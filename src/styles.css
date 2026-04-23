@@ -1,0 +1,59 @@
+/* style.css
+   Project-specific extras and overrides.
+   Keep this lean. The design system lives in index.css.
+*/
+
+/* Page titles inside your card body */
+.page-title {
+  @apply text-base font-semibold text-[rgb(var(--text))] tracking-tight;
+}
+
+/* Subheader / helper text under titles */
+.page-hint {
+  @apply text-xs text-[rgb(var(--muted))] leading-snug;
+}
+
+/* Little stat cards on Dashboard (if you add them later) */
+.stat-card {
+  @apply card p-4 lg:p-5 flex flex-col gap-2;
+}
+.stat-value {
+  @apply text-xl font-semibold text-[rgb(var(--text))];
+}
+.stat-label {
+  @apply text-xs text-[rgb(var(--muted))];
+}
+
+/* Login page tweaks (optional) */
+.login-wrapper {
+  @apply min-h-screen flex items-center justify-center bg-[rgb(var(--bg))] p-6;
+}
+.login-card {
+  @apply card max-w-sm w-full shadow-lg;
+}
+.login-card-body {
+  @apply card-body space-y-6;
+}
+.login-heading {
+  @apply text-xl font-semibold text-[rgb(var(--text))] text-center;
+}
+.login-subheading {
+  @apply text-sm text-[rgb(var(--muted))] text-center;
+}
+.login-error {
+  @apply text-xs text-red-600 bg-red-50 dark:bg-red-950/40
+         border border-red-200 dark:border-red-700 rounded-lg px-3 py-2;
+}
+.login-footer {
+  @apply text-[10px] text-center text-[rgb(var(--muted))];
+}
+
+/* Table action buttons row (edit/delete group on the right) */
+.row-actions {
+  @apply flex justify-end gap-2;
+}
+
+/* Pagination footer row */
+.page-footer-row {
+  @apply flex items-center justify-between text-[rgb(var(--muted))] text-xs sm:text-sm;
+}

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="220" viewBox="0 0 860 220">
+  <rect width="860" height="220" fill="none"/>
+  <!-- Mark (same as A, scaled) -->
+  <g transform="translate(20,20) scale(0.35)">
+    <circle cx="256" cy="256" r="228" fill="none" stroke="#0f172a" stroke-width="20"/>
+    <path d="M 360 156 A 130 130 0 1 0 360 356" fill="none" stroke="#16a34a" stroke-width="40" stroke-linecap="round"/>
+    <path d="M 320 220 L 320 356 L 392 356" fill="none" stroke="#16a34a" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- Wordmark -->
+  <g transform="translate(230,135)">
+    <text x="0" y="0" font-size="84" font-weight="700" font-family="Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif" fill="#0f172a">
+      Carbon<tspan fill="#16a34a">Lite</tspan>
+    </text>
+    <text x="2" y="36" font-size="18" font-family="Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif" fill="#94a3b8">
+      Carbon accounting made lighter
+    </text>
+  </g>
+  <title>CarbonLite Lockup — Mark + Word</title>
+</svg>

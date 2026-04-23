@@ -1,0 +1,15 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      // proxy API requests during dev to your Nest server on 3333
+      '/api': 'http://localhost:3333',
+    },
+      hmr: {
+      overlay: false,
+    },
+  },
+});
