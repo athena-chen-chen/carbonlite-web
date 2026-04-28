@@ -27,7 +27,7 @@ export default function AdvisorLandingPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-slate-900">Solution</h2>
           <p className="mt-4 text-slate-600">
-            CarbonLite introduces an AI-assisted workflow to convert unstructured documents into structured activity data.
+            CarbonLite AI introduces an AI-assisted workflow to convert unstructured documents into structured activity data.
           </p>
 
           <div className="mt-6 grid gap-4">
@@ -93,7 +93,7 @@ export default function AdvisorLandingPage() {
           <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="text-xl font-semibold text-slate-900">
-                CarbonLite – Ready for pilot validation
+                CarbonLite AI– Ready for pilot validation
               </h3>
               <p className="mt-2 text-sm text-slate-600">
                 Seeking funding to validate the solution with real SME workflows and improve system robustness.

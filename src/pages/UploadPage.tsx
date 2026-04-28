@@ -46,8 +46,9 @@ export function UploadPage() {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
-  const [showGoToSummary, setShowGoToSummary] = useState(false);
-const navigate = useNavigate();
+  const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
+
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function loadDocuments() {
@@ -79,7 +80,28 @@ const navigate = useNavigate();
     setError(null);
   }
 
-  async function handleUpload() {
+  function handleUseSampleCSV() {
+    const blob = new Blob(
+      [
+        `activityType,recordDate,quantity,unit
+DIESEL,2026-03-01,120,liters
+ELECTRICITY,2026-03-02,450,kWh
+NATURAL_GAS,2026-03-03,300,m3`,
+      ],
+      { type: 'text/csv' },
+    );
+
+    const file = new File([blob], 'carbonlite-sample.csv', {
+      type: 'text/csv',
+    });
+
+    setSelectedFile(file);
+    setDocumentType('SPREADSHEET');
+    setError(null);
+    setSuccessMessage('Sample CSV loaded. Click Upload & Extract.');
+  }
+
+  async function handleUploadAndExtract() {
     if (!selectedFile) {
       setError('Please select a file first.');
       return;
@@ -87,7 +109,7 @@ const navigate = useNavigate();
 
     setUploading(true);
     setError(null);
-    setSuccessMessage(null);
+    setSuccessMessage('Uploading document...');
 
     try {
       await uploadDocument({
@@ -95,7 +117,6 @@ const navigate = useNavigate();
         type: documentType,
       });
 
-      setSuccessMessage('Upload completed.');
       setSelectedFile(null);
 
       const input = document.getElementById(
@@ -106,17 +127,28 @@ const navigate = useNavigate();
         input.value = '';
       }
 
-      await loadDocuments();
-      setShowGoToSummary(false);
+      const data = await getDocuments();
+      setDocuments(data.items ?? []);
+
+      const latest = data.items?.[0];
+
+      if (!latest) {
+        throw new Error('Upload completed, but no uploaded document was found.');
+      }
+
+      setLatestDocumentId(latest.id);
+      setSuccessMessage('Upload completed. Extracting data now...');
+
+      await handleExtract(latest.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(err instanceof Error ? err.message : 'Upload or extract failed');
+      setSuccessMessage(null);
     } finally {
       setUploading(false);
     }
   }
 
   async function handleExtract(documentId: string) {
-    setShowGoToSummary(false);
     setExtractingId(documentId);
     setError(null);
     setSuccessMessage(null);
@@ -131,14 +163,16 @@ const navigate = useNavigate();
           ...item,
         })),
       );
-if (result.possibleMissingRows) {
-  setError(result.warning ?? 'Possible missing rows detected.');
-  setSuccessMessage(null);
-} else {
-  setSuccessMessage('Extract completed.');
-  setError(null);
-}
-      setSuccessMessage('Extract completed.');
+
+      if (result.possibleMissingRows) {
+        setError(result.warning ?? 'Possible missing rows detected.');
+        setSuccessMessage(null);
+      } else {
+        setSuccessMessage(
+          'Extraction completed. Review the preview below, then click Confirm Import.',
+        );
+        setError(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Extract failed');
     } finally {
@@ -174,14 +208,18 @@ if (result.possibleMissingRows) {
         return;
       }
 
-  const result = await confirmDocumentImport(documentId, normalizedActivities);
-setSuccessMessage(`Imported ${result.count} activity record(s).`);
-setPreviewDocumentId(null);
-setParsedActivities([]);
+      const result = await confirmDocumentImport(documentId, normalizedActivities);
 
-setTimeout(() => {
-  navigate('/metrics-summary');
-}, 800);
+      setSuccessMessage(
+        `Imported ${result.count} activity record(s). Redirecting to Metrics Summary...`,
+      );
+
+      setPreviewDocumentId(null);
+      setParsedActivities([]);
+
+      setTimeout(() => {
+        navigate('/metrics-summary');
+      }, 800);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Confirm import failed');
     } finally {
@@ -287,23 +325,27 @@ setTimeout(() => {
     );
   }
 
+  const isProcessing = uploading || extractingId !== null;
+
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1>Upload Documents</h1>
-      <p style={{ color: '#666' }}>
-        Upload utility bills, fuel invoices, spreadsheets, PDFs, or images.
+      <h1 style={{ marginBottom: 8 }}>Upload & Extract Carbon Data</h1>
+
+      <p style={{ color: '#666', marginBottom: 16 }}>
+        Upload invoices, fuel receipts, utility bills, or CSV files. CarbonLite AI will extract activity data and prepare it for review.
       </p>
 
-      <div
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 24,
-          background: '#fff',
-        }}
-      >
-        <div style={{ display: 'grid', gap: 16, maxWidth: 600 }}>
+      <div style={stepBarStyle}>
+        Upload → Extract → Review → Import → Metrics
+      </div>
+
+      <div style={uploadCardStyle}>
+        <h2 style={{ marginTop: 0 }}>Upload your document</h2>
+        <p style={{ color: '#666' }}>
+          Choose a document or use a sample file to test the workflow.
+        </p>
+
+        <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
           <div>
             <label style={{ display: 'block', marginBottom: 6 }}>
               Document Type
@@ -311,7 +353,7 @@ setTimeout(() => {
             <select
               value={documentType}
               onChange={(e) => setDocumentType(e.target.value)}
-              style={{ width: '100%', padding: 8 }}
+              style={{ width: '100%', padding: 10, borderRadius: 8 }}
             >
               <option value="UTILITY_BILL">UTILITY_BILL</option>
               <option value="FUEL_INVOICE">FUEL_INVOICE</option>
@@ -322,51 +364,40 @@ setTimeout(() => {
             </select>
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: 6 }}>
+          <input
+            ref={fileInputRef}
+            id="document-upload-input"
+            type="file"
+            onChange={handleFileChange}
+            accept=".pdf,.png,.jpg,.jpeg,.csv,.xlsx,.xls"
+            style={{ display: 'none' }}
+          />
+
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button type="button" onClick={handleChooseFile} style={secondaryButtonStyle}>
               Choose File
-            </label>
+            </button>
 
-            <input
-              ref={fileInputRef}
-              id="document-upload-input"
-              type="file"
-              onChange={handleFileChange}
-              accept=".pdf,.png,.jpg,.jpeg,.csv,.xlsx,.xls"
-              style={{ display: 'none' }}
-            />
+            <button type="button" onClick={handleUseSampleCSV} style={secondaryButtonStyle}>
+              Use Sample CSV
+            </button>
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
+            <button
+              type="button"
+              onClick={handleUploadAndExtract}
+              disabled={isProcessing}
+              style={primaryButtonStyle(isProcessing)}
             >
-              <button
-                type="button"
-                onClick={handleChooseFile}
-                style={secondaryButtonStyle}
-              >
-                Choose File
-              </button>
-
-              <span style={{ color: '#555' }}>
-                {selectedFile ? selectedFile.name : 'No file chosen'}
-              </span>
-            </div>
+              {isProcessing ? 'Processing...' : 'Upload & Extract'}
+            </button>
           </div>
 
+          <span style={{ color: '#555' }}>
+            {selectedFile ? selectedFile.name : 'No file chosen'}
+          </span>
+
           {selectedFile ? (
-            <div
-              style={{
-                padding: 12,
-                borderRadius: 8,
-                background: '#f7f7f7',
-                border: '1px solid #eee',
-              }}
-            >
+            <div style={fileInfoStyle}>
               <div>
                 <strong>Name:</strong> {selectedFile.name}
               </div>
@@ -378,99 +409,13 @@ setTimeout(() => {
               </div>
             </div>
           ) : null}
-
-          <div>
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={uploading}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 8,
-                border: '1px solid #111',
-                background: '#111',
-                color: '#fff',
-                cursor: uploading ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {uploading ? 'Uploading...' : 'Upload Document'}
-            </button>
-          </div>
         </div>
       </div>
 
-      {error ? (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 8,
-            border: '1px solid #f1b5b5',
-            background: '#fff4f4',
-            color: '#9b1c1c',
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <div style={errorStyle}>{error}</div> : null}
+      {successMessage ? <div style={successStyle}>{successMessage}</div> : null}
 
-      {successMessage ? (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 8,
-            border: '1px solid #b8dfc1',
-            background: '#f3fff5',
-            color: '#1d6b2d',
-          }}
-        >
-          {successMessage}
-        </div>
-      ) : null}
-{showGoToSummary ? (
-  <div
-    style={{
-      marginBottom: 16,
-      padding: 12,
-      borderRadius: 8,
-      border: '1px solid #d9d9d9',
-      background: '#fff',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 12,
-      flexWrap: 'wrap',
-    }}
-  >
-    <span style={{ color: '#333' }}>
-      Import completed. You can now recalculate metrics.
-    </span>
-
-    <button
-      type="button"
-      onClick={() => navigate('/metrics-summary')}
-      style={{
-        padding: '10px 16px',
-        borderRadius: 8,
-        border: '1px solid #111',
-        background: '#111',
-        color: '#fff',
-        cursor: 'pointer',
-      }}
-    >
-      Go to Metrics Summary
-    </button>
-  </div>
-) : null}
-      <div
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 12,
-          background: '#fff',
-          overflow: 'hidden',
-        }}
-      >
+      <div style={sectionCardStyle}>
         <div style={{ padding: 16, borderBottom: '1px solid #eee' }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>Uploaded Documents</h2>
         </div>
@@ -493,7 +438,10 @@ setTimeout(() => {
             </thead>
             <tbody>
               {documents.map((doc) => (
-                <tr key={doc.id}>
+                <tr
+                  key={doc.id}
+                  style={doc.id === latestDocumentId ? { background: '#f0f7ff' } : undefined}
+                >
                   <td style={tdStyle}>{doc.fileName}</td>
                   <td style={tdStyle}>{doc.type}</td>
                   <td style={tdStyle}>{doc.status}</td>
@@ -522,30 +470,11 @@ setTimeout(() => {
                           previewDocumentId !== doc.id ||
                           parsedActivities.length === 0
                         }
-                        style={{
-                          padding: '6px 10px',
-                          borderRadius: 6,
-                          border: '1px solid #111',
-                          background:
-                            previewDocumentId === doc.id &&
-                            parsedActivities.length > 0
-                              ? '#111'
-                              : '#ddd',
-                          color:
-                            previewDocumentId === doc.id &&
-                            parsedActivities.length > 0
-                              ? '#fff'
-                              : '#666',
-                          cursor:
-                            previewDocumentId === doc.id &&
-                            parsedActivities.length > 0
-                              ? 'pointer'
-                              : 'not-allowed',
-                        }}
+                        style={confirmButtonStyle(
+                          previewDocumentId === doc.id && parsedActivities.length > 0,
+                        )}
                       >
-                        {confirmingId === doc.id
-                          ? 'Importing...'
-                          : 'Confirm Import'}
+                        {confirmingId === doc.id ? 'Importing...' : 'Confirm Import'}
                       </button>
                     </div>
                   </td>
@@ -555,73 +484,33 @@ setTimeout(() => {
           </table>
         )}
       </div>
-{parsedActivities.length > 0 && error && error.includes('Possible missing rows') ? (
-  <div
-    style={{
-      margin: 16,
-      padding: 12,
-      borderRadius: 8,
-      border: '1px solid #f3d28b',
-      background: '#fff8e6',
-      color: '#8a5a00',
-    }}
-  >
-    {error}
-  </div>
-) : null}
+
       {previewDocumentId ? (
-        <div
-          style={{
-            marginTop: 24,
-            border: '1px solid #ddd',
-            borderRadius: 12,
-            background: '#fff',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              padding: 16,
-              borderBottom: '1px solid #eee',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              flexWrap: 'wrap',
-            }}
-          >
+        <div style={{ ...sectionCardStyle, marginTop: 24 }}>
+          <div style={previewHeaderStyle}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 18 }}>Extract Preview</h2>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Extract Preview</h2>
               <p style={{ marginTop: 8, color: '#666' }}>
-                Review highlighted fields before confirming import.
+                Review extracted activity records before importing them into CarbonLite AI.
               </p>
-              <p style={{ marginTop: 8, color: '#666' }}>
+              <p style={{ marginTop: 8, color: '#047857', fontWeight: 600 }}>
+                Extracted rows: {parsedActivities.length}
+              </p>
+              <p style={{ marginTop: 8, color: '#999' }}>
                 Document ID: {previewDocumentId}
               </p>
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={selectAllParsedActivities}
-                style={secondaryButtonStyle}
-              >
+              <button type="button" onClick={selectAllParsedActivities} style={secondaryButtonStyle}>
                 Select All
               </button>
 
-              <button
-                type="button"
-                onClick={clearAllParsedActivities}
-                style={secondaryButtonStyle}
-              >
+              <button type="button" onClick={clearAllParsedActivities} style={secondaryButtonStyle}>
                 Clear All
               </button>
 
-              <button
-                type="button"
-                onClick={addParsedActivity}
-                style={secondaryButtonStyle}
-              >
+              <button type="button" onClick={addParsedActivity} style={secondaryButtonStyle}>
                 Add Row
               </button>
             </div>
@@ -767,14 +656,7 @@ setTimeout(() => {
                       <button
                         type="button"
                         onClick={() => removeParsedActivity(index)}
-                        style={{
-                          padding: '6px 10px',
-                          borderRadius: 6,
-                          border: '1px solid #d33',
-                          background: '#fff',
-                          color: '#d33',
-                          cursor: 'pointer',
-                        }}
+                        style={deleteButtonStyle}
                       >
                         Delete
                       </button>
@@ -789,6 +671,67 @@ setTimeout(() => {
     </div>
   );
 }
+
+const stepBarStyle: React.CSSProperties = {
+  marginBottom: 24,
+  padding: 12,
+  borderRadius: 12,
+  background: '#ecfdf5',
+  border: '1px solid #a7f3d0',
+  color: '#047857',
+  fontWeight: 600,
+};
+
+const uploadCardStyle: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 16,
+  padding: 20,
+  marginBottom: 24,
+  background: '#fff',
+  boxShadow: '0 6px 20px rgba(0,0,0,0.04)',
+};
+
+const sectionCardStyle: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 12,
+  background: '#fff',
+  overflow: 'hidden',
+};
+
+const fileInfoStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 10,
+  background: '#f7f7f7',
+  border: '1px solid #eee',
+};
+
+const successStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 8,
+  border: '1px solid #b8dfc1',
+  background: '#f3fff5',
+  color: '#1d6b2d',
+};
+
+const errorStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 8,
+  border: '1px solid #f1b5b5',
+  background: '#fff4f4',
+  color: '#9b1c1c',
+};
+
+const previewHeaderStyle: React.CSSProperties = {
+  padding: 16,
+  borderBottom: '1px solid #eee',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
+};
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
@@ -807,5 +750,37 @@ const secondaryButtonStyle: React.CSSProperties = {
   borderRadius: 8,
   border: '1px solid #111',
   background: '#fff',
+  cursor: 'pointer',
+};
+
+function primaryButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '10px 16px',
+    borderRadius: 8,
+    border: '1px solid #047857',
+    background: disabled ? '#9ca3af' : '#047857',
+    color: '#fff',
+    fontWeight: 600,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function confirmButtonStyle(enabled: boolean): React.CSSProperties {
+  return {
+    padding: '6px 10px',
+    borderRadius: 6,
+    border: '1px solid #111',
+    background: enabled ? '#111' : '#ddd',
+    color: enabled ? '#fff' : '#666',
+    cursor: enabled ? 'pointer' : 'not-allowed',
+  };
+}
+
+const deleteButtonStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 6,
+  border: '1px solid #d33',
+  background: '#fff',
+  color: '#d33',
   cursor: 'pointer',
 };

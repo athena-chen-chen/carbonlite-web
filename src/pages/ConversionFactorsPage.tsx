@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   createConversionFactor,
   getConversionFactors,
@@ -20,10 +20,6 @@ type ConversionFactorItem = {
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
 };
 
 const initialForm: ConversionFactorInput = {
@@ -49,6 +45,7 @@ export function ConversionFactorsPage() {
   async function loadItems() {
     setLoading(true);
     setError(null);
+
     try {
       const data = (await getConversionFactors()) as ConversionFactorListResponse;
       setItems(data.items ?? []);
@@ -63,6 +60,26 @@ export function ConversionFactorsPage() {
     loadItems();
   }, []);
 
+  const defaultCount = useMemo(
+    () => items.filter((item) => item.isDefault).length,
+    [items],
+  );
+
+  const emissionCount = useMemo(
+    () => items.filter((item) => item.type === 'EMISSION').length,
+    [items],
+  );
+
+  const activityTypesCovered = useMemo(() => {
+    const types = new Set(
+      items
+        .map((item) => item.activityType)
+        .filter((value): value is string => Boolean(value)),
+    );
+
+    return types.size;
+  }, [items]);
+
   function updateField<K extends keyof ConversionFactorInput>(
     key: K,
     value: ConversionFactorInput[K],
@@ -75,6 +92,7 @@ export function ConversionFactorsPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+
     setSubmitting(true);
     setError(null);
     setSuccessMessage(null);
@@ -97,148 +115,190 @@ export function ConversionFactorsPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1>Conversion Factors</h1>
-
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))',
-          gap: 16,
-          padding: 16,
-          border: '1px solid #ddd',
-          borderRadius: 12,
-          marginBottom: 24,
-        }}
-      >
+      <div style={pageHeaderStyle}>
         <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Name</label>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => updateField('name', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          />
+          <h1 style={{ margin: 0 }}>Conversion Factors</h1>
+          <p style={{ marginTop: 8, color: '#666' }}>
+            Manage the factors CarbonLite AI uses to convert activity data into carbon metrics.
+          </p>
+        </div>
+      </div>
+
+      <div style={summaryGridStyle}>
+        <SummaryCard
+          icon="🧮"
+          title="Total Factors"
+          value={String(items.length)}
+          subtitle="Available conversion rules"
+        />
+
+        <SummaryCard
+          icon="🌱"
+          title="Emission Factors"
+          value={String(emissionCount)}
+          subtitle="Used for CO₂e calculations"
+          accent="#10b981"
+        />
+
+        <SummaryCard
+          icon="✅"
+          title="Default Factors"
+          value={String(defaultCount)}
+          subtitle="Automatically selected rules"
+          accent="#3b82f6"
+        />
+
+        <SummaryCard
+          icon="📊"
+          title="Activity Types"
+          value={String(activityTypesCovered)}
+          subtitle="Covered data categories"
+          accent="#f59e0b"
+        />
+      </div>
+
+      <form onSubmit={handleSubmit} style={formCardStyle}>
+        <div style={{ marginBottom: 18 }}>
+          <h2 style={{ margin: 0, fontSize: 20 }}>Add Conversion Factor</h2>
+          <p style={{ marginTop: 6, color: '#666' }}>
+            Define how an activity record should be converted into a calculated result.
+          </p>
         </div>
 
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Type</label>
-          <select
-            value={form.type}
-            onChange={(e) => updateField('type', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          >
-            <option value="EMISSION">EMISSION</option>
-            <option value="ENERGY">ENERGY</option>
-            <option value="COST">COST</option>
-            <option value="CUSTOM">CUSTOM</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Activity Type</label>
-          <select
-            value={form.activityType ?? ''}
-            onChange={(e) => updateField('activityType', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          >
-            <option value="">-- Select --</option>
-            <option value="ELECTRICITY">ELECTRICITY</option>
-            <option value="NATURAL_GAS">NATURAL_GAS</option>
-            <option value="DIESEL">DIESEL</option>
-            <option value="GASOLINE">GASOLINE</option>
-            <option value="STEAM">STEAM</option>
-            <option value="WATER">WATER</option>
-            <option value="WASTE">WASTE</option>
-            <option value="BUSINESS_TRAVEL">BUSINESS_TRAVEL</option>
-            <option value="FREIGHT">FREIGHT</option>
-            <option value="CUSTOM">CUSTOM</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Unit</label>
-          <input
-            type="text"
-            value={form.unit}
-            onChange={(e) => updateField('unit', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Factor Value</label>
-          <input
-            type="number"
-            step="0.0001"
-            value={form.factorValue}
-            onChange={(e) => updateField('factorValue', Number(e.target.value))}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Result Unit</label>
-          <input
-            type="text"
-            value={form.resultUnit}
-            onChange={(e) => updateField('resultUnit', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Source Name</label>
-          <input
-            type="text"
-            value={form.sourceName ?? ''}
-            onChange={(e) => updateField('sourceName', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Source Reference</label>
-          <input
-            type="text"
-            value={form.sourceReference ?? ''}
-            onChange={(e) => updateField('sourceReference', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </div>
-
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <div style={formGridStyle}>
+          <Field label="Name">
             <input
-              type="checkbox"
-              checked={!!form.isDefault}
-              onChange={(e) => updateField('isDefault', e.target.checked)}
+              type="text"
+              value={form.name}
+              onChange={(e) => updateField('name', e.target.value)}
+              style={inputStyle}
             />
-            Is Default
-          </label>
+          </Field>
+
+          <Field label="Type">
+            <select
+              value={form.type}
+              onChange={(e) => updateField('type', e.target.value)}
+              style={inputStyle}
+            >
+              <option value="EMISSION">EMISSION</option>
+              <option value="ENERGY">ENERGY</option>
+              <option value="COST">COST</option>
+              <option value="CUSTOM">CUSTOM</option>
+            </select>
+          </Field>
+
+          <Field label="Activity Type">
+            <select
+              value={form.activityType ?? ''}
+              onChange={(e) => updateField('activityType', e.target.value)}
+              style={inputStyle}
+            >
+              <option value="">-- Select --</option>
+              <option value="ELECTRICITY">ELECTRICITY</option>
+              <option value="NATURAL_GAS">NATURAL_GAS</option>
+              <option value="DIESEL">DIESEL</option>
+              <option value="GASOLINE">GASOLINE</option>
+              <option value="STEAM">STEAM</option>
+              <option value="WATER">WATER</option>
+              <option value="WASTE">WASTE</option>
+              <option value="BUSINESS_TRAVEL">BUSINESS_TRAVEL</option>
+              <option value="FREIGHT">FREIGHT</option>
+              <option value="CUSTOM">CUSTOM</option>
+            </select>
+          </Field>
+
+          <Field label="Input Unit">
+            <input
+              type="text"
+              value={form.unit}
+              onChange={(e) => updateField('unit', e.target.value)}
+              style={inputStyle}
+              placeholder="liters"
+            />
+          </Field>
+
+          <Field label="Factor Value">
+            <input
+              type="number"
+              step="0.0001"
+              value={form.factorValue}
+              onChange={(e) => updateField('factorValue', Number(e.target.value))}
+              style={inputStyle}
+            />
+          </Field>
+
+          <Field label="Result Unit">
+            <input
+              type="text"
+              value={form.resultUnit}
+              onChange={(e) => updateField('resultUnit', e.target.value)}
+              style={inputStyle}
+              placeholder="kgCO2e"
+            />
+          </Field>
+
+          <Field label="Source Name">
+            <input
+              type="text"
+              value={form.sourceName ?? ''}
+              onChange={(e) => updateField('sourceName', e.target.value)}
+              style={inputStyle}
+              placeholder="Government factor / custom source"
+            />
+          </Field>
+
+          <Field label="Source Reference">
+            <input
+              type="text"
+              value={form.sourceReference ?? ''}
+              onChange={(e) => updateField('sourceReference', e.target.value)}
+              style={inputStyle}
+              placeholder="reference, URL, or internal note"
+            />
+          </Field>
         </div>
 
-        <div style={{ gridColumn: '1 / -1' }}>
-          <button type="submit" disabled={submitting} style={{ padding: '10px 16px' }}>
+        <label style={checkboxRowStyle}>
+          <input
+            type="checkbox"
+            checked={!!form.isDefault}
+            onChange={(e) => updateField('isDefault', e.target.checked)}
+          />
+          Use as default factor for this activity type
+        </label>
+
+        <div style={{ marginTop: 18 }}>
+          <button type="submit" disabled={submitting} style={primaryButtonStyle(submitting)}>
             {submitting ? 'Creating...' : 'Create Conversion Factor'}
           </button>
         </div>
       </form>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      {successMessage && <p style={{ color: 'green' }}>{successMessage}</p>}
-      {loading && <p>Loading conversion factors...</p>}
+      {error ? <div style={errorStyle}>{error}</div> : null}
+      {successMessage ? <div style={successStyle}>{successMessage}</div> : null}
 
-      {!loading && (
-        <div style={{ border: '1px solid #ddd', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={tableCardStyle}>
+        <div style={tableHeaderStyle}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Conversion Factor Library</h2>
+            <p style={{ marginTop: 6, color: '#666' }}>
+              These factors are used when generating emissions and other calculated metrics.
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 16 }}>Loading conversion factors...</div>
+        ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#f7f7f7' }}>
+              <tr style={{ background: '#f8fafc' }}>
                 <th style={thStyle}>Name</th>
                 <th style={thStyle}>Type</th>
                 <th style={thStyle}>Activity Type</th>
-                <th style={thStyle}>Unit</th>
-                <th style={thStyle}>Factor Value</th>
+                <th style={thStyle}>Input Unit</th>
+                <th style={thStyle}>Factor</th>
                 <th style={thStyle}>Result Unit</th>
                 <th style={thStyle}>Default</th>
               </tr>
@@ -246,35 +306,221 @@ export function ConversionFactorsPage() {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 16, textAlign: 'center' }}>
+                  <td colSpan={7} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
                     No conversion factors yet.
                   </td>
                 </tr>
               ) : (
                 items.map((item) => (
                   <tr key={item.id}>
-                    <td style={tdStyle}>{item.name}</td>
-                    <td style={tdStyle}>{item.type}</td>
+                    <td style={tdStyle}>
+                      <div style={{ fontWeight: 600 }}>{item.name}</div>
+                      {item.sourceName ? (
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#777' }}>
+                          Source: {item.sourceName}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td style={tdStyle}>
+                      <Badge label={item.type} color="#0f766e" background="#ccfbf1" />
+                    </td>
                     <td style={tdStyle}>{item.activityType ?? '-'}</td>
                     <td style={tdStyle}>{item.unit}</td>
-                    <td style={tdStyle}>{item.factorValue}</td>
+                    <td style={tdStyle}>
+                      <strong>{item.factorValue}</strong>
+                    </td>
                     <td style={tdStyle}>{item.resultUnit}</td>
-                    <td style={tdStyle}>{item.isDefault ? 'Yes' : 'No'}</td>
+                    <td style={tdStyle}>
+                      {item.isDefault ? (
+                        <Badge label="Default" color="#047857" background="#d1fae5" />
+                      ) : (
+                        <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
+
+function SummaryCard({
+  icon,
+  title,
+  value,
+  subtitle,
+  accent = '#111827',
+}: {
+  icon: string;
+  title: string;
+  value: string;
+  subtitle: string;
+  accent?: string;
+}) {
+  return (
+    <div style={summaryCardStyle}>
+      <div style={{ fontSize: 26 }}>{icon}</div>
+      <div style={{ marginTop: 12, color: '#666', fontSize: 14 }}>{title}</div>
+      <div style={{ marginTop: 6, fontSize: 28, fontWeight: 800, color: accent }}>
+        {value}
+      </div>
+      <div style={{ marginTop: 8, color: '#777', fontSize: 13 }}>{subtitle}</div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function Badge({
+  label,
+  color,
+  background,
+}: {
+  label: string;
+  color: string;
+  background: string;
+}) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        borderRadius: 999,
+        padding: '4px 10px',
+        fontSize: 12,
+        fontWeight: 700,
+        color,
+        background,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+const pageHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  flexWrap: 'wrap',
+  marginBottom: 24,
+};
+
+const summaryGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 16,
+  marginBottom: 24,
+};
+
+const summaryCardStyle: React.CSSProperties = {
+  borderRadius: 16,
+  padding: 20,
+  background: '#fff',
+  border: '1px solid #eee',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+};
+
+const formCardStyle: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 16,
+  background: '#fff',
+  padding: 20,
+  marginBottom: 20,
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+};
+
+const formGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+  gap: 16,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #d1d5db',
+  outline: 'none',
+};
+
+const checkboxRowStyle: React.CSSProperties = {
+  marginTop: 16,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  color: '#444',
+};
+
+function primaryButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: 'none',
+    background: disabled ? '#9ca3af' : '#10b981',
+    color: '#fff',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+const successStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bbf7d0',
+  background: '#f0fdf4',
+  color: '#166534',
+};
+
+const errorStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #fecaca',
+  background: '#fef2f2',
+  color: '#991b1b',
+};
+
+const tableCardStyle: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 16,
+  overflow: 'hidden',
+  background: '#fff',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+};
+
+const tableHeaderStyle: React.CSSProperties = {
+  padding: 16,
+  borderBottom: '1px solid #eee',
+};
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: 12,
   borderBottom: '1px solid #ddd',
+  color: '#475569',
+  fontSize: 13,
 };
 
 const tdStyle: React.CSSProperties = {

@@ -108,29 +108,65 @@
 // export default function App() {
 //   return <RouterProvider router={router} />;
 // }
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { ActivityDataPage } from '../pages/ActivityDataPage';
 import { ConversionFactorsPage } from '../pages/ConversionFactorsPage';
 import { MetricsSummaryPage } from '../pages/MetricsSummaryPage';
 import { UploadPage } from '../pages/UploadPage';
 import { AppNav } from '../components/AppNav';
+import CarbonLiteLandingPage from '../pages/LandingPage';
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ minHeight: '100vh', background: '#fafafa' }}>
+      <AppNav />
+      <main style={{ padding: '24px 0' }}>{children}</main>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <BrowserRouter>
-      <div style={{ minHeight: '100vh', background: '#fafafa' }}>
-        <AppNav />
+      <Routes>
+        <Route path="/" element={<CarbonLiteLandingPage />} />
 
-        <main style={{ padding: '24px 0' }}>
-          <Routes>
-            <Route path="/" element={<Navigate to="/metrics-summary" replace />} />
-            <Route path="/activity-data" element={<ActivityDataPage />} />
-            <Route path="/conversion-factors" element={<ConversionFactorsPage />} />
-            <Route path="/metrics-summary" element={<MetricsSummaryPage />} />
-            <Route path="/upload" element={<UploadPage />} />
-          </Routes>
-        </main>
-      </div>
+        <Route
+          path="/activity-data"
+          element={
+            <AppShell>
+              <ActivityDataPage />
+            </AppShell>
+          }
+        />
+
+        <Route
+          path="/conversion-factors"
+          element={
+            <AppShell>
+              <ConversionFactorsPage />
+            </AppShell>
+          }
+        />
+
+        <Route
+          path="/metrics-summary"
+          element={
+            <AppShell>
+              <MetricsSummaryPage />
+            </AppShell>
+          }
+        />
+
+        <Route
+          path="/upload"
+          element={
+            <AppShell>
+              <UploadPage />
+            </AppShell>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   );
 }

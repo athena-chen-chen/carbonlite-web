@@ -134,7 +134,7 @@ export default function Reports() {
 
       {/* Printable cover/header */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>CarbonLite Emissions Report</h3>
+        <h3 style={{ marginTop: 0 }}>CarbonLite AI Emissions Report</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 8 }}>
           <div><strong>Date Range:</strong> {from || '—'} → {to || '—'}</div>
           <div><strong>Generated:</strong> {new Date().toLocaleString()}</div>

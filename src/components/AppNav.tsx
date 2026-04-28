@@ -30,9 +30,20 @@ export function AppNav() {
           gap: 16,
         }}
       >
-        <div style={{ fontSize: 20, fontWeight: 700 }}>CarbonLite 2.0</div>
+        <div style={{ fontSize: 20, fontWeight: 700 }}>CarbonLite AI 2.0</div>
 
         <nav style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <NavLink
+            to="/"
+            style={({ isActive }) => ({
+              ...linkBaseStyle,
+              background: isActive ? '#111' : 'transparent',
+              color: isActive ? '#fff' : '#222',
+            })}
+          >
+            Home
+          </NavLink>
+
           <NavLink
             to="/activity-data"
             style={({ isActive }) => ({
