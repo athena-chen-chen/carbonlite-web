@@ -18,15 +18,11 @@ type ActivityDataItem = {
 
 type ActivityDataListResponse = {
   items: ActivityDataItem[];
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
 };
 
 const initialForm: ActivityDataInput = {
   activityType: 'DIESEL',
-  recordDate: '2026-03-17T00:00:00.000Z',
+  recordDate: new Date().toISOString().slice(0, 10),
   quantity: 100,
   unit: 'liters',
   sourceType: 'MANUAL',
@@ -44,12 +40,9 @@ export function ActivityDataPage() {
 
   async function loadItems() {
     setLoading(true);
-    setError(null);
     try {
       const data = (await getActivityDataList()) as ActivityDataListResponse;
       setItems(data.items ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load activity data');
     } finally {
       setLoading(false);
     }
@@ -60,10 +53,7 @@ export function ActivityDataPage() {
   }, []);
 
   function updateField<K extends keyof ActivityDataInput>(key: K, value: ActivityDataInput[K]) {
-    setForm((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+    setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -78,11 +68,11 @@ export function ActivityDataPage() {
         quantity: Number(form.quantity),
       });
 
-      setSuccessMessage('Activity data created successfully.');
+      setSuccessMessage('Activity data added.');
       setForm(initialForm);
       await loadItems();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create activity data');
+      setError('Failed to create activity data');
     } finally {
       setSubmitting(false);
     }
@@ -90,168 +80,182 @@ export function ActivityDataPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1>Activity Data</h1>
+      {/* ⭐ 标题区 */}
+      <h1 style={{ marginBottom: 8 }}>Activity Data</h1>
 
-      <form
-        onSubmit={handleSubmit}
+      <p style={{ color: '#666', marginBottom: 24 }}>
+        Manage and review extracted or manually entered activity records.
+      </p>
+
+      {/* ⭐ Summary 卡片 */}
+      <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: 16,
-          padding: 16,
-          border: '1px solid #ddd',
-          borderRadius: 12,
           marginBottom: 24,
         }}
       >
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Activity Type</label>
-          <select
-            value={form.activityType}
-            onChange={(e) => updateField('activityType', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          >
-            <option value="ELECTRICITY">ELECTRICITY</option>
-            <option value="NATURAL_GAS">NATURAL_GAS</option>
-            <option value="DIESEL">DIESEL</option>
-            <option value="GASOLINE">GASOLINE</option>
-            <option value="STEAM">STEAM</option>
-            <option value="WATER">WATER</option>
-            <option value="WASTE">WASTE</option>
-            <option value="BUSINESS_TRAVEL">BUSINESS_TRAVEL</option>
-            <option value="FREIGHT">FREIGHT</option>
-            <option value="CUSTOM">CUSTOM</option>
-          </select>
+        <Card title="Total Records" value={items.length} icon="📄" />
+        <Card title="Manual Entries" value={items.filter(i => i.sourceType === 'MANUAL').length} icon="✍️" />
+        <Card title="Imported" value={items.filter(i => i.sourceType !== 'MANUAL').length} icon="📥" />
+      </div>
+
+      {/* ⭐ Form */}
+      <form onSubmit={handleSubmit} style={formCard}>
+        <h2 style={{ marginTop: 0 }}>Add Activity Data</h2>
+
+        <div style={grid}>
+          <Field label="Activity Type">
+            <select value={form.activityType} onChange={(e) => updateField('activityType', e.target.value)}>
+              <option value="DIESEL">DIESEL</option>
+              <option value="ELECTRICITY">ELECTRICITY</option>
+              <option value="NATURAL_GAS">NATURAL_GAS</option>
+            </select>
+          </Field>
+
+          <Field label="Record Date">
+            <input
+              type="date"
+              value={form.recordDate.slice(0, 10)}
+              onChange={(e) => updateField('recordDate', e.target.value)}
+            />
+          </Field>
+
+          <Field label="Quantity">
+            <input
+              type="number"
+              value={form.quantity}
+              onChange={(e) => updateField('quantity', Number(e.target.value))}
+            />
+          </Field>
+
+          <Field label="Unit">
+            <input value={form.unit} onChange={(e) => updateField('unit', e.target.value)} />
+          </Field>
+
+          <Field label="Source">
+            <select value={form.sourceType} onChange={(e) => updateField('sourceType', e.target.value)}>
+              <option value="MANUAL">Manual</option>
+              <option value="IMPORT">Import</option>
+              <option value="DOCUMENT_AI">AI</option>
+            </select>
+          </Field>
+
+          <Field label="Reference">
+            <input value={form.sourceReference ?? ''} onChange={(e) => updateField('sourceReference', e.target.value)} />
+          </Field>
         </div>
 
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Record Date</label>
-          <input
-            type="text"
-            value={form.recordDate}
-            onChange={(e) => updateField('recordDate', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-            placeholder="2026-03-17T00:00:00.000Z"
-          />
-        </div>
+        <textarea
+          placeholder="Notes"
+          value={form.notes ?? ''}
+          onChange={(e) => updateField('notes', e.target.value)}
+          style={{ width: '100%', marginTop: 12 }}
+        />
 
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Quantity</label>
-          <input
-            type="number"
-            value={form.quantity}
-            onChange={(e) => updateField('quantity', Number(e.target.value))}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Unit</label>
-          <input
-            type="text"
-            value={form.unit}
-            onChange={(e) => updateField('unit', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-            placeholder="liters"
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Source Type</label>
-          <select
-            value={form.sourceType}
-            onChange={(e) => updateField('sourceType', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          >
-            <option value="MANUAL">MANUAL</option>
-            <option value="IMPORT">IMPORT</option>
-            <option value="API">API</option>
-            <option value="DOCUMENT_AI">DOCUMENT_AI</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: 6 }}>Source Reference</label>
-          <input
-            type="text"
-            value={form.sourceReference ?? ''}
-            onChange={(e) => updateField('sourceReference', e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-            placeholder="manual-test-001"
-          />
-        </div>
-
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={{ display: 'block', marginBottom: 6 }}>Notes</label>
-          <textarea
-            value={form.notes ?? ''}
-            onChange={(e) => updateField('notes', e.target.value)}
-            style={{ width: '100%', padding: 8, minHeight: 80 }}
-            placeholder="Optional notes..."
-          />
-        </div>
-
-        <div style={{ gridColumn: '1 / -1' }}>
-          <button type="submit" disabled={submitting} style={{ padding: '10px 16px' }}>
-            {submitting ? 'Creating...' : 'Create Activity Data'}
-          </button>
-        </div>
+        <button type="submit" disabled={submitting} style={primaryBtn}>
+          {submitting ? 'Adding...' : 'Add Activity'}
+        </button>
       </form>
 
+      {/* 状态 */}
       {error && <p style={{ color: 'red' }}>{error}</p>}
       {successMessage && <p style={{ color: 'green' }}>{successMessage}</p>}
-      {loading && <p>Loading activity data...</p>}
 
-      {!loading && (
-        <div style={{ border: '1px solid #ddd', borderRadius: 12, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      {/* ⭐ Table */}
+      <div style={tableCard}>
+        <h2 style={{ margin: 0 }}>Activity Records</h2>
+
+        {loading ? (
+          <p>Loading...</p>
+        ) : items.length === 0 ? (
+          <p>No data yet</p>
+        ) : (
+          <table style={{ width: '100%' }}>
             <thead>
-              <tr style={{ background: '#f7f7f7' }}>
-                <th style={thStyle}>Record Date</th>
-                <th style={thStyle}>Activity Type</th>
-                <th style={thStyle}>Quantity</th>
-                <th style={thStyle}>Unit</th>
-                <th style={thStyle}>Source Type</th>
-                <th style={thStyle}>Source Reference</th>
-                <th style={thStyle}>Notes</th>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Quantity</th>
+                <th>Unit</th>
+                <th>Source</th>
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ padding: 16, textAlign: 'center' }}>
-                    No activity data yet.
-                  </td>
+              {items.map((i) => (
+                <tr key={i.id}>
+                  <td>{i.recordDate}</td>
+                  <td>{i.activityType}</td>
+                  <td>{i.quantity}</td>
+                  <td>{i.unit}</td>
+                  <td>{i.sourceType}</td>
                 </tr>
-              ) : (
-                items.map((item) => (
-                  <tr key={item.id}>
-                    <td style={tdStyle}>{item.recordDate}</td>
-                    <td style={tdStyle}>{item.activityType}</td>
-                    <td style={tdStyle}>{item.quantity}</td>
-                    <td style={tdStyle}>{item.unit}</td>
-                    <td style={tdStyle}>{item.sourceType}</td>
-                    <td style={tdStyle}>{item.sourceReference ?? '-'}</td>
-                    <td style={tdStyle}>{item.notes ?? '-'}</td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
 
-const thStyle: React.CSSProperties = {
-  textAlign: 'left',
-  padding: 12,
-  borderBottom: '1px solid #ddd',
+/* ⭐ UI Components */
+
+function Card({ title, value, icon }: any) {
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 22 }}>{icon}</div>
+      <div style={{ color: '#666' }}>{title}</div>
+      <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
+    </div>
+  );
+}
+
+function Field({ label, children }: any) {
+  return (
+    <div>
+      <label>{label}</label>
+      <div style={{ marginTop: 6 }}>{children}</div>
+    </div>
+  );
+}
+
+/* ⭐ Styles */
+
+const grid = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2,1fr)',
+  gap: 16,
 };
 
-const tdStyle: React.CSSProperties = {
-  padding: 12,
-  borderBottom: '1px solid #eee',
-  verticalAlign: 'top',
+const card = {
+  padding: 16,
+  borderRadius: 12,
+  background: '#fff',
+  border: '1px solid #eee',
+};
+
+const formCard = {
+  padding: 20,
+  borderRadius: 12,
+  border: '1px solid #ddd',
+  background: '#fff',
+  marginBottom: 24,
+};
+
+const tableCard = {
+  padding: 20,
+  borderRadius: 12,
+  border: '1px solid #ddd',
+  background: '#fff',
+};
+
+const primaryBtn = {
+  marginTop: 16,
+  padding: '10px 16px',
+  borderRadius: 8,
+  background: '#10b981',
+  color: '#fff',
+  border: 'none',
 };

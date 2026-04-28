@@ -44,7 +44,7 @@ export default function Login() {
           <div className="space-y-1 text-center">
             <div className="text-xl font-semibold text-[rgb(var(--text))]">Sign in</div>
             <div className="text-sm text-[rgb(var(--muted))]">
-              Use your CarbonLite admin credentials
+              Use your CarbonLite AI admin credentials
             </div>
           </div>
 
@@ -89,7 +89,7 @@ export default function Login() {
           </form>
 
           <div className="text-[10px] text-center text-[rgb(var(--muted))]">
-            CarbonLite Internal · v0.1
+            CarbonLite AI Internal · v0.1
           </div>
         </div>
       </div>

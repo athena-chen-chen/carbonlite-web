@@ -6,7 +6,7 @@
 ```md
 # CarbonLite Web
 
-React + Vite frontend for CarbonLite.
+React + Vite frontend for CarbonLite AI.
 
 This app provides:
 
