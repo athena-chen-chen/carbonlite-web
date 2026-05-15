@@ -1,22 +1,4 @@
-// import { NavLink } from 'react-router-dom';
 
-// const linkCls = ({ isActive }: { isActive: boolean }) =>
-//   `nav-link${isActive ? ' active' : ''}`;
-
-// export default function TopNav() {
-//   return (
-//     <nav className="nav">
-//       <NavLink to="/" end className={linkCls}>Dashboard</NavLink>
-//       <NavLink to="/emissions" className={linkCls}>Emissions</NavLink>
-//       <NavLink to="/analysis" className={linkCls}>Analysis</NavLink>
-//       <NavLink to="/reports" className={linkCls}>Reports</NavLink>
-//       <NavLink to="/factors" className={linkCls}>Factors</NavLink>
-//       <NavLink to="/admin" className={linkCls}>Admin</NavLink>
-//     </nav>
-//   );
-// }
-
-// src/components/TopNav.tsx
 
 type TopNavProps = {
   title: string;

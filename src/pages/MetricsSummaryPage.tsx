@@ -1,13 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { calculateMetrics, getMetricsSummary } from '../services/metrics';
 import { getActivityDataList } from '../services/activityData';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 
 export function MetricsSummaryPage() {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+const [reloadKey, setReloadKey] = useState(0);
 
+async function loadSummary() {
+  const data = await getMetricsSummary();
+  setSummary(data);
+}
+useEffect(() => {
+  loadSummary();
+}, []);
+
+useEffect(() => {
+  loadSummary();
+}, [reloadKey]);
   async function loadSummary() {
     setLoading(true);
     setError(null);
@@ -46,7 +61,125 @@ export function MetricsSummaryPage() {
   useEffect(() => {
     loadSummary();
   }, []);
+// function handleDownloadCSV() {
+//   const totalsByMetric = summary?.totalsByMetric ?? [];
 
+//   const rows = [
+//     ['Metric Type', 'Unit', 'Total Value', 'Count'],
+//     ...totalsByMetric.map((item: any) => [
+//       item.metricType,
+//       item.unit,
+//       item.totalValue,
+//       item.count,
+//     ]),
+//   ];
+
+//   const csv = rows.map((row) => row.join(',')).join('\n');
+//   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+//   const url = URL.createObjectURL(blob);
+
+//   const link = document.createElement('a');
+//   link.href = url;
+//   link.download = 'carbonlite-metrics-summary.csv';
+//   link.click();
+
+//   URL.revokeObjectURL(url);
+// }
+function escapeCSV(value: unknown) {
+  const text = String(value ?? '');
+  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function handleDownloadCSV() {
+  const totalsByMetric = summary?.totalsByMetric ?? [];
+  const totalsByFacility = summary?.totalsByFacility ?? [];
+
+  const rows = [
+    ['Section', 'Metric Type', 'Facility', 'Unit', 'Total Value', 'Count'],
+
+    ...totalsByMetric.map((item: any) => [
+      'Totals by Metric',
+      item.metricType,
+      '',
+      item.unit,
+      item.totalValue,
+      item.count,
+    ]),
+
+    ...totalsByFacility.map((item: any) => [
+      'Totals by Facility',
+      item.metricType,
+      item.facilityId ?? 'Unassigned',
+      item.unit,
+      item.totalValue,
+      '',
+    ]),
+  ];
+
+  const csv = rows
+    .map((row) => row.map(escapeCSV).join(','))
+    .join('\n');
+
+  const blob = new Blob([csv], {
+    type: 'text/csv;charset=utf-8;',
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = `carbonlite-metrics-summary-${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
+function handleDownloadPDF() {
+  const totalsByMetric = summary?.totalsByMetric ?? [];
+  const totalsByFacility = summary?.totalsByFacility ?? [];
+
+  const doc = new jsPDF();
+
+  doc.setFontSize(18);
+  doc.text('CarbonLite AI Metrics Summary', 14, 20);
+
+  doc.setFontSize(10);
+  doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
+  doc.text('Prepared for internal reporting and compliance preparation.', 14, 35);
+
+  autoTable(doc, {
+    startY: 45,
+    head: [['Metric Type', 'Unit', 'Total Value', 'Count']],
+    body: totalsByMetric.map((item: any) => [
+      item.metricType,
+      item.unit,
+      item.totalValue,
+      item.count,
+    ]),
+  });
+
+  autoTable(doc, {
+    startY: (doc as any).lastAutoTable.finalY + 12,
+    head: [['Facility', 'Metric Type', 'Unit', 'Total Value']],
+    body: totalsByFacility.map((item: any) => [
+      item.facilityId ?? 'Unassigned',
+      item.metricType,
+      item.unit,
+      item.totalValue,
+    ]),
+  });
+
+  doc.save(
+    `carbonlite-metrics-summary-${new Date().toISOString().slice(0, 10)}.pdf`,
+  );
+}
   const totalsByMetric = summary?.totalsByMetric ?? [];
 
   const fuelMetric = totalsByMetric.find((m: any) =>
@@ -68,11 +201,15 @@ export function MetricsSummaryPage() {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Your uploaded documents have been automatically converted into structured data and summarized.
       </p>
-
+      <p style={{ color: '#666', marginBottom: 8 }}>
+  Quickly enter activity data (like Excel). Press Enter to add a new row.
+</p>
+ 
+<div style={{display:'flex',flexDirection: 'row',  gap: 8,marginBottom: 24}}>
       <button
         onClick={handleCalculate}
         style={{
-          marginBottom: 24,
+          
           padding: '10px 16px',
           borderRadius: 10,
           border: 'none',
@@ -84,7 +221,39 @@ export function MetricsSummaryPage() {
       >
         {calcLoading ? 'Generating...' : 'Generate Metrics'}
       </button>
-
+<button
+  type="button"
+  onClick={handleDownloadCSV}
+  disabled={!summary?.totalsByMetric?.length}
+  style={{
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: '1px solid #10b981',
+    background: '#fff',
+    color: '#047857',
+    fontWeight: 700,
+    cursor: summary?.totalsByMetric?.length ? 'pointer' : 'not-allowed',
+  }}
+>
+  Download CSV
+</button>
+<button
+  type="button"
+  onClick={handleDownloadPDF}
+  disabled={!summary?.totalsByMetric?.length}
+  style={{
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: '1px solid #111827',
+    background: '#111827',
+    color: '#fff',
+    fontWeight: 700,
+    cursor: summary?.totalsByMetric?.length ? 'pointer' : 'not-allowed',
+  }}
+>
+  Download PDF
+</button>
+</div>
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
       {loading ? (
@@ -102,7 +271,7 @@ export function MetricsSummaryPage() {
           >
             <MetricCard
               title="Fuel Usage"
-              value={fuelMetric ? `${fuelMetric.totalValue} ${fuelMetric.unit}` : '—'}
+              value={fuelMetric ? `${fuelMetric.totalValue} ${fuelMetric.unit}` : '0'}
               icon="⛽"
               color="#f59e0b"
             />
@@ -112,7 +281,7 @@ export function MetricsSummaryPage() {
               value={
                 electricityMetric
                   ? `${electricityMetric.totalValue} ${electricityMetric.unit}`
-                  : '—'
+                  : '0'
               }
               icon="⚡"
               color="#3b82f6"
@@ -130,7 +299,22 @@ export function MetricsSummaryPage() {
               highlight
             />
           </div>
-
+<div
+  style={{
+    border: '1px solid #bbf7d0',
+    background: '#f0fdf4',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 24,
+  }}
+>
+  <h2 style={{ margin: 0, fontSize: 18, color: '#166534' }}>
+    Report-ready summary
+  </h2>
+  <p style={{ marginTop: 8, color: '#166534' }}>
+    These results can be reviewed, exported, and used as supporting data for internal reporting or compliance preparation.
+  </p>
+</div>
           {/* ⭐ 明细表 */}
           <div
             style={{

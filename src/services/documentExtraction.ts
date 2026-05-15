@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3333/api';
+import { apiFetch } from './api';
 
 export type ParsedActivity = {
   activityType: string;
@@ -26,41 +26,21 @@ export type ConfirmImportResponse = {
 };
 
 export async function extractDocument(documentId: string) {
-  const response = await fetch(`${API_BASE_URL}/document-extraction/extract`, {
+  return apiFetch<ExtractResponse>('/document-extraction/extract', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({ documentId }),
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API ${response.status}: ${text}`);
-  }
-
-  return response.json() as Promise<ExtractResponse>;
 }
 
 export async function confirmDocumentImport(
   documentId: string,
   activities: ParsedActivity[],
 ) {
-  const response = await fetch(`${API_BASE_URL}/document-extraction/confirm`, {
+  return apiFetch<ConfirmImportResponse>('/document-extraction/confirm', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({
       documentId,
       activities,
     }),
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API ${response.status}: ${text}`);
-  }
-
-  return response.json() as Promise<ConfirmImportResponse>;
 }

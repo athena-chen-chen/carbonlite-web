@@ -1,120 +1,16 @@
-// import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-// import { Routes, Route } from 'react-router-dom';
 
-// import { AuthProvider } from '../auth/AuthProvider';
-// import { AppShell } from "../layouts/AppShell";
-// import AppLayout from '../layouts/AppLayout';
-// import Dashboard from '../pages/Dashboard';
-// import Emissions from '../pages/Emissions';
-// import Analysis from '../pages/Analysis';
-// import Reports from '../pages/Reports';
-// import Factors from '../pages/Factors';
-// import Admin from '../pages/Admin';
-// import NotFound from '../pages/NotFound';
-// import Login from '../pages/Login';
-
-// export const router = createBrowserRouter([
-//   // Public route(s)
-//   {
-//     path: "/login",
-//     element: <Login />,
-//   },
-
-//   // Protected area
-//   {
-//     path: "/",
-//     element: (
-//       // <RequireAuth>
-//       <AppLayout />
-//       // </RequireAuth>
-//     ),
-//     children: [
-//       {
-//         index: true,
-//         element: <Dashboard />,
-//         handle: {
-//           title: "Dashboard",
-//           subtitle: "Company-wide emissions summary",
-//         },
-//       },
-//       {
-//         path: "emissions",
-//         element: <Emissions />,
-//         handle: {
-//           title: "Emissions",
-//           subtitle: "All recorded sources",
-//         },
-//       },
-//       {
-//         path: "analysis",
-//         element: <Analysis />,
-//         handle: {
-//           title: "Analysis",
-//           subtitle: "Trends and breakdowns",
-//         },
-//       },
-//       {
-//         path: "reports",
-//         element: <Reports />,
-//         handle: {
-//           title: "Reports",
-//           subtitle: "Compliance & exports",
-//         },
-//       },
-//       {
-//         path: "factors",
-//         element: <Factors />,
-//         handle: {
-//           title: "Factors",
-//           subtitle: "Emission factors & references",
-//         },
-//       },
-//       {
-//         path: "admin",
-//         element: <Admin />,
-//         handle: {
-//           title: "Admin",
-//           subtitle: "Org settings & access",
-//         },
-//       },
-//         {
-//         path: "metrics",
-//         element: <MetricsSummaryPage />,
-//         handle: {
-//           title: "Metrics Summary",
-//           subtitle: "Metrics Summary",
-//         },
-//       },
-//       {
-//         path: "*",
-//         element: <NotFound />,
-//         handle: {
-//           title: "Not found",
-//           subtitle: "",
-//         },
-//       },
-//     ],
-//   },
-
-//   // fallback for anything totally unmatched
-//   {
-//     path: "*",
-//     element: <NotFound />,
-//   },
-// ]);
-
-
-
-// export default function App() {
-//   return <RouterProvider router={router} />;
-// }
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { ActivityDataPage } from '../pages/ActivityDataPage';
 import { ConversionFactorsPage } from '../pages/ConversionFactorsPage';
 import { MetricsSummaryPage } from '../pages/MetricsSummaryPage';
 import { UploadPage } from '../pages/UploadPage';
 import { AppNav } from '../components/AppNav';
+import ReportingPage from '../pages/ReportingPage';
 import CarbonLiteLandingPage from '../pages/LandingPage';
+import NotFound from '../pages/NotFound';
+import { LoginPage } from '../pages/LoginPage';
+import { RegisterPage } from '../pages/RegisterPage';
+import { ProtectedRoute } from '../auth/ProtectedRoute';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -130,39 +26,91 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<CarbonLiteLandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+        <Route
+          path="/data-records"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <ActivityDataPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/activity-data"
           element={
-            <AppShell>
-              <ActivityDataPage />
-            </AppShell>
+            <ProtectedRoute>
+              <AppShell>
+                <ActivityDataPage />
+              </AppShell>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/conversion-factors"
           element={
-            <AppShell>
-              <ConversionFactorsPage />
-            </AppShell>
+            <ProtectedRoute>
+              <AppShell>
+                <ConversionFactorsPage />
+              </AppShell>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/metrics-summary"
           element={
-            <AppShell>
-              <MetricsSummaryPage />
-            </AppShell>
+            <ProtectedRoute>
+              <AppShell>
+                <MetricsSummaryPage />
+              </AppShell>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/upload"
           element={
+            <ProtectedRoute>
+              <AppShell>
+                <UploadPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+      
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <ReportingPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/reporting"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <ReportingPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="*"
+          element={
             <AppShell>
-              <UploadPage />
+              <NotFound />
             </AppShell>
           }
         />

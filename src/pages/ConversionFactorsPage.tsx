@@ -1,9 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   createConversionFactor,
+  deleteConversionFactor,
   getConversionFactors,
+  updateConversionFactor,
   type ConversionFactorInput,
 } from '../services/conversionFactors';
+import { activityTypes, defaultActivityType } from '../constants/activityTypes';
 
 type ConversionFactorItem = {
   id: string;
@@ -16,6 +19,7 @@ type ConversionFactorItem = {
   sourceName?: string | null;
   sourceReference?: string | null;
   isDefault: boolean;
+  isSystemDefault: boolean;
 };
 
 type ConversionFactorListResponse = {
@@ -25,7 +29,7 @@ type ConversionFactorListResponse = {
 const initialForm: ConversionFactorInput = {
   name: 'Diesel emission factor',
   type: 'EMISSION',
-  activityType: 'DIESEL',
+  activityType: defaultActivityType,
   unit: 'liters',
   factorValue: 2.68,
   resultUnit: 'kgCO2e',
@@ -39,6 +43,8 @@ export function ConversionFactorsPage() {
   const [items, setItems] = useState<ConversionFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -61,7 +67,7 @@ export function ConversionFactorsPage() {
   }, []);
 
   const defaultCount = useMemo(
-    () => items.filter((item) => item.isDefault).length,
+    () => items.filter((item) => item.isSystemDefault).length,
     [items],
   );
 
@@ -90,6 +96,13 @@ export function ConversionFactorsPage() {
     }));
   }
 
+  function getPayloadFromForm() {
+    return {
+      ...form,
+      factorValue: Number(form.factorValue),
+    };
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
@@ -98,19 +111,83 @@ export function ConversionFactorsPage() {
     setSuccessMessage(null);
 
     try {
-      await createConversionFactor({
-        ...form,
-        factorValue: Number(form.factorValue),
-      });
+      if (editingId) {
+        await updateConversionFactor(editingId, getPayloadFromForm());
+        setSuccessMessage('Conversion factor updated successfully.');
+        setEditingId(null);
+      } else {
+        await createConversionFactor(getPayloadFromForm());
+        setSuccessMessage('Conversion factor created successfully.');
+      }
 
-      setSuccessMessage('Conversion factor created successfully.');
       setForm(initialForm);
       await loadItems();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create conversion factor');
+      setError(
+        err instanceof Error
+          ? err.message
+          : editingId
+          ? 'Failed to update conversion factor'
+          : 'Failed to create conversion factor',
+      );
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleEditFactor(item: ConversionFactorItem) {
+    if (item.isSystemDefault) return;
+
+    setEditingId(item.id);
+    setForm({
+      name: item.name,
+      type: item.type,
+      activityType: item.activityType ?? '',
+      unit: item.unit,
+      factorValue: Number(item.factorValue),
+      resultUnit: item.resultUnit,
+      sourceName: item.sourceName ?? '',
+      sourceReference: item.sourceReference ?? '',
+      isDefault: item.isDefault,
+    });
+    setError(null);
+    setSuccessMessage(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(initialForm);
+    setError(null);
+    setSuccessMessage(null);
+  }
+
+  async function deleteFactorById(id: string) {
+    setDeletingId(id);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      await deleteConversionFactor(id);
+      setSuccessMessage('Conversion factor deleted successfully.');
+      await loadItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete conversion factor');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleDeleteFactor(item: ConversionFactorItem) {
+    if (item.isSystemDefault) return;
+
+    const shouldDelete = window.confirm(
+      `Delete conversion factor "${item.name}"?`,
+    );
+
+    if (!shouldDelete) return;
+
+    await deleteFactorById(item.id);
   }
 
   return (
@@ -144,7 +221,7 @@ export function ConversionFactorsPage() {
           icon="✅"
           title="Default Factors"
           value={String(defaultCount)}
-          subtitle="Automatically selected rules"
+          subtitle="System-provided starter library"
           accent="#3b82f6"
         />
 
@@ -159,9 +236,13 @@ export function ConversionFactorsPage() {
 
       <form onSubmit={handleSubmit} style={formCardStyle}>
         <div style={{ marginBottom: 18 }}>
-          <h2 style={{ margin: 0, fontSize: 20 }}>Add Conversion Factor</h2>
+          <h2 style={{ margin: 0, fontSize: 20 }}>
+            {editingId ? 'Edit Conversion Factor' : 'Add Conversion Factor'}
+          </h2>
           <p style={{ marginTop: 6, color: '#666' }}>
-            Define how an activity record should be converted into a calculated result.
+            {editingId
+              ? 'Update this conversion rule, then save your changes.'
+              : 'Define how an activity record should be converted into a calculated result.'}
           </p>
         </div>
 
@@ -195,16 +276,11 @@ export function ConversionFactorsPage() {
               style={inputStyle}
             >
               <option value="">-- Select --</option>
-              <option value="ELECTRICITY">ELECTRICITY</option>
-              <option value="NATURAL_GAS">NATURAL_GAS</option>
-              <option value="DIESEL">DIESEL</option>
-              <option value="GASOLINE">GASOLINE</option>
-              <option value="STEAM">STEAM</option>
-              <option value="WATER">WATER</option>
-              <option value="WASTE">WASTE</option>
-              <option value="BUSINESS_TRAVEL">BUSINESS_TRAVEL</option>
-              <option value="FREIGHT">FREIGHT</option>
-              <option value="CUSTOM">CUSTOM</option>
+              {activityTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
             </select>
           </Field>
 
@@ -270,8 +346,24 @@ export function ConversionFactorsPage() {
 
         <div style={{ marginTop: 18 }}>
           <button type="submit" disabled={submitting} style={primaryButtonStyle(submitting)}>
-            {submitting ? 'Creating...' : 'Create Conversion Factor'}
+            {submitting
+              ? editingId
+                ? 'Saving...'
+                : 'Creating...'
+              : editingId
+              ? 'Save Changes'
+              : 'Create Conversion Factor'}
           </button>
+          {editingId ? (
+            <button
+              type="button"
+              onClick={cancelEdit}
+              disabled={submitting}
+              style={cancelButtonStyle}
+            >
+              Cancel
+            </button>
+          ) : null}
         </div>
       </form>
 
@@ -300,13 +392,14 @@ export function ConversionFactorsPage() {
                 <th style={thStyle}>Input Unit</th>
                 <th style={thStyle}>Factor</th>
                 <th style={thStyle}>Result Unit</th>
-                <th style={thStyle}>Default</th>
+                <th style={thStyle}>Library</th>
+                <th style={thStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
+                  <td colSpan={8} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
                     No conversion factors yet.
                   </td>
                 </tr>
@@ -331,11 +424,40 @@ export function ConversionFactorsPage() {
                     </td>
                     <td style={tdStyle}>{item.resultUnit}</td>
                     <td style={tdStyle}>
-                      {item.isDefault ? (
-                        <Badge label="Default" color="#047857" background="#d1fae5" />
+                      {item.isSystemDefault ? (
+                        <Badge label="System" color="#1d4ed8" background="#dbeafe" />
                       ) : (
                         <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
                       )}
+                    </td>
+                    <td style={tdStyle}>
+                      {item.isSystemDefault ? (
+                        <div style={{ marginBottom: 6, fontSize: 12, color: '#64748b' }}>
+                          Locked
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => handleEditFactor(item)}
+                        disabled={item.isSystemDefault || deletingId === item.id || submitting}
+                        style={editButtonStyle(item.isSystemDefault)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFactor(item)}
+                        disabled={
+                          item.isSystemDefault ||
+                          deletingId === item.id ||
+                          editingId === item.id
+                        }
+                        style={deleteButtonStyle(
+                          item.isSystemDefault || deletingId === item.id,
+                        )}
+                      >
+                        {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -484,6 +606,17 @@ function primaryButtonStyle(disabled: boolean): React.CSSProperties {
   };
 }
 
+const cancelButtonStyle: React.CSSProperties = {
+  marginLeft: 10,
+  padding: '10px 16px',
+  borderRadius: 10,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#334155',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
 const successStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
@@ -528,3 +661,28 @@ const tdStyle: React.CSSProperties = {
   borderBottom: '1px solid #eee',
   verticalAlign: 'top',
 };
+
+function editButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    marginRight: 8,
+    padding: '7px 10px',
+    borderRadius: 8,
+    border: disabled ? '1px solid #e5e7eb' : '1px solid #bfdbfe',
+    background: disabled ? '#f3f4f6' : '#eff6ff',
+    color: disabled ? '#9ca3af' : '#1d4ed8',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function deleteButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '7px 10px',
+    borderRadius: 8,
+    border: '1px solid #fecaca',
+    background: disabled ? '#f3f4f6' : '#fff',
+    color: disabled ? '#9ca3af' : '#dc2626',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}

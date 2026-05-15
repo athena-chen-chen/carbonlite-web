@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { handleUnauthorized } from './auth';
 
-const TOKEN_KEY = 'authToken';
-const USER_KEY = 'authUser';
+const TOKEN_KEY = 'accessToken';
+const USER_KEY = 'currentUser';
 
 // helpers to read/write auth data
 export function getAuthToken(): string | null {
@@ -42,11 +43,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err?.response?.status === 401) {
-      // auto logout on unauthorized
-      setAuthToken(null);
-      setAuthUser(null);
-      // hard redirect to /login so app state resets
-      window.location.href = '/login';
+      handleUnauthorized();
     }
     return Promise.reject(err);
   }

@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
 import { getDocuments, uploadDocument } from '../services/documents';
 import {
   confirmDocumentImport,
@@ -6,6 +6,12 @@ import {
   type ParsedActivity,
 } from '../services/documentExtraction';
 import { useNavigate } from 'react-router-dom';
+import {
+  activityTypeDefaultUnits,
+  activityTypes,
+  defaultActivityType,
+} from '../constants/activityTypes';
+
 
 type DocumentItem = {
   id: string;
@@ -25,6 +31,8 @@ type EditableConfidenceField<T> = {
 
 type EditableParsedActivity = {
   selected: boolean;
+  documentId: string;
+  documentFileName: string;
   activityType: EditableConfidenceField<string>;
   recordDate: EditableConfidenceField<string>;
   quantity: EditableConfidenceField<number>;
@@ -33,24 +41,38 @@ type EditableParsedActivity = {
   notes: EditableConfidenceField<string>;
 };
 
+const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:3333/api';
+
+function getDocumentFileUrl(fileUrl: string) {
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+
+  const apiOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+  return `${apiOrigin}${fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`}`;
+}
+
 export function UploadPage() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [documentType, setDocumentType] = useState('OTHER');
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
 
   const [extractingId, setExtractingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
+  const [previewDocumentIds, setPreviewDocumentIds] = useState<string[]>([]);
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
-
+  const [showAllDocuments, setShowAllDocuments] = useState(false);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
+  const uploadDragDepthRef = useRef(0);
+  const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
   async function loadDocuments() {
     setLoading(true);
     setError(null);
@@ -69,24 +91,131 @@ export function UploadPage() {
     loadDocuments();
   }, []);
 
-  function handleChooseFile() {
-    fileInputRef.current?.click();
+  function getDocumentTypeFromFile(file: File) {
+    const fileName = file.name.toLowerCase();
+
+    if (file.type.startsWith('image/') || /\.(png|jpg)$/i.test(fileName)) {
+      return 'IMAGE';
+    }
+
+    if (file.type === 'application/pdf' || fileName.endsWith('.pdf')) {
+      return 'PDF';
+    }
+
+    if (/\.(csv|xlsx)$/i.test(fileName)) {
+      return 'SPREADSHEET';
+    }
+
+    return 'OTHER';
+  }
+
+  function isSupportedUploadFile(file: File) {
+    return /\.(pdf|csv|xlsx|png|jpg)$/i.test(file.name);
+  }
+
+  function clearUploadInput() {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
+  function selectUploadFiles(files: File[]) {
+    const unsupportedFile = files.find((file) => !isSupportedUploadFile(file));
+
+    if (unsupportedFile) {
+      setSelectedFiles([]);
+      setSuccessMessage(null);
+      setError(
+        `${unsupportedFile.name} is not supported. Please choose PDF, CSV, XLSX, PNG, or JPG files.`,
+      );
+      clearUploadInput();
+      return;
+    }
+
+    const oversizedFile = files.find(
+      (file) => file.size > MAX_UPLOAD_FILE_SIZE_BYTES,
+    );
+
+    if (oversizedFile) {
+      setSelectedFiles([]);
+      setSuccessMessage(null);
+      setError(`${oversizedFile.name} must be 10 MB or less.`);
+      clearUploadInput();
+      return;
+    }
+
+    setSelectedFiles(files);
+    setSuccessMessage(null);
+    setError(null);
+
+    if (files[0]) {
+      setDocumentType(getDocumentTypeFromFile(files[0]));
+    }
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    setSelectedFile(file);
-    setSuccessMessage(null);
-    setError(null);
+    const files = Array.from(event.target.files ?? []);
+    selectUploadFiles(files);
+  }
+
+  function handleUploadDragEnter(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isProcessing) return;
+
+    uploadDragDepthRef.current += 1;
+    setIsDraggingUpload(true);
+  }
+
+  function handleUploadDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isProcessing) {
+      event.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    event.dataTransfer.dropEffect = 'copy';
+    setIsDraggingUpload(true);
+  }
+
+  function handleUploadDragLeave(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    uploadDragDepthRef.current = Math.max(0, uploadDragDepthRef.current - 1);
+
+    if (uploadDragDepthRef.current === 0) {
+      setIsDraggingUpload(false);
+    }
+  }
+
+  function handleUploadDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    uploadDragDepthRef.current = 0;
+    setIsDraggingUpload(false);
+
+    if (isProcessing) return;
+
+    const files = Array.from(event.dataTransfer.files ?? []);
+    selectUploadFiles(files);
   }
 
   function handleUseSampleCSV() {
+    const sampleRows = activityTypes.slice(0, 3).map((activityType, index) => {
+      const quantity = [120, 80, 300][index] ?? 100;
+      const unit = activityTypeDefaultUnits[activityType] || 'unit';
+      return `${activityType},2026-03-0${index + 1},${quantity},${unit}`;
+    });
+
     const blob = new Blob(
       [
         `activityType,recordDate,quantity,unit
-DIESEL,2026-03-01,120,liters
-ELECTRICITY,2026-03-02,450,kWh
-NATURAL_GAS,2026-03-03,300,m3`,
+${sampleRows.join('\n')}`,
       ],
       { type: 'text/csv' },
     );
@@ -95,29 +224,48 @@ NATURAL_GAS,2026-03-03,300,m3`,
       type: 'text/csv',
     });
 
-    setSelectedFile(file);
+    setSelectedFiles([file]);
     setDocumentType('SPREADSHEET');
     setError(null);
     setSuccessMessage('Sample CSV loaded. Click Upload & Extract.');
   }
 
-  async function handleUploadAndExtract() {
-    if (!selectedFile) {
-      setError('Please select a file first.');
+  async function uploadSelectedFile(options?: { extractAfterUpload?: boolean }) {
+    if (selectedFiles.length === 0) {
+      setError('Please select at least one file first.');
       return;
     }
 
+    const shouldExtractAfterUpload = options?.extractAfterUpload ?? false;
+
     setUploading(true);
     setError(null);
-    setSuccessMessage('Uploading document...');
+    setSuccessMessage(
+      shouldExtractAfterUpload
+        ? 'Uploading document...'
+        : selectedFiles.length > 1
+        ? `Uploading ${selectedFiles.length} files...`
+        : 'Uploading file...',
+    );
 
     try {
-      await uploadDocument({
-        file: selectedFile,
-        type: documentType,
-      });
+      const uploadedDocuments: DocumentItem[] = [];
 
-      setSelectedFile(null);
+      try {
+        for (const file of selectedFiles) {
+          const uploadedDocument = await uploadDocument({
+            file,
+            type: selectedFiles.length > 1 ? getDocumentTypeFromFile(file) : documentType,
+          });
+          uploadedDocuments.push(uploadedDocument);
+        }
+      } catch {
+        setError('Upload failed. Please try again.');
+        setSuccessMessage(null);
+        return;
+      }
+
+      setSelectedFiles([]);
 
       const input = document.getElementById(
         'document-upload-input',
@@ -136,85 +284,250 @@ NATURAL_GAS,2026-03-03,300,m3`,
         throw new Error('Upload completed, but no uploaded document was found.');
       }
 
-      setLatestDocumentId(latest.id);
-      setSuccessMessage('Upload completed. Extracting data now...');
-
-      await handleExtract(latest.id);
+      setLatestDocumentId(uploadedDocuments[0]?.id ?? latest.id);
+      if (shouldExtractAfterUpload) {
+        setSuccessMessage(
+          selectedFiles.length > 1
+            ? `Uploaded ${selectedFiles.length} files. Extracting data now...`
+            : 'Upload completed. Extracting data now...',
+        );
+        await handleExtractDocuments(uploadedDocuments);
+      } else {
+        setSuccessMessage(
+          selectedFiles.length > 1
+            ? `Uploaded ${selectedFiles.length} files. You can now extract or review them.`
+            : 'Upload completed. You can now extract or review the uploaded file.',
+        );
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload or extract failed');
+      setError(
+        shouldExtractAfterUpload
+          ? 'Extraction could not identify valid activity rows.'
+          : err instanceof Error
+          ? err.message
+          : 'Upload completed, but documents could not be refreshed.',
+      );
       setSuccessMessage(null);
     } finally {
       setUploading(false);
     }
   }
 
+
+  function handleChooseFile() {
+    fileInputRef.current?.click();
+  }
+  async function handleUploadAndExtract() {
+    await uploadSelectedFile({ extractAfterUpload: true });
+  }
+
+  function updateDocumentStatuses(documentIds: string[], status: string) {
+    setDocuments((prev) =>
+      prev.map((document) =>
+        documentIds.includes(document.id)
+          ? {
+              ...document,
+              status,
+            }
+          : document,
+      ),
+    );
+  }
+
+  function isRetryableExtractionStatus(status: string) {
+    return status === 'NO_DATA_FOUND' || status === 'EXTRACTION_FAILED';
+  }
+
+  function handleViewDocument(doc: DocumentItem) {
+    if (!doc.fileUrl) {
+      setError('File is unavailable for this document.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    window.open(getDocumentFileUrl(doc.fileUrl), '_blank', 'noopener,noreferrer');
+  }
+
   async function handleExtract(documentId: string) {
-    setExtractingId(documentId);
+    const document = documents.find((doc) => doc.id === documentId);
+    await handleExtractDocuments([
+      {
+        id: documentId,
+        fileName: document?.fileName ?? documentId,
+      },
+    ]);
+  }
+
+  async function handleExtractDocuments(
+    documentsToExtract: Array<{ id: string; fileName: string }>,
+  ) {
+    if (documentsToExtract.length === 0) {
+      setError('No uploaded documents were found to extract.');
+      return;
+    }
+
+    setExtractingId(documentsToExtract.length > 1 ? 'multiple' : documentsToExtract[0].id);
     setError(null);
     setSuccessMessage(null);
 
     try {
-      const result = await extractDocument(documentId);
+      const extractedRows: EditableParsedActivity[] = [];
+      const warnings: string[] = [];
+      const noDataDocumentIds: string[] = [];
+      const reviewRequiredDocumentIds: string[] = [];
 
-      setPreviewDocumentId(documentId);
-      setParsedActivities(
-        (result.parsedActivities ?? []).map((item: ParsedActivity | any) => ({
-          selected: true,
-          ...item,
-        })),
+      for (const document of documentsToExtract) {
+        const result = await extractDocument(document.id);
+        const extractedActivities = result.parsedActivities ?? [];
+
+        if (extractedActivities.length === 0) {
+          noDataDocumentIds.push(document.id);
+        } else {
+          reviewRequiredDocumentIds.push(document.id);
+        }
+
+        extractedRows.push(
+          ...extractedActivities.map((item: ParsedActivity | any) => ({
+            selected: true,
+            documentId: document.id,
+            documentFileName: document.fileName,
+            ...item,
+          })),
+        );
+
+        if (result.possibleMissingRows) {
+          warnings.push(result.warning ?? `${document.fileName}: possible missing rows detected.`);
+        }
+      }
+
+      if (noDataDocumentIds.length > 0) {
+        updateDocumentStatuses(noDataDocumentIds, 'NO_DATA_FOUND');
+      }
+
+      if (reviewRequiredDocumentIds.length > 0) {
+        updateDocumentStatuses(reviewRequiredDocumentIds, 'REVIEW_REQUIRED');
+      }
+
+      if (extractedRows.length === 0) {
+        setPreviewDocumentId(null);
+        setPreviewDocumentIds([]);
+        setParsedActivities([]);
+        setError('No emissions data detected. You can view the file or retry extraction.');
+        setSuccessMessage(null);
+        await loadDocuments();
+        return;
+      }
+
+      setPreviewDocumentId(
+        documentsToExtract.length === 1 ? documentsToExtract[0].id : 'MULTIPLE',
       );
+      setPreviewDocumentIds(documentsToExtract.map((document) => document.id));
+      setParsedActivities(extractedRows);
+      await loadDocuments();
 
-      if (result.possibleMissingRows) {
-        setError(result.warning ?? 'Possible missing rows detected.');
+      if (warnings.length > 0) {
+        setError(warnings.join(' '));
         setSuccessMessage(null);
       } else {
         setSuccessMessage(
-          'Extraction completed. Review the preview below, then click Confirm Import.',
+          documentsToExtract.length > 1
+            ? 'Extraction completed for multiple files. Review the preview below, then click Confirm Import.'
+            : 'Extraction completed. Review the preview below, then click Confirm Import.',
         );
         setError(null);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Extract failed');
+    } catch {
+      updateDocumentStatuses(
+        documentsToExtract.map((document) => document.id),
+        'EXTRACTION_FAILED',
+      );
+      setError('Extraction could not identify valid activity rows.');
+      await loadDocuments();
     } finally {
       setExtractingId(null);
     }
   }
 
-  async function handleConfirmImport(documentId: string) {
-    if (!parsedActivities.length || previewDocumentId !== documentId) {
+  async function handleConfirmImport(documentId?: string) {
+    const activeDocumentIds =
+      previewDocumentIds.length > 0
+        ? previewDocumentIds
+        : documentId
+        ? [documentId]
+        : [];
+
+    if (!parsedActivities.length || activeDocumentIds.length === 0) {
       setError('No extracted activities to confirm.');
       return;
     }
 
-    setConfirmingId(documentId);
+    const selectedActivities = parsedActivities.filter((item) => item.selected);
+    const invalidQuantityIndex = selectedActivities.findIndex((item) => {
+      const quantity = Number(item.quantity.value);
+      return !Number.isFinite(quantity) || quantity < 0;
+    });
+
+    if (invalidQuantityIndex !== -1) {
+      setError(
+        `Quantity cannot be negative. Please fix selected row ${invalidQuantityIndex + 1} before importing.`,
+      );
+      setSuccessMessage(null);
+      return;
+    }
+
+    setConfirmingId(activeDocumentIds.length > 1 ? 'multiple' : activeDocumentIds[0]);
     setError(null);
     setSuccessMessage(null);
 
     try {
-      const normalizedActivities = parsedActivities
-        .filter((item) => item.selected)
-        .map((item) => ({
+      const activitiesByDocument = selectedActivities.reduce(
+        (groups, item) => {
+          const group = groups.get(item.documentId) ?? [];
+          group.push(item);
+          groups.set(item.documentId, group);
+          return groups;
+        },
+        new Map<string, EditableParsedActivity[]>(),
+      );
+
+      let importedCount = 0;
+
+      for (const [activityDocumentId, activities] of activitiesByDocument) {
+        const sourceFileName =
+          activities[0]?.documentFileName ??
+          documents.find((d) => d.id === activityDocumentId)?.fileName ??
+          activityDocumentId;
+        const normalizedActivities = activities.map((item) => ({
           activityType: item.activityType.value,
           recordDate: item.recordDate.value,
           quantity: item.quantity.value,
           unit: item.unit.value,
-          sourceReference: item.sourceReference.value,
-          notes: item.notes.value,
+          sourceType: 'AI_EXTRACTION',
+          sourceReference: item.sourceReference.value || sourceFileName,
+          notes: `Imported from AI extraction. Document ID: ${activityDocumentId}`,
         }));
 
-      if (!normalizedActivities.length) {
+        if (normalizedActivities.length === 0) continue;
+
+        const result = await confirmDocumentImport(
+          activityDocumentId,
+          normalizedActivities,
+        );
+        importedCount += result.count;
+      }
+
+      if (importedCount === 0) {
         setError('Please select at least one activity to import.');
         setConfirmingId(null);
         return;
       }
 
-      const result = await confirmDocumentImport(documentId, normalizedActivities);
-
       setSuccessMessage(
-        `Imported ${result.count} activity record(s). Redirecting to Metrics Summary...`,
+        `Imported ${importedCount} activity record(s). Redirecting to Metrics Summary...`,
       );
 
       setPreviewDocumentId(null);
+      setPreviewDocumentIds([]);
       setParsedActivities([]);
 
       setTimeout(() => {
@@ -281,7 +594,14 @@ NATURAL_GAS,2026-03-03,300,m3`,
       ...prev,
       {
         selected: true,
-        activityType: { value: 'DIESEL', confidence: 'medium' },
+        documentId: previewDocumentIds[0] ?? previewDocumentId ?? '',
+        documentFileName:
+          documents.find((doc) => doc.id === (previewDocumentIds[0] ?? previewDocumentId))
+            ?.fileName ??
+          previewDocumentIds[0] ??
+          previewDocumentId ??
+          '',
+        activityType: { value: defaultActivityType, confidence: 'medium' },
         recordDate: {
           value: new Date().toISOString().slice(0, 10),
           confidence: 'medium',
@@ -336,50 +656,70 @@ NATURAL_GAS,2026-03-03,300,m3`,
       </p>
 
       <div style={stepBarStyle}>
-        Upload → Extract → Review → Import → Metrics
+        Upload → Extract → Review → Confirm Import
       </div>
 
       <div style={uploadCardStyle}>
-        <h2 style={{ marginTop: 0 }}>Upload your document</h2>
+        <h2 style={{ marginTop: 0 }}>Upload your documents</h2>
         <p style={{ color: '#666' }}>
-          Choose a document or use a sample file to test the workflow.
+          Drop documents here, choose documents with the file picker, or use a sample file to test the workflow.
         </p>
 
         <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: 6 }}>
-              Document Type
-            </label>
-            <select
-              value={documentType}
-              onChange={(e) => setDocumentType(e.target.value)}
-              style={{ width: '100%', padding: 10, borderRadius: 8 }}
-            >
-              <option value="UTILITY_BILL">UTILITY_BILL</option>
-              <option value="FUEL_INVOICE">FUEL_INVOICE</option>
-              <option value="SPREADSHEET">SPREADSHEET</option>
-              <option value="PDF">PDF</option>
-              <option value="IMAGE">IMAGE</option>
-              <option value="OTHER">OTHER</option>
-            </select>
+          <div
+            onDragEnter={handleUploadDragEnter}
+            onDragOver={handleUploadDragOver}
+            onDragLeave={handleUploadDragLeave}
+            onDrop={handleUploadDrop}
+            style={uploadDropzoneStyle(isDraggingUpload, isProcessing)}
+          >
+            <strong>{isDraggingUpload ? 'Drop to select files' : 'Drag and drop files here'}</strong>
+            <span style={{ color: '#666' }}>
+              PDF, CSV, XLSX, PNG, or JPG files are supported. Max 10 MB.
+            </span>
           </div>
 
-          <input
+          <div>
+            <label style={documentTypeLabelStyle}>
+              Document Type
+            </label>
+            <div style={documentTypeSelectWrapStyle}>
+              <select
+                value={documentType}
+                onChange={(e) => setDocumentType(e.target.value)}
+                style={documentTypeSelectStyle}
+              >
+                <option value="UTILITY_BILL">UTILITY_BILL</option>
+                <option value="FUEL_INVOICE">FUEL_INVOICE</option>
+                <option value="SPREADSHEET">SPREADSHEET</option>
+                <option value="PDF">PDF</option>
+                <option value="IMAGE">IMAGE</option>
+                <option value="OTHER">OTHER</option>
+              </select>
+              <span aria-hidden="true" style={documentTypeSelectArrowStyle} />
+            </div>
+          </div>
+
+   
+
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+           <input
             ref={fileInputRef}
             id="document-upload-input"
             type="file"
             onChange={handleFileChange}
-            accept=".pdf,.png,.jpg,.jpeg,.csv,.xlsx,.xls"
+            accept=".pdf,.csv,.xlsx,.png,.jpg"
             style={{ display: 'none' }}
+            multiple
           />
 
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <button type="button" onClick={handleChooseFile} style={secondaryButtonStyle}>
-              Choose File
-            </button>
-
-            <button type="button" onClick={handleUseSampleCSV} style={secondaryButtonStyle}>
-              Use Sample CSV
+            <button
+              type="button"
+             onClick={handleChooseFile}
+              disabled={isProcessing}
+              style={secondaryActionButtonStyle(isProcessing)}
+            > 
+              {uploading ? 'Uploading...' : 'Upload File'}
             </button>
 
             <button
@@ -392,28 +732,24 @@ NATURAL_GAS,2026-03-03,300,m3`,
             </button>
           </div>
 
-          <span style={{ color: '#555' }}>
-            {selectedFile ? selectedFile.name : 'No file chosen'}
-          </span>
-
-          {selectedFile ? (
+          {selectedFiles.length > 0 ? (
             <div style={fileInfoStyle}>
-              <div>
-                <strong>Name:</strong> {selectedFile.name}
-              </div>
-              <div>
-                <strong>Type:</strong> {selectedFile.type || 'Unknown'}
-              </div>
-              <div>
-                <strong>Size:</strong> {selectedFile.size} bytes
-              </div>
+              <strong>
+                Selected {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'}:
+              </strong>
+              <ul style={selectedFileListStyle}>
+                {selectedFiles.map((file) => (
+                  <li key={`${file.name}-${file.size}-${file.lastModified}`}>
+                    {file.name} · {file.type || 'Unknown'} · {file.size} bytes
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
         </div>
       </div>
 
       {error ? <div style={errorStyle}>{error}</div> : null}
-      {successMessage ? <div style={successStyle}>{successMessage}</div> : null}
 
       <div style={sectionCardStyle}>
         <div style={{ padding: 16, borderBottom: '1px solid #eee' }}>
@@ -437,7 +773,7 @@ NATURAL_GAS,2026-03-03,300,m3`,
               </tr>
             </thead>
             <tbody>
-              {documents.map((doc) => (
+              {visibleDocuments.map((doc) => (
                 <tr
                   key={doc.id}
                   style={doc.id === latestDocumentId ? { background: '#f0f7ff' } : undefined}
@@ -447,11 +783,20 @@ NATURAL_GAS,2026-03-03,300,m3`,
                   <td style={tdStyle}>{doc.status}</td>
                   <td style={tdStyle}>{doc.fileSize ?? '-'}</td>
                   <td style={tdStyle}>{doc.createdAt}</td>
-                  <td style={tdStyle}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <a href={doc.fileUrl} target="_blank" rel="noreferrer">
-                        Open
-                      </a>
+                  <td style={documentActionTdStyle}>
+                    <div style={documentActionRowStyle}>
+                      <button
+                        type="button"
+                        onClick={() => handleViewDocument(doc)}
+                        disabled={!doc.fileUrl}
+                        style={documentViewButtonStyle(!doc.fileUrl)}
+                      >
+                        View
+                      </button>
+
+                      {!doc.fileUrl ? (
+                        <span style={missingFileTextStyle}>File unavailable</span>
+                      ) : null}
 
                       <button
                         type="button"
@@ -459,7 +804,11 @@ NATURAL_GAS,2026-03-03,300,m3`,
                         disabled={extractingId === doc.id}
                         style={secondaryButtonStyle}
                       >
-                        {extractingId === doc.id ? 'Extracting...' : 'Extract'}
+                        {extractingId === doc.id
+                          ? 'Extracting...'
+                          : isRetryableExtractionStatus(doc.status)
+                          ? 'Retry Extract'
+                          : 'Extract'}
                       </button>
 
                       <button
@@ -467,14 +816,17 @@ NATURAL_GAS,2026-03-03,300,m3`,
                         onClick={() => handleConfirmImport(doc.id)}
                         disabled={
                           confirmingId === doc.id ||
+                          previewDocumentIds.length > 1 ||
                           previewDocumentId !== doc.id ||
                           parsedActivities.length === 0
                         }
                         style={confirmButtonStyle(
-                          previewDocumentId === doc.id && parsedActivities.length > 0,
+                          previewDocumentIds.length <= 1 &&
+                            previewDocumentId === doc.id &&
+                            parsedActivities.length > 0,
                         )}
                       >
-                        {confirmingId === doc.id ? 'Importing...' : 'Confirm Import'}
+                        {confirmingId === doc.id ? 'Importing...' : 'Import'}
                       </button>
                     </div>
                   </td>
@@ -484,12 +836,37 @@ NATURAL_GAS,2026-03-03,300,m3`,
           </table>
         )}
       </div>
+      <br/>
+ {documents.length > 3 && (
+  <button
+    type="button"
+    onClick={() => setShowAllDocuments((v) => !v)}
+    style={secondaryButtonStyle}
+  >
+    {showAllDocuments ? 'Show Less' : `View All Documents (${documents.length})`}
+  </button>
+)}
 
+{successMessage ? (
+  <div style={successStyle}>
+    {successMessage}
+
+    <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
+      <button type="button" onClick={() => navigate('/metrics-summary')}>
+        View Metrics
+      </button>
+
+      <button type="button" onClick={() => navigate('/reports')}>
+        View Reports
+      </button>
+    </div>
+  </div>
+) : null}
       {previewDocumentId ? (
         <div style={{ ...sectionCardStyle, marginTop: 24 }}>
           <div style={previewHeaderStyle}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 20 }}>Extract Preview</h2>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Review & Edit Data Before Import</h2>
               <p style={{ marginTop: 8, color: '#666' }}>
                 Review extracted activity records before importing them into CarbonLite AI.
               </p>
@@ -497,7 +874,9 @@ NATURAL_GAS,2026-03-03,300,m3`,
                 Extracted rows: {parsedActivities.length}
               </p>
               <p style={{ marginTop: 8, color: '#999' }}>
-                Document ID: {previewDocumentId}
+                {previewDocumentIds.length > 1
+                  ? `Documents: ${previewDocumentIds.length}`
+                  : `Document ID: ${previewDocumentId}`}
               </p>
             </div>
 
@@ -513,17 +892,27 @@ NATURAL_GAS,2026-03-03,300,m3`,
               <button type="button" onClick={addParsedActivity} style={secondaryButtonStyle}>
                 Add Row
               </button>
+
+              <button
+                type="button"
+                onClick={() => handleConfirmImport()}
+                disabled={confirmingId !== null || parsedActivities.length === 0}
+                style={confirmButtonStyle(parsedActivities.length > 0)}
+              >
+                {confirmingId ? 'Importing...' : 'Confirm Import'}
+              </button>
             </div>
           </div>
 
           {parsedActivities.length === 0 ? (
             <div style={{ padding: 16 }}>No extracted activities.</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={previewTableWrapStyle}>
+            <table style={previewTableStyle}>
               <thead>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>Select</th>
-                  <th style={thStyle}>Activity Type</th>
+                  <th style={activityTypeThStyle}>Activity Type</th>
                   <th style={thStyle}>Record Date</th>
                   <th style={thStyle}>Quantity</th>
                   <th style={thStyle}>Unit</th>
@@ -545,30 +934,20 @@ NATURAL_GAS,2026-03-03,300,m3`,
                       />
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={activityTypeTdStyle}>
                       <select
                         value={item.activityType.value ?? ''}
                         onChange={(e) =>
                           updateParsedActivityField(index, 'activityType', e.target.value)
                         }
-                        style={{
-                          width: '100%',
-                          padding: 8,
-                          borderRadius: 6,
-                          ...getConfidenceStyle(item.activityType.confidence),
-                        }}
+                        style={activityTypeSelectStyle(item.activityType.confidence)}
                       >
                         <option value="">-- Select --</option>
-                        <option value="ELECTRICITY">ELECTRICITY</option>
-                        <option value="NATURAL_GAS">NATURAL_GAS</option>
-                        <option value="DIESEL">DIESEL</option>
-                        <option value="GASOLINE">GASOLINE</option>
-                        <option value="STEAM">STEAM</option>
-                        <option value="WATER">WATER</option>
-                        <option value="WASTE">WASTE</option>
-                        <option value="BUSINESS_TRAVEL">BUSINESS_TRAVEL</option>
-                        <option value="FREIGHT">FREIGHT</option>
-                        <option value="CUSTOM">CUSTOM</option>
+                        {activityTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
                       </select>
                     </td>
 
@@ -591,6 +970,7 @@ NATURAL_GAS,2026-03-03,300,m3`,
                     <td style={tdStyle}>
                       <input
                         type="number"
+                        min="0"
                         value={item.quantity.value ?? ''}
                         onChange={(e) =>
                           updateParsedActivityField(index, 'quantity', e.target.value)
@@ -665,6 +1045,7 @@ NATURAL_GAS,2026-03-03,300,m3`,
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       ) : null}
@@ -703,6 +1084,76 @@ const fileInfoStyle: React.CSSProperties = {
   borderRadius: 10,
   background: '#f7f7f7',
   border: '1px solid #eee',
+};
+
+const selectedFileListStyle: React.CSSProperties = {
+  margin: '8px 0 0',
+  paddingLeft: 20,
+  color: '#475569',
+  lineHeight: 1.7,
+};
+
+const documentTypeLabelStyle: React.CSSProperties = {
+  display: 'block',
+  marginBottom: 8,
+  color: '#0f172a',
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const documentTypeSelectWrapStyle: React.CSSProperties = {
+  position: 'relative',
+  maxWidth: 420,
+};
+
+const documentTypeSelectStyle: React.CSSProperties = {
+  width: '100%',
+  minHeight: 46,
+  padding: '10px 44px 10px 14px',
+  borderRadius: 10,
+  border: '2px solid #64748b',
+  background: '#f8fafc',
+  color: '#0f172a',
+  fontSize: 15,
+  fontWeight: 700,
+  cursor: 'pointer',
+  appearance: 'none',
+  outlineColor: '#10b981',
+  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.08)',
+};
+
+const documentTypeSelectArrowStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 16,
+  top: '50%',
+  width: 0,
+  height: 0,
+  borderLeft: '6px solid transparent',
+  borderRight: '6px solid transparent',
+  borderTop: '7px solid #0f172a',
+  transform: 'translateY(-35%)',
+  pointerEvents: 'none',
+};
+
+const uploadDropzoneStyle = (
+  isDragging: boolean,
+  isProcessing: boolean,
+): React.CSSProperties => ({
+  display: 'grid',
+  gap: 6,
+  padding: 18,
+  borderRadius: 12,
+  border: `2px dashed ${isDragging ? '#10b981' : '#cbd5e1'}`,
+  background: isDragging ? '#ecfdf5' : '#f8fafc',
+  color: isProcessing ? '#94a3b8' : '#0f172a',
+  cursor: isProcessing ? 'not-allowed' : 'copy',
+  opacity: isProcessing ? 0.72 : 1,
+  transition: 'border-color 120ms ease, background 120ms ease, color 120ms ease',
+});
+
+const nativeFileInputStyle: React.CSSProperties = {
+  width: '100%',
+  maxWidth: 360,
 };
 
 const successStyle: React.CSSProperties = {
@@ -745,6 +1196,91 @@ const tdStyle: React.CSSProperties = {
   verticalAlign: 'top',
 };
 
+const previewTableWrapStyle: React.CSSProperties = {
+  overflowX: 'auto',
+};
+
+const previewTableStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 980,
+  borderCollapse: 'collapse',
+};
+
+const activityTypeThStyle: React.CSSProperties = {
+  ...thStyle,
+  minWidth: 170,
+};
+
+const activityTypeTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  minWidth: 170,
+};
+
+function activityTypeSelectStyle(confidence: string): React.CSSProperties {
+  return {
+    width: '100%',
+    minWidth: 150,
+    padding: '8px 30px 8px 8px',
+    borderRadius: 6,
+    ...getPreviewConfidenceStyle(confidence),
+  };
+}
+
+function getPreviewConfidenceStyle(confidence: string): React.CSSProperties {
+  if (confidence === 'low') {
+    return {
+      background: '#fff1f1',
+      border: '1px solid #f5c2c7',
+    };
+  }
+
+  if (confidence === 'medium') {
+    return {
+      background: '#fff8e6',
+      border: '1px solid #f3d28b',
+    };
+  }
+
+  return {
+    background: '#f6fff7',
+    border: '1px solid #b7e4c7',
+  };
+}
+
+const documentActionTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  minWidth: 230,
+  whiteSpace: 'nowrap',
+};
+
+const documentActionRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
+  flexWrap: 'nowrap',
+};
+
+function documentViewButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid #ddd',
+    background: disabled ? '#f3f4f6' : '#fff',
+    color: disabled ? '#9ca3af' : '#111',
+  fontSize: 14,
+  fontWeight: 500,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+const missingFileTextStyle: React.CSSProperties = {
+  color: '#9ca3af',
+  fontSize: 12,
+};
+
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '8px 12px',
   borderRadius: 8,
@@ -760,6 +1296,18 @@ function primaryButtonStyle(disabled: boolean): React.CSSProperties {
     border: '1px solid #047857',
     background: disabled ? '#9ca3af' : '#047857',
     color: '#fff',
+    fontWeight: 600,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function secondaryActionButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '10px 16px',
+    borderRadius: 8,
+    border: '1px solid #111',
+    background: disabled ? '#f3f4f6' : '#fff',
+    color: disabled ? '#9ca3af' : '#111',
     fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
