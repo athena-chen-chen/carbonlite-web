@@ -1,38 +1,138 @@
-import { api, setAuthToken, setAuthUser } from './http';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:3333/api';
 
-export type LoginResponse = {
-  accessToken: string;
-  user: {
-    id: string;
-    email: string;
+const TOKEN_KEY = 'accessToken';
+const USER_KEY = 'currentUser';
+
+export type AuthUser = {
+  id?: string;
+  email: string;
+  organizationName?: string;
+  organization?: {
     name?: string;
-    role?: string;
   };
+  name?: string;
 };
 
-// call backend /auth/login
-export async function loginRequest(email: string, password: string): Promise<LoginResponse> {
-  const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
+export type AuthResponse = {
+  accessToken: string;
+  user?: AuthUser;
+};
+
+type RegisterInput = {
+  organizationName: string;
+  email: string;
+  password: string;
+};
+
+type LoginInput = {
+  email: string;
+  password: string;
+};
+
+function saveSession(response: AuthResponse, fallbackEmail: string) {
+  localStorage.setItem(TOKEN_KEY, response.accessToken);
+  localStorage.setItem(
+    USER_KEY,
+    JSON.stringify(response.user ?? { email: fallbackEmail }),
+  );
+}
+
+function getFriendlyAuthError(response: Response, fallback: string, detail: string) {
+  const normalizedDetail = detail.toLowerCase();
+
+  if (response.status === 401) return 'Invalid login. Please check your email and password.';
+  if (response.status === 409 || normalizedDetail.includes('already')) {
+    return 'Email already registered. Please log in instead.';
+  }
+  if (normalizedDetail.includes('invalid') || normalizedDetail.includes('password')) {
+    return 'Invalid login. Please check your email and password.';
+  }
+  if (response.status >= 500) return 'Backend unavailable. Please try again later.';
+  return fallback;
+}
+
+async function authRequest(path: string, body: LoginInput | RegisterInput) {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('Backend unavailable. Please try again later.');
+  }
+
+  if (!response.ok) {
+    const detail = await response.text();
+
+    throw new Error(
+      getFriendlyAuthError(
+        response,
+        path.includes('register')
+          ? 'Registration failed. Please try again.'
+          : 'Invalid login. Please check your email and password.',
+        detail,
+      ),
+    );
+  }
+
+  const data = (await response.json()) as AuthResponse;
+
+  if (!data.accessToken) {
+    throw new Error('Backend unavailable. Please try again later.');
+  }
+
+  saveSession(data, body.email);
   return data;
 }
 
-// call backend /auth/me to verify token
-export async function fetchMe(): Promise<LoginResponse['user'] | null> {
-  const { data } = await api.get('/auth/me');
-  // your /auth/me returns just user info, not wrapped in {user:...}
-  return data;
+export async function register(input: RegisterInput) {
+  return authRequest('/auth/register', input);
 }
 
-// high-level login: set localStorage
-export async function performLogin(email: string, password: string) {
-  const res = await loginRequest(email, password);
-  setAuthToken(res.accessToken);
-  setAuthUser(res.user);
-  return res.user;
+export async function login(input: LoginInput) {
+  return authRequest('/auth/login', input);
 }
 
-// logout: clear local state
-export function performLogout() {
-  setAuthToken(null);
-  setAuthUser(null);
+export function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+export function handleUnauthorized() {
+  sessionStorage.setItem(
+    'authMessage',
+    'Session expired. Please log in again.',
+  );
+  logout();
+
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+}
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function getCurrentUser(): AuthUser | null {
+  const raw = localStorage.getItem(USER_KEY);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}
+
+export function getOrganizationName(user: AuthUser | null) {
+  return user?.organizationName || user?.organization?.name || 'Workspace';
+}
+
+export function getUserDisplayName(user: AuthUser | null) {
+  return user?.name || user?.email || '';
 }

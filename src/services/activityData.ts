@@ -44,12 +44,46 @@ export type ActivityDataListResponse = {
   totalPages: number;
 };
 
-export async function createActivityData(input: ActivityDataInput) {
+export async function createActivityData(data: any) {
   return apiFetch<ActivityDataItem>('/activity-data', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(buildActivityDataPayload(data)),
   });
 }
+
+function normalizeOptionalString(value?: string) {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
+  return {
+    activityType: input.activityType.trim(),
+    recordDate: input.recordDate,
+    quantity: Number(input.quantity),
+    unit: input.unit.trim(),
+    sourceType: input.sourceType.trim(),
+    sourceReference: normalizeOptionalString(input.sourceReference),
+    notes: normalizeOptionalString(input.notes),
+    facilityId: normalizeOptionalString(input.facilityId),
+    assetId: normalizeOptionalString(input.assetId),
+    documentId: normalizeOptionalString(input.documentId),
+    customTypeLabel: normalizeOptionalString(input.customTypeLabel),
+    periodStart: normalizeOptionalString(input.periodStart),
+    periodEnd: normalizeOptionalString(input.periodEnd),
+  };
+}
+
+// export async function createActivityData(
+//   input: ActivityDataInput,
+// ): Promise<ActivityDataItem> {
+//   const payload = buildActivityDataPayload(input);
+
+//   return apiFetch<ActivityDataItem>('/activity-data', {
+//     method: 'POST',
+//     body: JSON.stringify(payload),
+//   });
+// }
 
 export async function getActivityDataList(params?: {
   page?: number;
@@ -78,4 +112,21 @@ export async function getActivityDataList(params?: {
 
 export async function getActivityDataById(id: string) {
   return apiFetch<ActivityDataItem>(`/activity-data/${id}`);
+}
+export async function updateActivityData(
+  id: string,
+  input: ActivityDataInput,
+) {
+  const payload = buildActivityDataPayload(input);
+
+  return apiFetch<ActivityDataItem>(`/activity-data/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteActivityData(id: string) {
+  return apiFetch<void>(`/activity-data/${id}`, {
+    method: 'DELETE',
+  });
 }

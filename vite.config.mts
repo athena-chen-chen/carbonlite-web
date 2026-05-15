@@ -4,7 +4,10 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
+     host: true,
+    port: 5173,
     proxy: {
+      
       // proxy API requests during dev to your Nest server on 3333
       '/api': 'http://localhost:3333',
     },

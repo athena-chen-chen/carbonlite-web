@@ -32,6 +32,7 @@ export type ConversionFactorItem = {
   effectiveFrom?: string | null;
   effectiveTo?: string | null;
   isDefault: boolean;
+  isSystemDefault: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -74,4 +75,22 @@ export async function getConversionFactors(params?: {
 
 export async function getConversionFactorById(id: string) {
   return apiFetch<ConversionFactorItem>(`/conversion-factors/${id}`);
+}
+
+export async function deleteConversionFactor(id: string) {
+  return apiFetch<{ id: string } | ConversionFactorItem>(
+    `/conversion-factors/${id}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+export async function updateConversionFactor(
+  id: string,
+  input: Partial<ConversionFactorInput>,
+) {
+  return apiFetch<ConversionFactorItem>(`/conversion-factors/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
 }

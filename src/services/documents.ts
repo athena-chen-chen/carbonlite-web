@@ -25,24 +25,15 @@ export type DocumentListResponse = {
   totalPages: number;
 };
 
-const API_BASE_URL = 'http://localhost:3333/api';
-
 export async function uploadDocument(input: UploadDocumentInput) {
   const formData = new FormData();
   formData.append('file', input.file);
   formData.append('type', input.type);
 
-  const response = await fetch(`${API_BASE_URL}/documents/upload`, {
+  return apiFetch<DocumentItem>('/documents/upload', {
     method: 'POST',
     body: formData,
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API ${response.status}: ${text}`);
-  }
-
-  return response.json() as Promise<DocumentItem>;
 }
 
 export async function getDocuments() {
