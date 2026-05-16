@@ -12,6 +12,13 @@ import {
   activityTypes,
   defaultActivityType,
 } from '../constants/activityTypes';
+import { getApiOrigin } from '../config/api';
+import {
+  demoDocuments,
+  demoParsedActivities,
+  enableDemoMode,
+  isDemoMode,
+} from '../demo/demoData';
 
 
 type DocumentItem = {
@@ -43,13 +50,12 @@ type EditableParsedActivity = {
 };
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:3333/api';
 
 function getDocumentFileUrl(fileUrl: string) {
   if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  if (fileUrl.startsWith('/demo/')) return fileUrl;
 
-  const apiOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+  const apiOrigin = getApiOrigin();
   return `${apiOrigin}${fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`}`;
 }
 
@@ -71,6 +77,7 @@ export function UploadPage() {
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
+  const [demoMode, setDemoMode] = useState(() => isDemoMode());
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDragDepthRef = useRef(0);
@@ -80,6 +87,15 @@ export function UploadPage() {
     setError(null);
 
     try {
+      if (demoMode) {
+        setDocuments(demoDocuments);
+        setPreviewDocumentId('MULTIPLE');
+        setPreviewDocumentIds(demoDocuments.map((document) => document.id));
+        setParsedActivities(buildDemoReviewRows());
+        setSuccessMessage('Demo Mode is ready with sample documents, activity records, metrics, and report examples.');
+        return;
+      }
+
       const data = await getDocuments();
       setDocuments(data.items ?? []);
     } catch (err) {
@@ -91,7 +107,34 @@ export function UploadPage() {
 
   useEffect(() => {
     loadDocuments();
+  }, [demoMode]);
+
+  useEffect(() => {
+    if (window.location.search.includes('demo=1')) {
+      enableDemoMode();
+      setDemoMode(true);
+    }
   }, []);
+
+  function buildDemoReviewRows() {
+    return demoParsedActivities.map((item, index) => ({
+      selected: true,
+      documentId: demoDocuments[index]?.id ?? demoDocuments[0].id,
+      documentFileName: demoDocuments[index]?.fileName ?? demoDocuments[0].fileName,
+      ...item,
+    }));
+  }
+
+  function startDemoMode() {
+    enableDemoMode();
+    setDemoMode(true);
+    setDocuments(demoDocuments);
+    setPreviewDocumentId('MULTIPLE');
+    setPreviewDocumentIds(demoDocuments.map((document) => document.id));
+    setParsedActivities(buildDemoReviewRows());
+    setSuccessMessage('Demo Mode loaded: sample fuel invoice, utility bill, CSV records, and extracted activity rows are ready for review.');
+    setError(null);
+  }
 
   function getDocumentTypeFromFile(file: File) {
     const fileName = file.name.toLowerCase();
@@ -373,6 +416,19 @@ ${sampleRows.join('\n')}`,
     setSuccessMessage(null);
 
     try {
+      if (demoMode) {
+        setSuccessMessage('Extracting sample fuel, electricity, and operations records...');
+        setPreviewDocumentId(documentsToExtract.length === 1 ? documentsToExtract[0].id : 'MULTIPLE');
+        setPreviewDocumentIds(documentsToExtract.map((document) => document.id));
+        setParsedActivities(buildDemoReviewRows());
+        updateDocumentStatuses(
+          documentsToExtract.map((document) => document.id),
+          'REVIEW_REQUIRED',
+        );
+        setSuccessMessage('Extraction completed. Review the three realistic activity rows, then confirm import.');
+        return;
+      }
+
       const extractedRows: EditableParsedActivity[] = [];
       const warnings: string[] = [];
       const noDataDocumentIds: string[] = [];
@@ -490,6 +546,18 @@ ${sampleRows.join('\n')}`,
     setSuccessMessage(null);
 
     try {
+      if (demoMode) {
+        const importedCount = selectedActivities.length;
+        setPreviewDocumentId(null);
+        setPreviewDocumentIds([]);
+        setParsedActivities([]);
+        setGeneratingMetrics(true);
+        setSuccessMessage(`Imported ${importedCount} activity record(s). Metrics generated automatically.`);
+        await calculateMetrics(selectedActivities.map((_, index) => `demo-activity-${index + 1}`));
+        navigate('/metrics-summary?demo=1');
+        return;
+      }
+
       const activitiesByDocument = selectedActivities.reduce(
         (groups, item) => {
           const group = groups.get(item.documentId) ?? [];
@@ -695,7 +763,19 @@ ${sampleRows.join('\n')}`,
       </p>
 
       <div style={stepBarStyle}>
-        Upload → Extract → Review → Confirm Import
+        Upload → Extract → Review → Import → Metrics → Reports
+      </div>
+
+      <div style={demoBannerStyle}>
+        <div>
+          <strong>{demoMode ? 'Demo Mode active' : 'Prepare a 90-second demo'}</strong>
+          <div style={{ color: '#475569', marginTop: 4 }}>
+            Preload a fuel invoice, utility bill, CSV activity file, extracted rows, metrics, and report examples.
+          </div>
+        </div>
+        <button type="button" onClick={startDemoMode} style={primaryButtonStyle(false)}>
+          {demoMode ? 'Reload Demo Data' : 'Start Demo Mode'}
+        </button>
       </div>
 
       <div style={uploadCardStyle}>
@@ -757,8 +837,17 @@ ${sampleRows.join('\n')}`,
              onClick={handleChooseFile}
               disabled={isProcessing}
               style={secondaryActionButtonStyle(isProcessing)}
-            > 
+            >
               {uploading ? 'Uploading...' : 'Upload File'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleUseSampleCSV}
+              disabled={isProcessing}
+              style={secondaryActionButtonStyle(isProcessing)}
+            >
+              Use Sample CSV
             </button>
 
             <button
@@ -796,9 +885,19 @@ ${sampleRows.join('\n')}`,
         </div>
 
         {loading ? (
-          <div style={{ padding: 16 }}>Loading documents...</div>
+          <div style={{ padding: 16 }}>
+            <strong>Loading documents...</strong>
+            <div style={{ marginTop: 8, color: '#64748b' }}>
+              Preparing uploaded files and extraction status.
+            </div>
+          </div>
         ) : documents.length === 0 ? (
-          <div style={{ padding: 16 }}>No documents uploaded yet.</div>
+          <div style={emptyStateStyle}>
+            <strong>No documents yet</strong>
+            <p style={{ margin: '8px 0 0', color: '#64748b' }}>
+              Upload a file or start Demo Mode to see a complete source-document workflow.
+            </p>
+          </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -1110,6 +1209,20 @@ const stepBarStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
+const demoBannerStyle: React.CSSProperties = {
+  marginBottom: 24,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #c7d2fe',
+  background: '#eef2ff',
+  color: '#1e293b',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  flexWrap: 'wrap',
+};
+
 const uploadCardStyle: React.CSSProperties = {
   border: '1px solid #ddd',
   borderRadius: 16,
@@ -1204,21 +1317,31 @@ const nativeFileInputStyle: React.CSSProperties = {
 };
 
 const successStyle: React.CSSProperties = {
+  position: 'sticky',
+  top: 88,
+  zIndex: 5,
   marginBottom: 16,
-  padding: 12,
-  borderRadius: 8,
+  padding: 14,
+  borderRadius: 10,
   border: '1px solid #b8dfc1',
   background: '#f3fff5',
   color: '#1d6b2d',
+  boxShadow: '0 10px 25px rgba(16, 185, 129, 0.12)',
 };
 
 const errorStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 8,
-  border: '1px solid #f1b5b5',
-  background: '#fff4f4',
-  color: '#9b1c1c',
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+};
+
+const emptyStateStyle: React.CSSProperties = {
+  padding: 24,
+  background: '#f8fafc',
+  color: '#0f172a',
 };
 
 const previewHeaderStyle: React.CSSProperties = {

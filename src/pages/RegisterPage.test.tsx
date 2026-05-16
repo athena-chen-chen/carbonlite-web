@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
+import { FALLBACK_API_BASE_URL } from '../config/api';
 import { RegisterPage } from './RegisterPage';
 
 function renderRegister() {
@@ -55,7 +56,7 @@ describe('RegisterPage', () => {
 
     expect(localStorage.getItem('accessToken')).toBe('registered-token');
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:3333/api/auth/register',
+      `${FALLBACK_API_BASE_URL}/auth/register`,
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({

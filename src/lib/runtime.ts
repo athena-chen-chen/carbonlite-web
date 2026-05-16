@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '../config/api';
+
 const RUNTIME_KEY = 'cl_runtime_v1';
 export function getRuntime() {
   try {
@@ -6,5 +8,5 @@ export function getRuntime() {
   } catch { return {}; }
 }
 export const runtime = getRuntime();
-export const API_BASE_URL = runtime.apiBaseUrl || '/api';
+export const RUNTIME_API_BASE_URL = runtime.apiBaseUrl || API_BASE_URL;
 export const USE_MOCK = !!runtime.useMockApi;

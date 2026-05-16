@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
+import { FALLBACK_API_BASE_URL } from '../config/api';
 import { LoginPage } from './LoginPage';
 
 function renderLogin() {
@@ -39,7 +40,7 @@ describe('LoginPage', () => {
 
     expect(localStorage.getItem('accessToken')).toBe('test-token');
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:3333/api/auth/login',
+      `${FALLBACK_API_BASE_URL}/auth/login`,
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({

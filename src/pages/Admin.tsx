@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { API_BASE_URL } from '../config/api';
 
 /* ------------------------- storage keys ------------------------- */
 const LS_ORG = 'cl_org_v1';
@@ -39,7 +40,7 @@ type Flags = {
 };
 
 type RuntimeConfig = {
-  apiBaseUrl: string; // e.g. /api or http://localhost:3333/api
+  apiBaseUrl: string;
   useMockApi: boolean;
 };
 
@@ -73,7 +74,7 @@ const defaultFlags: Flags = {
 };
 
 const defaultRuntime: RuntimeConfig = {
-  apiBaseUrl: 'http://localhost:3333/api',
+  apiBaseUrl: API_BASE_URL,
   useMockApi: false,
 };
 

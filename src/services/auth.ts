@@ -1,5 +1,5 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:3333/api';
+import { buildApiUrl } from '../config/api';
+import { isDemoMode } from '../demo/demoData';
 
 const TOKEN_KEY = 'accessToken';
 const USER_KEY = 'currentUser';
@@ -56,7 +56,7 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
   let response: Response;
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(buildApiUrl(path), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -115,10 +115,20 @@ export function handleUnauthorized() {
 }
 
 export function getToken() {
+  if (isDemoMode()) return 'demo-token';
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function getCurrentUser(): AuthUser | null {
+  if (isDemoMode()) {
+    return {
+      id: 'demo-user',
+      email: 'pilot@carbonlite.ai',
+      name: 'Pilot Reviewer',
+      organizationName: 'KACH Canada Demo',
+    };
+  }
+
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
 

@@ -1,7 +1,5 @@
 import { getToken, handleUnauthorized } from './auth';
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:3333/api';
+import { buildApiUrl } from '../config/api';
 
 export async function apiFetch<T>(
   path: string,
@@ -10,7 +8,7 @@ export async function apiFetch<T>(
   const token = getToken();
   const isFormData = options?.body instanceof FormData;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

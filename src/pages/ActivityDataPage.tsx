@@ -12,6 +12,7 @@ import {
   activityTypes,
   defaultActivityType,
 } from '../constants/activityTypes';
+import { isDemoMode } from '../demo/demoData';
 
 const PAGE_SIZE = 15;
 
@@ -41,6 +42,7 @@ const initialForm: ActivityDataInput = {
 };
 
 export function ActivityDataPage() {
+  const demoMode = isDemoMode();
   const [form, setForm] = useState<ActivityDataInput>(initialForm);
   const [items, setItems] = useState<ActivityDataItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -389,6 +391,11 @@ const errorTextStyle: React.CSSProperties = {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Manage and review extracted or manually entered activity records.
       </p>
+      {demoMode ? (
+        <div style={demoNoticeStyle}>
+          Demo Mode is showing imported records from the sample fuel invoice, utility bill, and CSV activity data.
+        </div>
+      ) : null}
 
       {/* ⭐ Summary 卡片 */}
       <div
@@ -465,8 +472,8 @@ const errorTextStyle: React.CSSProperties = {
       </form>
 
       {/* 状态 */}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      {successMessage && <p style={{ color: 'green' }}>{successMessage}</p>}
+      {error && <div style={warningStyle}>{error}</div>}
+      {successMessage && <div style={successStyle}>{successMessage}</div>}
           <ExcelInputTable
   onSuccess={() => {
     setReloadKey((k) => k + 1);
@@ -513,7 +520,9 @@ const errorTextStyle: React.CSSProperties = {
         {loading ? (
           <p>Loading...</p>
         ) : items.length === 0 ? (
-          <p>No data yet</p>
+          <div style={emptyStateStyle}>
+            No activity records yet. Import extracted rows from Upload or start Demo Mode to review sample data.
+          </div>
         ) : (
           <>
             <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
@@ -773,4 +782,41 @@ const dismissButtonStyle: React.CSSProperties = {
   background: '#fff',
   color: '#374151',
   cursor: 'pointer',
+};
+
+const demoNoticeStyle: React.CSSProperties = {
+  marginBottom: 18,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #c7d2fe',
+  background: '#eef2ff',
+  color: '#3730a3',
+  fontWeight: 600,
+};
+
+const warningStyle: React.CSSProperties = {
+  marginBottom: 12,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+};
+
+const successStyle: React.CSSProperties = {
+  marginBottom: 12,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bbf7d0',
+  background: '#f0fdf4',
+  color: '#166534',
+};
+
+const emptyStateStyle: React.CSSProperties = {
+  marginTop: 16,
+  padding: 18,
+  borderRadius: 12,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  color: '#475569',
 };

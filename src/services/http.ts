@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { handleUnauthorized } from './auth';
+import { API_BASE_URL } from '../config/api';
 
 const TOKEN_KEY = 'accessToken';
 const USER_KEY = 'currentUser';
@@ -24,7 +25,7 @@ export function setAuthUser(u: any | null) {
 
 // create axios instance
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3333/api',
+  baseURL: API_BASE_URL,
   withCredentials: false,
   timeout: 15000,
 });

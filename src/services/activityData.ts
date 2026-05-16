@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { demoActivityRecords, isDemoMode } from '../demo/demoData';
 
 export type ActivityDataInput = {
   activityType: string;
@@ -45,6 +46,16 @@ export type ActivityDataListResponse = {
 };
 
 export async function createActivityData(data: any) {
+  if (isDemoMode()) {
+    return {
+      id: `demo-activity-${Date.now()}`,
+      organizationId: 'demo-org',
+      ...buildActivityDataPayload(data),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   return apiFetch<ActivityDataItem>('/activity-data', {
     method: 'POST',
     body: JSON.stringify(buildActivityDataPayload(data)),
@@ -94,6 +105,21 @@ export async function getActivityDataList(params?: {
   dateTo?: string;
   search?: string;
 }) {
+  if (isDemoMode()) {
+    return {
+      items: demoActivityRecords.map((item) => ({
+        ...item,
+        organizationId: 'demo-org',
+        createdAt: '2026-03-31T14:10:00.000Z',
+        updatedAt: '2026-03-31T14:10:00.000Z',
+      })),
+      page: 1,
+      pageSize: demoActivityRecords.length,
+      total: demoActivityRecords.length,
+      totalPages: 1,
+    };
+  }
+
   const searchParams = new URLSearchParams();
 
   if (params?.page) searchParams.set('page', String(params.page));
@@ -117,6 +143,16 @@ export async function updateActivityData(
   id: string,
   input: ActivityDataInput,
 ) {
+  if (isDemoMode()) {
+    return {
+      id,
+      organizationId: 'demo-org',
+      ...buildActivityDataPayload(input),
+      createdAt: '2026-03-31T14:10:00.000Z',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   const payload = buildActivityDataPayload(input);
 
   return apiFetch<ActivityDataItem>(`/activity-data/${id}`, {
@@ -126,6 +162,8 @@ export async function updateActivityData(
 }
 
 export async function deleteActivityData(id: string) {
+  if (isDemoMode()) return;
+
   return apiFetch<void>(`/activity-data/${id}`, {
     method: 'DELETE',
   });

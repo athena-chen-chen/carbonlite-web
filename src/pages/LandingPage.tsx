@@ -84,6 +84,13 @@ export default function CarbonLiteLandingPage() {
             >
               Open App
             </button>
+            <button
+              type="button"
+              onClick={() => navigate('/pilot')}
+              className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300"
+            >
+              Request Pilot
+            </button>
             {isAuthenticated ? (
               <button
                 type="button"
@@ -112,21 +119,31 @@ export default function CarbonLiteLandingPage() {
               <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
                 Upload invoices, utility bills, or spreadsheets. CarbonLite extracts activity data, helps you review it, and prepares client-ready emissions reports.
               </p>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-700">
+                A lightweight SaaS workflow for SMEs and consultants who need faster Scope 1 and Scope 2 evidence collection without enterprise setup.
+              </p>
 
               <div className="mt-9 flex flex-wrap gap-4">
                 <button
                   type="button"
-                  onClick={() => navigate('/upload')}
+                  onClick={() => navigate('/upload?demo=1')}
                   className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 px-7 py-3.5 text-sm font-bold text-white shadow-xl shadow-emerald-200 transition hover:-translate-y-0.5"
                 >
-                  Upload Data
+                  View Demo Workflow
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/metrics-summary')}
+                  onClick={() => navigate('/pilot')}
                   className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
                 >
-                  See Sample Report
+                  Request Pilot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/pilot')}
+                  className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
+                >
+                  Book Demo
                 </button>
                 <button
                   type="button"

@@ -4,6 +4,7 @@ import { getActivityDataList } from '../services/activityData';
 import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { isDemoMode } from '../demo/demoData';
 
 
 export function MetricsSummaryPage() {
@@ -15,14 +16,6 @@ export function MetricsSummaryPage() {
     () => (location.state as { metricsError?: string } | null)?.metricsError ?? null,
   );
 const [reloadKey, setReloadKey] = useState(0);
-
-async function loadSummary() {
-  const data = await getMetricsSummary();
-  setSummary(data);
-}
-useEffect(() => {
-  loadSummary();
-}, []);
 
 useEffect(() => {
   loadSummary();
@@ -62,9 +55,6 @@ useEffect(() => {
     }
   }
 
-  useEffect(() => {
-    loadSummary();
-  }, []);
 // function handleDownloadCSV() {
 //   const totalsByMetric = summary?.totalsByMetric ?? [];
 
@@ -185,6 +175,7 @@ function handleDownloadPDF() {
   );
 }
   const totalsByMetric = summary?.totalsByMetric ?? [];
+  const demoMode = isDemoMode();
 
   const fuelMetric = totalsByMetric.find((m: any) =>
     m.metricType.includes('FUEL')
@@ -205,9 +196,11 @@ function handleDownloadPDF() {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Your uploaded documents have been automatically converted into structured data and summarized.
       </p>
-      <p style={{ color: '#666', marginBottom: 8 }}>
-  Quickly enter activity data (like Excel). Press Enter to add a new row.
-</p>
+      {demoMode ? (
+        <div style={demoNoticeStyle}>
+          Demo metrics are preloaded from a fuel invoice, utility bill, and CSV activity import.
+        </div>
+      ) : null}
  
 <div style={{display:'flex',flexDirection: 'row',  gap: 8,marginBottom: 24}}>
       <button
@@ -259,10 +252,10 @@ function handleDownloadPDF() {
   Download PDF
 </button>
 </div>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <div style={warningStyle}>{error}</div>}
 
       {loading ? (
-        <p>Loading...</p>
+        <div style={loadingStyle}>Generating metrics summary...</div>
       ) : (
         <>
           {/* ⭐ 核心卡片 */}
@@ -343,6 +336,13 @@ function handleDownloadPDF() {
                 </tr>
               </thead>
               <tbody>
+                {totalsByMetric.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={td}>
+                      No metrics yet. Import activity records or use Demo Mode to preview a report-ready summary.
+                    </td>
+                  </tr>
+                ) : null}
                 {totalsByMetric.map((item: any, i: number) => (
                   <tr key={i}>
                     <td style={td}>{item.metricType}</td>
@@ -404,4 +404,31 @@ const th = {
 const td = {
   padding: 12,
   borderBottom: '1px solid #eee',
+};
+
+const demoNoticeStyle: React.CSSProperties = {
+  marginBottom: 18,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #c7d2fe',
+  background: '#eef2ff',
+  color: '#3730a3',
+  fontWeight: 600,
+};
+
+const warningStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+};
+
+const loadingStyle: React.CSSProperties = {
+  padding: 18,
+  borderRadius: 12,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  color: '#475569',
 };

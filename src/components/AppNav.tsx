@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getOrganizationName, getUserDisplayName } from '../services/auth';
+import { isDemoMode } from '../demo/demoData';
 
 const navItems = [
   { to: '/', label: 'Home' },
@@ -86,6 +87,7 @@ export function AppNav() {
   const navigate = useNavigate();
   const workspaceName = getOrganizationName(user);
   const userLabel = getUserDisplayName(user);
+  const demoMode = isDemoMode();
 
   function handleLogout() {
     logout();
@@ -119,6 +121,8 @@ export function AppNav() {
             <div style={userChipStyle}>{userLabel || 'Signed in'}</div>
           ) : null}
 
+          {demoMode ? <div style={demoChipStyle}>Demo Mode</div> : null}
+
           {isAuthenticated ? (
             <button type="button" onClick={handleLogout} style={logoutButtonStyle}>
               Logout
@@ -149,6 +153,17 @@ const userChipStyle: React.CSSProperties = {
   color: '#047857',
   fontSize: 13,
   fontWeight: 700,
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
+};
+
+const demoChipStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  borderRadius: 999,
+  background: '#eef2ff',
+  color: '#3730a3',
+  fontSize: 13,
+  fontWeight: 800,
   whiteSpace: 'nowrap',
   flexShrink: 0,
 };

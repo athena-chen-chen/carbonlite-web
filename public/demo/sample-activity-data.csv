@@ -1,0 +1,4 @@
+activityType,recordDate,quantity,unit,sourceReference,notes
+DIESEL,2026-03-27,1280,liters,Prairie Logistics invoice #FL-2048,Fleet diesel purchase
+ELECTRICITY,2026-03-31,18450,kWh,NorthGrid utility bill account 8841,Warehouse electricity use
+NATURAL_GAS,2026-03-31,920,m3,March operations spreadsheet,Heating fuel

@@ -1,9 +1,9 @@
 import axios from 'axios';
 
-import { API_BASE_URL } from './runtime';
+import { RUNTIME_API_BASE_URL } from './runtime';
 import { getToken, handleUnauthorized } from '../services/auth';
 
-export const api = axios.create({ baseURL: API_BASE_URL });
+export const api = axios.create({ baseURL: RUNTIME_API_BASE_URL });
 
 api.interceptors.request.use((config) => {
   const token = getToken();
