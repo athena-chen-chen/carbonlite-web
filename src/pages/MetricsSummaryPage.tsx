@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { calculateMetrics, getMetricsSummary } from '../services/metrics';
 import { getActivityDataList } from '../services/activityData';
+import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 
 export function MetricsSummaryPage() {
+  const location = useLocation();
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    () => (location.state as { metricsError?: string } | null)?.metricsError ?? null,
+  );
 const [reloadKey, setReloadKey] = useState(0);
 
 async function loadSummary() {
@@ -208,15 +212,16 @@ function handleDownloadPDF() {
 <div style={{display:'flex',flexDirection: 'row',  gap: 8,marginBottom: 24}}>
       <button
         onClick={handleCalculate}
+        disabled={calcLoading}
         style={{
           
           padding: '10px 16px',
           borderRadius: 10,
           border: 'none',
-          background: '#10b981',
+          background: calcLoading ? '#9ca3af' : '#10b981',
           color: '#fff',
           fontWeight: 600,
-          cursor: 'pointer',
+          cursor: calcLoading ? 'not-allowed' : 'pointer',
         }}
       >
         {calcLoading ? 'Generating...' : 'Generate Metrics'}

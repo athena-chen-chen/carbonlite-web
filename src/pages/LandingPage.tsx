@@ -59,6 +59,13 @@ export default function CarbonLiteLandingPage() {
           <nav className="hidden gap-8 text-sm font-medium text-slate-600 md:flex">
             <a href="#workflow" className="transition hover:text-emerald-700">Workflow</a>
             <a href="#pricing" className="transition hover:text-emerald-700">Pricing</a>
+            <button
+              type="button"
+              onClick={() => navigate('/pilot')}
+              className="bg-transparent p-0 text-sm font-medium text-slate-600 transition hover:text-emerald-700"
+            >
+              Pilot Program
+            </button>
             <a href="#start" className="transition hover:text-emerald-700">Start</a>
           </nav>
 

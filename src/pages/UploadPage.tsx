@@ -6,6 +6,7 @@ import {
   type ParsedActivity,
 } from '../services/documentExtraction';
 import { useNavigate } from 'react-router-dom';
+import { calculateMetrics } from '../services/metrics';
 import {
   activityTypeDefaultUnits,
   activityTypes,
@@ -64,6 +65,7 @@ export function UploadPage() {
 
   const [extractingId, setExtractingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [generatingMetrics, setGeneratingMetrics] = useState(false);
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
   const [previewDocumentIds, setPreviewDocumentIds] = useState<string[]>([]);
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
@@ -392,6 +394,14 @@ ${sampleRows.join('\n')}`,
             documentId: document.id,
             documentFileName: document.fileName,
             ...item,
+            sourceReference: {
+              value: item.sourceReference?.value ?? item.sourceReference ?? document.fileName,
+              confidence: item.sourceReference?.confidence ?? 'medium',
+            },
+            notes: {
+              value: item.notes?.value ?? item.notes ?? '',
+              confidence: item.notes?.confidence ?? 'medium',
+            },
           })),
         );
 
@@ -491,6 +501,7 @@ ${sampleRows.join('\n')}`,
       );
 
       let importedCount = 0;
+      const createdActivityIds: string[] = [];
 
       for (const [activityDocumentId, activities] of activitiesByDocument) {
         const sourceFileName =
@@ -514,6 +525,7 @@ ${sampleRows.join('\n')}`,
           normalizedActivities,
         );
         importedCount += result.count;
+        createdActivityIds.push(...(result.createdIds ?? []));
       }
 
       if (importedCount === 0) {
@@ -522,17 +534,35 @@ ${sampleRows.join('\n')}`,
         return;
       }
 
-      setSuccessMessage(
-        `Imported ${importedCount} activity record(s). Redirecting to Metrics Summary...`,
-      );
-
       setPreviewDocumentId(null);
       setPreviewDocumentIds([]);
       setParsedActivities([]);
 
-      setTimeout(() => {
+      setGeneratingMetrics(true);
+      setSuccessMessage('Generating emissions metrics...');
+
+      try {
+        if (createdActivityIds.length > 0) {
+          await calculateMetrics(createdActivityIds);
+        }
+
+        setSuccessMessage(
+          `Imported ${importedCount} activity record(s). Generated emissions metrics. Redirecting to Metrics Summary...`,
+        );
         navigate('/metrics-summary');
-      }, 800);
+      } catch {
+        setError(
+          'Imported activity records, but emissions metrics could not be generated automatically. You can click Generate Metrics on the Metrics Summary page.',
+        );
+        navigate('/metrics-summary', {
+          state: {
+            metricsError:
+              'Imported activity records, but emissions metrics could not be generated automatically. Click Generate Metrics to retry.',
+          },
+        });
+      } finally {
+        setGeneratingMetrics(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Confirm import failed');
     } finally {
@@ -608,8 +638,13 @@ ${sampleRows.join('\n')}`,
         },
         quantity: { value: 0, confidence: 'low' },
         unit: { value: 'liters', confidence: 'medium' },
-        sourceReference: { value: '', confidence: 'low' },
-        notes: { value: 'Added manually', confidence: 'medium' },
+        sourceReference: {
+          value:
+            documents.find((doc) => doc.id === (previewDocumentIds[0] ?? previewDocumentId))
+              ?.fileName ?? '',
+          confidence: 'medium',
+        },
+        notes: { value: '', confidence: 'medium' },
       },
     ]);
   }
@@ -645,7 +680,11 @@ ${sampleRows.join('\n')}`,
     );
   }
 
-  const isProcessing = uploading || extractingId !== null;
+  const isProcessing =
+    uploading ||
+    extractingId !== null ||
+    confirmingId !== null ||
+    generatingMetrics;
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
@@ -815,6 +854,7 @@ ${sampleRows.join('\n')}`,
                         type="button"
                         onClick={() => handleConfirmImport(doc.id)}
                         disabled={
+                          generatingMetrics ||
                           confirmingId === doc.id ||
                           previewDocumentIds.length > 1 ||
                           previewDocumentId !== doc.id ||
@@ -826,7 +866,11 @@ ${sampleRows.join('\n')}`,
                             parsedActivities.length > 0,
                         )}
                       >
-                        {confirmingId === doc.id ? 'Importing...' : 'Import'}
+                        {generatingMetrics
+                          ? 'Generating...'
+                          : confirmingId === doc.id
+                          ? 'Importing...'
+                          : 'Import'}
                       </button>
                     </div>
                   </td>
@@ -896,10 +940,18 @@ ${sampleRows.join('\n')}`,
               <button
                 type="button"
                 onClick={() => handleConfirmImport()}
-                disabled={confirmingId !== null || parsedActivities.length === 0}
+                disabled={
+                  confirmingId !== null ||
+                  generatingMetrics ||
+                  parsedActivities.length === 0
+                }
                 style={confirmButtonStyle(parsedActivities.length > 0)}
               >
-                {confirmingId ? 'Importing...' : 'Confirm Import'}
+                {generatingMetrics
+                  ? 'Generating metrics...'
+                  : confirmingId
+                  ? 'Importing...'
+                  : 'Confirm Import'}
               </button>
             </div>
           </div>
@@ -1004,15 +1056,14 @@ ${sampleRows.join('\n')}`,
                       <input
                         type="text"
                         value={item.sourceReference.value ?? ''}
+                        placeholder={item.documentFileName}
                         onChange={(e) =>
                           updateParsedActivityField(index, 'sourceReference', e.target.value)
                         }
-                        style={{
-                          width: '100%',
-                          padding: 8,
-                          borderRadius: 6,
-                          ...getConfidenceStyle(item.sourceReference.confidence),
-                        }}
+                        style={optionalInputStyle(
+                          item.sourceReference.confidence,
+                          item.sourceReference.value,
+                        )}
                       />
                     </td>
 
@@ -1020,15 +1071,11 @@ ${sampleRows.join('\n')}`,
                       <input
                         type="text"
                         value={item.notes.value ?? ''}
+                        placeholder="Optional notes"
                         onChange={(e) =>
                           updateParsedActivityField(index, 'notes', e.target.value)
                         }
-                        style={{
-                          width: '100%',
-                          padding: 8,
-                          borderRadius: 6,
-                          ...getConfidenceStyle(item.notes.confidence),
-                        }}
+                        style={optionalInputStyle(item.notes.confidence, item.notes.value)}
                       />
                     </td>
 
@@ -1244,6 +1291,25 @@ function getPreviewConfidenceStyle(confidence: string): React.CSSProperties {
   return {
     background: '#f6fff7',
     border: '1px solid #b7e4c7',
+  };
+}
+
+function optionalInputStyle(
+  confidence: string,
+  value: string | null,
+): React.CSSProperties {
+  const isEmpty = !String(value ?? '').trim();
+
+  return {
+    width: '100%',
+    padding: 8,
+    borderRadius: 6,
+    ...(isEmpty
+      ? {
+          background: '#fff',
+          border: '1px solid #d1d5db',
+        }
+      : getPreviewConfidenceStyle(confidence)),
   };
 }
 

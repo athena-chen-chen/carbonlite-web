@@ -10,6 +10,7 @@ import CarbonLiteLandingPage from '../pages/LandingPage';
 import NotFound from '../pages/NotFound';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
+import PilotPage from '../pages/PilotPage';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<CarbonLiteLandingPage />} />
+        <Route path="/pilot" element={<PilotPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
