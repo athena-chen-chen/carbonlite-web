@@ -1,16 +1,13 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   createActivityData,
   getActivityDataList,
   updateActivityData,
   deleteActivityData,
-  type ActivityDataInput,
 } from '../services/activityData';
 import{ExcelInputTable} from '../components/ExcelInputTable';
 import {
-  activityTypeDefaultUnits,
   activityTypes,
-  defaultActivityType,
 } from '../constants/activityTypes';
 import { isDemoMode } from '../demo/demoData';
 
@@ -31,22 +28,10 @@ type ActivityDataListResponse = {
   items: ActivityDataItem[];
 };
 
-const initialForm: ActivityDataInput = {
-  activityType: defaultActivityType,
-  recordDate: new Date().toISOString().slice(0, 10),
-  quantity: 100,
-  unit: 'liters',
-  sourceType: 'MANUAL',
-  sourceReference: '',
-  notes: '',
-};
-
 export function ActivityDataPage() {
   const demoMode = isDemoMode();
-  const [form, setForm] = useState<ActivityDataInput>(initialForm);
   const [items, setItems] = useState<ActivityDataItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -81,16 +66,6 @@ const [currentPage, setCurrentPage] = useState(1);
     setCurrentPage((page) => Math.min(page, totalPages));
   }, [totalPages]);
 
-  function updateField<K extends keyof ActivityDataInput>(key: K, value: ActivityDataInput[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-function updateActivityType(activityType: string) {
-  setForm((prev) => ({
-    ...prev,
-    activityType,
-    unit: activityTypeDefaultUnits[activityType] ?? prev.unit,
-  }));
-}
 function toggleSelect(id: string, checked: boolean) {
   setSelectedIds((prev) =>
     checked ? [...prev, id] : prev.filter((x) => x !== id),
@@ -108,27 +83,6 @@ function toggleSelectAll(checked: boolean) {
     return prev.filter((id) => !pageIds.includes(id));
   });
 }
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    setSuccessMessage(null);
-
-    try {
-      await createActivityData({
-        ...form,
-        quantity: Number(form.quantity),
-      });
-
-      setSuccessMessage('Activity data added.');
-      setForm(initialForm);
-      await loadItems();
-    } catch (err) {
-      setError('Failed to create activity data');
-    } finally {
-      setSubmitting(false);
-    }
-  }
   async function handleBulkDelete() {
   if (!selectedIds.length) return;
 
@@ -411,69 +365,17 @@ const errorTextStyle: React.CSSProperties = {
         <Card title="Imported" value={items.filter(i => i.sourceType !== 'MANUAL').length} icon="📥" />
       </div>
 
-      {/* ⭐ Form */}
-      <form onSubmit={handleSubmit} style={formCard}>
-        <h2 style={{ marginTop: 0 }}>Add Activity Data</h2>
-
-        <div style={grid}>
-          <Field label="Activity Type">
-            <select value={form.activityType} onChange={(e) => updateActivityType(e.target.value)}>
-              {activityTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Record Date">
-            <input
-              type="date"
-              value={form.recordDate.slice(0, 10)}
-              onChange={(e) => updateField('recordDate', e.target.value)}
-            />
-          </Field>
-
-          <Field label="Quantity">
-            <input
-              type="number"
-              value={form.quantity}
-              onChange={(e) => updateField('quantity', Number(e.target.value))}
-            />
-          </Field>
-
-          <Field label="Unit">
-            <input value={form.unit} onChange={(e) => updateField('unit', e.target.value)} />
-          </Field>
-
-          <Field label="Source">
-            <select value={form.sourceType} onChange={(e) => updateField('sourceType', e.target.value)}>
-              <option value="MANUAL">Manual</option>
-              <option value="IMPORT">Import</option>
-              <option value="DOCUMENT_AI">AI</option>
-            </select>
-          </Field>
-
-          <Field label="Reference">
-            <input value={form.sourceReference ?? ''} onChange={(e) => updateField('sourceReference', e.target.value)} />
-          </Field>
-        </div>
-
-        <textarea
-          placeholder="Notes"
-          value={form.notes ?? ''}
-          onChange={(e) => updateField('notes', e.target.value)}
-          style={{ width: '100%', marginTop: 12 }}
-        />
-
-        <button type="submit" disabled={submitting} style={primaryBtn}>
-          {submitting ? 'Adding...' : 'Add Activity'}
-        </button>
-      </form>
-
       {/* 状态 */}
       {error && <div style={warningStyle}>{error}</div>}
       {successMessage && <div style={successStyle}>{successMessage}</div>}
+      <div style={quickEntryIntroStyle}>
+        <div>
+          <h2 style={{ margin: 0 }}>Quick Entry</h2>
+          <p style={{ margin: '6px 0 0', color: '#64748b' }}>
+            Enter manually, paste from Excel, or import CSV/XLSX files.
+          </p>
+        </div>
+      </div>
           <ExcelInputTable
   onSuccess={() => {
     setReloadKey((k) => k + 1);
@@ -587,8 +489,6 @@ const errorTextStyle: React.CSSProperties = {
   );
 }
 
-/* ⭐ UI Components */
-
 function Card({ title, value, icon }: any) {
   return (
     <div style={card}>
@@ -599,36 +499,13 @@ function Card({ title, value, icon }: any) {
   );
 }
 
-function Field({ label, children }: any) {
-  return (
-    <div>
-      <label>{label}</label>
-      <div style={{ marginTop: 6 }}>{children}</div>
-    </div>
-  );
-}
-
 /* ⭐ Styles */
-
-const grid = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2,1fr)',
-  gap: 16,
-};
 
 const card = {
   padding: 16,
   borderRadius: 12,
   background: '#fff',
   border: '1px solid #eee',
-};
-
-const formCard = {
-  padding: 20,
-  borderRadius: 12,
-  border: '1px solid #ddd',
-  background: '#fff',
-  marginBottom: 24,
 };
 
 const tableCard = {
@@ -638,13 +515,13 @@ const tableCard = {
   background: '#fff',
 };
 
-const primaryBtn = {
-  marginTop: 16,
-  padding: '10px 16px',
-  borderRadius: 8,
-  background: '#10b981',
-  color: '#fff',
-  border: 'none',
+const quickEntryIntroStyle: React.CSSProperties = {
+  marginBottom: 12,
+  padding: '16px 18px',
+  borderRadius: 12,
+  border: '1px solid #bbf7d0',
+  background: '#f0fdf4',
+  color: '#0f172a',
 };
 
 const rowActionStyle = {

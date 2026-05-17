@@ -440,16 +440,10 @@ alert('Saved! Metrics and Reports are ready to refresh.');
   onDrop={handleDrop}>
   <div style={headerStyle}>
     <div>
-      <h3 style={{ margin: 0 }}>Quick Entry</h3>
+      <h3 style={{ margin: 0 }}>Activity Rows</h3>
       <p style={{ margin: '6px 0 0', color: '#64748b' }}>
-        Enter activity data manually. Press Enter to add a new row.
+        Type directly, paste rows from Excel, import CSV/XLSX files, or drag and drop a file here. Press Enter on the last row to add another row.
       </p>
-      <p style={{ margin: '6px 0 0', color: '#64748b' }}>
-  Enter manually, import CSV/Excel, or paste rows from Excel.
-</p>
-<p style={{ margin: '6px 0 0', color: '#64748b' }}>
-  Enter manually, import CSV/Excel, paste rows, or drag and drop a file here.
-</p>
     </div>
   </div>
 

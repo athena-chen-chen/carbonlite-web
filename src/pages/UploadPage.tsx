@@ -1,5 +1,5 @@
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
-import { getDocuments, uploadDocument } from '../services/documents';
+import { deleteDocument, getDocuments, uploadDocument } from '../services/documents';
 import {
   confirmDocumentImport,
   extractDocument,
@@ -78,6 +78,8 @@ export function UploadPage() {
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
   const [demoMode, setDemoMode] = useState(() => isDemoMode());
+  const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDragDepthRef = useRef(0);
@@ -391,6 +393,38 @@ ${sampleRows.join('\n')}`,
     }
 
     window.open(getDocumentFileUrl(doc.fileUrl), '_blank', 'noopener,noreferrer');
+  }
+
+  function clearDeletedDocumentPreview(documentId: string) {
+    setParsedActivities((prev) => prev.filter((item) => item.documentId !== documentId));
+    setPreviewDocumentIds((prev) => {
+      const next = prev.filter((id) => id !== documentId);
+      setPreviewDocumentId(next.length === 0 ? null : next.length === 1 ? next[0] : 'MULTIPLE');
+      return next;
+    });
+
+    setLatestDocumentId((prev) => (prev === documentId ? null : prev));
+  }
+
+  async function handleDeleteDocument() {
+    if (!documentToDelete) return;
+
+    const documentId = documentToDelete.id;
+    setDeletingDocumentId(documentId);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      await deleteDocument(documentId);
+      setDocuments((prev) => prev.filter((doc) => doc.id !== documentId));
+      clearDeletedDocumentPreview(documentId);
+      setDocumentToDelete(null);
+      setSuccessMessage('Document deleted. Existing activity records will remain.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Document deletion failed. Please try again.');
+    } finally {
+      setDeletingDocumentId(null);
+    }
   }
 
   async function handleExtract(documentId: string) {
@@ -753,6 +787,8 @@ ${sampleRows.join('\n')}`,
     extractingId !== null ||
     confirmingId !== null ||
     generatingMetrics;
+  const showPostImportLinks =
+    Boolean(successMessage) && /import|metric/i.test(successMessage ?? '');
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
@@ -900,6 +936,14 @@ ${sampleRows.join('\n')}`,
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <colgroup>
+              <col />
+              <col style={{ width: 110 }} />
+              <col style={{ width: 150 }} />
+              <col style={{ width: 80 }} />
+              <col style={{ width: 150 }} />
+              <col style={{ width: 280 }} />
+            </colgroup>
             <thead>
               <tr style={{ background: '#fafafa' }}>
                 <th style={thStyle}>File Name</th>
@@ -922,55 +966,68 @@ ${sampleRows.join('\n')}`,
                   <td style={tdStyle}>{doc.fileSize ?? '-'}</td>
                   <td style={tdStyle}>{doc.createdAt}</td>
                   <td style={documentActionTdStyle}>
-                    <div style={documentActionRowStyle}>
-                      <button
-                        type="button"
-                        onClick={() => handleViewDocument(doc)}
-                        disabled={!doc.fileUrl}
-                        style={documentViewButtonStyle(!doc.fileUrl)}
-                      >
-                        View
-                      </button>
+                    <div style={documentActionStackStyle}>
+                      <div style={documentActionRowStyle}>
+                        <button
+                          type="button"
+                          onClick={() => handleViewDocument(doc)}
+                          disabled={!doc.fileUrl}
+                          style={documentViewButtonStyle(!doc.fileUrl)}
+                        >
+                          View
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleExtract(doc.id)}
+                          disabled={extractingId === doc.id}
+                          style={documentSecondaryButtonStyle}
+                        >
+                          {extractingId === doc.id
+                            ? 'Extracting...'
+                            : isRetryableExtractionStatus(doc.status)
+                            ? 'Retry Extract'
+                            : 'Extract'}
+                        </button>
+                      </div>
+
+                      <div style={documentActionRowStyle}>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmImport(doc.id)}
+                          disabled={
+                            generatingMetrics ||
+                            confirmingId === doc.id ||
+                            previewDocumentIds.length > 1 ||
+                            previewDocumentId !== doc.id ||
+                            parsedActivities.length === 0
+                          }
+                          style={documentConfirmButtonStyle(
+                            previewDocumentIds.length <= 1 &&
+                              previewDocumentId === doc.id &&
+                              parsedActivities.length > 0,
+                          )}
+                        >
+                          {generatingMetrics
+                            ? 'Generating...'
+                            : confirmingId === doc.id
+                            ? 'Importing...'
+                            : 'Import'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDocumentToDelete(doc)}
+                          disabled={deletingDocumentId === doc.id}
+                          style={documentDeleteButtonStyle(deletingDocumentId === doc.id)}
+                        >
+                          {deletingDocumentId === doc.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
 
                       {!doc.fileUrl ? (
                         <span style={missingFileTextStyle}>File unavailable</span>
                       ) : null}
-
-                      <button
-                        type="button"
-                        onClick={() => handleExtract(doc.id)}
-                        disabled={extractingId === doc.id}
-                        style={secondaryButtonStyle}
-                      >
-                        {extractingId === doc.id
-                          ? 'Extracting...'
-                          : isRetryableExtractionStatus(doc.status)
-                          ? 'Retry Extract'
-                          : 'Extract'}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleConfirmImport(doc.id)}
-                        disabled={
-                          generatingMetrics ||
-                          confirmingId === doc.id ||
-                          previewDocumentIds.length > 1 ||
-                          previewDocumentId !== doc.id ||
-                          parsedActivities.length === 0
-                        }
-                        style={confirmButtonStyle(
-                          previewDocumentIds.length <= 1 &&
-                            previewDocumentId === doc.id &&
-                            parsedActivities.length > 0,
-                        )}
-                      >
-                        {generatingMetrics
-                          ? 'Generating...'
-                          : confirmingId === doc.id
-                          ? 'Importing...'
-                          : 'Import'}
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -994,6 +1051,7 @@ ${sampleRows.join('\n')}`,
   <div style={successStyle}>
     {successMessage}
 
+    {showPostImportLinks ? (
     <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
       <button type="button" onClick={() => navigate('/metrics-summary')}>
         View Metrics
@@ -1003,6 +1061,7 @@ ${sampleRows.join('\n')}`,
         View Reports
       </button>
     </div>
+    ) : null}
   </div>
 ) : null}
       {previewDocumentId ? (
@@ -1193,6 +1252,43 @@ ${sampleRows.join('\n')}`,
             </table>
             </div>
           )}
+        </div>
+      ) : null}
+
+      {documentToDelete ? (
+        <div style={modalBackdropStyle} role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-document-title"
+            style={modalStyle}
+          >
+            <h2 id="delete-document-title" style={{ marginTop: 0 }}>
+              Delete uploaded document?
+            </h2>
+            <p style={{ color: '#475569', lineHeight: 1.6 }}>
+              This will remove <strong>{documentToDelete.fileName}</strong> from Uploaded Documents and clear any extraction preview rows for this file.
+            </p>
+            <p style={warningTextStyle}>Imported activity records will remain.</p>
+            <div style={modalActionRowStyle}>
+              <button
+                type="button"
+                onClick={() => setDocumentToDelete(null)}
+                disabled={deletingDocumentId !== null}
+                style={secondaryActionButtonStyle(deletingDocumentId !== null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteDocument}
+                disabled={deletingDocumentId !== null}
+                style={dangerButtonStyle(deletingDocumentId !== null)}
+              >
+                {deletingDocumentId ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
@@ -1438,29 +1534,42 @@ function optionalInputStyle(
 
 const documentActionTdStyle: React.CSSProperties = {
   ...tdStyle,
-  minWidth: 230,
-  whiteSpace: 'nowrap',
+  width: 220,
+  minWidth: 220,
+  maxWidth: 220,
+  whiteSpace: 'normal',
+};
+
+const documentActionStackStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  width: '100%',
+  maxWidth: 188,
 };
 
 const documentActionRowStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 8,
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: 12,
   alignItems: 'center',
-  flexWrap: 'nowrap',
+  width: '100%',
 };
 
 function documentViewButtonStyle(disabled: boolean): React.CSSProperties {
   return {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '6px 10px',
-  borderRadius: 8,
-  border: '1px solid #ddd',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    minHeight: 34,
+    padding: '6px 8px',
+    borderRadius: 8,
+    border: '1px solid #ddd',
     background: disabled ? '#f3f4f6' : '#fff',
     color: disabled ? '#9ca3af' : '#111',
-  fontSize: 14,
-  fontWeight: 500,
+    fontSize: 14,
+    fontWeight: 500,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }
@@ -1471,11 +1580,20 @@ const missingFileTextStyle: React.CSSProperties = {
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
-  padding: '8px 12px',
+  padding: '6px 10px',
   borderRadius: 8,
   border: '1px solid #111',
   background: '#fff',
   cursor: 'pointer',
+  fontSize: 14,
+};
+
+const documentSecondaryButtonStyle: React.CSSProperties = {
+  ...secondaryButtonStyle,
+  width: '100%',
+  minHeight: 34,
+  padding: '6px 8px',
+  whiteSpace: 'nowrap',
 };
 
 function primaryButtonStyle(disabled: boolean): React.CSSProperties {
@@ -1513,6 +1631,43 @@ function confirmButtonStyle(enabled: boolean): React.CSSProperties {
   };
 }
 
+function documentConfirmButtonStyle(enabled: boolean): React.CSSProperties {
+  return {
+    ...confirmButtonStyle(enabled),
+    width: '100%',
+    minHeight: 34,
+    padding: '6px 8px',
+    borderRadius: 8,
+  };
+}
+
+function documentDeleteButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    width: '100%',
+    minHeight: 34,
+    padding: '6px 8px',
+    borderRadius: 8,
+    border: '1px solid #fecaca',
+    background: disabled ? '#f3f4f6' : '#fff',
+    color: disabled ? '#9ca3af' : '#b91c1c',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontSize: 14,
+    fontWeight: 600,
+  };
+}
+
+function dangerButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '10px 16px',
+    borderRadius: 8,
+    border: '1px solid #b91c1c',
+    background: disabled ? '#fca5a5' : '#dc2626',
+    color: '#fff',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
 const deleteButtonStyle: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 6,
@@ -1520,4 +1675,42 @@ const deleteButtonStyle: React.CSSProperties = {
   background: '#fff',
   color: '#d33',
   cursor: 'pointer',
+};
+
+const modalBackdropStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 50,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 20,
+  background: 'rgba(15, 23, 42, 0.45)',
+};
+
+const modalStyle: React.CSSProperties = {
+  width: '100%',
+  maxWidth: 480,
+  borderRadius: 16,
+  border: '1px solid #e5e7eb',
+  background: '#fff',
+  padding: 24,
+  boxShadow: '0 25px 80px rgba(15, 23, 42, 0.25)',
+};
+
+const warningTextStyle: React.CSSProperties = {
+  margin: '16px 0',
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+  fontWeight: 600,
+};
+
+const modalActionRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: 10,
+  marginTop: 20,
 };

@@ -64,3 +64,21 @@ export async function getDocuments() {
 
   return apiFetch<DocumentListResponse>('/documents');
 }
+
+export async function deleteDocument(id: string) {
+  if (isDemoMode()) return;
+
+  try {
+    return await apiFetch<void>(`/documents/${id}`, {
+      method: 'DELETE',
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+
+    if (/api 403/i.test(message)) {
+      throw new Error('You can only delete your own uploaded documents.');
+    }
+
+    throw new Error('Document deletion failed. Please try again.');
+  }
+}

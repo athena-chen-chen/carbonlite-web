@@ -4,7 +4,7 @@ export function isDemoMode() {
   if (typeof window === 'undefined') return false;
   return (
     window.localStorage.getItem(DEMO_STORAGE_KEY) === 'enabled' ||
-    window.location.search.includes('demo=1')
+    (window.location.search ?? '').includes('demo=1')
   );
 }
 
