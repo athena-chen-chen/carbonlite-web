@@ -49,6 +49,8 @@ type EditableParsedActivity = {
   notes: EditableConfidenceField<string>;
 };
 
+type RawExtractionField = string | number | null | undefined | Record<string, any>;
+
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 function getDocumentFileUrl(fileUrl: string) {
@@ -57,6 +59,62 @@ function getDocumentFileUrl(fileUrl: string) {
 
   const apiOrigin = getApiOrigin();
   return `${apiOrigin}${fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`}`;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function extractFieldConfidence(value: RawExtractionField) {
+  return isRecord(value) && typeof value.confidence === 'string'
+    ? value.confidence
+    : 'medium';
+}
+
+function formatOptionalExtractionField(value: RawExtractionField) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+
+  if (!isRecord(value)) return '';
+
+  const nestedValue = value.value ?? value.text ?? value.label ?? value.source;
+  if (typeof nestedValue === 'string' || typeof nestedValue === 'number') {
+    return String(nestedValue);
+  }
+
+  return '';
+}
+
+export function formatSourceReference(
+  value: RawExtractionField,
+  documentFileName = '',
+) {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (typeof value === 'number') return String(value);
+
+  if (!isRecord(value)) return documentFileName;
+
+  const fileLabel = formatOptionalExtractionField(
+    value.fileName ??
+      value.filename ??
+      value.documentFileName ??
+      value.documentName ??
+      value.document,
+  );
+  const page = value.pageNumber ?? value.page;
+  const sourceLabel = formatOptionalExtractionField(
+    value.sourceLabel ?? value.label ?? value.sourceType ?? value.type ?? value.method,
+  );
+  const parts = [
+    formatOptionalExtractionField(
+      fileLabel || (typeof value.value === 'string' ? value.value : ''),
+    ),
+    page ? `Page ${page}` : '',
+    sourceLabel,
+  ].filter((part) => String(part).trim());
+
+  return parts.join(' - ') || 'PDF extraction';
 }
 
 export function UploadPage() {
@@ -485,12 +543,12 @@ ${sampleRows.join('\n')}`,
             documentFileName: document.fileName,
             ...item,
             sourceReference: {
-              value: item.sourceReference?.value ?? item.sourceReference ?? document.fileName,
-              confidence: item.sourceReference?.confidence ?? 'medium',
+              value: formatSourceReference(item.sourceReference, document.fileName),
+              confidence: extractFieldConfidence(item.sourceReference),
             },
             notes: {
-              value: item.notes?.value ?? item.notes ?? '',
-              confidence: item.notes?.confidence ?? 'medium',
+              value: formatOptionalExtractionField(item.notes),
+              confidence: extractFieldConfidence(item.notes),
             },
           })),
         );
@@ -693,7 +751,7 @@ ${sampleRows.join('\n')}`,
     };
   }
 
-  function updateParsedActivityField(
+function updateParsedActivityField(
     index: number,
     field: keyof EditableParsedActivity,
     value: string,
@@ -709,7 +767,10 @@ ${sampleRows.join('\n')}`,
           ...item,
           [field]: {
             ...currentField,
-            value: field === 'quantity' ? Number(value) : value,
+            value:
+              field === 'quantity'
+                ? Number(value)
+                : formatOptionalExtractionField(value),
             confidence: 'medium',
           },
         };
