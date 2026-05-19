@@ -5,11 +5,17 @@ import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { isDemoMode } from '../demo/demoData';
+import {
+  aggregateActivityUsage,
+  formatActivityUsageValue,
+  type ActivityUsageRecord,
+} from '../utils/activityAggregation';
 
 
 export function MetricsSummaryPage() {
   const location = useLocation();
   const [summary, setSummary] = useState<any>(null);
+  const [activities, setActivities] = useState<ActivityUsageRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
   const [error, setError] = useState<string | null>(
@@ -24,8 +30,12 @@ useEffect(() => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getMetricsSummary();
-      setSummary(data);
+      const [summaryData, activityData] = await Promise.all([
+        getMetricsSummary(),
+        getActivityDataList(),
+      ]);
+      setSummary(summaryData);
+      setActivities(activityData.items ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load summary');
     } finally {
@@ -176,13 +186,9 @@ function handleDownloadPDF() {
 }
   const totalsByMetric = summary?.totalsByMetric ?? [];
   const demoMode = isDemoMode();
-
-  const fuelMetric = totalsByMetric.find((m: any) =>
-    m.metricType.includes('FUEL')
-  );
-
-  const electricityMetric = totalsByMetric.find((m: any) =>
-    m.metricType.includes('ELECTRIC')
+  const usageTotals = useMemo(
+    () => aggregateActivityUsage(activities),
+    [activities],
   );
 
   const carbonMetric = totalsByMetric.find((m: any) =>
@@ -219,7 +225,7 @@ function handleDownloadPDF() {
       >
         {calcLoading ? 'Generating...' : 'Generate Metrics'}
       </button>
-<button
+{/* <button
   type="button"
   onClick={handleDownloadCSV}
   disabled={!summary?.totalsByMetric?.length}
@@ -234,8 +240,8 @@ function handleDownloadPDF() {
   }}
 >
   Download CSV
-</button>
-<button
+</button> */}
+{/* <button
   type="button"
   onClick={handleDownloadPDF}
   disabled={!summary?.totalsByMetric?.length}
@@ -250,7 +256,7 @@ function handleDownloadPDF() {
   }}
 >
   Download PDF
-</button>
+</button> */}
 </div>
       {error && <div style={warningStyle}>{error}</div>}
 
@@ -269,18 +275,20 @@ function handleDownloadPDF() {
           >
             <MetricCard
               title="Fuel Usage"
-              value={fuelMetric ? `${fuelMetric.totalValue} ${fuelMetric.unit}` : '0'}
+              value={formatActivityUsageValue(
+                usageTotals.fuel,
+                usageTotals.fuelUnitLabel,
+              )}
               icon="⛽"
               color="#f59e0b"
             />
 
             <MetricCard
               title="Electricity"
-              value={
-                electricityMetric
-                  ? `${electricityMetric.totalValue} ${electricityMetric.unit}`
-                  : '0'
-              }
+              value={formatActivityUsageValue(
+                usageTotals.electricity,
+                usageTotals.electricityUnitLabel,
+              )}
               icon="⚡"
               color="#3b82f6"
             />

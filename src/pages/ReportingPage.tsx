@@ -3,6 +3,10 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMetricsSummary } from '../services/metrics';
 import { getActivityDataList } from '../services/activityData';
+import {
+  aggregateActivityUsage,
+  formatActivityUsageValue,
+} from '../utils/activityAggregation';
 
 type ActivityItem = {
   id: string;
@@ -90,25 +94,10 @@ function classifyScope(activityType?: string) {
     return date >= periodStart && date <= periodEnd;
   });
 }, [activities, periodStart, periodEnd]);
-const fuelActivities = filteredActivities.filter((item) =>
-  ['DIESEL', 'GASOLINE', 'NATURAL_GAS'].includes(item.activityType),
-);
-
-const electricityActivities = filteredActivities.filter(
-  (item) => item.activityType === 'ELECTRICITY',
-);
-
-
-  const totalFuel = useMemo(() => {
-    return fuelActivities.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-  }, [fuelActivities]);
-
-  const totalElectricity = useMemo(() => {
-    return electricityActivities.reduce(
-      (sum, item) => sum + Number(item.quantity || 0),
-      0,
-    );
-  }, [electricityActivities]);
+  const usageTotals = useMemo(
+    () => aggregateActivityUsage(filteredActivities),
+    [filteredActivities],
+  );
 
 const scopeRows = useMemo(() => {
   return filteredActivities.map((item) => ({
@@ -414,11 +403,21 @@ function formatSourceType(sourceType?: string) {
               icon="🌱"
             />
 
-            <Card title="Fuel Usage" value={`${totalFuel} L / m3`} icon="⛽" />
+            <Card
+              title="Fuel Usage"
+              value={formatActivityUsageValue(
+                usageTotals.fuel,
+                usageTotals.fuelUnitLabel,
+              )}
+              icon="⛽"
+            />
 
             <Card
               title="Electricity"
-              value={`${totalElectricity} kWh`}
+              value={formatActivityUsageValue(
+                usageTotals.electricity,
+                usageTotals.electricityUnitLabel,
+              )}
               icon="⚡"
             />
 

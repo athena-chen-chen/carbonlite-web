@@ -138,6 +138,7 @@ export function UploadPage() {
   const [demoMode, setDemoMode] = useState(() => isDemoMode());
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDragDepthRef = useRef(0);
@@ -443,6 +444,57 @@ ${sampleRows.join('\n')}`,
     return status === 'NO_DATA_FOUND' || status === 'EXTRACTION_FAILED';
   }
 
+  function canImportDocument(doc: DocumentItem) {
+    return (
+      !generatingMetrics &&
+      confirmingId !== doc.id &&
+      previewDocumentIds.length <= 1 &&
+      previewDocumentId === doc.id &&
+      parsedActivities.length > 0
+    );
+  }
+
+  function getDocumentPrimaryAction(doc: DocumentItem) {
+    if (extractingId === doc.id) return { label: 'Extracting...', disabled: true };
+    if (confirmingId === doc.id) return { label: 'Importing...', disabled: true };
+    if (generatingMetrics) return { label: 'Generating...', disabled: true };
+
+    if (doc.status === 'IMPORTED') {
+      return { label: 'View Results', disabled: false };
+    }
+
+    if (canImportDocument(doc)) {
+      return { label: 'Import', disabled: false };
+    }
+
+    if (doc.status === 'REVIEW_REQUIRED') {
+      return { label: 'Re-extract', disabled: false };
+    }
+
+    return {
+      label: isRetryableExtractionStatus(doc.status) ? 'Re-extract' : 'Extract',
+      disabled: false,
+    };
+  }
+
+  function handleDocumentPrimaryAction(doc: DocumentItem) {
+    const action = getDocumentPrimaryAction(doc);
+    if (action.disabled) return;
+    setOpenDocumentMenuId(null);
+
+    if (action.label === 'View Results') {
+      navigate('/metrics-summary');
+      return;
+    }
+
+    if (action.label === 'Import') {
+      handleConfirmImport(doc.id);
+      return;
+    }
+
+    handleExtract(doc.id);
+  }
+
   function handleViewDocument(doc: DocumentItem) {
     if (!doc.fileUrl) {
       setError('File is unavailable for this document.');
@@ -477,6 +529,7 @@ ${sampleRows.join('\n')}`,
       setDocuments((prev) => prev.filter((doc) => doc.id !== documentId));
       clearDeletedDocumentPreview(documentId);
       setDocumentToDelete(null);
+      setOpenDocumentMenuId(null);
       setSuccessMessage('Document deleted. Existing activity records will remain.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Document deletion failed. Please try again.');
@@ -1003,7 +1056,7 @@ function updateParsedActivityField(
               <col style={{ width: 150 }} />
               <col style={{ width: 80 }} />
               <col style={{ width: 150 }} />
-              <col style={{ width: 280 }} />
+              <col style={{ width: 190 }} />
             </colgroup>
             <thead>
               <tr style={{ background: '#fafafa' }}>
@@ -1027,65 +1080,72 @@ function updateParsedActivityField(
                   <td style={tdStyle}>{doc.fileSize ?? '-'}</td>
                   <td style={tdStyle}>{doc.createdAt}</td>
                   <td style={documentActionTdStyle}>
-                    <div style={documentActionStackStyle}>
-                      <div style={documentActionRowStyle}>
-                        <button
-                          type="button"
-                          onClick={() => handleViewDocument(doc)}
-                          disabled={!doc.fileUrl}
-                          style={documentViewButtonStyle(!doc.fileUrl)}
-                        >
-                          View
-                        </button>
+                    <div style={documentActionRowCompactStyle}>
+                      <button
+                        type="button"
+                        onClick={() => handleDocumentPrimaryAction(doc)}
+                        disabled={getDocumentPrimaryAction(doc).disabled}
+                        title={getDocumentPrimaryAction(doc).label}
+                        style={documentPrimaryActionButtonStyle(
+                          getDocumentPrimaryAction(doc).disabled,
+                        )}
+                      >
+                        {getDocumentPrimaryAction(doc).label}
+                      </button>
 
+                      <div style={documentMenuWrapStyle}>
                         <button
                           type="button"
-                          onClick={() => handleExtract(doc.id)}
-                          disabled={extractingId === doc.id}
-                          style={documentSecondaryButtonStyle}
-                        >
-                          {extractingId === doc.id
-                            ? 'Extracting...'
-                            : isRetryableExtractionStatus(doc.status)
-                            ? 'Retry Extract'
-                            : 'Extract'}
-                        </button>
-                      </div>
-
-                      <div style={documentActionRowStyle}>
-                        <button
-                          type="button"
-                          onClick={() => handleConfirmImport(doc.id)}
-                          disabled={
-                            generatingMetrics ||
-                            confirmingId === doc.id ||
-                            previewDocumentIds.length > 1 ||
-                            previewDocumentId !== doc.id ||
-                            parsedActivities.length === 0
+                          aria-label={`More actions for ${doc.fileName}`}
+                          aria-expanded={openDocumentMenuId === doc.id}
+                          onClick={() =>
+                            setOpenDocumentMenuId((current) =>
+                              current === doc.id ? null : doc.id,
+                            )
                           }
-                          style={documentConfirmButtonStyle(
-                            previewDocumentIds.length <= 1 &&
-                              previewDocumentId === doc.id &&
-                              parsedActivities.length > 0,
-                          )}
+                          style={kebabButtonStyle}
                         >
-                          {generatingMetrics
-                            ? 'Generating...'
-                            : confirmingId === doc.id
-                            ? 'Importing...'
-                            : 'Import'}
+                          ⋮
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => setDocumentToDelete(doc)}
-                          disabled={deletingDocumentId === doc.id}
-                          style={documentDeleteButtonStyle(deletingDocumentId === doc.id)}
-                        >
-                          {deletingDocumentId === doc.id ? 'Deleting...' : 'Delete'}
-                        </button>
+                        {openDocumentMenuId === doc.id ? (
+                          <div style={documentMenuStyle}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenDocumentMenuId(null);
+                                handleViewDocument(doc);
+                              }}
+                              disabled={!doc.fileUrl}
+                              style={documentMenuItemStyle(!doc.fileUrl)}
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenDocumentMenuId(null);
+                                handleConfirmImport(doc.id);
+                              }}
+                              disabled={!canImportDocument(doc)}
+                              style={documentMenuItemStyle(!canImportDocument(doc))}
+                            >
+                              Import
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenDocumentMenuId(null);
+                                setDocumentToDelete(doc);
+                              }}
+                              disabled={deletingDocumentId === doc.id}
+                              style={documentMenuDangerItemStyle(deletingDocumentId === doc.id)}
+                            >
+                              {deletingDocumentId === doc.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
-
                       {!doc.fileUrl ? (
                         <span style={missingFileTextStyle}>File unavailable</span>
                       ) : null}
@@ -1393,7 +1453,7 @@ const sectionCardStyle: React.CSSProperties = {
   border: '1px solid #ddd',
   borderRadius: 12,
   background: '#fff',
-  overflow: 'hidden',
+  overflow: 'visible',
 };
 
 const fileInfoStyle: React.CSSProperties = {
@@ -1595,43 +1655,86 @@ function optionalInputStyle(
 
 const documentActionTdStyle: React.CSSProperties = {
   ...tdStyle,
-  width: 220,
-  minWidth: 220,
-  maxWidth: 220,
+  width: 190,
+  minWidth: 190,
+  maxWidth: 190,
   whiteSpace: 'normal',
 };
 
-const documentActionStackStyle: React.CSSProperties = {
+const documentActionRowCompactStyle: React.CSSProperties = {
+  position: 'relative',
   display: 'flex',
-  flexDirection: 'column',
   gap: 8,
-  width: '100%',
-  maxWidth: 188,
-};
-
-const documentActionRowStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: 12,
   alignItems: 'center',
-  width: '100%',
+  flexWrap: 'wrap',
 };
 
-function documentViewButtonStyle(disabled: boolean): React.CSSProperties {
+function documentPrimaryActionButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
+    minWidth: 112,
     minHeight: 34,
-    padding: '6px 8px',
+    padding: '6px 12px',
     borderRadius: 8,
-    border: '1px solid #ddd',
-    background: disabled ? '#f3f4f6' : '#fff',
-    color: disabled ? '#9ca3af' : '#111',
+    border: '1px solid #047857',
+    background: disabled ? '#e5e7eb' : '#047857',
+    color: disabled ? '#6b7280' : '#fff',
     fontSize: 14,
-    fontWeight: 500,
+    fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+const documentMenuWrapStyle: React.CSSProperties = {
+  position: 'relative',
+};
+
+const kebabButtonStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#0f172a',
+  cursor: 'pointer',
+  fontSize: 18,
+  fontWeight: 800,
+  lineHeight: 1,
+};
+
+const documentMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 0,
+  top: 40,
+  zIndex: 20,
+  minWidth: 150,
+  padding: 6,
+  borderRadius: 10,
+  border: '1px solid #e5e7eb',
+  background: '#fff',
+  boxShadow: '0 14px 36px rgba(15, 23, 42, 0.16)',
+};
+
+function documentMenuItemStyle(disabled: boolean): React.CSSProperties {
+  return {
+    width: '100%',
+    padding: '9px 10px',
+    border: 'none',
+    borderRadius: 8,
+    background: 'transparent',
+    color: disabled ? '#94a3b8' : '#0f172a',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    textAlign: 'left',
+    fontWeight: 600,
+  };
+}
+
+function documentMenuDangerItemStyle(disabled: boolean): React.CSSProperties {
+  return {
+    ...documentMenuItemStyle(disabled),
+    color: disabled ? '#94a3b8' : '#b91c1c',
   };
 }
 
@@ -1647,14 +1750,6 @@ const secondaryButtonStyle: React.CSSProperties = {
   background: '#fff',
   cursor: 'pointer',
   fontSize: 14,
-};
-
-const documentSecondaryButtonStyle: React.CSSProperties = {
-  ...secondaryButtonStyle,
-  width: '100%',
-  minHeight: 34,
-  padding: '6px 8px',
-  whiteSpace: 'nowrap',
 };
 
 function primaryButtonStyle(disabled: boolean): React.CSSProperties {
@@ -1689,31 +1784,6 @@ function confirmButtonStyle(enabled: boolean): React.CSSProperties {
     background: enabled ? '#111' : '#ddd',
     color: enabled ? '#fff' : '#666',
     cursor: enabled ? 'pointer' : 'not-allowed',
-  };
-}
-
-function documentConfirmButtonStyle(enabled: boolean): React.CSSProperties {
-  return {
-    ...confirmButtonStyle(enabled),
-    width: '100%',
-    minHeight: 34,
-    padding: '6px 8px',
-    borderRadius: 8,
-  };
-}
-
-function documentDeleteButtonStyle(disabled: boolean): React.CSSProperties {
-  return {
-    width: '100%',
-    minHeight: 34,
-    padding: '6px 8px',
-    borderRadius: 8,
-    border: '1px solid #fecaca',
-    background: disabled ? '#f3f4f6' : '#fff',
-    color: disabled ? '#9ca3af' : '#b91c1c',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontSize: 14,
-    fontWeight: 600,
   };
 }
 

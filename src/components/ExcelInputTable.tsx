@@ -558,15 +558,15 @@ alert('Saved! Metrics and Reports are ready to refresh.');
     <button type="button" onClick={saveAll} style={primaryButtonStyle}>
       Save All
     </button>
-    <label style={secondaryButtonStyle}>
+    {/* <label style={secondaryButtonStyle}>
   Import CSV
   <input
     type="file"
     accept=".csv"
     onChange={handleImportCSV}
     style={{ display: 'none' }}
-  />
-</label>
+  /> */}
+{/* </label>
 <label style={secondaryButtonStyle}>
   Import Excel
   <input
@@ -575,7 +575,7 @@ alert('Saved! Metrics and Reports are ready to refresh.');
     onChange={handleImportExcel}
     style={{ display: 'none' }}
   />
-</label>
+</label> */}
   </div>
 </div>
   );
