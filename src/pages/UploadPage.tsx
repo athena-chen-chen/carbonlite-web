@@ -536,6 +536,10 @@ ${sampleRows.join('\n')}`,
       });
 
       if (!response.ok) {
+        if (response.status === 404 || response.status === 410) {
+          throw new Error('FILE_UNAVAILABLE');
+        }
+
         throw new Error(`Download failed with status ${response.status}`);
       }
 
@@ -552,9 +556,13 @@ ${sampleRows.join('\n')}`,
       }
 
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-    } catch {
+    } catch (err) {
       viewerWindow?.close();
-      setError('Unable to open document.');
+      setError(
+        err instanceof Error && err.message === 'FILE_UNAVAILABLE'
+          ? 'This uploaded file is no longer available. Please upload it again.'
+          : 'Unable to open document.',
+      );
       setSuccessMessage(null);
     } finally {
       setViewingDocumentId(null);
