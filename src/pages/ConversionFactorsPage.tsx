@@ -6,7 +6,7 @@ import {
   updateConversionFactor,
   type ConversionFactorInput,
 } from '../services/conversionFactors';
-import { activityTypes, defaultActivityType } from '../constants/activityTypes';
+import { activityTypes } from '../constants/activityTypes';
 
 type ConversionFactorItem = {
   id: string;
@@ -27,14 +27,14 @@ type ConversionFactorListResponse = {
 };
 
 const initialForm: ConversionFactorInput = {
-  name: 'Diesel emission factor',
+  name: '',
   type: 'EMISSION',
-  activityType: defaultActivityType,
-  unit: 'liters',
-  factorValue: 2.68,
+  activityType: '',
+  unit: '',
+  factorValue: '' as unknown as number,
   resultUnit: 'kgCO2e',
-  sourceName: 'Manual test factor',
-  sourceReference: 'local-test',
+  sourceName: '',
+  sourceReference: '',
   isDefault: true,
 };
 
@@ -45,6 +45,7 @@ export function ConversionFactorsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showFactorForm, setShowFactorForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -115,9 +116,11 @@ export function ConversionFactorsPage() {
         await updateConversionFactor(editingId, getPayloadFromForm());
         setSuccessMessage('Conversion factor updated successfully.');
         setEditingId(null);
+        setShowFactorForm(false);
       } else {
         await createConversionFactor(getPayloadFromForm());
         setSuccessMessage('Conversion factor created successfully.');
+        setShowFactorForm(false);
       }
 
       setForm(initialForm);
@@ -139,6 +142,7 @@ export function ConversionFactorsPage() {
     if (item.isSystemDefault) return;
 
     setEditingId(item.id);
+    setShowFactorForm(true);
     setForm({
       name: item.name,
       type: item.type,
@@ -158,6 +162,7 @@ export function ConversionFactorsPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(initialForm);
+    setShowFactorForm(false);
     setError(null);
     setSuccessMessage(null);
   }
@@ -234,10 +239,33 @@ export function ConversionFactorsPage() {
         />
       </div>
 
+      {!showFactorForm ? (
+        <div style={collapsedFormStyle}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Custom conversion factors</h2>
+            <p style={{ marginTop: 6, color: '#666' }}>
+              System default factors are already available. Add a custom factor only when you need organization-specific values.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setForm(initialForm);
+              setEditingId(null);
+              setShowFactorForm(true);
+              setError(null);
+              setSuccessMessage(null);
+            }}
+            style={primaryButtonStyle(false)}
+          >
+            + Add Custom Factor
+          </button>
+        </div>
+      ) : (
       <form onSubmit={handleSubmit} style={formCardStyle}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>
-            {editingId ? 'Edit Conversion Factor' : 'Add Conversion Factor'}
+            {editingId ? 'Edit Conversion Factor' : 'Add Custom Factor'}
           </h2>
           <p style={{ marginTop: 6, color: '#666' }}>
             {editingId
@@ -253,6 +281,7 @@ export function ConversionFactorsPage() {
               value={form.name}
               onChange={(e) => updateField('name', e.target.value)}
               style={inputStyle}
+              placeholder="e.g. Diesel emission factor"
             />
           </Field>
 
@@ -290,7 +319,7 @@ export function ConversionFactorsPage() {
               value={form.unit}
               onChange={(e) => updateField('unit', e.target.value)}
               style={inputStyle}
-              placeholder="liters"
+              placeholder="e.g. liters"
             />
           </Field>
 
@@ -299,8 +328,14 @@ export function ConversionFactorsPage() {
               type="number"
               step="0.0001"
               value={form.factorValue}
-              onChange={(e) => updateField('factorValue', Number(e.target.value))}
+              onChange={(e) =>
+                updateField(
+                  'factorValue',
+                  e.target.value === '' ? ('' as unknown as number) : Number(e.target.value),
+                )
+              }
               style={inputStyle}
+              placeholder="e.g. 2.68"
             />
           </Field>
 
@@ -310,7 +345,7 @@ export function ConversionFactorsPage() {
               value={form.resultUnit}
               onChange={(e) => updateField('resultUnit', e.target.value)}
               style={inputStyle}
-              placeholder="kgCO2e"
+              placeholder="e.g. kgCO2e"
             />
           </Field>
 
@@ -320,7 +355,7 @@ export function ConversionFactorsPage() {
               value={form.sourceName ?? ''}
               onChange={(e) => updateField('sourceName', e.target.value)}
               style={inputStyle}
-              placeholder="Government factor / custom source"
+              placeholder="e.g. Environment Canada"
             />
           </Field>
 
@@ -330,7 +365,7 @@ export function ConversionFactorsPage() {
               value={form.sourceReference ?? ''}
               onChange={(e) => updateField('sourceReference', e.target.value)}
               style={inputStyle}
-              placeholder="reference, URL, or internal note"
+              placeholder="e.g. 2025 factor table"
             />
           </Field>
         </div>
@@ -363,9 +398,19 @@ export function ConversionFactorsPage() {
             >
               Cancel
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={cancelEdit}
+              disabled={submitting}
+              style={cancelButtonStyle}
+            >
+              Cancel
+            </button>
+          )}
         </div>
       </form>
+      )}
 
       {error ? <div style={errorStyle}>{error}</div> : null}
       {successMessage ? <div style={successStyle}>{successMessage}</div> : null}
@@ -570,6 +615,15 @@ const formCardStyle: React.CSSProperties = {
   padding: 20,
   marginBottom: 20,
   boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+};
+
+const collapsedFormStyle: React.CSSProperties = {
+  ...formCardStyle,
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 16,
+  flexWrap: 'wrap',
 };
 
 const formGridStyle: React.CSSProperties = {

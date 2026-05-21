@@ -5,7 +5,6 @@ import { getConversionFactors } from '../services/conversionFactors';
 import {
   activityTypeDefaultUnits,
   activityTypes,
-  defaultActivityType,
 } from '../constants/activityTypes';
 import * as XLSX from 'xlsx';
 
@@ -143,6 +142,8 @@ function normalizeType(type?: string) {
   return String(type ?? '').toUpperCase().trim();
 }
 function findMatchingFactor(activityType: string, unit: string) {
+  if (!activityType || !unit) return undefined;
+
   const rowType = normalizeActivityType(activityType);
   const rowUnit = normalizeUnit(unit);
 
@@ -195,7 +196,7 @@ function importExcelFile(file: File) {
 
     const importedRows = jsonData.map((row) => {
       const activityType =
-        row.activityType || row.type || row.activity || defaultActivityType;
+        row.activityType || row.type || row.activity || '';
 
       return {
         id: Math.random().toString(),
@@ -261,7 +262,7 @@ function parseCSVText(text: string) {
 
   const importedRows = lines.slice(1).map((line) => {
     const cols = line.split(',').map((v) => v.trim());
-    const activityType = cols[activityTypeIndex] || defaultActivityType;
+    const activityType = cols[activityTypeIndex] || '';
 
     return {
       id: Math.random().toString(),
@@ -299,12 +300,11 @@ function validateRow(row: Row) {
 function createEmptyRow(): Row {
   return {
     id: Math.random().toString(),
-    activityType: defaultActivityType,
+    activityType: '',
     quantity: '',
-    unit: 'L',
+    unit: '',
     recordDate: new Date().toISOString().slice(0, 10),
   };
-  setEntrySourceType('MANUAL');
 }
 function getDefaultUnit(activityType: string) {
   return activityTypeDefaultUnits[activityType] ?? '';
@@ -318,6 +318,10 @@ function getDefaultUnit(activityType: string) {
         ...row,
         [key]: value,
       };
+
+      if (key === 'activityType') {
+        updated.unit = getDefaultUnit(value);
+      }
 
       return applyFactorToRow(updated);
     }),
@@ -352,7 +356,7 @@ function handlePasteRows(event: React.ClipboardEvent<HTMLTableElement>) {
     .split(/\r?\n/)
     .map((line) => line.split('\t').map((cell) => cell.trim()))
     .map(([activityType, recordDate, quantity, unit]) => {
-      const type = activityType || defaultActivityType;
+      const type = activityType || '';
 
       return {
         id: Math.random().toString(),
@@ -484,6 +488,7 @@ alert('Saved! Metrics and Reports are ready to refresh.');
                 }}
                 style={inputStyle}
               >
+                <option value="">Select type</option>
                 {activityTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
@@ -500,7 +505,7 @@ alert('Saved! Metrics and Reports are ready to refresh.');
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && index === rows.length - 1) addRow();
                 }}
-                placeholder="120"
+                placeholder="Quantity"
                 style={inputStyle}
               />
             </td>
@@ -509,7 +514,7 @@ alert('Saved! Metrics and Reports are ready to refresh.');
               <input
                 value={row.unit}
                 onChange={(e) => updateRow(row.id, 'unit', e.target.value)}
-                placeholder="L"
+                placeholder="Auto-filled after type"
                 style={inputStyle}
               />
             </td>

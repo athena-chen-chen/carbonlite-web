@@ -48,7 +48,9 @@ describe('ExcelInputTable factor matching', () => {
 
     render(<ExcelInputTable onSuccess={vi.fn()} />);
 
-    expect(await screen.findByText(/Matched: Diesel factor/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Quantity')).toHaveValue(null);
+    expect(screen.getByPlaceholderText('Auto-filled after type')).toHaveValue('');
 
     await userEvent.selectOptions(screen.getByRole('combobox'), 'ELECTRICITY');
 
@@ -61,7 +63,7 @@ describe('ExcelInputTable factor matching', () => {
     expect(await screen.findByText(/No matching factor/i)).toBeInTheDocument();
 
     await userEvent.clear(screen.getByDisplayValue('MWh'));
-    await userEvent.type(screen.getByPlaceholderText('L'), 'kwh');
+    await userEvent.type(screen.getByPlaceholderText('Auto-filled after type'), 'kwh');
 
     expect(await screen.findByText(/Matched: Electricity factor/i)).toBeInTheDocument();
   });

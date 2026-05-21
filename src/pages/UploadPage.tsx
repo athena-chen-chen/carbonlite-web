@@ -12,7 +12,8 @@ import {
   activityTypes,
   defaultActivityType,
 } from '../constants/activityTypes';
-import { getApiOrigin } from '../config/api';
+import { buildApiUrl } from '../config/api';
+import { getToken } from '../services/auth';
 import {
   demoDocuments,
   demoParsedActivities,
@@ -52,14 +53,6 @@ type EditableParsedActivity = {
 type RawExtractionField = string | number | null | undefined | Record<string, any>;
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-function getDocumentFileUrl(fileUrl: string) {
-  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
-  if (fileUrl.startsWith('/demo/')) return fileUrl;
-
-  const apiOrigin = getApiOrigin();
-  return `${apiOrigin}${fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`}`;
-}
 
 function isRecord(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -138,6 +131,7 @@ export function UploadPage() {
   const [demoMode, setDemoMode] = useState(() => isDemoMode());
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [viewingDocumentId, setViewingDocumentId] = useState<string | null>(null);
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -495,14 +489,55 @@ ${sampleRows.join('\n')}`,
     handleExtract(doc.id);
   }
 
-  function handleViewDocument(doc: DocumentItem) {
-    if (!doc.fileUrl) {
+  async function handleViewDocument(doc: DocumentItem) {
+    if (viewingDocumentId === doc.id) return;
+
+    if (demoMode && doc.fileUrl?.startsWith('/demo/')) {
+      window.open(doc.fileUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (!doc.id) {
       setError('File is unavailable for this document.');
       setSuccessMessage(null);
       return;
     }
 
-    window.open(getDocumentFileUrl(doc.fileUrl), '_blank', 'noopener,noreferrer');
+    const token = getToken();
+
+    if (!token) {
+      setError('Please log in again to view this file.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    setViewingDocumentId(doc.id);
+    setError(null);
+
+    try {
+      // TODO: Backend endpoint should stream GET /api/documents/:id/download
+      // with auth/org checks. Long term, store files in S3/Supabase Storage
+      // instead of relying on Render local disk.
+      const response = await fetch(buildApiUrl(`/documents/${doc.id}/download`), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Download failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch {
+      setError('File could not be opened. Please try again.');
+      setSuccessMessage(null);
+    } finally {
+      setViewingDocumentId(null);
+    }
   }
 
   function clearDeletedDocumentPreview(documentId: string) {
@@ -1116,10 +1151,10 @@ function updateParsedActivityField(
                                 setOpenDocumentMenuId(null);
                                 handleViewDocument(doc);
                               }}
-                              disabled={!doc.fileUrl}
-                              style={documentMenuItemStyle(!doc.fileUrl)}
+                              disabled={viewingDocumentId === doc.id}
+                              style={documentMenuItemStyle(viewingDocumentId === doc.id)}
                             >
-                              View
+                              {viewingDocumentId === doc.id ? 'Opening...' : 'View'}
                             </button>
                             <button
                               type="button"
@@ -1146,9 +1181,6 @@ function updateParsedActivityField(
                           </div>
                         ) : null}
                       </div>
-                      {!doc.fileUrl ? (
-                        <span style={missingFileTextStyle}>File unavailable</span>
-                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -1737,11 +1769,6 @@ function documentMenuDangerItemStyle(disabled: boolean): React.CSSProperties {
     color: disabled ? '#94a3b8' : '#b91c1c',
   };
 }
-
-const missingFileTextStyle: React.CSSProperties = {
-  color: '#9ca3af',
-  fontSize: 12,
-};
 
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '6px 10px',
