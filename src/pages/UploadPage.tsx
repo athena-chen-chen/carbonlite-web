@@ -54,6 +54,10 @@ type RawExtractionField = string | number | null | undefined | Record<string, an
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
+export function getDocumentDownloadUrl(documentId: string) {
+  return buildApiUrl(`/documents/${documentId}/download`);
+}
+
 function isRecord(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -518,7 +522,7 @@ ${sampleRows.join('\n')}`,
       // TODO: Backend endpoint should stream GET /api/documents/:id/download
       // with auth/org checks. Long term, store files in S3/Supabase Storage
       // instead of relying on Render local disk.
-      const response = await fetch(buildApiUrl(`/documents/${doc.id}/download`), {
+      const response = await fetch(getDocumentDownloadUrl(doc.id), {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -533,7 +537,7 @@ ${sampleRows.join('\n')}`,
       window.open(objectUrl, '_blank', 'noopener,noreferrer');
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch {
-      setError('File could not be opened. Please try again.');
+      setError('Unable to open document.');
       setSuccessMessage(null);
     } finally {
       setViewingDocumentId(null);

@@ -1,4 +1,4 @@
-import { formatSourceReference } from './UploadPage';
+import { formatSourceReference, getDocumentDownloadUrl } from './UploadPage';
 
 describe('formatSourceReference', () => {
   it('keeps string source references readable', () => {
@@ -25,5 +25,14 @@ describe('formatSourceReference', () => {
     expect(formatSourceReference(undefined, 'uploaded-bill.pdf')).toBe(
       'uploaded-bill.pdf',
     );
+  });
+});
+
+describe('getDocumentDownloadUrl', () => {
+  it('uses the backend document download endpoint instead of frontend uploads paths', () => {
+    const url = getDocumentDownloadUrl('doc-123');
+
+    expect(url).toContain('/api/documents/doc-123/download');
+    expect(url).not.toContain('/uploads/');
   });
 });
