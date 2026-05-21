@@ -517,6 +517,13 @@ ${sampleRows.join('\n')}`,
 
     setViewingDocumentId(doc.id);
     setError(null);
+    const viewerWindow = window.open('', '_blank');
+
+    if (viewerWindow) {
+      viewerWindow.opener = null;
+      viewerWindow.document.title = doc.fileName || 'Opening document';
+      viewerWindow.document.body.innerHTML = '<p style="font-family: sans-serif;">Opening document...</p>';
+    }
 
     try {
       // TODO: Backend endpoint should stream GET /api/documents/:id/download
@@ -534,9 +541,19 @@ ${sampleRows.join('\n')}`,
 
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+
+      if (viewerWindow) {
+        viewerWindow.location.href = objectUrl;
+      } else {
+        const openedWindow = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        if (!openedWindow) {
+          throw new Error('Popup blocked');
+        }
+      }
+
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch {
+      viewerWindow?.close();
       setError('Unable to open document.');
       setSuccessMessage(null);
     } finally {
