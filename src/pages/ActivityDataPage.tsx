@@ -46,10 +46,6 @@ const [bulkDeleting, setBulkDeleting] = useState(false);
     setLoading(true);
     try {
       const nextItems = (await getAllActivityData()) as ActivityDataItem[];
-      console.log(
-        '[ActivityDataPage] records after reload',
-        nextItems.map((item) => item.id),
-      );
 
       if (updateState) {
         setItems(nextItems);
@@ -73,10 +69,6 @@ const [bulkDeleting, setBulkDeleting] = useState(false);
     setItems((prev) => prev.filter((item) => !idsToDelete.includes(item.id)));
   }
 
-  function getRecordIds(records: ActivityDataItem[]) {
-    return records.map((item) => item.id);
-  }
-
   function getStillReturnedDeletedIds(
     records: ActivityDataItem[],
     deletedIds: string[],
@@ -89,9 +81,6 @@ const [bulkDeleting, setBulkDeleting] = useState(false);
     deletedIds: string[],
   ) {
     const stillReturnedIds = getStillReturnedDeletedIds(refreshedItems, deletedIds);
-
-    console.log('[ActivityDataPage] records after reload ids', getRecordIds(refreshedItems));
-    console.log('[ActivityDataPage] deleted ids still returned by GET', stillReturnedIds);
 
     if (stillReturnedIds.length > 0) {
       setError(
@@ -150,10 +139,7 @@ function toggleSelectAll(checked: boolean) {
   setSuccessMessage(null);
 
   try {
-    console.log('[ActivityDataPage] bulk delete response pending for ids', idsToDelete);
-    console.log('[ActivityDataPage] records before reload ids', getRecordIds(items));
     const result = await bulkDeleteActivityData(idsToDelete);
-    console.log('[ActivityDataPage] bulk delete response', result);
     const deletedCount = getDeletedCount(result);
 
     if (deletedCount <= 0) {
@@ -242,10 +228,7 @@ async function handleDelete(row: ActivityDataItem) {
   setSuccessMessage(null);
 
   try {
-    console.log('[ActivityDataPage] single delete response pending for id', row.id);
-    console.log('[ActivityDataPage] records before reload ids', getRecordIds(items));
     const result = await deleteActivityData(row.id);
-    console.log('[ActivityDataPage] single delete response', result);
     const deletedCount = getDeletedCount(result);
 
     if (deletedCount <= 0) {
@@ -462,7 +445,7 @@ const errorTextStyle: React.CSSProperties = {
           marginBottom: 24,
         }}
       >
-        <Card title="Total Records" value={items.length} icon="📄" />
+        <Card title="Total Activity Records" value={items.length} icon="📄" />
         <Card title="Manual Entries" value={items.filter(i => i.sourceType === 'MANUAL').length} icon="✍️" />
         <Card title="Imported" value={items.filter(i => i.sourceType !== 'MANUAL').length} icon="📥" />
       </div>

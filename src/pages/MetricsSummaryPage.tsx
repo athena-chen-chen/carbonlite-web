@@ -1,37 +1,61 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { isDemoMode } from '../demo/demoData';
 import {
-  aggregateActivityUsage,
   formatActivityUsageValue,
   type ActivityUsageRecord,
 } from '../utils/activityAggregation';
-import { loadMetricsOverview } from '../services/metricsOverview';
+import {
+  EMPTY_ACTIVITY_USAGE_TOTALS,
+  loadMetricsOverview,
+} from '../services/metricsOverview';
 
 
 export function MetricsSummaryPage() {
   const location = useLocation();
   const [summary, setSummary] = useState<any>(null);
   const [activities, setActivities] = useState<ActivityUsageRecord[]>([]);
+  const [usageTotals, setUsageTotals] = useState(EMPTY_ACTIVITY_USAGE_TOTALS);
+  const [totalEstimatedEmissionsKgCO2e, setTotalEstimatedEmissionsKgCO2e] = useState(0);
+  const [countSummary, setCountSummary] = useState({
+    totalRecordsFound: 0,
+    processedRecords: 0,
+    skippedRecords: 0,
+    missingFactorRecords: 0,
+  });
   const [loading, setLoading] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
   const [error, setError] = useState<string | null>(
     () => (location.state as { metricsError?: string } | null)?.metricsError ?? null,
   );
 const [reloadKey, setReloadKey] = useState(0);
+const [periodStart, setPeriodStart] = useState('2026-01-01');
+const [periodEnd, setPeriodEnd] = useState('2026-12-31');
 
 useEffect(() => {
   loadSummary();
-}, [reloadKey]);
+}, [reloadKey, periodStart, periodEnd]);
   async function loadSummary() {
     setLoading(true);
     setError(null);
     try {
-      const overview = await loadMetricsOverview({ recalculate: true });
+      const overview = await loadMetricsOverview({
+        recalculate: true,
+        dateFrom: periodStart,
+        dateTo: periodEnd,
+      });
       setSummary(overview.summary);
       setActivities(overview.activities);
+      setUsageTotals(overview.usageTotals);
+      setTotalEstimatedEmissionsKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
+      setCountSummary({
+        totalRecordsFound: overview.totalRecordsFound,
+        processedRecords: overview.processedRecords,
+        skippedRecords: overview.skippedRecords,
+        missingFactorRecords: overview.missingFactorRecords,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load summary');
     } finally {
@@ -44,7 +68,11 @@ useEffect(() => {
     setError(null);
 
     try {
-      const overview = await loadMetricsOverview({ recalculate: true });
+      const overview = await loadMetricsOverview({
+        recalculate: true,
+        dateFrom: periodStart,
+        dateTo: periodEnd,
+      });
 
       if (!overview.totalRecords) {
         alert('No activity data found');
@@ -53,6 +81,14 @@ useEffect(() => {
 
       setSummary(overview.summary);
       setActivities(overview.activities);
+      setUsageTotals(overview.usageTotals);
+      setTotalEstimatedEmissionsKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
+      setCountSummary({
+        totalRecordsFound: overview.totalRecordsFound,
+        processedRecords: overview.processedRecords,
+        skippedRecords: overview.skippedRecords,
+        missingFactorRecords: overview.missingFactorRecords,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate metrics');
     } finally {
@@ -181,14 +217,6 @@ function handleDownloadPDF() {
 }
   const totalsByMetric = summary?.totalsByMetric ?? [];
   const demoMode = isDemoMode();
-  const usageTotals = useMemo(
-    () => aggregateActivityUsage(activities),
-    [activities],
-  );
-
-  const carbonMetric = totalsByMetric.find((m: any) =>
-    m.metricType.includes('CARBON')
-  );
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
@@ -202,6 +230,39 @@ function handleDownloadPDF() {
           Demo metrics are preloaded from a fuel invoice, utility bill, and CSV activity import.
         </div>
       ) : null}
+
+      <div style={filterCardStyle}>
+        <div>
+          <label style={labelStyle}>Start Date</label>
+          <input
+            type="date"
+            value={periodStart}
+            onChange={(e) => setPeriodStart(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>End Date</label>
+          <input
+            type="date"
+            value={periodEnd}
+            onChange={(e) => setPeriodEnd(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setPeriodStart('2026-01-01');
+            setPeriodEnd('2026-12-31');
+          }}
+          style={secondaryButtonStyle}
+        >
+          2026 Full Year
+        </button>
+      </div>
  
 <div style={{display:'flex',flexDirection: 'row',  gap: 8,marginBottom: 24}}>
       <button
@@ -290,19 +351,15 @@ function handleDownloadPDF() {
 
             <MetricCard
               title="CO₂ Emissions"
-              value={
-                carbonMetric
-                  ? `${carbonMetric.totalValue} ${carbonMetric.unit}`
-                  : '—'
-              }
+              value={`${totalEstimatedEmissionsKgCO2e} kg CO2e`}
               icon="🌱"
               color="#10b981"
               highlight
             />
 
             <MetricCard
-              title="Total Records"
-              value={String(activities.length)}
+              title="Records Included in Summary"
+              value={String(countSummary.processedRecords)}
               icon="📄"
               color="#64748b"
             />
@@ -323,6 +380,11 @@ function handleDownloadPDF() {
     These results can be reviewed, exported, and used as supporting data for internal reporting or compliance preparation.
   </p>
 </div>
+          {countSummary.skippedRecords > 0 ? (
+            <div style={warningStyle}>
+              {countSummary.skippedRecords} record(s) were skipped due to missing factors or filters. {countSummary.missingFactorRecords} record(s) are missing matching conversion factors. {countSummary.totalRecordsFound} record(s) matched the selected date range.
+            </div>
+          ) : null}
           {/* ⭐ 明细表 */}
           <div
             style={{
@@ -441,4 +503,42 @@ const loadingStyle: React.CSSProperties = {
   border: '1px solid #e2e8f0',
   background: '#f8fafc',
   color: '#475569',
+};
+
+const filterCardStyle: React.CSSProperties = {
+  marginBottom: 18,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #dbeafe',
+  background: '#eff6ff',
+  display: 'flex',
+  alignItems: 'flex-end',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  marginBottom: 6,
+  color: '#1e3a8a',
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const inputStyle: React.CSSProperties = {
+  padding: '9px 10px',
+  borderRadius: 8,
+  border: '1px solid #bfdbfe',
+  background: '#fff',
+  color: '#0f172a',
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  padding: '10px 14px',
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#fff',
+  color: '#1d4ed8',
+  fontWeight: 700,
+  cursor: 'pointer',
 };

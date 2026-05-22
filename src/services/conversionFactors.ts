@@ -77,6 +77,32 @@ export async function getConversionFactors(params?: {
   );
 }
 
+export async function getAllConversionFactors(params?: {
+  type?: string;
+  activityType?: string;
+  search?: string;
+}) {
+  const firstPage = await getConversionFactors({
+    ...params,
+    page: 1,
+    pageSize: 100,
+  });
+  const totalPages = Math.max(1, Number(firstPage.totalPages ?? 1));
+  const items = [...(firstPage.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = await getConversionFactors({
+      ...params,
+      page,
+      pageSize: 100,
+    });
+
+    items.push(...(nextPage.items ?? []));
+  }
+
+  return items;
+}
+
 export async function getConversionFactorById(id: string) {
   return apiFetch<ConversionFactorItem>(`/conversion-factors/${id}`);
 }

@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
-  aggregateActivityUsage,
   formatActivityUsageValue,
 } from '../utils/activityAggregation';
-import { loadMetricsOverview } from '../services/metricsOverview';
+import {
+  EMPTY_ACTIVITY_USAGE_TOTALS,
+  loadMetricsOverview,
+} from '../services/metricsOverview';
 
 type ActivityItem = {
   id: string;
@@ -37,6 +39,14 @@ const SCOPE_MAP: Record<string, 'Scope 1' | 'Scope 2' | 'Scope 3'> = {
 export default function ReportingPage() {
   const [summary, setSummary] = useState<any>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [usageTotals, setUsageTotals] = useState(EMPTY_ACTIVITY_USAGE_TOTALS);
+  const [totalEstimatedEmissionsKgCO2e, setTotalEstimatedEmissionsKgCO2e] = useState(0);
+  const [countSummary, setCountSummary] = useState({
+    totalRecordsFound: 0,
+    processedRecords: 0,
+    skippedRecords: 0,
+    missingFactorRecords: 0,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 const [reloadKey, setReloadKey] = useState(0);
@@ -55,6 +65,14 @@ const [periodEnd, setPeriodEnd] = useState('2026-12-31');
 
       setSummary(overview.summary);
       setActivities(overview.activities);
+      setUsageTotals(overview.usageTotals);
+      setTotalEstimatedEmissionsKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
+      setCountSummary({
+        totalRecordsFound: overview.totalRecordsFound,
+        processedRecords: overview.processedRecords,
+        skippedRecords: overview.skippedRecords,
+        missingFactorRecords: overview.missingFactorRecords,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report data');
     } finally {
@@ -82,25 +100,8 @@ function classifyScope(activityType?: string) {
   const totalsByMetric = summary?.totalsByMetric ?? [];
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
-  const carbonMetric = totalsByMetric.find((m: any) =>
-    String(m.metricType).includes('CARBON'),
-  );
-  const filteredActivities = useMemo(() => {
-  return activities.filter((item) => {
-    const date = item.recordDate?.slice(0, 10);
-
-    if (!date) return false;
-
-    return date >= periodStart && date <= periodEnd;
-  });
-}, [activities, periodStart, periodEnd]);
-  const usageTotals = useMemo(
-    () => aggregateActivityUsage(filteredActivities),
-    [filteredActivities],
-  );
-
 const scopeRows = useMemo(() => {
-  return filteredActivities.map((item) => ({
+  return activities.map((item) => ({
     scope: classifyScope(item.activityType),
     activityType: item.activityType,
     quantity: item.quantity,
@@ -108,7 +109,7 @@ const scopeRows = useMemo(() => {
     source: formatSourceType(item.sourceType),
     reference: item.sourceReference ?? '-',
   }));
-}, [filteredActivities]);
+}, [activities]);
 
   const scopeSummary = useMemo(() => {
   const summary = {
@@ -217,7 +218,7 @@ function handleDownloadPDF() {
   autoTable(doc, {
     startY: 78,
     head: [['Date', 'Activity Type', 'Quantity', 'Unit', 'Source', 'Reference']],
-    body: filteredActivities.map((item) => [
+    body: activities.map((item) => [
       item.recordDate?.slice(0, 10) ?? '',
       item.activityType,
       item.quantity,
@@ -258,7 +259,7 @@ function handleDownloadPDF() {
   autoTable(doc, {
     startY: sourceStartY + 8,
     head: [['Date', 'Activity Type', 'Quantity', 'Unit', 'Source Type', 'Source Reference']],
-    body: filteredActivities.map((item) => [
+    body: activities.map((item) => [
       item.recordDate?.slice(0, 10) ?? '',
       item.activityType,
       item.quantity,
@@ -395,11 +396,7 @@ function formatSourceType(sourceType?: string) {
           <div style={gridStyle}>
             <Card
               title="Estimated Emissions"
-              value={
-                carbonMetric
-                  ? `${carbonMetric.totalValue} ${carbonMetric.unit}`
-                  : 'No data'
-              }
+              value={`${totalEstimatedEmissionsKgCO2e} kg CO2e`}
               icon="🌱"
             />
 
@@ -422,11 +419,16 @@ function formatSourceType(sourceType?: string) {
             />
 
             <Card
-              title="Records Processed"
-              value={String(activities.length)}
+              title="Records Included in Report"
+              value={String(countSummary.processedRecords)}
               icon="📄"
             />
           </div>
+          {countSummary.skippedRecords > 0 ? (
+            <div style={errorStyle}>
+              {countSummary.skippedRecords} record(s) were skipped due to missing factors or filters. {countSummary.missingFactorRecords} record(s) are missing matching conversion factors. {countSummary.totalRecordsFound} record(s) matched the selected date range.
+            </div>
+          ) : null}
 
           <Section title="Scope Breakdown">
             <table style={tableStyle}>
@@ -448,7 +450,7 @@ function formatSourceType(sourceType?: string) {
                     </td>
                   </tr>
                 ) : (
-                  filteredActivities.map((item) => (
+                  activities.map((item) => (
                     <tr key={item.id}>
                       <td style={tdStyle}>{item.recordDate?.slice(0, 10)}</td>
                       <td style={tdStyle}>{item.activityType}</td>

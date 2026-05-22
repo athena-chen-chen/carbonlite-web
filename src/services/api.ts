@@ -19,10 +19,6 @@ export async function apiFetch<T>(
   const isFormData = options?.body instanceof FormData;
   const url = buildApiUrl(path);
 
-  if (import.meta.env.DEV) {
-    console.debug('[apiFetch]', options?.method ?? 'GET', url);
-  }
-
   const response = await fetch(url, {
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),

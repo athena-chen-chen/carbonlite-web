@@ -24,7 +24,3 @@ export function clampApiPageSize(requestedPageSize?: number, fallback = 20) {
 
   return Math.min(normalizedPageSize, MAX_API_PAGE_SIZE);
 }
-
-if (import.meta.env.DEV) {
-  console.info('[CarbonLite API] API_BASE_URL', API_BASE_URL);
-}

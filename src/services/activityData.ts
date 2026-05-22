@@ -1,6 +1,6 @@
 import { apiFetch } from './api';
 import { demoActivityRecords, isDemoMode } from '../demo/demoData';
-import { API_BASE_URL, buildApiUrl, clampApiPageSize } from '../config/api';
+import { clampApiPageSize } from '../config/api';
 
 export type ActivityDataInput = {
   activityType: string;
@@ -56,12 +56,6 @@ const ACTIVITY_DATA_PAGE_SIZE = 100;
 function shouldUseDemoActivityData() {
   const hasToken =
     typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
-
-  if (isDemoMode() && hasToken) {
-    console.warn(
-      '[ActivityData] Demo mode is enabled, but an access token exists. Using backend data instead of sample activity records.',
-    );
-  }
 
   return isDemoMode() && !hasToken;
 }
@@ -127,7 +121,6 @@ export async function getActivityDataList(params?: {
   search?: string;
 }) {
   if (shouldUseDemoActivityData()) {
-    console.warn('[ActivityData GET] Demo mode active. Returning sample activity records.');
     return {
       items: demoActivityRecords.map((item) => ({
         ...item,
@@ -157,16 +150,7 @@ export async function getActivityDataList(params?: {
 
   const query = searchParams.toString();
   const path = `/activity-data${query ? `?${query}` : ''}`;
-  const response = await apiFetch<ActivityDataListResponse>(path);
-
-  console.log('[ActivityData GET] API_BASE_URL', API_BASE_URL);
-  console.log('[ActivityData GET] URL', buildApiUrl(path));
-  console.log(
-    '[ActivityData GET] response ids',
-    response.items?.map((item) => item.id) ?? [],
-  );
-
-  return response;
+  return apiFetch<ActivityDataListResponse>(path);
 }
 
 export async function getAllActivityData(params?: {
@@ -228,15 +212,9 @@ export async function deleteActivityData(id: string) {
 
   try {
     const path = `/activity-data/${id}`;
-    console.log('[ActivityData delete] API_BASE_URL', API_BASE_URL);
-    console.log('[ActivityData delete] URL', buildApiUrl(path));
-    console.log('[ActivityData delete] deleting id', id);
-
     const response = await apiFetch<DeleteActivityDataResponse>(path, {
       method: 'DELETE',
     });
-
-    console.log('[ActivityData delete] response', response);
 
     const deletedCount =
       response && typeof response === 'object'
@@ -268,16 +246,10 @@ export async function bulkDeleteActivityData(ids: string[]) {
 
   try {
     const path = '/activity-data/bulk-delete';
-    console.log('[ActivityData bulk delete] API_BASE_URL', API_BASE_URL);
-    console.log('[ActivityData bulk delete] URL', buildApiUrl(path));
-    console.log('[ActivityData bulk delete] deleting ids', ids);
-
     const response = await apiFetch<DeleteActivityDataResponse>(path, {
       method: 'POST',
       body: JSON.stringify({ ids }),
     });
-
-    console.log('[ActivityData bulk delete] response', response);
 
     const deletedCount =
       response && typeof response === 'object'
