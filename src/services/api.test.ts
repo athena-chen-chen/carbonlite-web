@@ -130,4 +130,15 @@ describe('apiFetch authenticated requests', () => {
       value: originalLocation,
     });
   });
+
+  it('shows a friendly error for backend pageSize validation failures', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('pageSize must not be greater than 100', { status: 400 }),
+    );
+
+    await expect(apiFetch('/activity-data?pageSize=1000')).rejects.toThrow(
+      'Page size is too large. Please refresh and try again.',
+    );
+  });
 });

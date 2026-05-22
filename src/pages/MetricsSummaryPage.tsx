@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { calculateMetrics, getMetricsSummary } from '../services/metrics';
-import { getActivityDataList } from '../services/activityData';
 import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -10,6 +8,7 @@ import {
   formatActivityUsageValue,
   type ActivityUsageRecord,
 } from '../utils/activityAggregation';
+import { loadMetricsOverview } from '../services/metricsOverview';
 
 
 export function MetricsSummaryPage() {
@@ -30,12 +29,9 @@ useEffect(() => {
     setLoading(true);
     setError(null);
     try {
-      const [summaryData, activityData] = await Promise.all([
-        getMetricsSummary(),
-        getActivityDataList(),
-      ]);
-      setSummary(summaryData);
-      setActivities(activityData.items ?? []);
+      const overview = await loadMetricsOverview({ recalculate: true });
+      setSummary(overview.summary);
+      setActivities(overview.activities);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load summary');
     } finally {
@@ -48,16 +44,15 @@ useEffect(() => {
     setError(null);
 
     try {
-      const list: any = await getActivityDataList();
-      const ids = (list.items ?? []).map((item: any) => item.id);
+      const overview = await loadMetricsOverview({ recalculate: true });
 
-      if (!ids.length) {
+      if (!overview.totalRecords) {
         alert('No activity data found');
         return;
       }
 
-      await calculateMetrics(ids);
-      await loadSummary();
+      setSummary(overview.summary);
+      setActivities(overview.activities);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate metrics');
     } finally {
@@ -303,6 +298,13 @@ function handleDownloadPDF() {
               icon="🌱"
               color="#10b981"
               highlight
+            />
+
+            <MetricCard
+              title="Total Records"
+              value={String(activities.length)}
+              icon="📄"
+              color="#64748b"
             />
           </div>
 <div

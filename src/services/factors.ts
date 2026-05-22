@@ -1,5 +1,6 @@
 // web/src/services/factors.ts
 import { api } from './http';
+import { clampApiPageSize } from '../config/api';
 
 /** 单条因子结构（与后端 Prisma 模型一致） */
 export type Factor = {
@@ -61,7 +62,9 @@ function buildParams(q: FactorQuery = {}) {
   if (q.q) params.q = q.q;
   if (Number.isFinite(q.year as number)) params.year = q.year;
   if (Number.isFinite(q.page as number)) params.page = q.page;
-  if (Number.isFinite(q.pageSize as number)) params.pageSize = q.pageSize;
+  if (Number.isFinite(q.pageSize as number)) {
+    params.pageSize = clampApiPageSize(q.pageSize);
+  }
   if (q.sortBy) params.sortBy = q.sortBy;
   if (q.sortOrder) params.sortOrder = q.sortOrder;
   return params;

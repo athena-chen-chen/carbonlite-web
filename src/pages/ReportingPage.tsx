@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { getMetricsSummary } from '../services/metrics';
-import { getActivityDataList } from '../services/activityData';
 import {
   aggregateActivityUsage,
   formatActivityUsageValue,
 } from '../utils/activityAggregation';
+import { loadMetricsOverview } from '../services/metricsOverview';
 
 type ActivityItem = {
   id: string;
@@ -48,13 +47,14 @@ const [periodEnd, setPeriodEnd] = useState('2026-12-31');
     setError(null);
 
     try {
-      const [summaryData, activityData] = await Promise.all([
-        getMetricsSummary(),
-        getActivityDataList(),
-      ]);
+      const overview = await loadMetricsOverview({
+        recalculate: true,
+        dateFrom: periodStart,
+        dateTo: periodEnd,
+      });
 
-      setSummary(summaryData);
-      setActivities(activityData.items ?? []);
+      setSummary(overview.summary);
+      setActivities(overview.activities);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report data');
     } finally {
@@ -63,7 +63,7 @@ const [periodEnd, setPeriodEnd] = useState('2026-12-31');
   }
 useEffect(() => {
   loadReportData();
-}, [reloadKey]);
+}, [reloadKey, periodStart, periodEnd]);
 
 function classifyScope(activityType?: string) {
   const type = String(activityType ?? '').toUpperCase();

@@ -1,5 +1,6 @@
 import { apiFetch } from './api';
 import { demoActivityRecords, isDemoMode } from '../demo/demoData';
+import { API_BASE_URL, buildApiUrl, clampApiPageSize } from '../config/api';
 
 export type ActivityDataInput = {
   activityType: string;
@@ -45,8 +46,28 @@ export type ActivityDataListResponse = {
   totalPages: number;
 };
 
+export type DeleteActivityDataResponse = void | {
+  deletedCount?: number;
+  count?: number;
+};
+
+const ACTIVITY_DATA_PAGE_SIZE = 100;
+
+function shouldUseDemoActivityData() {
+  const hasToken =
+    typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
+
+  if (isDemoMode() && hasToken) {
+    console.warn(
+      '[ActivityData] Demo mode is enabled, but an access token exists. Using backend data instead of sample activity records.',
+    );
+  }
+
+  return isDemoMode() && !hasToken;
+}
+
 export async function createActivityData(data: any) {
-  if (isDemoMode()) {
+  if (shouldUseDemoActivityData()) {
     return {
       id: `demo-activity-${Date.now()}`,
       organizationId: 'demo-org',
@@ -105,7 +126,8 @@ export async function getActivityDataList(params?: {
   dateTo?: string;
   search?: string;
 }) {
-  if (isDemoMode()) {
+  if (shouldUseDemoActivityData()) {
+    console.warn('[ActivityData GET] Demo mode active. Returning sample activity records.');
     return {
       items: demoActivityRecords.map((item) => ({
         ...item,
@@ -121,9 +143,12 @@ export async function getActivityDataList(params?: {
   }
 
   const searchParams = new URLSearchParams();
+  const safePageSize = params?.pageSize
+    ? clampApiPageSize(params.pageSize)
+    : undefined;
 
   if (params?.page) searchParams.set('page', String(params.page));
-  if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (safePageSize) searchParams.set('pageSize', String(safePageSize));
   if (params?.facilityId) searchParams.set('facilityId', params.facilityId);
   if (params?.activityType) searchParams.set('activityType', params.activityType);
   if (params?.dateFrom) searchParams.set('dateFrom', params.dateFrom);
@@ -131,9 +156,46 @@ export async function getActivityDataList(params?: {
   if (params?.search) searchParams.set('search', params.search);
 
   const query = searchParams.toString();
-  return apiFetch<ActivityDataListResponse>(
-    `/activity-data${query ? `?${query}` : ''}`,
+  const path = `/activity-data${query ? `?${query}` : ''}`;
+  const response = await apiFetch<ActivityDataListResponse>(path);
+
+  console.log('[ActivityData GET] API_BASE_URL', API_BASE_URL);
+  console.log('[ActivityData GET] URL', buildApiUrl(path));
+  console.log(
+    '[ActivityData GET] response ids',
+    response.items?.map((item) => item.id) ?? [],
   );
+
+  return response;
+}
+
+export async function getAllActivityData(params?: {
+  facilityId?: string;
+  activityType?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
+}) {
+  const firstPage = (await getActivityDataList({
+    ...params,
+    page: 1,
+    pageSize: ACTIVITY_DATA_PAGE_SIZE,
+  })) as ActivityDataListResponse;
+
+  const totalPages = Math.max(1, Number(firstPage.totalPages ?? 1));
+  const items = [...(firstPage.items ?? [])];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = (await getActivityDataList({
+      ...params,
+      page,
+      pageSize: ACTIVITY_DATA_PAGE_SIZE,
+    })) as ActivityDataListResponse;
+
+    items.push(...(nextPage.items ?? []));
+  }
+
+  return items;
 }
 
 export async function getActivityDataById(id: string) {
@@ -143,7 +205,7 @@ export async function updateActivityData(
   id: string,
   input: ActivityDataInput,
 ) {
-  if (isDemoMode()) {
+  if (shouldUseDemoActivityData()) {
     return {
       id,
       organizationId: 'demo-org',
@@ -162,9 +224,82 @@ export async function updateActivityData(
 }
 
 export async function deleteActivityData(id: string) {
-  if (isDemoMode()) return;
+  if (shouldUseDemoActivityData()) return { deletedCount: 1 };
 
-  return apiFetch<void>(`/activity-data/${id}`, {
-    method: 'DELETE',
-  });
+  try {
+    const path = `/activity-data/${id}`;
+    console.log('[ActivityData delete] API_BASE_URL', API_BASE_URL);
+    console.log('[ActivityData delete] URL', buildApiUrl(path));
+    console.log('[ActivityData delete] deleting id', id);
+
+    const response = await apiFetch<DeleteActivityDataResponse>(path, {
+      method: 'DELETE',
+    });
+
+    console.log('[ActivityData delete] response', response);
+
+    const deletedCount =
+      response && typeof response === 'object'
+        ? Number(response.deletedCount ?? response.count ?? 0)
+        : 0;
+
+    if (deletedCount <= 0) {
+      throw new Error('No activity record was deleted.');
+    }
+
+    return response;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+
+    if (/api 403/i.test(message)) {
+      throw new Error('You can only delete your own activity records.');
+    }
+
+    if (/api 404/i.test(message) || message === 'No activity record was deleted.') {
+      throw new Error('Activity record was not deleted. Please refresh and try again.');
+    }
+
+    throw new Error('Unable to delete selected records. Please try again.');
+  }
+}
+
+export async function bulkDeleteActivityData(ids: string[]) {
+  if (shouldUseDemoActivityData()) return { deletedCount: ids.length };
+
+  try {
+    const path = '/activity-data/bulk-delete';
+    console.log('[ActivityData bulk delete] API_BASE_URL', API_BASE_URL);
+    console.log('[ActivityData bulk delete] URL', buildApiUrl(path));
+    console.log('[ActivityData bulk delete] deleting ids', ids);
+
+    const response = await apiFetch<DeleteActivityDataResponse>(path, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+
+    console.log('[ActivityData bulk delete] response', response);
+
+    const deletedCount =
+      response && typeof response === 'object'
+        ? Number(response.deletedCount ?? response.count ?? 0)
+        : 0;
+
+    if (deletedCount <= 0) {
+      throw new Error('No activity records were deleted.');
+    }
+
+    return response;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+
+    if (/api 403/i.test(message)) {
+      throw new Error('You can only delete your own activity records.');
+    }
+
+    if (/api 404/i.test(message) || message === 'No activity records were deleted.') {
+      throw new Error('Activity records were not deleted. Please refresh and try again.');
+    }
+
+    throw new Error('Unable to delete selected records. Please try again.');
+  }
 }

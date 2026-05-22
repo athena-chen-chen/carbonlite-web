@@ -1,5 +1,6 @@
 import { apiFetch } from './api';
 import { demoMetricsSummary, isDemoMode } from '../demo/demoData';
+import { clampApiPageSize } from '../config/api';
 
 export type CalculateMetricsResponse = {
   count: number;
@@ -86,9 +87,12 @@ export async function getMetricsList(params?: {
   periodEnd?: string;
 }) {
   const searchParams = new URLSearchParams();
+  const safePageSize = params?.pageSize
+    ? clampApiPageSize(params.pageSize)
+    : undefined;
 
   if (params?.page) searchParams.set('page', String(params.page));
-  if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (safePageSize) searchParams.set('pageSize', String(safePageSize));
   if (params?.facilityId) searchParams.set('facilityId', params.facilityId);
   if (params?.metricType) searchParams.set('metricType', params.metricType);
   if (params?.periodStart) searchParams.set('periodStart', params.periodStart);

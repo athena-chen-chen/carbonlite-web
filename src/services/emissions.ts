@@ -1,5 +1,6 @@
 
 import { api } from './http';
+import { clampApiPageSize } from '../config/api';
 
 export interface Emission {
   id: string;
@@ -52,7 +53,13 @@ export type UpdateEmissionInput = Partial<CreateEmissionInput>;
 
 /** GET /api/emissions */
 export async function listEmissions(params: EmissionListParams = {}): Promise<EmissionsListResult> {
-  const { data } = await api.get('/emissions', { params });
+  const safeParams = {
+    ...params,
+    ...(params.pageSize
+      ? { pageSize: clampApiPageSize(params.pageSize) }
+      : {}),
+  };
+  const { data } = await api.get('/emissions', { params: safeParams });
   return data as EmissionsListResult;
 }
 

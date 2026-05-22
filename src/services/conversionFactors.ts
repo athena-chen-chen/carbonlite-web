@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { clampApiPageSize } from '../config/api';
 
 export type ConversionFactorInput = {
   name: string;
@@ -60,9 +61,12 @@ export async function getConversionFactors(params?: {
   search?: string;
 }) {
   const searchParams = new URLSearchParams();
+  const safePageSize = params?.pageSize
+    ? clampApiPageSize(params.pageSize)
+    : undefined;
 
   if (params?.page) searchParams.set('page', String(params.page));
-  if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (safePageSize) searchParams.set('pageSize', String(safePageSize));
   if (params?.type) searchParams.set('type', params.type);
   if (params?.activityType) searchParams.set('activityType', params.activityType);
   if (params?.search) searchParams.set('search', params.search);

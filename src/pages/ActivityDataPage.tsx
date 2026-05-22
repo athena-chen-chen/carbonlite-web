@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
   createActivityData,
-  getActivityDataList,
+  getAllActivityData,
   updateActivityData,
   deleteActivityData,
+  bulkDeleteActivityData,
+  type DeleteActivityDataResponse,
 } from '../services/activityData';
 import{ExcelInputTable} from '../components/ExcelInputTable';
 import {
@@ -24,10 +26,6 @@ type ActivityDataItem = {
   notes?: string | null;
 };
 
-type ActivityDataListResponse = {
-  items: ActivityDataItem[];
-};
-
 export function ActivityDataPage() {
   const demoMode = isDemoMode();
   const [items, setItems] = useState<ActivityDataItem[]>([]);
@@ -42,14 +40,72 @@ const [lastDeleted, setLastDeleted] = useState<ActivityDataItem | null>(null);
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
 const [reloadKey, setReloadKey] = useState(0);
 const [currentPage, setCurrentPage] = useState(1);
-  async function loadItems() {
+const [bulkDeleting, setBulkDeleting] = useState(false);
+  async function loadItems(options: { updateState?: boolean } = {}) {
+    const { updateState = true } = options;
     setLoading(true);
     try {
-      const data = (await getActivityDataList()) as ActivityDataListResponse;
-      setItems(data.items ?? []);
+      const nextItems = (await getAllActivityData()) as ActivityDataItem[];
+      console.log(
+        '[ActivityDataPage] records after reload',
+        nextItems.map((item) => item.id),
+      );
+
+      if (updateState) {
+        setItems(nextItems);
+      }
+
+      return nextItems;
     } finally {
       setLoading(false);
     }
+  }
+
+  function getDeletedCount(result: DeleteActivityDataResponse) {
+    if (result && typeof result === 'object') {
+      return Number(result.deletedCount ?? result.count ?? 0);
+    }
+
+    return 0;
+  }
+
+  function removeDeletedRows(idsToDelete: string[]) {
+    setItems((prev) => prev.filter((item) => !idsToDelete.includes(item.id)));
+  }
+
+  function getRecordIds(records: ActivityDataItem[]) {
+    return records.map((item) => item.id);
+  }
+
+  function getStillReturnedDeletedIds(
+    records: ActivityDataItem[],
+    deletedIds: string[],
+  ) {
+    return deletedIds.filter((id) => records.some((item) => item.id === id));
+  }
+
+  function reconcileDeletedRowsAfterReload(
+    refreshedItems: ActivityDataItem[],
+    deletedIds: string[],
+  ) {
+    const stillReturnedIds = getStillReturnedDeletedIds(refreshedItems, deletedIds);
+
+    console.log('[ActivityDataPage] records after reload ids', getRecordIds(refreshedItems));
+    console.log('[ActivityDataPage] deleted ids still returned by GET', stillReturnedIds);
+
+    if (stillReturnedIds.length > 0) {
+      setError(
+        `Delete succeeded, but GET /activity-data still returned ${stillReturnedIds.length} deleted record(s). Showing synced UI while backend list is checked.`,
+      );
+      setItems(refreshedItems.filter((item) => !deletedIds.includes(item.id)));
+      return;
+    }
+
+    setItems(refreshedItems);
+  }
+
+  function formatDeletedMessage(deletedCount: number) {
+    return `${deletedCount} ${deletedCount === 1 ? 'record' : 'records'} deleted.`;
   }
 
   useEffect(() => {
@@ -88,15 +144,38 @@ function toggleSelectAll(checked: boolean) {
 
   if (!confirm(`Delete ${selectedIds.length} selected record(s)?`)) return;
 
+  const idsToDelete = [...selectedIds];
+  setBulkDeleting(true);
+  setError(null);
+  setSuccessMessage(null);
+
   try {
-    for (const id of selectedIds) {
-      await deleteActivityData(id);
+    console.log('[ActivityDataPage] bulk delete response pending for ids', idsToDelete);
+    console.log('[ActivityDataPage] records before reload ids', getRecordIds(items));
+    const result = await bulkDeleteActivityData(idsToDelete);
+    console.log('[ActivityDataPage] bulk delete response', result);
+    const deletedCount = getDeletedCount(result);
+
+    if (deletedCount <= 0) {
+      setError('No records were deleted. Activity records were refreshed.');
+      await loadItems();
+      return;
     }
 
+    removeDeletedRows(idsToDelete);
     setSelectedIds([]);
-    await loadItems();
-  } catch {
-    alert('Bulk delete failed');
+    setSuccessMessage(formatDeletedMessage(deletedCount));
+
+    const refreshedItems = await loadItems({ updateState: false });
+    reconcileDeletedRowsAfterReload(refreshedItems, idsToDelete);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Unable to delete selected records. Please try again.',
+    );
+  } finally {
+    setBulkDeleting(false);
   }
 }
 function startEdit(row: any) {
@@ -159,12 +238,35 @@ function validateEditRow(row: any) {
 async function handleDelete(row: ActivityDataItem) {
   if (!confirm('Delete this record?')) return;
 
+  setError(null);
+  setSuccessMessage(null);
+
   try {
-    await deleteActivityData(row.id);
+    console.log('[ActivityDataPage] single delete response pending for id', row.id);
+    console.log('[ActivityDataPage] records before reload ids', getRecordIds(items));
+    const result = await deleteActivityData(row.id);
+    console.log('[ActivityDataPage] single delete response', result);
+    const deletedCount = getDeletedCount(result);
+
+    if (deletedCount <= 0) {
+      setError('No records were deleted. Activity records were refreshed.');
+      await loadItems();
+      return;
+    }
+
+    removeDeletedRows([row.id]);
     setLastDeleted(row);
-    await loadItems();
-  } catch {
-    alert('Delete failed');
+    setSelectedIds((prev) => prev.filter((id) => id !== row.id));
+    setSuccessMessage(formatDeletedMessage(deletedCount));
+
+    const refreshedItems = await loadItems({ updateState: false });
+    reconcileDeletedRowsAfterReload(refreshedItems, [row.id]);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Unable to delete selected records. Please try again.',
+    );
   }
 }
 function updateEditField(key: string, value: any) {
@@ -412,10 +514,14 @@ const errorTextStyle: React.CSSProperties = {
   <button
     type="button"
     onClick={handleBulkDelete}
-    disabled={!selectedIds.length}
-    style={bulkDeleteButtonStyle(selectedIds.length)}
+    disabled={!selectedIds.length || bulkDeleting}
+    style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
   >
-    {selectedIds.length ? `Delete Selected (${selectedIds.length})` : 'Delete Selected'}
+    {bulkDeleting
+      ? 'Deleting...'
+      : selectedIds.length
+      ? `Delete Selected (${selectedIds.length})`
+      : 'Delete Selected'}
   </button>
 </div>
 
@@ -569,8 +675,11 @@ const dangerActionBtn = {
   cursor: 'pointer',
 };
 
-function bulkDeleteButtonStyle(selectedCount: number): React.CSSProperties {
-  const hasSelection = selectedCount > 0;
+function bulkDeleteButtonStyle(
+  selectedCount: number,
+  deleting = false,
+): React.CSSProperties {
+  const hasSelection = selectedCount > 0 && !deleting;
 
   return {
     padding: '8px 12px',
