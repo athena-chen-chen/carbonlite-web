@@ -14,17 +14,47 @@ export default function CarbonLiteLandingPage() {
   }
   const reportSteps = [
     {
-      title: 'Upload',
-      text: 'Upload invoices, utility bills, fuel receipts, or spreadsheets.',
+      title: 'Upload documents',
+      text: 'Upload invoices, utility bills, spreadsheets, or operational PDFs.',
     },
     {
-      title: 'Review',
-      text: 'Check extracted rows, fix uncertain values, and confirm clean activity data.',
+      title: 'Review extracted activity data',
+      text: 'Check extracted rows, source references, quantities, units, and uncertain values before import.',
     },
     {
-      title: 'Generate',
-      text: 'Turn verified activity data into metrics and client-ready emissions reports.',
+      title: 'Generate summaries and reports',
+      text: 'Turn reviewed activity data into emissions summaries and report-ready outputs.',
     },
+  ];
+  const audienceCards = [
+    {
+      title: 'Environmental consultants',
+      text: 'Prepare client activity data faster while keeping source evidence traceable.',
+    },
+    {
+      title: 'SMEs preparing emissions reports',
+      text: 'Move from scattered bills and spreadsheets to structured report inputs.',
+    },
+    {
+      title: 'Industrial operations teams',
+      text: 'Review fuel, electricity, water, and operational records before calculations.',
+    },
+    {
+      title: 'ESG and reporting teams',
+      text: 'Create report-ready summaries from documents your team already uses.',
+    },
+  ];
+  const documentExamples = [
+    'Fuel invoices',
+    'Utility bills',
+    'CSV/Excel activity data',
+    'Operational PDFs',
+  ];
+  const valuePoints = [
+    'Report-ready summaries',
+    'Source document traceability',
+    'Review-before-import workflow',
+    'Designed for SME and consultant workflows',
   ];
   const pricingPlans = [
     {
@@ -58,7 +88,8 @@ export default function CarbonLiteLandingPage() {
 
           <nav className="hidden gap-8 text-sm font-medium text-slate-600 md:flex">
             <a href="#workflow" className="transition hover:text-emerald-700">Workflow</a>
-            <a href="#pricing" className="transition hover:text-emerald-700">Pricing</a>
+            <a href="#audiences" className="transition hover:text-emerald-700">Who it is for</a>
+            <a href="#documents" className="transition hover:text-emerald-700">Documents</a>
             <button
               type="button"
               onClick={() => navigate('/pilot')}
@@ -72,6 +103,13 @@ export default function CarbonLiteLandingPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={() => navigate('/pilot')}
+              className="rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-200 transition hover:-translate-y-0.5 hover:bg-emerald-700"
+            >
+              Request Pilot
+            </button>
+            <button
+              type="button"
               onClick={() => navigate(isAuthenticated ? '/upload' : '/login')}
               className="rounded-2xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
             >
@@ -80,16 +118,9 @@ export default function CarbonLiteLandingPage() {
             <button
               type="button"
               onClick={() => navigate('/upload')}
-              className="rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-200 transition hover:-translate-y-0.5 hover:bg-emerald-700"
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
             >
               Open App
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/pilot')}
-              className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300"
-            >
-              Request Pilot
             </button>
             {isAuthenticated ? (
               <button
@@ -111,46 +142,39 @@ export default function CarbonLiteLandingPage() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Built for SMEs, consultants, and operations teams
+                Currently onboarding a limited number of pilot users in Alberta
               </div>
               <h1 className="mt-7 max-w-3xl text-5xl font-black tracking-tight text-slate-950 md:text-6xl lg:text-7xl">
-                Generate emissions reports in minutes.
+                Turn emissions documents into reviewed, report-ready summaries.
               </h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
-                Upload invoices, utility bills, or spreadsheets. CarbonLite extracts activity data, helps you review it, and prepares client-ready emissions reports.
+                Upload invoices, utility bills, spreadsheets, or operational PDFs. CarbonLite AI extracts activity data, lets your team review the rows, then generates emissions summaries and reports.
               </p>
               <p className="mt-4 max-w-2xl text-base leading-7 text-slate-700">
-                A lightweight SaaS workflow for SMEs and consultants who need faster Scope 1 and Scope 2 evidence collection without enterprise setup.
+                Built for pilot teams validating a practical workflow for source document traceability, review-before-import controls, and SME-friendly emissions reporting.
               </p>
 
               <div className="mt-9 flex flex-wrap gap-4">
                 <button
                   type="button"
-                  onClick={() => navigate('/upload?demo=1')}
+                  onClick={() => navigate('/pilot')}
                   className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 px-7 py-3.5 text-sm font-bold text-white shadow-xl shadow-emerald-200 transition hover:-translate-y-0.5"
                 >
-                  View Demo Workflow
+                  Request Pilot Access
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/pilot')}
+                  onClick={() => navigate('/upload?demo=1')}
                   className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
                 >
-                  Request Pilot
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate('/pilot')}
-                  className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
-                >
-                  Book Demo
+                  See Sample Workflow
                 </button>
                 <button
                   type="button"
                   onClick={() => navigate(isAuthenticated ? '/upload' : '/login')}
                   className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
                 >
-                  {isAuthenticated ? 'Dashboard' : 'Login'}
+                  {isAuthenticated ? 'Open App' : 'Login'}
                 </button>
               </div>
 
@@ -158,7 +182,7 @@ export default function CarbonLiteLandingPage() {
                 {[
                   ['3 steps', 'upload to report'],
                   ['AI', 'data extraction'],
-                  ['Pro', '$19 per report'],
+                  ['5-10', 'pilot users'],
                 ].map(([value, label]) => (
                   <div key={label} className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg shadow-slate-200/60 backdrop-blur">
                     <div className="text-2xl font-black text-slate-950">{value}</div>
@@ -175,7 +199,7 @@ export default function CarbonLiteLandingPage() {
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
                     <div>
                       <div className="text-sm font-bold">Report Preview</div>
-                      <div className="mt-1 text-xs text-slate-400">Activity rows: 3 · Report status: ready</div>
+                      <div className="mt-1 text-xs text-slate-400">Source traceability · Review before import</div>
                     </div>
                     <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-bold text-emerald-300">
                       Ready
@@ -208,7 +232,7 @@ export default function CarbonLiteLandingPage() {
           <div className="mx-auto max-w-7xl px-6 py-20">
             <div className="max-w-3xl">
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">How it works</p>
-              <h2 className="mt-3 text-4xl font-black tracking-tight">From source documents to emissions reports.</h2>
+              <h2 className="mt-3 text-4xl font-black tracking-tight">From source documents to emissions summaries.</h2>
             </div>
 
             <div className="mt-12 grid gap-6 md:grid-cols-3">
@@ -221,6 +245,61 @@ export default function CarbonLiteLandingPage() {
                   <p className="mt-3 text-sm leading-7 text-slate-600">{step.text}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="audiences" className="mx-auto max-w-7xl px-6 py-20">
+          <div className="max-w-3xl">
+            <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Pilot users</p>
+            <h2 className="mt-3 text-4xl font-black tracking-tight">Built for real emissions workflows</h2>
+            <p className="mt-4 text-lg leading-8 text-slate-600">
+              CarbonLite is designed for teams who already handle invoices, utility data, spreadsheets, and operational records, but need a clearer path to report-ready emissions outputs.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {audienceCards.map((audience) => (
+              <div key={audience.title} className="rounded-3xl border border-slate-200 bg-white p-7 shadow-lg shadow-slate-200/50">
+                <h3 className="text-lg font-bold text-slate-950">{audience.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-600">{audience.text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="documents" className="border-y border-slate-200 bg-white">
+          <div className="mx-auto grid max-w-7xl gap-10 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Supported inputs</p>
+              <h2 className="mt-3 text-4xl font-black tracking-tight">Upload the documents your workflow already uses.</h2>
+              <p className="mt-4 text-lg leading-8 text-slate-600">
+                Pilot users can test common source documents and help shape extraction coverage for practical SME and consultant reporting workflows.
+              </p>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-7">
+                <h3 className="text-lg font-bold text-slate-950">Document examples</h3>
+                <div className="mt-5 grid gap-3">
+                  {documentExamples.map((item) => (
+                    <div key={item} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-7">
+                <h3 className="text-lg font-bold text-slate-950">What pilot teams can validate</h3>
+                <div className="mt-5 grid gap-3">
+                  {valuePoints.map((item) => (
+                    <div key={item} className="rounded-2xl border border-emerald-100 bg-white/80 px-4 py-3 text-sm font-semibold text-emerald-900">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -249,17 +328,17 @@ export default function CarbonLiteLandingPage() {
           <div className="mx-auto max-w-7xl px-6 py-20">
             <div className="overflow-hidden rounded-[2rem] bg-gradient-to-r from-slate-950 to-emerald-950 p-8 text-white shadow-2xl shadow-slate-300/60 md:flex md:items-center md:justify-between md:p-10">
               <div>
-                <h2 className="text-3xl font-black">Start your first report today</h2>
+                <h2 className="text-3xl font-black">Join the CarbonLite pilot</h2>
                 <p className="mt-4 max-w-2xl leading-8 text-slate-300">
-                  Bring one document, review the extracted activity data, and see how quickly CarbonLite can prepare emissions reporting outputs.
+                  We are currently onboarding a small number of Alberta pilot users to test document extraction, review workflows, and report-ready summaries.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => navigate('/upload')}
+                onClick={() => navigate('/pilot')}
                 className="mt-7 inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-7 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/30 transition hover:-translate-y-0.5 hover:bg-emerald-400 md:mt-0"
               >
-                Upload Your Data
+                Request Pilot Access
               </button>
             </div>
           </div>
