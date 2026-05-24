@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import {
   bulkDeleteActivityData,
   deleteActivityData,
@@ -70,8 +71,16 @@ describe('ActivityDataPage delete flows', () => {
     mockActivityRecordsOnce(refreshedItems);
   }
 
+  function renderPage() {
+    return render(
+      <MemoryRouter>
+        <ActivityDataPage />
+      </MemoryRouter>,
+    );
+  }
+
   it('uses neutral disabled state when no rows are selected and red enabled state when selected', async () => {
-    render(<ActivityDataPage />);
+    renderPage();
 
     const deleteButton = await screen.findByRole('button', {
       name: /^Delete Selected$/i,
@@ -98,7 +107,7 @@ describe('ActivityDataPage delete flows', () => {
 
   it('deletes one selected record and removes it from the UI after backend refresh', async () => {
     mockInitialAndRefreshedRecords([records[1]]);
-    render(<ActivityDataPage />);
+    renderPage();
 
     await screen.findByText('DIESEL');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
@@ -116,7 +125,7 @@ describe('ActivityDataPage delete flows', () => {
   it('shows a warning and refetches when backend reports zero deleted records', async () => {
     vi.mocked(bulkDeleteActivityData).mockResolvedValue({ deletedCount: 0 });
     mockInitialAndRefreshedRecords(records);
-    render(<ActivityDataPage />);
+    renderPage();
 
     await screen.findByText('DIESEL');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
@@ -131,7 +140,7 @@ describe('ActivityDataPage delete flows', () => {
 
   it('deletes one record from the row action and removes it from the UI after backend refresh', async () => {
     mockInitialAndRefreshedRecords([records[1]]);
-    render(<ActivityDataPage />);
+    renderPage();
 
     await screen.findByText('DIESEL');
     await userEvent.click(screen.getAllByRole('button', { name: /^Delete$/i })[0]);
@@ -146,7 +155,7 @@ describe('ActivityDataPage delete flows', () => {
   it('deletes multiple selected records and confirms they are gone after backend refresh', async () => {
     vi.mocked(bulkDeleteActivityData).mockResolvedValue({ deletedCount: 2 });
     mockInitialAndRefreshedRecords([]);
-    render(<ActivityDataPage />);
+    renderPage();
 
     await screen.findByText('DIESEL');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
@@ -166,7 +175,7 @@ describe('ActivityDataPage delete flows', () => {
       new Error('You can only delete your own activity records.'),
     );
 
-    render(<ActivityDataPage />);
+    renderPage();
 
     await screen.findByText('DIESEL');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
@@ -184,7 +193,7 @@ describe('ActivityDataPage delete flows', () => {
       new Error('You can only delete your own activity records.'),
     );
 
-    render(<ActivityDataPage />);
+    renderPage();
 
     await screen.findByText('DIESEL');
     await userEvent.click(screen.getAllByRole('button', { name: /^Delete$/i })[0]);

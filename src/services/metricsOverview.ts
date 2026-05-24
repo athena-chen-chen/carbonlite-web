@@ -46,11 +46,32 @@ export async function loadMetricsOverview(options?: {
   recalculate?: boolean;
   dateFrom?: string;
   dateTo?: string;
+  selectedRecordIds?: string[];
+  selectedActivityRecordIds?: string[];
+  selectedDocumentIds?: string[];
 }): Promise<MetricsOverview> {
-  const activities = await getAllActivityDataForMetrics({
-    dateFrom: options?.dateFrom,
-    dateTo: options?.dateTo,
-  });
+  const selectedRecordIds =
+    options?.selectedActivityRecordIds ?? options?.selectedRecordIds ?? [];
+  const selectedDocumentIds = options?.selectedDocumentIds ?? [];
+  const hasSelectedRecords = selectedRecordIds.length > 0;
+  const hasSelectedDocuments = selectedDocumentIds.length > 0;
+  const queriedActivities = await getAllActivityDataForMetrics(
+    hasSelectedRecords || hasSelectedDocuments
+      ? undefined
+      : {
+          dateFrom: options?.dateFrom,
+          dateTo: options?.dateTo,
+        },
+  );
+  const selectedIdSet = new Set(selectedRecordIds);
+  const selectedDocumentIdSet = new Set(selectedDocumentIds);
+  const activities = hasSelectedRecords
+    ? queriedActivities.filter((item) => selectedIdSet.has(item.id))
+    : hasSelectedDocuments
+    ? queriedActivities.filter((item) =>
+        item.documentId ? selectedDocumentIdSet.has(item.documentId) : false,
+      )
+    : queriedActivities;
   const activityIds = activities.map((item) => item.id).filter(Boolean);
 
   if (options?.recalculate && activityIds.length > 0) {
@@ -75,7 +96,7 @@ export async function loadMetricsOverview(options?: {
   );
 
   console.log('[MetricsOverview] records count', activities.length);
-  console.log('[MetricsOverview] total records queried', activities.length);
+  console.log('[MetricsOverview] total records queried', queriedActivities.length);
   console.log('[MetricsOverview] records after date filter', activities.length);
   console.log('[MetricsOverview] matched factors count', emissionsSummary.matchedFactorsCount);
   console.log('[MetricsOverview] missing factor count', emissionsSummary.missingFactors.length);

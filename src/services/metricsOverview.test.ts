@@ -34,6 +34,19 @@ function activity(id: string, activityType: string, quantity: number, unit: stri
   };
 }
 
+function activityFromDocument(
+  id: string,
+  documentId: string,
+  activityType: string,
+  quantity: number,
+  unit: string,
+) {
+  return {
+    ...activity(id, activityType, quantity, unit),
+    documentId,
+  };
+}
+
 function summary(totalValue: string, count: number) {
   return {
     totalsByMetric: [
@@ -279,6 +292,66 @@ describe('loadMetricsOverview', () => {
     const overview = await loadMetricsOverview({ recalculate: true });
 
     expect(overview.totalEstimatedEmissionsKgCO2e).toBe(300);
+  });
+
+  it('calculates report totals from selected record ids only', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue([
+      activity('activity-1', 'DIESEL', 100, 'L'),
+      activity('activity-2', 'ELECTRICITY', 200, 'kWh'),
+      activity('activity-3', 'NATURAL_GAS', 50, 'm3'),
+    ]);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({ activityType: 'DIESEL', unit: 'L', factorValue: 2 }),
+      factor({ activityType: 'ELECTRICITY', unit: 'kWh', factorValue: 0.5 }),
+      factor({ activityType: 'NATURAL_GAS', unit: 'm3', factorValue: 3 }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('0', 2));
+
+    const overview = await loadMetricsOverview({
+      recalculate: true,
+      selectedRecordIds: ['activity-1', 'activity-2'],
+    });
+
+    expect(overview.activities.map((item) => item.id)).toEqual([
+      'activity-1',
+      'activity-2',
+    ]);
+    expect(overview.usageTotals.fuel).toBe(100);
+    expect(overview.usageTotals.electricity).toBe(200);
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(300);
+    expect(overview.totalRecordsFound).toBe(2);
+    expect(overview.processedRecords).toBe(2);
+    expect(calculateMetrics).toHaveBeenCalledWith(['activity-1', 'activity-2']);
+  });
+
+  it('calculates report totals from selected document ids only', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue([
+      activityFromDocument('activity-1', 'doc-1', 'DIESEL', 100, 'L'),
+      activityFromDocument('activity-2', 'doc-2', 'ELECTRICITY', 200, 'kWh'),
+      activityFromDocument('activity-3', 'doc-3', 'NATURAL_GAS', 50, 'm3'),
+    ]);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({ activityType: 'DIESEL', unit: 'L', factorValue: 2 }),
+      factor({ activityType: 'ELECTRICITY', unit: 'kWh', factorValue: 0.5 }),
+      factor({ activityType: 'NATURAL_GAS', unit: 'm3', factorValue: 3 }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('0', 2));
+
+    const overview = await loadMetricsOverview({
+      recalculate: true,
+      selectedDocumentIds: ['doc-1', 'doc-2'],
+    });
+
+    expect(overview.activities.map((item) => item.id)).toEqual([
+      'activity-1',
+      'activity-2',
+    ]);
+    expect(overview.usageTotals.fuel).toBe(100);
+    expect(overview.usageTotals.electricity).toBe(200);
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(300);
+    expect(overview.totalRecordsFound).toBe(2);
+    expect(overview.processedRecords).toBe(2);
+    expect(calculateMetrics).toHaveBeenCalledWith(['activity-1', 'activity-2']);
   });
 
   it('changes totals consistently when the date range changes', async () => {

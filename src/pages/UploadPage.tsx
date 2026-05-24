@@ -137,6 +137,7 @@ export function UploadPage() {
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [viewingDocumentId, setViewingDocumentId] = useState<string | null>(null);
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDragDepthRef = useRef(0);
@@ -571,6 +572,7 @@ ${sampleRows.join('\n')}`,
 
   function clearDeletedDocumentPreview(documentId: string) {
     setParsedActivities((prev) => prev.filter((item) => item.documentId !== documentId));
+    setSelectedDocumentIds((prev) => prev.filter((id) => id !== documentId));
     setPreviewDocumentIds((prev) => {
       const next = prev.filter((id) => id !== documentId);
       setPreviewDocumentId(next.length === 0 ? null : next.length === 1 ? next[0] : 'MULTIPLE');
@@ -600,6 +602,37 @@ ${sampleRows.join('\n')}`,
     } finally {
       setDeletingDocumentId(null);
     }
+  }
+
+  function toggleDocumentSelection(documentId: string, checked: boolean) {
+    setSelectedDocumentIds((prev) =>
+      checked
+        ? Array.from(new Set([...prev, documentId]))
+        : prev.filter((id) => id !== documentId),
+    );
+  }
+
+  function toggleVisibleDocumentSelection(checked: boolean) {
+    const visibleIds = visibleDocuments.map((document) => document.id);
+
+    setSelectedDocumentIds((prev) => {
+      if (checked) {
+        return Array.from(new Set([...prev, ...visibleIds]));
+      }
+
+      return prev.filter((id) => !visibleIds.includes(id));
+    });
+  }
+
+  function handleGenerateReportFromSelectedDocuments() {
+    if (!selectedDocumentIds.length) return;
+
+    navigate('/reports', {
+      state: {
+        reportScope: 'selectedDocuments',
+        selectedDocumentIds,
+      },
+    });
   }
 
   async function handleExtract(documentId: string) {
@@ -1094,8 +1127,16 @@ function updateParsedActivityField(
       {error ? <div style={errorStyle}>{error}</div> : null}
 
       <div style={sectionCardStyle}>
-        <div style={{ padding: 16, borderBottom: '1px solid #eee' }}>
+        <div style={uploadedDocumentsHeaderStyle}>
           <h2 style={{ margin: 0, fontSize: 18 }}>Uploaded Documents</h2>
+          <button
+            type="button"
+            onClick={handleGenerateReportFromSelectedDocuments}
+            disabled={!selectedDocumentIds.length}
+            style={selectedDocumentsReportButtonStyle(selectedDocumentIds.length)}
+          >
+            Generate Report from Selected Documents
+          </button>
         </div>
 
         {loading ? (
@@ -1115,6 +1156,7 @@ function updateParsedActivityField(
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <colgroup>
+              <col style={{ width: 52 }} />
               <col />
               <col style={{ width: 110 }} />
               <col style={{ width: 150 }} />
@@ -1124,6 +1166,19 @@ function updateParsedActivityField(
             </colgroup>
             <thead>
               <tr style={{ background: '#fafafa' }}>
+                <th style={thStyle}>
+                  <input
+                    type="checkbox"
+                    checked={
+                      visibleDocuments.length > 0 &&
+                      visibleDocuments.every((doc) => selectedDocumentIds.includes(doc.id))
+                    }
+                    onChange={(event) =>
+                      toggleVisibleDocumentSelection(event.target.checked)
+                    }
+                    aria-label="Select visible documents"
+                  />
+                </th>
                 <th style={thStyle}>File Name</th>
                 <th style={thStyle}>Type</th>
                 <th style={thStyle}>Status</th>
@@ -1138,6 +1193,16 @@ function updateParsedActivityField(
                   key={doc.id}
                   style={doc.id === latestDocumentId ? { background: '#f0f7ff' } : undefined}
                 >
+                  <td style={tdStyle}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDocumentIds.includes(doc.id)}
+                      onChange={(event) =>
+                        toggleDocumentSelection(doc.id, event.target.checked)
+                      }
+                      aria-label={`Select document ${doc.fileName}`}
+                    />
+                  </td>
                   <td style={tdStyle}>{doc.fileName}</td>
                   <td style={tdStyle}>{doc.type}</td>
                   <td style={tdStyle}>{doc.status}</td>
@@ -1796,6 +1861,30 @@ function documentMenuDangerItemStyle(disabled: boolean): React.CSSProperties {
   return {
     ...documentMenuItemStyle(disabled),
     color: disabled ? '#94a3b8' : '#b91c1c',
+  };
+}
+
+const uploadedDocumentsHeaderStyle: React.CSSProperties = {
+  padding: 16,
+  borderBottom: '1px solid #eee',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+
+function selectedDocumentsReportButtonStyle(selectedCount: number): React.CSSProperties {
+  const hasSelection = selectedCount > 0;
+
+  return {
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: hasSelection ? '1px solid #10b981' : '1px solid #d1d5db',
+    background: hasSelection ? '#10b981' : '#f3f4f6',
+    color: hasSelection ? '#fff' : '#6b7280',
+    cursor: hasSelection ? 'pointer' : 'not-allowed',
+    fontWeight: 700,
   };
 }
 

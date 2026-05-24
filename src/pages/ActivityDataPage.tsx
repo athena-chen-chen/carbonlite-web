@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   createActivityData,
   getAllActivityData,
@@ -27,6 +28,7 @@ type ActivityDataItem = {
 };
 
 export function ActivityDataPage() {
+  const navigate = useNavigate();
   const demoMode = isDemoMode();
   const [items, setItems] = useState<ActivityDataItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -126,6 +128,18 @@ function toggleSelectAll(checked: boolean) {
     }
 
     return prev.filter((id) => !pageIds.includes(id));
+  });
+}
+
+function handleGenerateReportFromSelection() {
+  if (!selectedIds.length) return;
+
+  navigate('/reports', {
+    state: {
+      reportScope: 'selectedRecords',
+      selectedActivityRecordIds: selectedIds,
+      selectedRecordIds: selectedIds,
+    },
   });
 }
   async function handleBulkDelete() {
@@ -491,21 +505,32 @@ const errorTextStyle: React.CSSProperties = {
 )}
       {/* ⭐ Table */}
       <div style={tableCard}>
-       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
   <h2 style={{ margin: 0 }}>Activity Records</h2>
 
-  <button
-    type="button"
-    onClick={handleBulkDelete}
-    disabled={!selectedIds.length || bulkDeleting}
-    style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
-  >
-    {bulkDeleting
-      ? 'Deleting...'
-      : selectedIds.length
-      ? `Delete Selected (${selectedIds.length})`
-      : 'Delete Selected'}
-  </button>
+  <div style={tableToolbarStyle}>
+    <button
+      type="button"
+      onClick={handleGenerateReportFromSelection}
+      disabled={!selectedIds.length}
+      style={generateReportButtonStyle(selectedIds.length)}
+    >
+      Generate Report from Selected Records
+    </button>
+
+    <button
+      type="button"
+      onClick={handleBulkDelete}
+      disabled={!selectedIds.length || bulkDeleting}
+      style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
+    >
+      {bulkDeleting
+        ? 'Deleting...'
+        : selectedIds.length
+        ? `Delete Selected (${selectedIds.length})`
+        : 'Delete Selected'}
+    </button>
+  </div>
 </div>
 
         {loading ? (
@@ -628,6 +653,13 @@ const editRowActionStyle = {
   minWidth: 150,
 };
 
+const tableToolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  alignItems: 'center',
+  flexWrap: 'wrap',
+};
+
 const primaryActionBtn = {
   padding: '8px 14px',
   borderRadius: 8,
@@ -669,6 +701,20 @@ function bulkDeleteButtonStyle(
     borderRadius: 8,
     border: hasSelection ? '1px solid #dc2626' : '1px solid #d1d5db',
     background: hasSelection ? '#dc2626' : '#f3f4f6',
+    color: hasSelection ? '#fff' : '#6b7280',
+    cursor: hasSelection ? 'pointer' : 'not-allowed',
+    fontWeight: 700,
+  };
+}
+
+function generateReportButtonStyle(selectedCount: number): React.CSSProperties {
+  const hasSelection = selectedCount > 0;
+
+  return {
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: hasSelection ? '1px solid #10b981' : '1px solid #d1d5db',
+    background: hasSelection ? '#10b981' : '#f3f4f6',
     color: hasSelection ? '#fff' : '#6b7280',
     cursor: hasSelection ? 'pointer' : 'not-allowed',
     fontWeight: 700,

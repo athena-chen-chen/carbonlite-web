@@ -331,7 +331,26 @@ function getDefaultUnit(activityType: string) {
 
   function addRow() {
     setRows((prev) => [...prev, createEmptyRow()]);
-  }function normalizeHeader(value: string) {
+  }
+
+function removeRow(id: string) {
+  setRows((prev) => {
+    if (prev.length <= 1) {
+      return [applyFactorToRow(createEmptyRow())];
+    }
+
+    return prev.filter((row) => row.id !== id);
+  });
+  setEntrySourceType('MANUAL');
+}
+
+function handleQuickEntryKeyDown(event: React.KeyboardEvent<HTMLTableElement>) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+  }
+}
+
+function normalizeHeader(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '');
 }
 
@@ -446,13 +465,13 @@ alert('Saved! Metrics and Reports are ready to refresh.');
     <div>
       <h3 style={{ margin: 0 }}>Activity Rows</h3>
       <p style={{ margin: '6px 0 0', color: '#64748b' }}>
-        Type directly, paste rows from Excel, import CSV/XLSX files, or drag and drop a file here. Press Enter on the last row to add another row.
+        Type directly, paste rows from Excel, import CSV/XLSX files, or drag and drop a file here. Use + Add Row to add another row.
       </p>
     </div>
   </div>
 
   <div style={{ overflowX: 'auto' }}>
-    <table style={tableStyle} onPaste={handlePasteRows}>
+    <table style={tableStyle} onPaste={handlePasteRows} onKeyDown={handleQuickEntryKeyDown}>
       <thead>
         <tr>
           <th style={thStyle}>Type</th>
@@ -461,6 +480,7 @@ alert('Saved! Metrics and Reports are ready to refresh.');
           <th style={thStyle}>Date</th>
           <th style={thStyle}>Status</th>
           <th style={thStyle}>Factor</th>
+          <th style={thStyle}>Actions</th>
         </tr>
       </thead>
 
@@ -502,9 +522,6 @@ alert('Saved! Metrics and Reports are ready to refresh.');
                 type="number"
                 value={row.quantity}
                 onChange={(e) => updateRow(row.id, 'quantity', e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && index === rows.length - 1) addRow();
-                }}
                 placeholder="Quantity"
                 style={inputStyle}
               />
@@ -548,6 +565,16 @@ alert('Saved! Metrics and Reports are ready to refresh.');
       No matching factor
     </div>
   )}
+</td>
+<td style={tdStyle}>
+  <button
+    type="button"
+    onClick={() => removeRow(row.id)}
+    aria-label={`Remove row ${index + 1}`}
+    style={removeButtonStyle}
+  >
+    Remove
+  </button>
 </td>
           </tr>
         ))}
@@ -661,6 +688,16 @@ const secondaryButtonStyle: React.CSSProperties = {
   border: '1px solid #cbd5e1',
   background: '#fff',
   color: '#111827',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const removeButtonStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: '1px solid #fecaca',
+  background: '#fff',
+  color: '#b91c1c',
   fontWeight: 700,
   cursor: 'pointer',
 };

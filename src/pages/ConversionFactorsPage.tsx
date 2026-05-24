@@ -7,6 +7,10 @@ import {
   type ConversionFactorInput,
 } from '../services/conversionFactors';
 import { activityTypes } from '../constants/activityTypes';
+import {
+  getCurrentUser,
+  getOrganizationName,
+} from '../services/auth';
 
 type ConversionFactorItem = {
   id: string;
@@ -39,6 +43,8 @@ const initialForm: ConversionFactorInput = {
 };
 
 export function ConversionFactorsPage() {
+  const organizationName = getOrganizationName(getCurrentUser());
+  const generatedAt = new Date().toLocaleString();
   const [form, setForm] = useState<ConversionFactorInput>(initialForm);
   const [items, setItems] = useState<ConversionFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -195,8 +201,24 @@ export function ConversionFactorsPage() {
     await deleteFactorById(item.id);
   }
 
+  function handlePrintFactors() {
+    window.print();
+  }
+
   return (
-    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+    <div className="conversion-factors-page" style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+      <style>{printStyles}</style>
+      <div className="print-report-header" style={printHeaderStyle}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>CarbonLite AI</div>
+          <h1 style={{ margin: '8px 0 0', fontSize: 24 }}>Conversion Factors Report</h1>
+        </div>
+        <div style={{ textAlign: 'right', fontSize: 12, color: '#475569' }}>
+          <div>Generated: {generatedAt}</div>
+          <div>Organization: {organizationName}</div>
+        </div>
+      </div>
+
       <div style={pageHeaderStyle}>
         <div>
           <h1 style={{ margin: 0 }}>Conversion Factors</h1>
@@ -204,9 +226,17 @@ export function ConversionFactorsPage() {
             Manage the factors CarbonLite AI uses to convert activity data into carbon metrics.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handlePrintFactors}
+          className="no-print"
+          style={printButtonStyle}
+        >
+          Print Factors
+        </button>
       </div>
 
-      <div style={summaryGridStyle}>
+      <div className="no-print" style={summaryGridStyle}>
         <SummaryCard
           icon="🧮"
           title="Total Factors"
@@ -240,7 +270,7 @@ export function ConversionFactorsPage() {
       </div>
 
       {!showFactorForm ? (
-        <div style={collapsedFormStyle}>
+        <div className="no-print" style={collapsedFormStyle}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20 }}>Custom conversion factors</h2>
             <p style={{ marginTop: 6, color: '#666' }}>
@@ -262,7 +292,7 @@ export function ConversionFactorsPage() {
           </button>
         </div>
       ) : (
-      <form onSubmit={handleSubmit} style={formCardStyle}>
+      <form className="no-print" onSubmit={handleSubmit} style={formCardStyle}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>
             {editingId ? 'Edit Conversion Factor' : 'Add Custom Factor'}
@@ -412,10 +442,10 @@ export function ConversionFactorsPage() {
       </form>
       )}
 
-      {error ? <div style={errorStyle}>{error}</div> : null}
-      {successMessage ? <div style={successStyle}>{successMessage}</div> : null}
+      {error ? <div className="no-print" style={errorStyle}>{error}</div> : null}
+      {successMessage ? <div className="no-print" style={successStyle}>{successMessage}</div> : null}
 
-      <div style={tableCardStyle}>
+      <div className="print-table-card" style={tableCardStyle}>
         <div style={tableHeaderStyle}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20 }}>Conversion Factor Library</h2>
@@ -431,14 +461,14 @@ export function ConversionFactorsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                <th style={thStyle}>Name</th>
-                <th style={thStyle}>Type</th>
                 <th style={thStyle}>Activity Type</th>
-                <th style={thStyle}>Input Unit</th>
-                <th style={thStyle}>Factor</th>
-                <th style={thStyle}>Result Unit</th>
-                <th style={thStyle}>Library</th>
-                <th style={thStyle}>Actions</th>
+                <th style={thStyle}>Factor Name</th>
+                <th style={thStyle}>Factor Value</th>
+                <th style={thStyle}>Unit</th>
+                <th className="print-only-table-cell" style={thStyle}>Source Name</th>
+                <th className="print-only-table-cell" style={thStyle}>Source Reference</th>
+                <th style={thStyle}>Factor Type</th>
+                <th className="no-print" style={thStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -451,6 +481,7 @@ export function ConversionFactorsPage() {
               ) : (
                 items.map((item) => (
                   <tr key={item.id}>
+                    <td style={tdStyle}>{item.activityType ?? '-'}</td>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600 }}>{item.name}</div>
                       {item.sourceName ? (
@@ -460,14 +491,11 @@ export function ConversionFactorsPage() {
                       ) : null}
                     </td>
                     <td style={tdStyle}>
-                      <Badge label={item.type} color="#0f766e" background="#ccfbf1" />
-                    </td>
-                    <td style={tdStyle}>{item.activityType ?? '-'}</td>
-                    <td style={tdStyle}>{item.unit}</td>
-                    <td style={tdStyle}>
                       <strong>{item.factorValue}</strong>
                     </td>
-                    <td style={tdStyle}>{item.resultUnit}</td>
+                    <td style={tdStyle}>{item.unit}</td>
+                    <td className="print-only-table-cell" style={tdStyle}>{item.sourceName ?? '-'}</td>
+                    <td className="print-only-table-cell" style={tdStyle}>{item.sourceReference ?? '-'}</td>
                     <td style={tdStyle}>
                       {item.isSystemDefault ? (
                         <Badge label="System" color="#1d4ed8" background="#dbeafe" />
@@ -475,7 +503,7 @@ export function ConversionFactorsPage() {
                         <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
                       )}
                     </td>
-                    <td style={tdStyle}>
+                    <td className="no-print" style={tdStyle}>
                       {item.isSystemDefault ? (
                         <div style={{ marginBottom: 6, fontSize: 12, color: '#64748b' }}>
                           Locked
@@ -510,6 +538,11 @@ export function ConversionFactorsPage() {
             </tbody>
           </table>
         )}
+      </div>
+
+      <div className="print-report-footer" style={printFooterStyle}>
+        <div>Generated by CarbonLite AI</div>
+        <div>For environmental reporting reference</div>
       </div>
     </div>
   );
@@ -591,6 +624,37 @@ const pageHeaderStyle: React.CSSProperties = {
   gap: 16,
   flexWrap: 'wrap',
   marginBottom: 24,
+};
+
+const printHeaderStyle: React.CSSProperties = {
+  display: 'none',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  gap: 24,
+  marginBottom: 20,
+  paddingBottom: 12,
+  borderBottom: '2px solid #0f172a',
+};
+
+const printFooterStyle: React.CSSProperties = {
+  display: 'none',
+  justifyContent: 'space-between',
+  gap: 16,
+  marginTop: 20,
+  paddingTop: 10,
+  borderTop: '1px solid #cbd5e1',
+  color: '#475569',
+  fontSize: 12,
+};
+
+const printButtonStyle: React.CSSProperties = {
+  padding: '10px 16px',
+  borderRadius: 10,
+  border: '1px solid #10b981',
+  background: '#10b981',
+  color: '#fff',
+  fontWeight: 700,
+  cursor: 'pointer',
 };
 
 const summaryGridStyle: React.CSSProperties = {
@@ -740,3 +804,93 @@ function deleteButtonStyle(disabled: boolean): React.CSSProperties {
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }
+
+const printStyles = `
+  .print-report-header,
+  .print-report-footer,
+  .print-only-table-cell {
+    display: none;
+  }
+
+  @media print {
+    @page {
+      size: landscape;
+      margin: 12mm;
+    }
+
+    body {
+      background: #fff !important;
+      color: #0f172a !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    body * {
+      visibility: hidden;
+    }
+
+    .conversion-factors-page,
+    .conversion-factors-page * {
+      visibility: visible;
+    }
+
+    .conversion-factors-page {
+      max-width: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      font-size: 11px;
+    }
+
+    .no-print,
+    .no-print * {
+      display: none !important;
+      visibility: hidden !important;
+    }
+
+    .print-report-header,
+    .print-report-footer {
+      display: flex !important;
+      visibility: visible !important;
+    }
+
+    .print-only-table-cell {
+      display: table-cell !important;
+    }
+
+    .print-table-card {
+      border: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      overflow: visible !important;
+    }
+
+    table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      page-break-inside: auto;
+    }
+
+    thead {
+      display: table-header-group;
+    }
+
+    tr {
+      page-break-inside: avoid;
+      page-break-after: auto;
+    }
+
+    th,
+    td {
+      border: 1px solid #cbd5e1 !important;
+      padding: 6px 8px !important;
+      vertical-align: top !important;
+      font-size: 10px !important;
+    }
+
+    th {
+      background: #e2e8f0 !important;
+      color: #0f172a !important;
+      font-weight: 800 !important;
+    }
+  }
+`;

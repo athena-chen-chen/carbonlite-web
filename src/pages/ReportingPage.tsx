@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -37,6 +38,19 @@ const SCOPE_MAP: Record<string, 'Scope 1' | 'Scope 2' | 'Scope 3'> = {
 };
 
 export default function ReportingPage() {
+  const location = useLocation();
+  const routeState = location.state as {
+    reportScope?: string;
+    selectedRecordIds?: string[];
+    selectedActivityRecordIds?: string[];
+    selectedDocumentIds?: string[];
+  } | null;
+  const initialSelectedRecordIds =
+    (routeState?.selectedActivityRecordIds ?? routeState?.selectedRecordIds ?? [])
+      .filter((id): id is string => typeof id === 'string');
+  const initialSelectedDocumentIds =
+    (routeState?.selectedDocumentIds ?? [])
+      .filter((id): id is string => typeof id === 'string');
   const [summary, setSummary] = useState<any>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [usageTotals, setUsageTotals] = useState(EMPTY_ACTIVITY_USAGE_TOTALS);
@@ -52,6 +66,19 @@ export default function ReportingPage() {
 const [reloadKey, setReloadKey] = useState(0);
 const [periodStart, setPeriodStart] = useState('2026-01-01');
 const [periodEnd, setPeriodEnd] = useState('2026-12-31');
+const [reportScope, setReportScope] = useState<'dateRange' | 'selectedDocuments' | 'selectedRecords'>(
+  initialSelectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
+    ? 'selectedDocuments'
+    : initialSelectedRecordIds.length
+    ? 'selectedRecords'
+    : 'dateRange',
+);
+const [selectedRecordIds] = useState<string[]>(
+  initialSelectedRecordIds,
+);
+const [selectedDocumentIds] = useState<string[]>(
+  initialSelectedDocumentIds,
+);
   async function loadReportData() {
     setLoading(true);
     setError(null);
@@ -59,8 +86,11 @@ const [periodEnd, setPeriodEnd] = useState('2026-12-31');
     try {
       const overview = await loadMetricsOverview({
         recalculate: true,
-        dateFrom: periodStart,
-        dateTo: periodEnd,
+        ...(reportScope === 'selectedRecords'
+          ? { selectedActivityRecordIds: selectedRecordIds }
+          : reportScope === 'selectedDocuments'
+          ? { selectedDocumentIds }
+          : { dateFrom: periodStart, dateTo: periodEnd }),
       });
 
       setSummary(overview.summary);
@@ -81,7 +111,14 @@ const [periodEnd, setPeriodEnd] = useState('2026-12-31');
   }
 useEffect(() => {
   loadReportData();
-}, [reloadKey, periodStart, periodEnd]);
+}, [
+  reloadKey,
+  periodStart,
+  periodEnd,
+  reportScope,
+  selectedRecordIds.join('|'),
+  selectedDocumentIds.join('|'),
+]);
 
 function classifyScope(activityType?: string) {
   const type = String(activityType ?? '').toUpperCase();
@@ -97,7 +134,16 @@ function classifyScope(activityType?: string) {
   return 'Scope 3';
 }
 
-  const totalsByMetric = summary?.totalsByMetric ?? [];
+  const totalsByMetric = reportScope === 'dateRange'
+    ? summary?.totalsByMetric ?? []
+    : [
+        {
+          metricType: 'ESTIMATED_EMISSIONS',
+          unit: 'kg CO2e',
+          totalValue: totalEstimatedEmissionsKgCO2e,
+          count: countSummary.processedRecords,
+        },
+      ];
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
 const scopeRows = useMemo(() => {
@@ -202,21 +248,27 @@ function handleDownloadPDF() {
   const today = new Date().toISOString().slice(0, 10);
 
   // Cover / Header
-  doc.setFontSize(20);
-  doc.text('CarbonLite AI', 14, 20);
+  drawCarbonLitePdfLogo(doc, 14, 14);
 
   doc.setFontSize(16);
-  doc.text('Emissions Reporting Summary', 14, 32);
+  doc.text('Emissions Reporting Summary', 14, 38);
 
   doc.setFontSize(10);
-  doc.text('Company: KACH CANADA LTD.', 14, 45);
-  doc.text('Reporting Period: Draft period / user selected period', 14, 52);
-  doc.text(`Generated Date: ${today}`, 14, 59);
-  doc.text('Status: Draft for internal review and compliance preparation', 14, 66);
+  doc.text('Company: KACH CANADA LTD.', 14, 51);
+  doc.text('Reporting Period: Draft period / user selected period', 14, 58);
+  doc.text(`Generated Date: ${today}`, 14, 65);
+  doc.text('Status: Draft for internal review and compliance preparation', 14, 72);
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    `Estimated Emissions: ${totalEstimatedEmissionsKgCO2e} kg CO2e`,
+    14,
+    79,
+  );
+  doc.setFont('helvetica', 'normal');
 
   // Executive summary
   autoTable(doc, {
-    startY: 78,
+    startY: 91,
     head: [['Date', 'Activity Type', 'Quantity', 'Unit', 'Source', 'Reference']],
     body: activities.map((item) => [
       item.recordDate?.slice(0, 10) ?? '',
@@ -305,6 +357,32 @@ function handleDownloadPDF() {
 
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
 }
+
+function drawCarbonLitePdfLogo(doc: jsPDF, x: number, y: number) {
+  doc.setLineWidth(1.2);
+  doc.setDrawColor(15, 23, 42);
+  doc.circle(x + 7, y + 7, 7, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(22, 163, 74);
+  doc.text('C', x + 3.3, y + 11.2);
+
+  doc.setFontSize(18);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Carbon', x + 20, y + 9);
+  doc.setTextColor(22, 163, 74);
+  doc.text('Lite', x + 46, y + 9);
+  doc.setTextColor(15, 23, 42);
+  doc.text(' AI', x + 62, y + 9);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Carbon accounting made lighter', x + 20, y + 15);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'normal');
+}
 function getScopeDescription(scope: string) {
   if (scope === 'Scope 1') return 'Direct fuel emissions';
   if (scope === 'Scope 2') return 'Purchased electricity';
@@ -334,6 +412,39 @@ function formatSourceType(sourceType?: string) {
         and calculated metrics.
       </p>
 <div style={filterCardStyle}>
+  <div style={{ width: '100%' }}>
+    <label style={labelStyle}>Report Scope</label>
+    <div style={scopeToggleStyle}>
+      <button
+        type="button"
+        onClick={() => setReportScope('dateRange')}
+        style={scopeButtonStyle(reportScope === 'dateRange')}
+      >
+        Date Range
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (selectedDocumentIds.length) setReportScope('selectedDocuments');
+        }}
+        disabled={!selectedDocumentIds.length}
+        style={scopeButtonStyle(reportScope === 'selectedDocuments', !selectedDocumentIds.length)}
+      >
+        Selected Documents
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (selectedRecordIds.length) setReportScope('selectedRecords');
+        }}
+        disabled={!selectedRecordIds.length}
+        style={scopeButtonStyle(reportScope === 'selectedRecords', !selectedRecordIds.length)}
+      >
+        Selected Records
+      </button>
+    </div>
+  </div>
+
   <div>
     <label style={labelStyle}>Start Date</label>
     <input
@@ -341,6 +452,7 @@ function formatSourceType(sourceType?: string) {
       value={periodStart}
       onChange={(e) => setPeriodStart(e.target.value)}
       style={inputStyle}
+      disabled={reportScope !== 'dateRange'}
     />
   </div>
 
@@ -351,6 +463,7 @@ function formatSourceType(sourceType?: string) {
       value={periodEnd}
       onChange={(e) => setPeriodEnd(e.target.value)}
       style={inputStyle}
+      disabled={reportScope !== 'dateRange'}
     />
   </div>
 
@@ -361,10 +474,25 @@ function formatSourceType(sourceType?: string) {
       setPeriodEnd('2026-12-31');
     }}
     style={secondaryButtonStyle}
+    disabled={reportScope !== 'dateRange'}
   >
     2026 Full Year
   </button>
 </div>
+      {reportScope === 'selectedDocuments' ? (
+        <div style={selectionNoticeStyle}>
+          Report Scope: Selected Documents ({selectedDocumentIds.length})
+        </div>
+      ) : reportScope === 'selectedRecords' ? (
+        <div style={selectionNoticeStyle}>
+          Report Scope: Selected Records ({selectedRecordIds.length})
+        </div>
+      ) : null}
+      {reportScope === 'selectedDocuments' && !loading && activities.length === 0 ? (
+        <div style={emptyScopeNoticeStyle}>
+          No activity records found for selected documents.
+        </div>
+      ) : null}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
         <button onClick={loadReportData} style={secondaryButtonStyle}>
           Refresh
@@ -653,4 +781,45 @@ const inputStyle: React.CSSProperties = {
   padding: '10px 12px',
   borderRadius: 10,
   border: '1px solid #cbd5e1',
+};
+
+const scopeToggleStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  gap: 6,
+  padding: 4,
+  borderRadius: 12,
+  background: '#f1f5f9',
+  border: '1px solid #e2e8f0',
+};
+
+function scopeButtonStyle(active: boolean, disabled = false): React.CSSProperties {
+  return {
+    padding: '8px 12px',
+    borderRadius: 10,
+    border: active ? '1px solid #10b981' : '1px solid transparent',
+    background: active ? '#10b981' : '#fff',
+    color: disabled ? '#94a3b8' : active ? '#fff' : '#334155',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+const selectionNoticeStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bbf7d0',
+  background: '#f0fdf4',
+  color: '#166534',
+  fontWeight: 700,
+};
+
+const emptyScopeNoticeStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #fde68a',
+  background: '#fffbeb',
+  color: '#92400e',
+  fontWeight: 700,
 };
