@@ -71,6 +71,8 @@ function factor(overrides: Partial<{
   isDefault: boolean;
   isSystemDefault: boolean;
   updatedAt: string;
+  sourceAuthority: string;
+  sourceYear: number;
 }> = {}) {
   return {
     id: overrides.id ?? 'factor-1',
@@ -85,6 +87,8 @@ function factor(overrides: Partial<{
     resultUnit: 'kg CO2e',
     sourceName: null,
     sourceReference: null,
+    sourceAuthority: overrides.sourceAuthority ?? null,
+    sourceYear: overrides.sourceYear ?? null,
     effectiveFrom: null,
     effectiveTo: null,
     isDefault: overrides.isDefault ?? true,
@@ -292,6 +296,35 @@ describe('loadMetricsOverview', () => {
     const overview = await loadMetricsOverview({ recalculate: true });
 
     expect(overview.totalEstimatedEmissionsKgCO2e).toBe(300);
+  });
+
+  it('does not use another organization custom factor for emissions', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue(
+      [activity('activity-1', 'DIESEL', 100, 'L')],
+    );
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({
+        id: 'other-org-factor',
+        organizationId: 'org-2',
+        activityType: 'DIESEL',
+        unit: 'L',
+        factorValue: 9,
+        isSystemDefault: false,
+      }),
+      factor({
+        id: 'system-factor',
+        organizationId: null,
+        activityType: 'DIESEL',
+        unit: 'L',
+        factorValue: 2.68,
+        isSystemDefault: true,
+      }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('0', 1));
+
+    const overview = await loadMetricsOverview({ recalculate: true });
+
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(268);
   });
 
   it('calculates report totals from selected record ids only', async () => {

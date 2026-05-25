@@ -7,6 +7,11 @@ import {
   activityTypes,
 } from '../constants/activityTypes';
 import * as XLSX from 'xlsx';
+import {
+  findBestConversionFactorMatch,
+  getFactorSourceAuthority,
+} from '../utils/conversionFactorMatching';
+import { getCurrentUser, getOrganizationId } from '../services/auth';
 
 type Row = {
   id: string;
@@ -17,6 +22,9 @@ type Row = {
   factorId?: string;
   factorName?: string;
   factorValue?: string | number;
+  factorSourceLabel?: string;
+  factorSourceAuthority?: string;
+  factorSourceYear?: string | number | null;
   factorStatus?: 'matched' | 'missing';
   errors?: string[];
 };
@@ -109,76 +117,44 @@ function importCSVFile(file: File) {
   reader.readAsText(file);
   setEntrySourceType('CSV');
 }
-function normalizeActivityType(value?: string | null) {
-  return String(value ?? '').trim().toUpperCase().replace(/\s+/g, '_');
-}
-
-function normalizeUnit(value?: string | null) {
-  const unit = String(value ?? '').trim().toLowerCase();
-
-  if (['l', 'liter', 'liters', 'litre', 'litres'].includes(unit)) {
-    return 'L';
-  }
-
-  if (['kwh', 'kw h', 'kilowatt hour', 'kilowatt hours'].includes(unit)) {
-    return 'KWH';
-  }
-
-  if (['m3', 'm³', 'cubic meter', 'cubic meters'].includes(unit)) {
-    return 'M3';
-  }
-
-  if (['kg', 'kilogram', 'kilograms'].includes(unit)) {
-    return 'KG';
-  }
-
-  return unit.toUpperCase();
-}
-function normalize(value?: string | null) {
-  return String(value ?? '').trim().toUpperCase();
-}
-
-function normalizeType(type?: string) {
-  return String(type ?? '').toUpperCase().trim();
-}
 function findMatchingFactor(activityType: string, unit: string) {
   if (!activityType || !unit) return undefined;
 
-  const rowType = normalizeActivityType(activityType);
-  const rowUnit = normalizeUnit(unit);
-
-  return conversionFactors.find((factor) => {
-    const factorType = normalizeActivityType(factor.activityType);
-    const factorUnit = normalizeUnit(factor.unit);
-    const factorKind = String(factor.type ?? '').trim().toUpperCase();
-
-    return (
-      factorKind === 'EMISSION' &&
-      factorType === rowType &&
-      factorUnit === rowUnit
-    );
+  return findBestConversionFactorMatch({
+    activityType,
+    inputUnit: unit,
+    organizationId: getOrganizationId(getCurrentUser()),
+    factors: conversionFactors,
   });
 }
 
 
 function applyFactorToRow(row: Row): Row {
-  const factor = findMatchingFactor(row.activityType, row.unit);
+  const match = findMatchingFactor(row.activityType, row.unit);
 
-  if (!factor) {
+  if (!match) {
     return {
       ...row,
       factorId: undefined,
       factorName: undefined,
       factorValue: undefined,
+      factorSourceLabel: undefined,
+      factorSourceAuthority: undefined,
+      factorSourceYear: undefined,
       factorStatus: 'missing',
     };
   }
+
+  const { factor } = match;
 
   return {
     ...row,
     factorId: factor.id,
     factorName: factor.name,
     factorValue: factor.factorValue,
+    factorSourceLabel: match.sourceLabel,
+    factorSourceAuthority: getFactorSourceAuthority(factor),
+    factorSourceYear: factor.sourceYear,
     factorStatus: 'matched',
   };
 }
@@ -559,6 +535,20 @@ alert('Saved! Metrics and Reports are ready to refresh.');
       Matched: {row.factorName}
       <br />
       Factor: {row.factorValue}
+      <br />
+      Source: {row.factorSourceLabel}
+      {row.factorSourceAuthority ? (
+        <>
+          <br />
+          Authority: {row.factorSourceAuthority}
+        </>
+      ) : null}
+      {row.factorSourceYear ? (
+        <>
+          <br />
+          Year: {row.factorSourceYear}
+        </>
+      ) : null}
     </div>
   ) : (
     <div style={{ color: '#be123c', fontSize: 12 }}>

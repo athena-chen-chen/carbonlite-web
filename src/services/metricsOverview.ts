@@ -15,6 +15,9 @@ import {
   type ActivityUsageTotals,
   aggregateActivityUsage,
 } from '../utils/activityAggregation';
+import {
+  findBestConversionFactorMatch,
+} from '../utils/conversionFactorMatching';
 
 export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
   fuel: 0,
@@ -140,7 +143,12 @@ function calculateEstimatedEmissions(
 
   activities.forEach((activity) => {
     const quantity = Number(activity.quantity ?? 0);
-    const matchingFactor = findMatchingFactor(activity, conversionFactors);
+    const matchingFactor = findBestConversionFactorMatch({
+      activityType: activity.activityType,
+      inputUnit: activity.unit,
+      organizationId: activity.organizationId,
+      factors: conversionFactors,
+    })?.factor;
 
     if (!matchingFactor) {
       missingFactors.push({
@@ -164,70 +172,6 @@ function calculateEstimatedEmissions(
   };
 }
 
-function findMatchingFactor(
-  activity: ActivityDataItem,
-  conversionFactors: ConversionFactorItem[],
-) {
-  const activityType = normalizeActivityType(activity.activityType);
-  const unit = normalizeUnit(activity.unit);
-  const matches = conversionFactors.filter((factor) =>
-    normalizeActivityType(factor.activityType) === activityType &&
-    normalizeUnit(factor.unit) === unit &&
-    Number.isFinite(Number(factor.factorValue)),
-  );
-
-  return matches.sort(compareFactorPriority)[0];
-}
-
-function compareFactorPriority(a: ConversionFactorItem, b: ConversionFactorItem) {
-  const aCustom = isCustomFactor(a) ? 1 : 0;
-  const bCustom = isCustomFactor(b) ? 1 : 0;
-
-  if (aCustom !== bCustom) return bCustom - aCustom;
-  if (Number(a.isDefault) !== Number(b.isDefault)) {
-    return Number(b.isDefault) - Number(a.isDefault);
-  }
-
-  return String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
-}
-
-function isCustomFactor(factor: ConversionFactorItem) {
-  return Boolean(factor.organizationId) || !factor.isSystemDefault;
-}
-
-function normalizeActivityType(value?: string | null) {
-  return String(value ?? '').trim().toUpperCase();
-}
-
-function normalizeUnit(value?: string | null) {
-  const unit = String(value ?? '').trim().toLowerCase();
-  const compact = unit.replace(/[\s._-]+/g, '');
-
-  const aliases: Record<string, string> = {
-    l: 'l',
-    liter: 'l',
-    liters: 'l',
-    litre: 'l',
-    litres: 'l',
-    kwh: 'kwh',
-    kwhr: 'kwh',
-    m3: 'm3',
-    cubicmeter: 'm3',
-    cubicmeters: 'm3',
-    cubicmetre: 'm3',
-    cubicmetres: 'm3',
-    kg: 'kg',
-    kilogram: 'kg',
-    kilograms: 'kg',
-    km: 'km',
-    kilometer: 'km',
-    kilometers: 'km',
-    kilometre: 'km',
-    kilometres: 'km',
-  };
-
-  return aliases[compact] ?? compact;
-}
 
 function roundEmissions(value: number) {
   return Math.round(value * 1000) / 1000;

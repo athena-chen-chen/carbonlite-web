@@ -3,12 +3,10 @@ import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
-  formatActivityUsageValue,
-} from '../utils/activityAggregation';
-import {
   EMPTY_ACTIVITY_USAGE_TOTALS,
   loadMetricsOverview,
 } from '../services/metricsOverview';
+import { MetricsSummarySection } from '../components/MetricsSummarySection';
 
 type ActivityItem = {
   id: string;
@@ -134,16 +132,6 @@ function classifyScope(activityType?: string) {
   return 'Scope 3';
 }
 
-  const totalsByMetric = reportScope === 'dateRange'
-    ? summary?.totalsByMetric ?? []
-    : [
-        {
-          metricType: 'ESTIMATED_EMISSIONS',
-          unit: 'kg CO2e',
-          totalValue: totalEstimatedEmissionsKgCO2e,
-          count: countSummary.processedRecords,
-        },
-      ];
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
 const scopeRows = useMemo(() => {
@@ -521,42 +509,12 @@ function formatSourceType(sourceType?: string) {
         <p>Loading report data...</p>
       ) : (
         <>
-          <div style={gridStyle}>
-            <Card
-              title="Estimated Emissions"
-              value={`${totalEstimatedEmissionsKgCO2e} kg CO2e`}
-              icon="🌱"
-            />
-
-            <Card
-              title="Fuel Usage"
-              value={formatActivityUsageValue(
-                usageTotals.fuel,
-                usageTotals.fuelUnitLabel,
-              )}
-              icon="⛽"
-            />
-
-            <Card
-              title="Electricity"
-              value={formatActivityUsageValue(
-                usageTotals.electricity,
-                usageTotals.electricityUnitLabel,
-              )}
-              icon="⚡"
-            />
-
-            <Card
-              title="Records Included in Report"
-              value={String(countSummary.processedRecords)}
-              icon="📄"
-            />
-          </div>
-          {countSummary.skippedRecords > 0 ? (
-            <div style={errorStyle}>
-              {countSummary.skippedRecords} record(s) were skipped due to missing factors or filters. {countSummary.missingFactorRecords} record(s) are missing matching conversion factors. {countSummary.totalRecordsFound} record(s) matched the selected date range.
-            </div>
-          ) : null}
+          <MetricsSummarySection
+            usageTotals={usageTotals}
+            totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
+            countSummary={countSummary}
+            emptyMessage="No calculated metrics available."
+          />
 
           <Section title="Scope Breakdown">
             <table style={tableStyle}>
@@ -588,38 +546,6 @@ function formatSourceType(sourceType?: string) {
                       <td style={tdStyle}>{item.sourceReference ?? '-'}</td>
                     </tr>
                   ))
-                )}
-              </tbody>
-            </table>
-          </Section>
-
-          <Section title="Metrics Summary">
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Metric Type</th>
-                  <th style={thStyle}>Unit</th>
-                  <th style={thStyle}>Total Value</th>
-                  <th style={thStyle}>Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {totalsByMetric.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} style={emptyStyle}>
-                      No calculated metrics available.
-                    </td>
-                  </tr>
-                ) : (
-                  totalsByMetric.map((item: any, index: number) => (
-                    <tr key={index}>
-                      <td style={tdStyle}>{item.metricType}</td>
-                      <td style={tdStyle}>{item.unit}</td>
-                      <td style={tdStyle}>{item.totalValue}</td>
-                      <td style={tdStyle}>{item.count}</td>
-                    </tr>
-                  ))
-                  
                 )}
               </tbody>
             </table>
@@ -680,13 +606,6 @@ function Section({
     </div>
   );
 }
-
-const gridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-  gap: 16,
-  marginBottom: 24,
-};
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 16,

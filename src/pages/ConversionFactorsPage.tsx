@@ -1,30 +1,17 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Fragment, FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   createConversionFactor,
   deleteConversionFactor,
   getConversionFactors,
   updateConversionFactor,
   type ConversionFactorInput,
+  type ConversionFactorItem,
 } from '../services/conversionFactors';
 import { activityTypes } from '../constants/activityTypes';
 import {
   getCurrentUser,
   getOrganizationName,
 } from '../services/auth';
-
-type ConversionFactorItem = {
-  id: string;
-  name: string;
-  type: string;
-  activityType?: string | null;
-  unit: string;
-  factorValue: string | number;
-  resultUnit: string;
-  sourceName?: string | null;
-  sourceReference?: string | null;
-  isDefault: boolean;
-  isSystemDefault: boolean;
-};
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -39,8 +26,39 @@ const initialForm: ConversionFactorInput = {
   resultUnit: 'kgCO2e',
   sourceName: '',
   sourceReference: '',
+  sourceAuthority: '',
+  sourceDocument: '',
+  sourceYear: '' as unknown as number,
+  sourceUrl: '',
+  methodology: '',
+  confidenceLevel: '',
+  verified: false,
+  notes: '',
   isDefault: true,
 };
+
+export function getFactorTraceability(item: ConversionFactorItem) {
+  return {
+    sourceAuthority:
+      item.sourceAuthority ||
+      item.sourceName ||
+      (item.isSystemDefault ? 'MVP Default' : ''),
+    sourceDocument:
+      item.sourceDocument ||
+      item.sourceReference ||
+      (item.isSystemDefault ? 'Pilot default factor library' : ''),
+    sourceYear: item.sourceYear ?? null,
+    sourceUrl: item.sourceUrl ?? '',
+    methodology:
+      item.methodology ||
+      (item.isSystemDefault
+        ? 'Used for pilot workflow validation; replace with verified ECCC/Alberta factors before production reporting'
+        : ''),
+    confidenceLevel: item.confidenceLevel ?? '',
+    verified: Boolean(item.verified),
+    notes: item.notes ?? '',
+  };
+}
 
 export function ConversionFactorsPage() {
   const organizationName = getOrganizationName(getCurrentUser());
@@ -52,6 +70,7 @@ export function ConversionFactorsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFactorForm, setShowFactorForm] = useState(false);
+  const [expandedFactorId, setExpandedFactorId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -107,6 +126,7 @@ export function ConversionFactorsPage() {
     return {
       ...form,
       factorValue: Number(form.factorValue),
+      sourceYear: form.sourceYear ? Number(form.sourceYear) : undefined,
     };
   }
 
@@ -158,6 +178,14 @@ export function ConversionFactorsPage() {
       resultUnit: item.resultUnit,
       sourceName: item.sourceName ?? '',
       sourceReference: item.sourceReference ?? '',
+      sourceAuthority: item.sourceAuthority ?? '',
+      sourceDocument: item.sourceDocument ?? '',
+      sourceYear: item.sourceYear ?? ('' as unknown as number),
+      sourceUrl: item.sourceUrl ?? '',
+      methodology: item.methodology ?? '',
+      confidenceLevel: item.confidenceLevel ?? '',
+      verified: Boolean(item.verified),
+      notes: item.notes ?? '',
       isDefault: item.isDefault,
     });
     setError(null);
@@ -267,6 +295,10 @@ export function ConversionFactorsPage() {
           subtitle="Covered data categories"
           accent="#f59e0b"
         />
+      </div>
+
+      <div className="no-print" style={pilotDisclaimerStyle}>
+        System default factors are provided for pilot workflow validation. Users should verify factors against applicable reporting requirements before relying on final reports.
       </div>
 
       {!showFactorForm ? (
@@ -400,6 +432,83 @@ export function ConversionFactorsPage() {
           </Field>
         </div>
 
+        <div style={sourceSectionStyle}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 18 }}>Source & Methodology</h3>
+          <div style={formGridStyle}>
+            <Field label="Source Authority">
+              <input
+                type="text"
+                value={form.sourceAuthority ?? ''}
+                onChange={(e) => updateField('sourceAuthority', e.target.value)}
+                style={inputStyle}
+                placeholder="e.g. Environment and Climate Change Canada"
+              />
+            </Field>
+
+            <Field label="Source Document">
+              <input
+                type="text"
+                value={form.sourceDocument ?? ''}
+                onChange={(e) => updateField('sourceDocument', e.target.value)}
+                style={inputStyle}
+                placeholder="e.g. Canada National Inventory Report"
+              />
+            </Field>
+
+            <Field label="Source Year">
+              <input
+                type="number"
+                value={form.sourceYear ?? ''}
+                onChange={(e) =>
+                  updateField(
+                    'sourceYear',
+                    e.target.value === '' ? ('' as unknown as number) : Number(e.target.value),
+                  )
+                }
+                style={inputStyle}
+                placeholder="e.g. 2025"
+              />
+            </Field>
+
+            <Field label="Source URL">
+              <input
+                type="url"
+                value={form.sourceUrl ?? ''}
+                onChange={(e) => updateField('sourceUrl', e.target.value)}
+                style={inputStyle}
+                placeholder="https://..."
+              />
+            </Field>
+
+            <Field label="Methodology">
+              <textarea
+                value={form.methodology ?? ''}
+                onChange={(e) => updateField('methodology', e.target.value)}
+                style={textareaStyle}
+                placeholder="Describe how the factor should be applied."
+              />
+            </Field>
+
+            <Field label="Notes">
+              <textarea
+                value={form.notes ?? ''}
+                onChange={(e) => updateField('notes', e.target.value)}
+                style={textareaStyle}
+                placeholder="Optional reviewer notes"
+              />
+            </Field>
+          </div>
+
+          <label style={checkboxRowStyle}>
+            <input
+              type="checkbox"
+              checked={Boolean(form.verified)}
+              onChange={(e) => updateField('verified', e.target.checked)}
+            />
+            Verified source and methodology
+          </label>
+        </div>
+
         <label style={checkboxRowStyle}>
           <input
             type="checkbox"
@@ -462,12 +571,12 @@ export function ConversionFactorsPage() {
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 <th style={thStyle}>Activity Type</th>
-                <th style={thStyle}>Factor Name</th>
-                <th style={thStyle}>Factor Value</th>
+                <th style={thStyle}>Factor</th>
                 <th style={thStyle}>Unit</th>
-                <th className="print-only-table-cell" style={thStyle}>Source Name</th>
-                <th className="print-only-table-cell" style={thStyle}>Source Reference</th>
+                <th style={thStyle}>Source Authority</th>
+                <th style={thStyle}>Source Year</th>
                 <th style={thStyle}>Factor Type</th>
+                <th style={thStyle}>Verification</th>
                 <th className="no-print" style={thStyle}>Actions</th>
               </tr>
             </thead>
@@ -479,61 +588,88 @@ export function ConversionFactorsPage() {
                   </td>
                 </tr>
               ) : (
-                items.map((item) => (
-                  <tr key={item.id}>
-                    <td style={tdStyle}>{item.activityType ?? '-'}</td>
-                    <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{item.name}</div>
-                      {item.sourceName ? (
-                        <div style={{ marginTop: 4, fontSize: 12, color: '#777' }}>
-                          Source: {item.sourceName}
-                        </div>
+                items.map((item) => {
+                  const traceability = getFactorTraceability(item);
+                  const isExpanded = expandedFactorId === item.id;
+
+                  return (
+                    <Fragment key={item.id}>
+                      <tr>
+                        <td style={tdStyle}>{item.activityType ?? '-'}</td>
+                        <td style={tdStyle}>
+                          <div style={{ fontWeight: 600 }}>{item.name}</div>
+                          <div style={{ marginTop: 4, fontSize: 12, color: '#475569' }}>
+                            {item.factorValue} {item.resultUnit}
+                          </div>
+                        </td>
+                        <td style={tdStyle}>{item.unit}</td>
+                        <td style={tdStyle}>{traceability.sourceAuthority || '-'}</td>
+                        <td style={tdStyle}>{traceability.sourceYear ?? '-'}</td>
+                        <td style={tdStyle}>
+                          {item.isSystemDefault ? (
+                            <Badge label="System" color="#1d4ed8" background="#dbeafe" />
+                          ) : (
+                            <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
+                          )}
+                        </td>
+                        <td style={tdStyle}>
+                          {traceability.verified ? (
+                            <Badge label="Verified" color="#047857" background="#d1fae5" />
+                          ) : (
+                            <Badge label="Needs review" color="#92400e" background="#fef3c7" />
+                          )}
+                        </td>
+                        <td className="no-print" style={tdStyle}>
+                          {item.isSystemDefault ? (
+                            <div style={{ marginBottom: 6, fontSize: 12, color: '#64748b' }}>
+                              Locked
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedFactorId((current) =>
+                                current === item.id ? null : item.id,
+                              )
+                            }
+                            style={detailsButtonStyle}
+                          >
+                            {isExpanded ? 'Hide Details' : 'Details'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditFactor(item)}
+                            disabled={item.isSystemDefault || deletingId === item.id || submitting}
+                            style={editButtonStyle(item.isSystemDefault)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFactor(item)}
+                            disabled={
+                              item.isSystemDefault ||
+                              deletingId === item.id ||
+                              editingId === item.id
+                            }
+                            style={deleteButtonStyle(
+                              item.isSystemDefault || deletingId === item.id,
+                            )}
+                          >
+                            {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr className="no-print">
+                          <td colSpan={8} style={traceabilityCellStyle}>
+                            <TraceabilityDetails item={item} />
+                          </td>
+                        </tr>
                       ) : null}
-                    </td>
-                    <td style={tdStyle}>
-                      <strong>{item.factorValue}</strong>
-                    </td>
-                    <td style={tdStyle}>{item.unit}</td>
-                    <td className="print-only-table-cell" style={tdStyle}>{item.sourceName ?? '-'}</td>
-                    <td className="print-only-table-cell" style={tdStyle}>{item.sourceReference ?? '-'}</td>
-                    <td style={tdStyle}>
-                      {item.isSystemDefault ? (
-                        <Badge label="System" color="#1d4ed8" background="#dbeafe" />
-                      ) : (
-                        <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
-                      )}
-                    </td>
-                    <td className="no-print" style={tdStyle}>
-                      {item.isSystemDefault ? (
-                        <div style={{ marginBottom: 6, fontSize: 12, color: '#64748b' }}>
-                          Locked
-                        </div>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => handleEditFactor(item)}
-                        disabled={item.isSystemDefault || deletingId === item.id || submitting}
-                        style={editButtonStyle(item.isSystemDefault)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFactor(item)}
-                        disabled={
-                          item.isSystemDefault ||
-                          deletingId === item.id ||
-                          editingId === item.id
-                        }
-                        style={deleteButtonStyle(
-                          item.isSystemDefault || deletingId === item.id,
-                        )}
-                      >
-                        {deletingId === item.id ? 'Deleting...' : 'Delete'}
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                    </Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -617,6 +753,48 @@ function Badge({
   );
 }
 
+function TraceabilityDetails({ item }: { item: ConversionFactorItem }) {
+  const traceability = getFactorTraceability(item);
+
+  return (
+    <div style={traceabilityDetailsStyle}>
+      <DetailItem label="Source Document" value={traceability.sourceDocument} />
+      <DetailItem
+        label="Source URL"
+        value={
+          traceability.sourceUrl ? (
+            <a href={traceability.sourceUrl} target="_blank" rel="noreferrer">
+              {traceability.sourceUrl}
+            </a>
+          ) : (
+            ''
+          )
+        }
+      />
+      <DetailItem label="Methodology" value={traceability.methodology} />
+      <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
+      <DetailItem label="Notes" value={traceability.notes} />
+    </div>
+  );
+}
+
+function DetailItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+        {label}
+      </div>
+      <div style={{ marginTop: 4, color: '#0f172a' }}>{value || '-'}</div>
+    </div>
+  );
+}
+
 const pageHeaderStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -696,12 +874,34 @@ const formGridStyle: React.CSSProperties = {
   gap: 16,
 };
 
+const sourceSectionStyle: React.CSSProperties = {
+  marginTop: 20,
+  paddingTop: 18,
+  borderTop: '1px solid #e5e7eb',
+};
+
+const pilotDisclaimerStyle: React.CSSProperties = {
+  marginBottom: 20,
+  padding: 12,
+  borderRadius: 12,
+  border: '1px solid #fde68a',
+  background: '#fffbeb',
+  color: '#92400e',
+  fontWeight: 600,
+};
+
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   borderRadius: 10,
   border: '1px solid #d1d5db',
   outline: 'none',
+};
+
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle,
+  minHeight: 88,
+  resize: 'vertical',
 };
 
 const checkboxRowStyle: React.CSSProperties = {
@@ -804,6 +1004,30 @@ function deleteButtonStyle(disabled: boolean): React.CSSProperties {
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }
+
+const detailsButtonStyle: React.CSSProperties = {
+  marginRight: 8,
+  marginBottom: 6,
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#0f172a',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const traceabilityCellStyle: React.CSSProperties = {
+  padding: 14,
+  borderBottom: '1px solid #e5e7eb',
+  background: '#f8fafc',
+};
+
+const traceabilityDetailsStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 14,
+};
 
 const printStyles = `
   .print-report-header,

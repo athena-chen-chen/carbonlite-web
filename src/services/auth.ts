@@ -7,8 +7,10 @@ const USER_KEY = 'currentUser';
 export type AuthUser = {
   id?: string;
   email: string;
+  organizationId?: string;
   organizationName?: string;
   organization?: {
+    id?: string;
     name?: string;
   };
   name?: string;
@@ -141,6 +143,10 @@ export function getCurrentUser(): AuthUser | null {
 
 export function getOrganizationName(user: AuthUser | null) {
   return user?.organizationName || user?.organization?.name || 'Workspace';
+}
+
+export function getOrganizationId(user: AuthUser | null) {
+  return user?.organizationId || user?.organization?.id || '';
 }
 
 export function getUserDisplayName(user: AuthUser | null) {

@@ -4,13 +4,16 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { isDemoMode } from '../demo/demoData';
 import {
-  formatActivityUsageValue,
   type ActivityUsageRecord,
 } from '../utils/activityAggregation';
 import {
   EMPTY_ACTIVITY_USAGE_TOTALS,
   loadMetricsOverview,
 } from '../services/metricsOverview';
+import {
+  buildMetricsSummaryTableRows,
+  MetricsSummarySection,
+} from '../components/MetricsSummarySection';
 
 
 export function MetricsSummaryPage() {
@@ -129,7 +132,6 @@ function escapeCSV(value: unknown) {
 }
 
 function handleDownloadCSV() {
-  const totalsByMetric = summary?.totalsByMetric ?? [];
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
   const rows = [
@@ -177,7 +179,6 @@ function handleDownloadCSV() {
   URL.revokeObjectURL(url);
 }
 function handleDownloadPDF() {
-  const totalsByMetric = summary?.totalsByMetric ?? [];
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
   const doc = new jsPDF();
@@ -215,7 +216,11 @@ function handleDownloadPDF() {
     `carbonlite-metrics-summary-${new Date().toISOString().slice(0, 10)}.pdf`,
   );
 }
-  const totalsByMetric = summary?.totalsByMetric ?? [];
+  const totalsByMetric = buildMetricsSummaryTableRows({
+    usageTotals,
+    totalEstimatedEmissionsKgCO2e,
+    recordsIncluded: countSummary.processedRecords,
+  });
   const demoMode = isDemoMode();
 
   return (
@@ -320,163 +325,16 @@ function handleDownloadPDF() {
         <div style={loadingStyle}>Generating metrics summary...</div>
       ) : (
         <>
-          {/* ⭐ 核心卡片 */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: 20,
-              marginBottom: 30,
-            }}
-          >
-            <MetricCard
-              title="Fuel Usage"
-              value={formatActivityUsageValue(
-                usageTotals.fuel,
-                usageTotals.fuelUnitLabel,
-              )}
-              icon="⛽"
-              color="#f59e0b"
-            />
-
-            <MetricCard
-              title="Electricity"
-              value={formatActivityUsageValue(
-                usageTotals.electricity,
-                usageTotals.electricityUnitLabel,
-              )}
-              icon="⚡"
-              color="#3b82f6"
-            />
-
-            <MetricCard
-              title="CO₂ Emissions"
-              value={`${totalEstimatedEmissionsKgCO2e} kg CO2e`}
-              icon="🌱"
-              color="#10b981"
-              highlight
-            />
-
-            <MetricCard
-              title="Records Included in Summary"
-              value={String(countSummary.processedRecords)}
-              icon="📄"
-              color="#64748b"
-            />
-          </div>
-<div
-  style={{
-    border: '1px solid #bbf7d0',
-    background: '#f0fdf4',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 24,
-  }}
->
-  <h2 style={{ margin: 0, fontSize: 18, color: '#166534' }}>
-    Report-ready summary
-  </h2>
-  <p style={{ marginTop: 8, color: '#166534' }}>
-    These results can be reviewed, exported, and used as supporting data for internal reporting or compliance preparation.
-  </p>
-</div>
-          {countSummary.skippedRecords > 0 ? (
-            <div style={warningStyle}>
-              {countSummary.skippedRecords} record(s) were skipped due to missing factors or filters. {countSummary.missingFactorRecords} record(s) are missing matching conversion factors. {countSummary.totalRecordsFound} record(s) matched the selected date range.
-            </div>
-          ) : null}
-          {/* ⭐ 明细表 */}
-          <div
-            style={{
-              border: '1px solid #ddd',
-              borderRadius: 12,
-              background: '#fff',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ padding: 16, borderBottom: '1px solid #eee' }}>
-              <h2 style={{ margin: 0 }}>Totals by Metric</h2>
-            </div>
-
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#fafafa' }}>
-                  <th style={th}>Type</th>
-                  <th style={th}>Unit</th>
-                  <th style={th}>Total</th>
-                  <th style={th}>Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {totalsByMetric.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} style={td}>
-                      No metrics yet. Import activity records or use Demo Mode to preview a report-ready summary.
-                    </td>
-                  </tr>
-                ) : null}
-                {totalsByMetric.map((item: any, i: number) => (
-                  <tr key={i}>
-                    <td style={td}>{item.metricType}</td>
-                    <td style={td}>{item.unit}</td>
-                    <td style={td}>{item.totalValue}</td>
-                    <td style={td}>{item.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <MetricsSummarySection
+            usageTotals={usageTotals}
+            totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
+            countSummary={countSummary}
+          />
         </>
       )}
     </div>
   );
 }
-
-function MetricCard({
-  title,
-  value,
-  icon,
-  color,
-  highlight,
-}: any) {
-  return (
-    <div
-      style={{
-        borderRadius: 16,
-        padding: 20,
-        background: '#fff',
-        border: highlight ? `2px solid ${color}` : '1px solid #eee',
-        boxShadow: '0 6px 20px rgba(0,0,0,0.06)',
-      }}
-    >
-      <div style={{ fontSize: 26 }}>{icon}</div>
-
-      <div style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{title}</div>
-
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 28,
-          fontWeight: 700,
-          color: highlight ? color : '#111',
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-const th = {
-  textAlign: 'left' as const,
-  padding: 12,
-  borderBottom: '1px solid #ddd',
-};
-
-const td = {
-  padding: 12,
-  borderBottom: '1px solid #eee',
-};
 
 const demoNoticeStyle: React.CSSProperties = {
   marginBottom: 18,
