@@ -3,6 +3,28 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getOrganizationName } from '../services/auth';
 
+const demoVideoUrl = import.meta.env.VITE_DEMO_VIDEO_URL || 'https://www.youtube.com/embed/rninS2Y0FBo';
+const demoVideoEmbedUrl = getYouTubeEmbedUrl(demoVideoUrl);
+
+function getYouTubeEmbedUrl(urlOrId: string) {
+  const value = String(urlOrId ?? '').trim();
+
+  if (!value) return '';
+  if (value.includes('/embed/')) return value;
+
+  const watchMatch = value.match(/[?&]v=([^&]+)/);
+  if (watchMatch?.[1]) {
+    return `https://www.youtube.com/embed/${watchMatch[1]}?rel=0&modestbranding=1`;
+  }
+
+  const shortMatch = value.match(/youtu\.be\/([^?&]+)/);
+  if (shortMatch?.[1]) {
+    return `https://www.youtube.com/embed/${shortMatch[1]}?rel=0&modestbranding=1`;
+  }
+
+  return `https://www.youtube.com/embed/${value}?rel=0&modestbranding=1`;
+}
+
 export default function CarbonLiteLandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated, logout, user } = useAuth();
@@ -55,6 +77,12 @@ export default function CarbonLiteLandingPage() {
     'Source document traceability',
     'Review-before-import workflow',
     'Designed for SME and consultant workflows',
+  ];
+  const demoBullets = [
+    'Upload invoices, utility bills, spreadsheets',
+    'AI extracts activity data',
+    'Review before import',
+    'Generate emissions summaries and reports',
   ];
   const pricingPlans = [
     {
@@ -169,6 +197,12 @@ export default function CarbonLiteLandingPage() {
                 >
                   See Sample Workflow
                 </button>
+                <a
+                  href="#demo-video"
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-7 py-3.5 text-sm font-bold text-emerald-800 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white"
+                >
+                  Watch Demo
+                </a>
                 <button
                   type="button"
                   onClick={() => navigate(isAuthenticated ? '/upload' : '/login')}
@@ -223,6 +257,42 @@ export default function CarbonLiteLandingPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="demo-video" className="border-y border-slate-200 bg-white">
+          <div className="mx-auto grid max-w-7xl gap-10 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Product demo</p>
+              <h2 className="mt-3 text-4xl font-black tracking-tight">See CarbonLite in Action</h2>
+              <p className="mt-4 text-lg leading-8 text-slate-600">
+                Watch a real workflow from upload to emissions reporting.
+              </p>
+
+              <div className="mt-7 grid gap-3">
+                {demoBullets.map((item) => (
+                  <div key={item} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">
+                      ✓
+                    </span>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[2rem] border border-slate-200 bg-slate-50 p-3 shadow-2xl shadow-slate-200/70">
+              <div className="relative aspect-video overflow-hidden rounded-[1.5rem] bg-slate-950">
+                <iframe
+                  className="absolute inset-0 h-full w-full"
+                  src={demoVideoEmbedUrl}
+                  title="CarbonLite AI demo video"
+                  loading="lazy"
+                  allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
               </div>
             </div>
           </div>

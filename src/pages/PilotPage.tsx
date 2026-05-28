@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 
-const requestPilotHref = 'mailto:chen.athena@gmail.com?subject=CarbonLite Pilot Request';
-const bookDemoHref = 'mailto:chen.athena@gmail.com?subject=CarbonLite Demo Request';
+const requestPilotHref = 'mailto:carbonliteai@gmail.com?subject=CarbonLite Pilot Request';
+const bookDemoHref = 'mailto:carbonliteai@gmail.com?subject=CarbonLite Demo Request';
 
 const audience = [
   'SMEs preparing emissions reports',
