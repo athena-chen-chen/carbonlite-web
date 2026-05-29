@@ -13,6 +13,7 @@ import {
 import {
   buildMetricsSummaryTableRows,
   MetricsSummarySection,
+  type MissingFactorItem,
 } from '../components/MetricsSummarySection';
 
 
@@ -28,6 +29,7 @@ export function MetricsSummaryPage() {
     skippedRecords: 0,
     missingFactorRecords: 0,
   });
+  const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
   const [error, setError] = useState<string | null>(
@@ -59,6 +61,7 @@ useEffect(() => {
         skippedRecords: overview.skippedRecords,
         missingFactorRecords: overview.missingFactorRecords,
       });
+      setMissingFactors(overview.missingFactors);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load summary');
     } finally {
@@ -92,6 +95,7 @@ useEffect(() => {
         skippedRecords: overview.skippedRecords,
         missingFactorRecords: overview.missingFactorRecords,
       });
+      setMissingFactors(overview.missingFactors);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate metrics');
     } finally {
@@ -329,6 +333,7 @@ function handleDownloadPDF() {
             usageTotals={usageTotals}
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}
+            missingFactors={missingFactors}
           />
         </>
       )}

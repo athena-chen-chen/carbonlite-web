@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import {
   getConversionFactors,
 } from '../services/conversionFactors';
@@ -82,7 +83,11 @@ describe('ConversionFactorsPage traceability', () => {
       totalPages: 1,
     });
 
-    render(<ConversionFactorsPage />);
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByText('MVP Default')).toBeInTheDocument();
     expect(screen.getByText('Environment and Climate Change Canada')).toBeInTheDocument();
@@ -94,5 +99,43 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByText('Canada National Inventory Report')).toBeInTheDocument();
     expect(screen.getByText('ISO-aligned methodology review.')).toBeInTheDocument();
     expect(screen.getByText('Reviewed by consultant.')).toBeInTheDocument();
+  });
+
+  it('prefills a custom factor form from missing factor route state', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+    });
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/conversion-factors',
+            state: {
+              prefillFactor: {
+                activityType: 'WATER',
+                unit: 'm3',
+                resultUnit: 'kgCO2e',
+                type: 'EMISSION',
+              },
+            },
+          },
+        ]}
+      >
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText(/Add a conversion factor for WATER \/ m3/i),
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue('WATER')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('m3')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('kgCO2e')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('EMISSION')).toBeInTheDocument();
   });
 });

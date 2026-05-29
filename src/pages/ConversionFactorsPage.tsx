@@ -1,4 +1,5 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   createConversionFactor,
   deleteConversionFactor,
@@ -16,6 +17,10 @@ import {
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
 };
+
+type ConversionFactorRouteState = {
+  prefillFactor?: Partial<ConversionFactorInput>;
+} | null;
 
 const initialForm: ConversionFactorInput = {
   name: '',
@@ -61,6 +66,8 @@ export function getFactorTraceability(item: ConversionFactorItem) {
 }
 
 export function ConversionFactorsPage() {
+  const location = useLocation();
+  const prefillFactor = (location.state as ConversionFactorRouteState)?.prefillFactor;
   const organizationName = getOrganizationName(getCurrentUser());
   const generatedAt = new Date().toLocaleString();
   const [form, setForm] = useState<ConversionFactorInput>(initialForm);
@@ -91,6 +98,25 @@ export function ConversionFactorsPage() {
   useEffect(() => {
     loadItems();
   }, []);
+
+  useEffect(() => {
+    if (!prefillFactor) return;
+
+    setEditingId(null);
+    setShowFactorForm(true);
+    setError(null);
+    setSuccessMessage(
+      `Add a conversion factor for ${prefillFactor.activityType ?? 'this activity'} / ${prefillFactor.unit ?? 'this unit'} to include skipped records.`,
+    );
+    setForm({
+      ...initialForm,
+      type: prefillFactor.type ?? 'EMISSION',
+      activityType: prefillFactor.activityType ?? '',
+      unit: prefillFactor.unit ?? '',
+      resultUnit: prefillFactor.resultUnit ?? 'kgCO2e',
+      isDefault: true,
+    });
+  }, [prefillFactor]);
 
   const defaultCount = useMemo(
     () => items.filter((item) => item.isSystemDefault).length,

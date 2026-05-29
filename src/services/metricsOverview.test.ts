@@ -227,6 +227,23 @@ describe('loadMetricsOverview', () => {
     expect(overview.skippedRecords).toBe(0);
     expect(overview.missingFactorRecords).toBe(0);
     expect(overview.missingFactors).toEqual([]);
+    expect(overview.matchedActivityEmissions).toEqual([
+      expect.objectContaining({
+        activityDataId: 'activity-1',
+        activityType: 'DIESEL',
+        estimatedEmissionsKgCO2e: 268,
+        factorId: 'factor-1',
+      }),
+    ]);
+    expect(overview.conversionFactorsUsed).toEqual([
+      expect.objectContaining({
+        factorId: 'factor-1',
+        activityType: 'DIESEL',
+        factorValue: 2.68,
+        inputUnit: 'L',
+        factorType: 'System',
+      }),
+    ]);
   });
 
   it('calculates ELECTRICITY 100 kWh with matching factor', async () => {
@@ -267,6 +284,34 @@ describe('loadMetricsOverview', () => {
         unit: 'kg',
       },
     ]);
+  });
+
+  it('includes previously skipped records after a matching factor is added', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue(
+      [activity('activity-1', 'WATER', 10, 'm3')],
+    );
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('0', 1));
+    vi.mocked(getAllConversionFactors)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        factor({ activityType: 'WATER', unit: 'm3', factorValue: 0.5 }),
+      ]);
+
+    const beforeFactor = await loadMetricsOverview({ recalculate: true });
+    const afterFactor = await loadMetricsOverview({ recalculate: true });
+
+    expect(beforeFactor.totalEstimatedEmissionsKgCO2e).toBe(0);
+    expect(beforeFactor.processedRecords).toBe(0);
+    expect(beforeFactor.missingFactors).toEqual([
+      {
+        activityDataId: 'activity-1',
+        activityType: 'WATER',
+        unit: 'm3',
+      },
+    ]);
+    expect(afterFactor.totalEstimatedEmissionsKgCO2e).toBe(5);
+    expect(afterFactor.processedRecords).toBe(1);
+    expect(afterFactor.missingFactors).toEqual([]);
   });
 
   it('prefers organization custom factor over system default factor', async () => {

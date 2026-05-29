@@ -7,11 +7,13 @@ export type MatchableConversionFactor = {
   inputUnit?: string | null;
   unit?: string | null;
   factorValue: string | number;
+  resultUnit?: string | null;
   isSystemDefault?: boolean | null;
   isDefault?: boolean | null;
   sourceAuthority?: string | null;
   sourceName?: string | null;
   sourceYear?: number | null;
+  verified?: boolean | null;
   updatedAt?: string | null;
 };
 

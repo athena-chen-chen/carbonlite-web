@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import {
   formatActivityUsageValue,
   type ActivityUsageTotals,
@@ -16,6 +17,42 @@ export type MetricsSummaryTableRow = {
   totalValue: string;
   count: number;
 };
+
+export type MissingFactorItem = {
+  activityDataId?: string;
+  activityType: string;
+  unit: string;
+};
+
+export type MissingFactorGroup = {
+  activityType: string;
+  unit: string;
+  count: number;
+};
+
+export function groupMissingFactors(
+  missingFactors: MissingFactorItem[] = [],
+): MissingFactorGroup[] {
+  const groups = new Map<string, MissingFactorGroup>();
+
+  missingFactors.forEach((item) => {
+    const activityType = String(item.activityType || 'UNKNOWN').toUpperCase();
+    const unit = String(item.unit || '-');
+    const key = `${activityType}:${unit.toLowerCase()}`;
+    const existing = groups.get(key) ?? {
+      activityType,
+      unit,
+      count: 0,
+    };
+
+    existing.count += 1;
+    groups.set(key, existing);
+  });
+
+  return Array.from(groups.values()).sort((a, b) =>
+    `${a.activityType}:${a.unit}`.localeCompare(`${b.activityType}:${b.unit}`),
+  );
+}
 
 export function buildMetricsSummaryTableRows(input: {
   usageTotals: ActivityUsageTotals;
@@ -66,18 +103,35 @@ export function MetricsSummarySection({
   usageTotals,
   totalEstimatedEmissionsKgCO2e,
   countSummary,
+  missingFactors = [],
   emptyMessage = 'No metrics yet. Import activity records or use Demo Mode to preview a report-ready summary.',
 }: {
   usageTotals: ActivityUsageTotals;
   totalEstimatedEmissionsKgCO2e: number;
   countSummary: MetricsCountSummary;
+  missingFactors?: MissingFactorItem[];
   emptyMessage?: string;
 }) {
+  const navigate = useNavigate();
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
     recordsIncluded: countSummary.processedRecords,
   });
+  const missingFactorGroups = groupMissingFactors(missingFactors);
+
+  function handleCreateFactor(group: MissingFactorGroup) {
+    navigate('/conversion-factors', {
+      state: {
+        prefillFactor: {
+          activityType: group.activityType,
+          unit: group.unit,
+          resultUnit: 'kgCO2e',
+          type: 'EMISSION',
+        },
+      },
+    });
+  }
 
   return (
     <>
@@ -118,9 +172,36 @@ export function MetricsSummarySection({
         />
       </div>
 
-      {countSummary.skippedRecords > 0 ? (
+      {missingFactorGroups.length > 0 ? (
         <div style={warningStyle}>
-          {countSummary.skippedRecords} record(s) were skipped due to missing factors or filters. {countSummary.missingFactorRecords} record(s) are missing matching conversion factors. {countSummary.totalRecordsFound} record(s) matched the selected scope.
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>
+            Some records were skipped because no matching conversion factor was found.
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            Add a factor to include them in emissions calculations.
+          </div>
+          <div style={missingFactorListStyle}>
+            {missingFactorGroups.map((group) => (
+              <div key={`${group.activityType}-${group.unit}`} style={missingFactorRowStyle}>
+                <span>
+                  <strong>{group.activityType} / {group.unit}</strong>
+                  {' — '}
+                  {group.count} {group.count === 1 ? 'record' : 'records'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCreateFactor(group)}
+                  style={createFactorButtonStyle}
+                >
+                  Create Factor
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : countSummary.skippedRecords > 0 ? (
+        <div style={warningStyle}>
+          {countSummary.skippedRecords} record(s) were skipped due to filters or validation.
         </div>
       ) : null}
 
@@ -210,6 +291,33 @@ const warningStyle: React.CSSProperties = {
   border: '1px solid #fed7aa',
   background: '#fff7ed',
   color: '#9a3412',
+};
+
+const missingFactorListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+};
+
+const missingFactorRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 12,
+  flexWrap: 'wrap',
+  padding: 10,
+  borderRadius: 10,
+  background: '#fff',
+  border: '1px solid #fed7aa',
+};
+
+const createFactorButtonStyle: React.CSSProperties = {
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1px solid #10b981',
+  background: '#ecfdf5',
+  color: '#047857',
+  fontWeight: 800,
+  cursor: 'pointer',
 };
 
 const tableCardStyle: React.CSSProperties = {

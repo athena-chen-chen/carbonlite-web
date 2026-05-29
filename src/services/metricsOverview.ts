@@ -17,6 +17,7 @@ import {
 } from '../utils/activityAggregation';
 import {
   findBestConversionFactorMatch,
+  getFactorSourceAuthority,
 } from '../utils/conversionFactorMatching';
 
 export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
@@ -41,6 +42,29 @@ export type MetricsOverview = {
     activityDataId: string;
     activityType: string;
     unit: string;
+  }>;
+  matchedActivityEmissions: Array<{
+    activityDataId: string;
+    activityType: string;
+    quantity: string | number;
+    unit: string;
+    estimatedEmissionsKgCO2e: number;
+    sourceType: string;
+    sourceReference?: string | null;
+    notes?: string | null;
+    factorId: string;
+  }>;
+  conversionFactorsUsed: Array<{
+    factorId: string;
+    activityType?: string | null;
+    factorName: string;
+    factorValue: string | number;
+    inputUnit: string;
+    resultUnit: string;
+    sourceAuthority: string;
+    sourceYear?: number | null;
+    factorType: 'System' | 'Custom';
+    verified: boolean;
   }>;
   totalRecords: number;
 };
@@ -140,6 +164,8 @@ function calculateEstimatedEmissions(
   let totalEstimatedEmissionsKgCO2e = 0;
   let matchedFactorsCount = 0;
   const missingFactors: MetricsOverview['missingFactors'] = [];
+  const matchedActivityEmissions: MetricsOverview['matchedActivityEmissions'] = [];
+  const conversionFactorsById = new Map<string, MetricsOverview['conversionFactorsUsed'][number]>();
 
   activities.forEach((activity) => {
     const quantity = Number(activity.quantity ?? 0);
@@ -161,14 +187,44 @@ function calculateEstimatedEmissions(
 
     if (!Number.isFinite(quantity)) return;
 
+    const estimatedEmissionsKgCO2e = roundEmissions(
+      quantity * Number(matchingFactor.factorValue),
+    );
+
     matchedFactorsCount += 1;
-    totalEstimatedEmissionsKgCO2e += quantity * Number(matchingFactor.factorValue);
+    totalEstimatedEmissionsKgCO2e += estimatedEmissionsKgCO2e;
+    matchedActivityEmissions.push({
+      activityDataId: activity.id,
+      activityType: activity.activityType,
+      quantity: activity.quantity,
+      unit: activity.unit,
+      estimatedEmissionsKgCO2e,
+      sourceType: activity.sourceType,
+      sourceReference: activity.sourceReference,
+      notes: activity.notes,
+      factorId: matchingFactor.id,
+    });
+
+    conversionFactorsById.set(matchingFactor.id, {
+      factorId: matchingFactor.id,
+      activityType: matchingFactor.activityType,
+      factorName: matchingFactor.name,
+      factorValue: matchingFactor.factorValue,
+      inputUnit: matchingFactor.inputUnit || matchingFactor.unit || '',
+      resultUnit: matchingFactor.resultUnit || 'kgCO2e',
+      sourceAuthority: getFactorSourceAuthority(matchingFactor),
+      sourceYear: matchingFactor.sourceYear,
+      factorType: matchingFactor.isSystemDefault ? 'System' : 'Custom',
+      verified: Boolean(matchingFactor.verified),
+    });
   });
 
   return {
     totalEstimatedEmissionsKgCO2e: roundEmissions(totalEstimatedEmissionsKgCO2e),
     matchedFactorsCount,
     missingFactors,
+    matchedActivityEmissions,
+    conversionFactorsUsed: Array.from(conversionFactorsById.values()),
   };
 }
 

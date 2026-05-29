@@ -6,7 +6,20 @@ import {
   EMPTY_ACTIVITY_USAGE_TOTALS,
   loadMetricsOverview,
 } from '../services/metricsOverview';
-import { MetricsSummarySection } from '../components/MetricsSummarySection';
+import {
+  MetricsSummarySection,
+  buildMetricsSummaryTableRows,
+  type MissingFactorItem,
+} from '../components/MetricsSummarySection';
+import {
+  FORMAL_REPORT_DISCLAIMER,
+  FormalReportPreview,
+  buildSourceEvidenceRows,
+  formatSourceType,
+  type FormalActivityEmission,
+  type FormalConversionFactorUsed,
+} from '../components/FormalReportPreview';
+import { getCurrentUser, getOrganizationName } from '../services/auth';
 
 type ActivityItem = {
   id: string;
@@ -51,6 +64,8 @@ export default function ReportingPage() {
       .filter((id): id is string => typeof id === 'string');
   const [summary, setSummary] = useState<any>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [matchedActivityEmissions, setMatchedActivityEmissions] = useState<FormalActivityEmission[]>([]);
+  const [conversionFactorsUsed, setConversionFactorsUsed] = useState<FormalConversionFactorUsed[]>([]);
   const [usageTotals, setUsageTotals] = useState(EMPTY_ACTIVITY_USAGE_TOTALS);
   const [totalEstimatedEmissionsKgCO2e, setTotalEstimatedEmissionsKgCO2e] = useState(0);
   const [countSummary, setCountSummary] = useState({
@@ -59,6 +74,7 @@ export default function ReportingPage() {
     skippedRecords: 0,
     missingFactorRecords: 0,
   });
+  const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 const [reloadKey, setReloadKey] = useState(0);
@@ -93,6 +109,8 @@ const [selectedDocumentIds] = useState<string[]>(
 
       setSummary(overview.summary);
       setActivities(overview.activities);
+      setMatchedActivityEmissions(overview.matchedActivityEmissions);
+      setConversionFactorsUsed(overview.conversionFactorsUsed);
       setUsageTotals(overview.usageTotals);
       setTotalEstimatedEmissionsKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
       setCountSummary({
@@ -101,6 +119,7 @@ const [selectedDocumentIds] = useState<string[]>(
         skippedRecords: overview.skippedRecords,
         missingFactorRecords: overview.missingFactorRecords,
       });
+      setMissingFactors(overview.missingFactors);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report data');
     } finally {
@@ -234,114 +253,117 @@ const scopeNarrative = useMemo(() => {
 function handleDownloadPDF() {
   const doc = new jsPDF();
   const today = new Date().toISOString().slice(0, 10);
+  const totalsByMetric = buildMetricsSummaryTableRows({
+    usageTotals,
+    totalEstimatedEmissionsKgCO2e,
+    recordsIncluded: countSummary.processedRecords,
+  });
 
   // Cover / Header
   drawCarbonLitePdfLogo(doc, 14, 14);
 
   doc.setFontSize(16);
-  doc.text('Emissions Reporting Summary', 14, 38);
+  doc.text('Formal Emissions Report', 14, 38);
 
   doc.setFontSize(10);
-  doc.text('Company: KACH CANADA LTD.', 14, 51);
-  doc.text('Reporting Period: Draft period / user selected period', 14, 58);
+  doc.text(`Organization: ${organizationName}`, 14, 51);
+  doc.text(`Report Period: ${reportPeriod}`, 14, 58);
   doc.text(`Generated Date: ${today}`, 14, 65);
-  doc.text('Status: Draft for internal review and compliance preparation', 14, 72);
-  doc.setFont('helvetica', 'bold');
-  doc.text(
-    `Estimated Emissions: ${totalEstimatedEmissionsKgCO2e} kg CO2e`,
-    14,
-    79,
-  );
-  doc.setFont('helvetica', 'normal');
+  doc.text(`Report Scope: ${reportScopeLabel}`, 14, 72);
+  doc.text(`Records Included: ${countSummary.processedRecords}`, 14, 79);
 
-  // Executive summary
   autoTable(doc, {
-    startY: 91,
-    head: [['Date', 'Activity Type', 'Quantity', 'Unit', 'Source', 'Reference']],
-    body: activities.map((item) => [
-      item.recordDate?.slice(0, 10) ?? '',
-      item.activityType,
-      item.quantity,
+    startY: 90,
+    head: [['Executive Summary', 'Value']],
+    body: [
+      ['Fuel Usage', `${usageTotals.fuel} ${usageTotals.fuelUnitLabel}`],
+      ['Electricity Consumption', `${usageTotals.electricity} ${usageTotals.electricityUnitLabel}`],
+      ['Estimated Emissions', `${totalEstimatedEmissionsKgCO2e} kgCO2e`],
+      ['Records Included', countSummary.processedRecords],
+    ],
+  });
+
+  autoTable(doc, {
+    startY: (doc as any).lastAutoTable.finalY + 10,
+    head: [['Metric Type', 'Unit', 'Total', 'Count']],
+    body: totalsByMetric.map((item) => [
+      item.metricType,
       item.unit,
-      formatSourceType(item.sourceType),
-      item.sourceReference ?? '',
+      item.totalValue,
+      item.count,
     ]),
   });
 
-  const executiveY = (doc as any).lastAutoTable?.finalY ?? 115;
-
-  // Scope 1/2/3
+  const activityStartY = (doc as any).lastAutoTable.finalY + 10;
   autoTable(doc, {
-    startY: executiveY + 12,
-    head: [['Scope', 'Description', 'Activity Type', 'Quantity', 'Unit', 'Source']],
-    body: scopeRows.map((r) => [
-      r.scope,
-      getScopeDescription(r.scope),
-      r.activityType,
-      r.quantity,
-      r.unit,
-      r.source,
-    ]),
+    startY: activityStartY,
+    head: [['Activity Type', 'Quantity', 'Unit', 'Estimated Emissions', 'Source Reference']],
+    body: matchedActivityEmissions.length
+      ? matchedActivityEmissions.map((item) => [
+          item.activityType,
+          item.quantity,
+          item.unit,
+          `${item.estimatedEmissionsKgCO2e} kgCO2e`,
+          item.sourceReference ?? '',
+        ])
+      : [['No activity records with matching conversion factors.', '', '', '', '']],
   });
 
-  const scopeY = (doc as any).lastAutoTable?.finalY ?? 170;
-
-  // Source Evidence
-  if (scopeY > 230) {
+  let nextY = (doc as any).lastAutoTable?.finalY ?? 115;
+  if (nextY > 230) {
     doc.addPage();
+    nextY = 20;
   }
 
-  const sourceStartY = scopeY > 230 ? 20 : scopeY + 12;
-
-  doc.setFontSize(14);
-  doc.text('Source Evidence / Audit Trail', 14, sourceStartY);
-
   autoTable(doc, {
-    startY: sourceStartY + 8,
-    head: [['Date', 'Activity Type', 'Quantity', 'Unit', 'Source Type', 'Source Reference']],
-    body: activities.map((item) => [
-      item.recordDate?.slice(0, 10) ?? '',
-      item.activityType,
-      item.quantity,
-      item.unit,
-      item.sourceType,
-      item.sourceReference ?? '',
-    ]),
+    startY: nextY + 10,
+    head: [['Activity Type', 'Factor Value', 'Input Unit', 'Result Unit', 'Source Authority', 'Source Year', 'Type', 'Verified']],
+    body: conversionFactorsUsed.length
+      ? conversionFactorsUsed.map((factor) => [
+          factor.activityType ?? '',
+          factor.factorValue,
+          factor.inputUnit,
+          factor.resultUnit,
+          factor.sourceAuthority,
+          factor.sourceYear ?? '',
+          factor.factorType,
+          factor.verified ? 'Verified' : 'Needs review',
+        ])
+      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '']],
   });
 
-  // Methodology
-  doc.addPage();
+  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (nextY > 230) {
+    doc.addPage();
+    nextY = 20;
+  }
 
   doc.setFontSize(14);
-  doc.text('Methodology & Assumptions', 14, 20);
+  doc.text('Source Evidence', 14, nextY + 10);
+
+  autoTable(doc, {
+    startY: nextY + 18,
+    head: [['Source Document / File', 'Source Type', 'Record Count', 'Notes']],
+    body: sourceEvidenceRows.length
+      ? sourceEvidenceRows.map((item) => [
+          item.sourceReference,
+          item.sourceType,
+          item.recordCount,
+          item.notes,
+        ])
+      : [['No source evidence available.', '', '', '']],
+  });
+
+  doc.addPage();
+  doc.setFontSize(14);
+  doc.text('Methodology and Disclaimer', 14, 20);
 
   doc.setFontSize(10);
   doc.text(
-    [
-      'Emissions estimates are calculated using imported activity data and configured conversion factors.',
-      'Scope classification is based on activity type:',
-      '- Scope 1: direct fuel combustion such as diesel, gasoline, natural gas, or propane.',
-      '- Scope 2: purchased electricity.',
-      '- Scope 3: other indirect activity such as freight, waste, water, travel, or third-party services.',
-      'Uploaded documents may be processed using AI-assisted extraction and reviewed before import.',
-      'This report is intended for internal reporting support and compliance preparation.',
-      'Final submission requirements may vary by jurisdiction and reporting program.',
-    ],
+    doc.splitTextToSize(FORMAL_REPORT_DISCLAIMER, 180),
     14,
     32,
   );
-
-  // Review Notes
-  autoTable(doc, {
-    startY: 86,
-    head: [['Review Notes', '']],
-    body: [
-      ['Reviewer', ''],
-      ['Review Date', ''],
-      ['Notes', ''],
-      ['Approval Status', 'Draft / Reviewed / Approved'],
-    ],
-  });
 
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
 }
@@ -377,19 +399,34 @@ function getScopeDescription(scope: string) {
   if (scope === 'Scope 3') return 'Other indirect emissions';
   return 'Unclassified';
 }
-function formatSourceType(sourceType?: string) {
-  if (!sourceType) return 'Unknown';
 
-  const value = sourceType.toUpperCase();
+function getReportScopeLabel(
+  reportScope: 'dateRange' | 'selectedDocuments' | 'selectedRecords',
+  selectedRecordCount: number,
+  selectedDocumentCount: number,
+) {
+  if (reportScope === 'selectedRecords') {
+    return `Selected Records (${selectedRecordCount})`;
+  }
 
-  if (value === 'MANUAL') return 'Manual';
-  if (value === 'CSV') return 'CSV Import';
-  if (value === 'EXCEL') return 'Excel Import';
-  if (value === 'PASTE') return 'Pasted from Excel';
-  if (value === 'DOCUMENT_AI' || value === 'AI_EXTRACTION') return 'AI Extraction';
+  if (reportScope === 'selectedDocuments') {
+    return `Selected Documents (${selectedDocumentCount})`;
+  }
 
-  return sourceType;
+  return 'Date Range';
 }
+const organizationName = getOrganizationName(getCurrentUser());
+const generatedAt = new Date().toLocaleString();
+const reportScopeLabel = getReportScopeLabel(
+  reportScope,
+  selectedRecordIds.length,
+  selectedDocumentIds.length,
+);
+const reportPeriod =
+  reportScope === 'dateRange'
+    ? `${periodStart} to ${periodEnd}`
+    : 'Selected records';
+const sourceEvidenceRows = buildSourceEvidenceRows(activities);
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
@@ -513,7 +550,21 @@ function formatSourceType(sourceType?: string) {
             usageTotals={usageTotals}
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}
+            missingFactors={missingFactors}
             emptyMessage="No calculated metrics available."
+          />
+
+          <FormalReportPreview
+            organizationName={organizationName}
+            reportPeriod={reportPeriod}
+            scopeLabel={reportScopeLabel}
+            generatedAt={generatedAt}
+            usageTotals={usageTotals}
+            totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
+            countSummary={countSummary}
+            matchedActivityEmissions={matchedActivityEmissions}
+            conversionFactorsUsed={conversionFactorsUsed}
+            sourceEvidenceRows={sourceEvidenceRows}
           />
 
           <Section title="Scope Breakdown">
