@@ -1,7 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getOrganizationName, getUserDisplayName } from '../services/auth';
-import { disableDemoMode, isDemoMode } from '../demo/demoData';
 
 const navItems = [
   { to: '/', label: 'Home' },
@@ -87,16 +86,10 @@ export function AppNav() {
   const navigate = useNavigate();
   const workspaceName = getOrganizationName(user);
   const userLabel = getUserDisplayName(user);
-  const demoMode = isDemoMode();
 
   function handleLogout() {
     logout();
     navigate('/login', { replace: true });
-  }
-
-  function handleExitDemo() {
-    disableDemoMode();
-    window.location.href = localStorage.getItem('accessToken') ? window.location.pathname : '/login';
   }
 
   return (
@@ -124,12 +117,6 @@ export function AppNav() {
 
           {isAuthenticated ? (
             <div style={userChipStyle}>{userLabel || 'Signed in'}</div>
-          ) : null}
-
-          {demoMode ? (
-            <button type="button" onClick={handleExitDemo} style={demoButtonStyle}>
-              Exit Demo
-            </button>
           ) : null}
 
           {isAuthenticated ? (
@@ -164,17 +151,4 @@ const userChipStyle: React.CSSProperties = {
   fontWeight: 700,
   whiteSpace: 'nowrap',
   flexShrink: 0,
-};
-
-const demoButtonStyle: React.CSSProperties = {
-  padding: '8px 10px',
-  borderRadius: 999,
-  border: '1px solid #c7d2fe',
-  background: '#eef2ff',
-  color: '#3730a3',
-  fontSize: 13,
-  fontWeight: 800,
-  whiteSpace: 'nowrap',
-  flexShrink: 0,
-  cursor: 'pointer',
 };

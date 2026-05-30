@@ -29,6 +29,35 @@ describe('AppNav logout flow', () => {
     expect(screen.getByRole('button', { name: /logout/i })).toBeInTheDocument();
   });
 
+  it('keeps all navigation tabs available without a special demo state', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem('carbonliteDemoMode', 'enabled');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'user@example.com', organizationName: 'KACH CANADA LTD.' }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/upload']}>
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    [
+      'Upload',
+      'Data Records',
+      'Conversion Factors',
+      'Metrics Summary',
+      'Reports',
+    ].forEach((label) => {
+      expect(screen.getByRole('link', { name: label })).toHaveAttribute('href');
+    });
+    expect(screen.queryByRole('button', { name: /exit demo/i })).not.toBeInTheDocument();
+  });
+
+
   it('clears token and redirects to login when logging out', async () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem('currentUser', JSON.stringify({ email: 'user@example.com' }));

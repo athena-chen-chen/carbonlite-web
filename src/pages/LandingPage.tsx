@@ -125,7 +125,7 @@ export default function CarbonLiteLandingPage() {
             >
               Pilot Program
             </button>
-            <a href="#start" className="transition hover:text-emerald-700">Start</a>
+            <a href="#start" className="transition hover:text-emerald-700">Price</a>
           </nav>
 
           <div className="flex items-center gap-3">
@@ -142,13 +142,6 @@ export default function CarbonLiteLandingPage() {
               className="rounded-2xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
             >
               {isAuthenticated ? 'Dashboard' : 'Login'}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/upload')}
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
-            >
-              Open App
             </button>
             {isAuthenticated ? (
               <button
@@ -192,7 +185,7 @@ export default function CarbonLiteLandingPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/upload?demo=1')}
+                  onClick={() => navigate('/upload', { state: { loadSampleWorkspace: true } })}
                   className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
                 >
                   See Sample Workflow
@@ -208,7 +201,7 @@ export default function CarbonLiteLandingPage() {
                   onClick={() => navigate(isAuthenticated ? '/upload' : '/login')}
                   className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
                 >
-                  {isAuthenticated ? 'Open App' : 'Login'}
+                  {isAuthenticated ? 'Dashboard' : 'Login'}
                 </button>
               </div>
 

@@ -18,13 +18,16 @@ import {
 import {
   findBestConversionFactorMatch,
   getFactorSourceAuthority,
+  normalizeActivityType,
+  normalizeUnit,
 } from '../utils/conversionFactorMatching';
 
 export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
   fuel: 0,
   electricity: 0,
-  fuelUnitLabel: 'L / m3',
+  fuelUnitLabel: 'Grouped by type and unit',
   electricityUnitLabel: 'kWh',
+  fuelUsageBreakdown: [],
 };
 
 export type MetricsOverview = {
@@ -42,6 +45,7 @@ export type MetricsOverview = {
     activityDataId: string;
     activityType: string;
     unit: string;
+    availableUnitsForActivityType?: string[];
   }>;
   matchedActivityEmissions: Array<{
     activityDataId: string;
@@ -96,7 +100,11 @@ export async function loadMetricsOverview(options?: {
     ? queriedActivities.filter((item) => selectedIdSet.has(item.id))
     : hasSelectedDocuments
     ? queriedActivities.filter((item) =>
-        item.documentId ? selectedDocumentIdSet.has(item.documentId) : false,
+        item.sourceDocumentId
+          ? selectedDocumentIdSet.has(item.sourceDocumentId)
+          : item.documentId
+          ? selectedDocumentIdSet.has(item.documentId)
+          : false,
       )
     : queriedActivities;
   const activityIds = activities.map((item) => item.id).filter(Boolean);
@@ -181,6 +189,11 @@ function calculateEstimatedEmissions(
         activityDataId: activity.id,
         activityType: activity.activityType,
         unit: activity.unit,
+        availableUnitsForActivityType: getAvailableUnitsForActivityType(
+          activity.activityType,
+          activity.unit,
+          conversionFactors,
+        ),
       });
       return;
     }
@@ -226,6 +239,35 @@ function calculateEstimatedEmissions(
     matchedActivityEmissions,
     conversionFactorsUsed: Array.from(conversionFactorsById.values()),
   };
+}
+
+function getAvailableUnitsForActivityType(
+  activityType: string,
+  missingUnit: string,
+  conversionFactors: ConversionFactorItem[],
+) {
+  const normalizedActivityType = normalizeActivityType(activityType);
+  const normalizedMissingUnit = normalizeUnit(missingUnit);
+  const units = new Map<string, string>();
+
+  conversionFactors.forEach((factor) => {
+    const factorKind = String(factor.type ?? 'EMISSION').trim().toUpperCase();
+    const inputUnit = factor.inputUnit || factor.unit || '';
+    const normalizedInputUnit = normalizeUnit(inputUnit);
+
+    if (
+      factorKind !== 'EMISSION' ||
+      normalizeActivityType(factor.activityType) !== normalizedActivityType ||
+      !normalizedInputUnit ||
+      normalizedInputUnit === normalizedMissingUnit
+    ) {
+      return;
+    }
+
+    units.set(normalizedInputUnit, inputUnit);
+  });
+
+  return Array.from(units.values()).sort((a, b) => a.localeCompare(b));
 }
 
 

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { isDemoMode } from '../demo/demoData';
 import {
   type ActivityUsageRecord,
 } from '../utils/activityAggregation';
@@ -31,17 +30,39 @@ export function MetricsSummaryPage() {
   });
   const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [calcLoading, setCalcLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(
     () => (location.state as { metricsError?: string } | null)?.metricsError ?? null,
   );
-const [reloadKey, setReloadKey] = useState(0);
-const [periodStart, setPeriodStart] = useState('2026-01-01');
-const [periodEnd, setPeriodEnd] = useState('2026-12-31');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [periodStart, setPeriodStart] = useState('2026-01-01');
+  const [periodEnd, setPeriodEnd] = useState('2026-12-31');
 
-useEffect(() => {
-  loadSummary();
-}, [reloadKey, periodStart, periodEnd]);
+  useEffect(() => {
+    loadSummary();
+  }, [reloadKey, periodStart, periodEnd]);
+
+  useEffect(() => {
+    function refreshMetrics() {
+      window.sessionStorage.removeItem('carbonliteMetricsStale');
+      setReloadKey((key) => key + 1);
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key === 'carbonliteMetricsStale' && event.newValue === 'true') {
+        refreshMetrics();
+      }
+    }
+
+    window.addEventListener('carbonlite:metrics-stale', refreshMetrics);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('carbonlite:metrics-stale', refreshMetrics);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
   async function loadSummary() {
     setLoading(true);
     setError(null);
@@ -62,6 +83,7 @@ useEffect(() => {
         missingFactorRecords: overview.missingFactorRecords,
       });
       setMissingFactors(overview.missingFactors);
+      setLastUpdated(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load summary');
     } finally {
@@ -69,50 +91,19 @@ useEffect(() => {
     }
   }
 
-  async function handleCalculate() {
-    setCalcLoading(true);
-    setError(null);
-
-    try {
-      const overview = await loadMetricsOverview({
-        recalculate: true,
-        dateFrom: periodStart,
-        dateTo: periodEnd,
-      });
-
-      if (!overview.totalRecords) {
-        alert('No activity data found');
-        return;
-      }
-
-      setSummary(overview.summary);
-      setActivities(overview.activities);
-      setUsageTotals(overview.usageTotals);
-      setTotalEstimatedEmissionsKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
-      setCountSummary({
-        totalRecordsFound: overview.totalRecordsFound,
-        processedRecords: overview.processedRecords,
-        skippedRecords: overview.skippedRecords,
-        missingFactorRecords: overview.missingFactorRecords,
-      });
-      setMissingFactors(overview.missingFactors);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to calculate metrics');
-    } finally {
-      setCalcLoading(false);
-    }
+  function handleRefresh() {
+    setReloadKey((key) => key + 1);
   }
 
 // function handleDownloadCSV() {
 //   const totalsByMetric = summary?.totalsByMetric ?? [];
 
 //   const rows = [
-//     ['Metric Type', 'Unit', 'Total Value', 'Count'],
+//     ['Metric Type', 'Unit', 'Total Value'],
 //     ...totalsByMetric.map((item: any) => [
 //       item.metricType,
 //       item.unit,
 //       item.totalValue,
-//       item.count,
 //     ]),
 //   ];
 
@@ -139,7 +130,7 @@ function handleDownloadCSV() {
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
   const rows = [
-    ['Section', 'Metric Type', 'Facility', 'Unit', 'Total Value', 'Count'],
+    ['Section', 'Metric Type', 'Facility', 'Unit', 'Total Value'],
 
     ...totalsByMetric.map((item: any) => [
       'Totals by Metric',
@@ -147,7 +138,6 @@ function handleDownloadCSV() {
       '',
       item.unit,
       item.totalValue,
-      item.count,
     ]),
 
     ...totalsByFacility.map((item: any) => [
@@ -156,7 +146,6 @@ function handleDownloadCSV() {
       item.facilityId ?? 'Unassigned',
       item.unit,
       item.totalValue,
-      '',
     ]),
   ];
 
@@ -196,12 +185,11 @@ function handleDownloadPDF() {
 
   autoTable(doc, {
     startY: 45,
-    head: [['Metric Type', 'Unit', 'Total Value', 'Count']],
+    head: [['Metric Type', 'Unit', 'Total Value']],
     body: totalsByMetric.map((item: any) => [
       item.metricType,
       item.unit,
       item.totalValue,
-      item.count,
     ]),
   });
 
@@ -225,8 +213,6 @@ function handleDownloadPDF() {
     totalEstimatedEmissionsKgCO2e,
     recordsIncluded: countSummary.processedRecords,
   });
-  const demoMode = isDemoMode();
-
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       <h1 style={{ marginBottom: 8 }}>Metrics Summary</h1>
@@ -234,12 +220,6 @@ function handleDownloadPDF() {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Your uploaded documents have been automatically converted into structured data and summarized.
       </p>
-      {demoMode ? (
-        <div style={demoNoticeStyle}>
-          Demo metrics are preloaded from a fuel invoice, utility bill, and CSV activity import.
-        </div>
-      ) : null}
-
       <div style={filterCardStyle}>
         <div>
           <label style={labelStyle}>Start Date</label>
@@ -273,23 +253,22 @@ function handleDownloadPDF() {
         </button>
       </div>
  
-<div style={{display:'flex',flexDirection: 'row',  gap: 8,marginBottom: 24}}>
-      <button
-        onClick={handleCalculate}
-        disabled={calcLoading}
-        style={{
-          
-          padding: '10px 16px',
-          borderRadius: 10,
-          border: 'none',
-          background: calcLoading ? '#9ca3af' : '#10b981',
-          color: '#fff',
-          fontWeight: 600,
-          cursor: calcLoading ? 'not-allowed' : 'pointer',
-        }}
-      >
-        {calcLoading ? 'Generating...' : 'Generate Metrics'}
-      </button>
+      <div style={statusBarStyle}>
+        <div style={statusTextStyle}>
+          {loading
+            ? 'Updating metrics automatically...'
+            : lastUpdated
+            ? `Last updated: ${formatLastUpdated(lastUpdated)}`
+            : 'Updated automatically'}
+        </div>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={loading}
+          style={refreshButtonStyle(loading)}
+        >
+          Refresh
+        </button>
 {/* <button
   type="button"
   onClick={handleDownloadCSV}
@@ -322,34 +301,25 @@ function handleDownloadPDF() {
 >
   Download PDF
 </button> */}
-</div>
+      </div>
       {error && <div style={warningStyle}>{error}</div>}
 
-      {loading ? (
-        <div style={loadingStyle}>Generating metrics summary...</div>
-      ) : (
-        <>
-          <MetricsSummarySection
-            usageTotals={usageTotals}
-            totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
-            countSummary={countSummary}
-            missingFactors={missingFactors}
-          />
-        </>
-      )}
+      <MetricsSummarySection
+        usageTotals={usageTotals}
+        totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
+        countSummary={countSummary}
+        missingFactors={missingFactors}
+      />
     </div>
   );
 }
 
-const demoNoticeStyle: React.CSSProperties = {
-  marginBottom: 18,
-  padding: 12,
-  borderRadius: 10,
-  border: '1px solid #c7d2fe',
-  background: '#eef2ff',
-  color: '#3730a3',
-  fontWeight: 600,
-};
+function formatLastUpdated(date: Date) {
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 const warningStyle: React.CSSProperties = {
   marginBottom: 16,
@@ -358,14 +328,6 @@ const warningStyle: React.CSSProperties = {
   border: '1px solid #fed7aa',
   background: '#fff7ed',
   color: '#9a3412',
-};
-
-const loadingStyle: React.CSSProperties = {
-  padding: 18,
-  borderRadius: 12,
-  border: '1px solid #e2e8f0',
-  background: '#f8fafc',
-  color: '#475569',
 };
 
 const filterCardStyle: React.CSSProperties = {
@@ -405,3 +367,30 @@ const secondaryButtonStyle: React.CSSProperties = {
   fontWeight: 700,
   cursor: 'pointer',
 };
+
+const statusBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  marginBottom: 24,
+  flexWrap: 'wrap',
+};
+
+const statusTextStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+function refreshButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '8px 12px',
+    borderRadius: 10,
+    border: '1px solid #cbd5e1',
+    background: disabled ? '#f8fafc' : '#fff',
+    color: disabled ? '#94a3b8' : '#334155',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}

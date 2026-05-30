@@ -1,5 +1,4 @@
 import { buildApiUrl } from '../config/api';
-import { isDemoMode } from '../demo/demoData';
 
 const TOKEN_KEY = 'accessToken';
 const USER_KEY = 'currentUser';
@@ -117,20 +116,10 @@ export function handleUnauthorized() {
 }
 
 export function getToken() {
-  if (isDemoMode()) return 'demo-token';
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function getCurrentUser(): AuthUser | null {
-  if (isDemoMode()) {
-    return {
-      id: 'demo-user',
-      email: 'pilot@carbonlite.ai',
-      name: 'Pilot Reviewer',
-      organizationName: 'KACH Canada Demo',
-    };
-  }
-
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
 

@@ -1,5 +1,4 @@
 import { apiFetch } from './api';
-import { demoDocuments, isDemoMode } from '../demo/demoData';
 
 export type UploadDocumentInput = {
   file: File;
@@ -26,21 +25,12 @@ export type DocumentListResponse = {
   totalPages: number;
 };
 
-export async function uploadDocument(input: UploadDocumentInput) {
-  if (isDemoMode()) {
-    return {
-      id: `demo-upload-${Date.now()}`,
-      fileName: input.file.name,
-      fileUrl: '#demo-upload',
-      mimeType: input.file.type,
-      fileSize: input.file.size,
-      type: input.type,
-      status: 'UPLOADED',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  }
+export type DeleteDocumentResponse = {
+  deletedDocument: boolean;
+  deletedActivityRecords: number;
+};
 
+export async function uploadDocument(input: UploadDocumentInput) {
   const formData = new FormData();
   formData.append('file', input.file);
   formData.append('type', input.type);
@@ -52,26 +42,19 @@ export async function uploadDocument(input: UploadDocumentInput) {
 }
 
 export async function getDocuments() {
-  if (isDemoMode()) {
-    return {
-      items: demoDocuments,
-      page: 1,
-      pageSize: demoDocuments.length,
-      total: demoDocuments.length,
-      totalPages: 1,
-    };
-  }
-
   return apiFetch<DocumentListResponse>('/documents');
 }
 
 export async function deleteDocument(id: string) {
-  if (isDemoMode()) return;
-
   try {
-    return await apiFetch<void>(`/documents/${id}`, {
+    const response = await apiFetch<DeleteDocumentResponse | void>(`/documents/${id}`, {
       method: 'DELETE',
     });
+
+    return response ?? {
+      deletedDocument: true,
+      deletedActivityRecords: 0,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : '';
 

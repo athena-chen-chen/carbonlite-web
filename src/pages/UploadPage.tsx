@@ -5,7 +5,7 @@ import {
   extractDocument,
   type ParsedActivity,
 } from '../services/documentExtraction';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { calculateMetrics } from '../services/metrics';
 import {
   activityTypeDefaultUnits,
@@ -15,10 +15,8 @@ import {
 import { buildApiUrl } from '../config/api';
 import { getToken } from '../services/auth';
 import {
-  demoDocuments,
-  demoParsedActivities,
-  enableDemoMode,
-  isDemoMode,
+  sampleDocuments,
+  sampleParsedActivities,
 } from '../demo/demoData';
 
 
@@ -42,6 +40,7 @@ type EditableParsedActivity = {
   selected: boolean;
   documentId: string;
   documentFileName: string;
+  dateEstimated: boolean;
   activityType: EditableConfidenceField<string>;
   recordDate: EditableConfidenceField<string>;
   quantity: EditableConfidenceField<number>;
@@ -53,6 +52,29 @@ type EditableParsedActivity = {
 type RawExtractionField = string | number | null | undefined | Record<string, any>;
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
+type DocumentActionKind =
+  | 'view'
+  | 'extract'
+  | 'preview'
+  | 'reextract'
+  | 'import'
+  | 'viewRecords'
+  | 'delete';
+
+type DocumentActionConfig = {
+  kind: DocumentActionKind;
+  label: string;
+  disabled?: boolean;
+  title?: string;
+  danger?: boolean;
+};
+
+type DocumentActionModel = {
+  statusLabel: string;
+  primaryAction: DocumentActionConfig;
+  menuActions: DocumentActionConfig[];
+};
 
 export function getDocumentDownloadUrl(documentId: string) {
   return buildApiUrl(`/documents/${documentId}/download`);
@@ -114,6 +136,185 @@ export function formatSourceReference(
   return parts.join(' - ') || 'PDF extraction';
 }
 
+function formatDateValue(value: RawExtractionField) {
+  const text = formatOptionalExtractionField(value).trim();
+  if (!text) return '';
+
+  return text.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(text)
+    ? text.slice(0, 10)
+    : text;
+}
+
+export function resolveActivityRecordDate(input: {
+  recordDate?: RawExtractionField;
+  extractedDocumentDate?: RawExtractionField;
+  uploadDate?: RawExtractionField;
+}) {
+  const recordDate = formatDateValue(input.recordDate);
+  if (recordDate) {
+    return {
+      value: recordDate,
+      dateEstimated: false,
+      label: recordDate,
+    };
+  }
+
+  const extractedDocumentDate = formatDateValue(input.extractedDocumentDate);
+  if (extractedDocumentDate) {
+    return {
+      value: extractedDocumentDate,
+      dateEstimated: true,
+      label: `${extractedDocumentDate} (estimated)`,
+    };
+  }
+
+  const uploadDate = formatDateValue(input.uploadDate);
+  if (uploadDate) {
+    return {
+      value: uploadDate,
+      dateEstimated: true,
+      label: `${uploadDate} (estimated)`,
+    };
+  }
+
+  return {
+    value: '',
+    dateEstimated: true,
+    label: 'Missing date',
+  };
+}
+
+function getExtractedDocumentDate(item: ParsedActivity | any) {
+  return (
+    item.documentDate ??
+    item.extractedDocumentDate ??
+    item.invoiceDate ??
+    item.billDate ??
+    item.statementDate ??
+    null
+  );
+}
+
+function normalizeDocumentStatus(status: string) {
+  return String(status || '').toUpperCase();
+}
+
+export function getDocumentStatusLabel(status: string) {
+  const normalized = normalizeDocumentStatus(status);
+
+  if (normalized === 'IMPORTED') return 'Imported';
+  if (['PROCESSED', 'EXTRACTED', 'REVIEW_REQUIRED'].includes(normalized)) {
+    return 'Ready for Review';
+  }
+  if (['FAILED', 'EXTRACTION_FAILED', 'NO_DATA_FOUND'].includes(normalized)) {
+    return 'Needs Attention';
+  }
+
+  return 'Uploaded';
+}
+
+export function getDocumentActionModel(input: {
+  status: string;
+  canImport?: boolean;
+  hasPreview?: boolean;
+  isExtracting?: boolean;
+  isImporting?: boolean;
+  isGeneratingMetrics?: boolean;
+  isViewing?: boolean;
+  isDeleting?: boolean;
+}): DocumentActionModel {
+  const status = normalizeDocumentStatus(input.status);
+  const viewAction: DocumentActionConfig = {
+    kind: 'view',
+    label: input.isViewing ? 'Opening...' : 'View',
+    disabled: input.isViewing,
+  };
+  const deleteAction: DocumentActionConfig = {
+    kind: 'delete',
+    label: input.isDeleting ? 'Deleting...' : 'Delete',
+    disabled: input.isDeleting,
+    danger: true,
+  };
+
+  if (input.isExtracting) {
+    return {
+      statusLabel: getDocumentStatusLabel(status),
+      primaryAction: { kind: 'extract', label: 'Extracting...', disabled: true },
+      menuActions: [viewAction, deleteAction],
+    };
+  }
+
+  if (input.isImporting || input.isGeneratingMetrics) {
+    return {
+      statusLabel: getDocumentStatusLabel(status),
+      primaryAction: {
+        kind: 'import',
+        label: input.isGeneratingMetrics ? 'Generating...' : 'Importing...',
+        disabled: true,
+      },
+      menuActions: [viewAction, deleteAction],
+    };
+  }
+
+  if (status === 'IMPORTED') {
+    return {
+      statusLabel: 'Imported',
+      primaryAction: {
+        kind: 'viewRecords',
+        label: 'View Records',
+      },
+      menuActions: [viewAction, deleteAction],
+    };
+  }
+
+  if (['FAILED', 'EXTRACTION_FAILED', 'NO_DATA_FOUND'].includes(status)) {
+    return {
+      statusLabel: 'Needs Attention',
+      primaryAction: {
+        kind: 'reextract',
+        label: 'Retry Extract',
+        title: 'Run extraction again',
+      },
+      menuActions: [deleteAction],
+    };
+  }
+
+  if (['PROCESSED', 'EXTRACTED', 'REVIEW_REQUIRED'].includes(status)) {
+    return {
+      statusLabel: 'Ready for Review',
+      primaryAction: {
+        kind: 'preview',
+        label: 'Preview Data',
+        disabled: !input.hasPreview,
+        title: input.hasPreview
+          ? 'Review extracted activity rows'
+          : 'No extraction preview is available. Use Re-extract to generate a new preview.',
+      },
+      menuActions: [
+        viewAction,
+        ...(input.canImport
+          ? [{ kind: 'import', label: 'Import' } satisfies DocumentActionConfig]
+          : []),
+        {
+          kind: 'reextract',
+          label: 'Re-extract',
+          title: 'Run extraction again',
+        },
+        deleteAction,
+      ],
+    };
+  }
+
+  return {
+    statusLabel: 'Uploaded',
+    primaryAction: {
+      kind: 'extract',
+      label: 'Extract',
+    },
+    menuActions: [viewAction, deleteAction],
+  };
+}
+
 export function UploadPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [documentType, setDocumentType] = useState('OTHER');
@@ -132,13 +333,14 @@ export function UploadPage() {
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
-  const [demoMode, setDemoMode] = useState(() => isDemoMode());
+  const [sampleWorkspaceLoaded, setSampleWorkspaceLoaded] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [viewingDocumentId, setViewingDocumentId] = useState<string | null>(null);
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const navigate = useNavigate();
+  const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDragDepthRef = useRef(0);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
@@ -147,12 +349,7 @@ export function UploadPage() {
     setError(null);
 
     try {
-      if (demoMode) {
-        setDocuments(demoDocuments);
-        setPreviewDocumentId('MULTIPLE');
-        setPreviewDocumentIds(demoDocuments.map((document) => document.id));
-        setParsedActivities(buildDemoReviewRows());
-        setSuccessMessage('Demo Mode is ready with sample documents, activity records, metrics, and report examples.');
+      if ((location.state as { loadSampleWorkspace?: boolean } | null)?.loadSampleWorkspace) {
         return;
       }
 
@@ -167,33 +364,37 @@ export function UploadPage() {
 
   useEffect(() => {
     loadDocuments();
-  }, [demoMode]);
-
-  useEffect(() => {
-    if (window.location.search.includes('demo=1')) {
-      enableDemoMode();
-      setDemoMode(true);
-    }
   }, []);
 
-  function buildDemoReviewRows() {
-    return demoParsedActivities.map((item, index) => ({
+  useEffect(() => {
+    if ((location.state as { loadSampleWorkspace?: boolean } | null)?.loadSampleWorkspace) {
+      loadSampleWorkspace();
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [location.state]);
+
+  function buildSampleReviewRows() {
+    return sampleParsedActivities.map((item, index) => ({
       selected: true,
-      documentId: demoDocuments[index]?.id ?? demoDocuments[0].id,
-      documentFileName: demoDocuments[index]?.fileName ?? demoDocuments[0].fileName,
+      documentId: sampleDocuments[index]?.id ?? sampleDocuments[0].id,
+      documentFileName: sampleDocuments[index]?.fileName ?? sampleDocuments[0].fileName,
+      dateEstimated: false,
       ...item,
     }));
   }
 
-  function startDemoMode() {
-    enableDemoMode();
-    setDemoMode(true);
-    setDocuments(demoDocuments);
+  function loadSampleWorkspace() {
+    setDocuments(sampleDocuments);
     setPreviewDocumentId('MULTIPLE');
-    setPreviewDocumentIds(demoDocuments.map((document) => document.id));
-    setParsedActivities(buildDemoReviewRows());
-    setSuccessMessage('Demo Mode loaded: sample fuel invoice, utility bill, CSV records, and extracted activity rows are ready for review.');
+    setPreviewDocumentIds(sampleDocuments.map((document) => document.id));
+    setParsedActivities(buildSampleReviewRows());
+    setSampleWorkspaceLoaded(true);
+    setSuccessMessage('Sample files loaded. You can review, import, edit, and generate reports like a real workflow.');
     setError(null);
+  }
+
+  function isSampleDocumentId(documentId: string) {
+    return sampleDocuments.some((document) => document.id === documentId);
   }
 
   function getDocumentTypeFromFile(file: File) {
@@ -439,10 +640,6 @@ ${sampleRows.join('\n')}`,
     );
   }
 
-  function isRetryableExtractionStatus(status: string) {
-    return status === 'NO_DATA_FOUND' || status === 'EXTRACTION_FAILED';
-  }
-
   function canImportDocument(doc: DocumentItem) {
     return (
       !generatingMetrics &&
@@ -453,51 +650,67 @@ ${sampleRows.join('\n')}`,
     );
   }
 
-  function getDocumentPrimaryAction(doc: DocumentItem) {
-    if (extractingId === doc.id) return { label: 'Extracting...', disabled: true };
-    if (confirmingId === doc.id) return { label: 'Importing...', disabled: true };
-    if (generatingMetrics) return { label: 'Generating...', disabled: true };
-
-    if (doc.status === 'IMPORTED') {
-      return { label: 'View Results', disabled: false };
-    }
-
-    if (canImportDocument(doc)) {
-      return { label: 'Import', disabled: false };
-    }
-
-    if (doc.status === 'REVIEW_REQUIRED') {
-      return { label: 'Re-extract', disabled: false };
-    }
-
-    return {
-      label: isRetryableExtractionStatus(doc.status) ? 'Re-extract' : 'Extract',
-      disabled: false,
-    };
+  function hasPreviewForDocument(doc: DocumentItem) {
+    return (
+      parsedActivities.some((item) => item.documentId === doc.id) &&
+      (previewDocumentId === doc.id || previewDocumentIds.includes(doc.id))
+    );
   }
 
-  function handleDocumentPrimaryAction(doc: DocumentItem) {
-    const action = getDocumentPrimaryAction(doc);
+  function getDocumentActionModelForDoc(doc: DocumentItem) {
+    return getDocumentActionModel({
+      status: doc.status,
+      canImport: canImportDocument(doc),
+      hasPreview: hasPreviewForDocument(doc),
+      isExtracting: extractingId === doc.id,
+      isImporting: confirmingId === doc.id,
+      isGeneratingMetrics: generatingMetrics,
+      isViewing: viewingDocumentId === doc.id,
+      isDeleting: deletingDocumentId === doc.id,
+    });
+  }
+
+  function handleDocumentAction(doc: DocumentItem, action: DocumentActionConfig) {
     if (action.disabled) return;
     setOpenDocumentMenuId(null);
 
-    if (action.label === 'View Results') {
-      navigate('/metrics-summary');
-      return;
+    switch (action.kind) {
+      case 'view':
+        handleViewDocument(doc);
+        return;
+      case 'preview':
+        if (hasPreviewForDocument(doc)) {
+          setPreviewDocumentId(doc.id);
+          setPreviewDocumentIds([doc.id]);
+          setSuccessMessage('Review the extracted activity rows below, then confirm import.');
+        }
+        return;
+      case 'import':
+        handleConfirmImport(doc.id);
+        return;
+      case 'viewRecords':
+        navigate('/data-records', {
+          state: {
+            sourceDocumentId: doc.id,
+          },
+        });
+        return;
+      case 'delete':
+        setDocumentToDelete(doc);
+        return;
+      case 'extract':
+      case 'reextract':
+        handleExtract(doc.id);
+        return;
+      default:
+        return;
     }
-
-    if (action.label === 'Import') {
-      handleConfirmImport(doc.id);
-      return;
-    }
-
-    handleExtract(doc.id);
   }
 
   async function handleViewDocument(doc: DocumentItem) {
     if (viewingDocumentId === doc.id) return;
 
-    if (demoMode && doc.fileUrl?.startsWith('/demo/')) {
+    if (isSampleDocumentId(doc.id) && doc.fileUrl?.startsWith('/demo/')) {
       window.open(doc.fileUrl, '_blank', 'noopener,noreferrer');
       return;
     }
@@ -591,12 +804,18 @@ ${sampleRows.join('\n')}`,
     setSuccessMessage(null);
 
     try {
-      await deleteDocument(documentId);
+      const result = await deleteDocument(documentId);
       setDocuments((prev) => prev.filter((doc) => doc.id !== documentId));
       clearDeletedDocumentPreview(documentId);
       setDocumentToDelete(null);
       setOpenDocumentMenuId(null);
-      setSuccessMessage('Document deleted. Existing activity records will remain.');
+      window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+      window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+      setSuccessMessage(
+        result.deletedActivityRecords > 0
+          ? `Document deleted. ${result.deletedActivityRecords} related activity record${result.deletedActivityRecords === 1 ? '' : 's'} removed.`
+          : 'Document deleted.',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Document deletion failed. Please try again.');
     } finally {
@@ -641,12 +860,13 @@ ${sampleRows.join('\n')}`,
       {
         id: documentId,
         fileName: document?.fileName ?? documentId,
+        createdAt: document?.createdAt,
       },
     ]);
   }
 
   async function handleExtractDocuments(
-    documentsToExtract: Array<{ id: string; fileName: string }>,
+    documentsToExtract: Array<{ id: string; fileName: string; createdAt?: string | null }>,
   ) {
     if (documentsToExtract.length === 0) {
       setError('No uploaded documents were found to extract.');
@@ -658,16 +878,16 @@ ${sampleRows.join('\n')}`,
     setSuccessMessage(null);
 
     try {
-      if (demoMode) {
+      if (documentsToExtract.every((document) => isSampleDocumentId(document.id))) {
         setSuccessMessage('Extracting sample fuel, electricity, and operations records...');
         setPreviewDocumentId(documentsToExtract.length === 1 ? documentsToExtract[0].id : 'MULTIPLE');
         setPreviewDocumentIds(documentsToExtract.map((document) => document.id));
-        setParsedActivities(buildDemoReviewRows());
+        setParsedActivities(buildSampleReviewRows());
         updateDocumentStatuses(
           documentsToExtract.map((document) => document.id),
           'REVIEW_REQUIRED',
         );
-        setSuccessMessage('Extraction completed. Review the three realistic activity rows, then confirm import.');
+        setSuccessMessage('Sample extraction completed. Review the activity rows, then confirm import.');
         return;
       }
 
@@ -687,20 +907,39 @@ ${sampleRows.join('\n')}`,
         }
 
         extractedRows.push(
-          ...extractedActivities.map((item: ParsedActivity | any) => ({
-            selected: true,
-            documentId: document.id,
-            documentFileName: document.fileName,
-            ...item,
-            sourceReference: {
-              value: formatSourceReference(item.sourceReference, document.fileName),
-              confidence: extractFieldConfidence(item.sourceReference),
-            },
-            notes: {
-              value: formatOptionalExtractionField(item.notes),
-              confidence: extractFieldConfidence(item.notes),
-            },
-          })),
+          ...extractedActivities.map((item: ParsedActivity | any) => {
+            const documentUploadDate =
+              document.createdAt ??
+              documents.find((doc) => doc.id === document.id)?.createdAt ??
+              null;
+            const resolvedDate = resolveActivityRecordDate({
+              recordDate: item.recordDate,
+              extractedDocumentDate: getExtractedDocumentDate(item),
+              uploadDate: documentUploadDate,
+            });
+
+            return {
+              selected: true,
+              documentId: document.id,
+              documentFileName: document.fileName,
+              ...item,
+              dateEstimated: resolvedDate.dateEstimated || Boolean(item.dateEstimated),
+              recordDate: {
+                value: resolvedDate.value,
+                confidence: resolvedDate.dateEstimated
+                  ? 'low'
+                  : extractFieldConfidence(item.recordDate),
+              },
+              sourceReference: {
+                value: formatSourceReference(item.sourceReference, document.fileName),
+                confidence: extractFieldConfidence(item.sourceReference),
+              },
+              notes: {
+                value: formatOptionalExtractionField(item.notes),
+                confidence: extractFieldConfidence(item.notes),
+              },
+            };
+          }),
         );
 
         if (result.possibleMissingRows) {
@@ -783,20 +1022,40 @@ ${sampleRows.join('\n')}`,
       return;
     }
 
+    const missingDateCount = selectedActivities.filter(
+      (item) => item.dateEstimated || !item.recordDate.value,
+    ).length;
+
+    if (missingDateCount > 0) {
+      const shouldImport = window.confirm(
+        `${missingDateCount} record${missingDateCount === 1 ? ' is' : 's are'} missing dates. Import anyway?`,
+      );
+
+      if (!shouldImport) {
+        setError('Import cancelled. You can edit missing dates before importing.');
+        setSuccessMessage(null);
+        return;
+      }
+    }
+
     setConfirmingId(activeDocumentIds.length > 1 ? 'multiple' : activeDocumentIds[0]);
     setError(null);
     setSuccessMessage(null);
 
     try {
-      if (demoMode) {
+      if (activeDocumentIds.every((documentId) => isSampleDocumentId(documentId))) {
         const importedCount = selectedActivities.length;
         setPreviewDocumentId(null);
         setPreviewDocumentIds([]);
         setParsedActivities([]);
-        setGeneratingMetrics(true);
-        setSuccessMessage(`Imported ${importedCount} activity record(s). Metrics generated automatically.`);
-        await calculateMetrics(selectedActivities.map((_, index) => `demo-activity-${index + 1}`));
-        navigate('/metrics-summary?demo=1');
+        setDocuments((prev) =>
+          prev.map((document) =>
+            activeDocumentIds.includes(document.id)
+              ? { ...document, status: 'IMPORTED' }
+              : document,
+          ),
+        );
+        setSuccessMessage(`Imported ${importedCount} sample activity record(s). You can continue with the normal workflow.`);
         return;
       }
 
@@ -820,11 +1079,15 @@ ${sampleRows.join('\n')}`,
           activityDocumentId;
         const normalizedActivities = activities.map((item) => ({
           activityType: item.activityType.value,
-          recordDate: item.recordDate.value,
+          recordDate: item.recordDate.value || null,
           quantity: item.quantity.value,
           unit: item.unit.value,
           sourceType: 'AI_EXTRACTION',
           sourceReference: item.sourceReference.value || sourceFileName,
+          documentId: activityDocumentId,
+          sourceDocumentId: activityDocumentId,
+          sourceFileName,
+          dateEstimated: item.dateEstimated,
           notes: `Imported from AI extraction. Document ID: ${activityDocumentId}`,
         }));
 
@@ -862,12 +1125,12 @@ ${sampleRows.join('\n')}`,
         navigate('/metrics-summary');
       } catch {
         setError(
-          'Imported activity records, but emissions metrics could not be generated automatically. You can click Generate Metrics on the Metrics Summary page.',
+          'Imported activity records, but emissions metrics could not be generated automatically. Metrics Summary will retry automatically, or you can use Refresh.',
         );
         navigate('/metrics-summary', {
           state: {
             metricsError:
-              'Imported activity records, but emissions metrics could not be generated automatically. Click Generate Metrics to retry.',
+              'Imported activity records, but emissions metrics could not be generated automatically. Metrics Summary will retry automatically, or you can use Refresh.',
           },
         });
       } finally {
@@ -912,15 +1175,17 @@ function updateParsedActivityField(
         if (field === 'selected') return item;
 
         const currentField = item[field] as EditableConfidenceField<any>;
+        const nextValue =
+          field === 'quantity'
+            ? Number(value)
+            : formatOptionalExtractionField(value);
 
         return {
           ...item,
+          ...(field === 'recordDate' ? { dateEstimated: false } : {}),
           [field]: {
             ...currentField,
-            value:
-              field === 'quantity'
-                ? Number(value)
-                : formatOptionalExtractionField(value),
+            value: nextValue,
             confidence: 'medium',
           },
         };
@@ -942,8 +1207,9 @@ function updateParsedActivityField(
           documents.find((doc) => doc.id === (previewDocumentIds[0] ?? previewDocumentId))
             ?.fileName ??
           previewDocumentIds[0] ??
-          previewDocumentId ??
+            previewDocumentId ??
           '',
+        dateEstimated: false,
         activityType: { value: defaultActivityType, confidence: 'medium' },
         recordDate: {
           value: new Date().toISOString().slice(0, 10),
@@ -1013,15 +1279,15 @@ function updateParsedActivityField(
         Upload → Extract → Review → Import → Metrics → Reports
       </div>
 
-      <div style={demoBannerStyle}>
+      <div style={sampleBannerStyle}>
         <div>
-          <strong>{demoMode ? 'Demo Mode active' : 'Prepare a 90-second demo'}</strong>
+          <strong>{sampleWorkspaceLoaded ? 'Example workspace loaded' : 'Try sample files'}</strong>
           <div style={{ color: '#475569', marginTop: 4 }}>
-            Preload a fuel invoice, utility bill, CSV activity file, extracted rows, metrics, and report examples.
+            Preload sample uploaded documents and extracted rows without changing how the app works.
           </div>
         </div>
-        <button type="button" onClick={startDemoMode} style={primaryButtonStyle(false)}>
-          {demoMode ? 'Reload Demo Data' : 'Start Demo Mode'}
+        <button type="button" onClick={loadSampleWorkspace} style={primaryButtonStyle(false)}>
+          {sampleWorkspaceLoaded ? 'Reload Sample Data' : 'Load Sample Data'}
         </button>
       </div>
 
@@ -1150,7 +1416,7 @@ function updateParsedActivityField(
           <div style={emptyStateStyle}>
             <strong>No documents yet</strong>
             <p style={{ margin: '8px 0 0', color: '#64748b' }}>
-              Upload a file or start Demo Mode to see a complete source-document workflow.
+              Upload a file or load sample data to see a complete source-document workflow.
             </p>
           </div>
         ) : (
@@ -1188,97 +1454,89 @@ function updateParsedActivityField(
               </tr>
             </thead>
             <tbody>
-              {visibleDocuments.map((doc) => (
-                <tr
-                  key={doc.id}
-                  style={doc.id === latestDocumentId ? { background: '#f0f7ff' } : undefined}
-                >
-                  <td style={tdStyle}>
-                    <input
-                      type="checkbox"
-                      checked={selectedDocumentIds.includes(doc.id)}
-                      onChange={(event) =>
-                        toggleDocumentSelection(doc.id, event.target.checked)
-                      }
-                      aria-label={`Select document ${doc.fileName}`}
-                    />
-                  </td>
-                  <td style={tdStyle}>{doc.fileName}</td>
-                  <td style={tdStyle}>{doc.type}</td>
-                  <td style={tdStyle}>{doc.status}</td>
-                  <td style={tdStyle}>{doc.fileSize ?? '-'}</td>
-                  <td style={tdStyle}>{doc.createdAt}</td>
-                  <td style={documentActionTdStyle}>
-                    <div style={documentActionRowCompactStyle}>
-                      <button
-                        type="button"
-                        onClick={() => handleDocumentPrimaryAction(doc)}
-                        disabled={getDocumentPrimaryAction(doc).disabled}
-                        title={getDocumentPrimaryAction(doc).label}
-                        style={documentPrimaryActionButtonStyle(
-                          getDocumentPrimaryAction(doc).disabled,
-                        )}
-                      >
-                        {getDocumentPrimaryAction(doc).label}
-                      </button>
+              {visibleDocuments.map((doc) => {
+                const actionModel = getDocumentActionModelForDoc(doc);
+                const primaryAction = actionModel.primaryAction;
 
-                      <div style={documentMenuWrapStyle}>
+                return (
+                  <tr
+                    key={doc.id}
+                    style={doc.id === latestDocumentId ? { background: '#f0f7ff' } : undefined}
+                  >
+                    <td style={tdStyle}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDocumentIds.includes(doc.id)}
+                        onChange={(event) =>
+                          toggleDocumentSelection(doc.id, event.target.checked)
+                        }
+                        aria-label={`Select document ${doc.fileName}`}
+                      />
+                    </td>
+                    <td style={tdStyle}>{doc.fileName}</td>
+                    <td style={tdStyle}>{doc.type}</td>
+                    <td style={tdStyle}>
+                      <span style={documentStatusBadgeStyle(doc.status)}>
+                        {actionModel.statusLabel}
+                      </span>
+                    </td>
+                    <td style={tdStyle}>{doc.fileSize ?? '-'}</td>
+                    <td style={tdStyle}>{doc.createdAt}</td>
+                    <td style={documentActionTdStyle}>
+                      <div style={documentActionRowCompactStyle}>
                         <button
                           type="button"
-                          aria-label={`More actions for ${doc.fileName}`}
-                          aria-expanded={openDocumentMenuId === doc.id}
-                          onClick={() =>
-                            setOpenDocumentMenuId((current) =>
-                              current === doc.id ? null : doc.id,
-                            )
-                          }
-                          style={kebabButtonStyle}
+                          onClick={() => handleDocumentAction(doc, primaryAction)}
+                          disabled={primaryAction.disabled}
+                          title={primaryAction.title ?? primaryAction.label}
+                          style={documentPrimaryActionButtonStyle(
+                            Boolean(primaryAction.disabled),
+                          )}
                         >
-                          ⋮
+                          {primaryAction.label}
                         </button>
 
-                        {openDocumentMenuId === doc.id ? (
-                          <div style={documentMenuStyle}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenDocumentMenuId(null);
-                                handleViewDocument(doc);
-                              }}
-                              disabled={viewingDocumentId === doc.id}
-                              style={documentMenuItemStyle(viewingDocumentId === doc.id)}
-                            >
-                              {viewingDocumentId === doc.id ? 'Opening...' : 'View'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenDocumentMenuId(null);
-                                handleConfirmImport(doc.id);
-                              }}
-                              disabled={!canImportDocument(doc)}
-                              style={documentMenuItemStyle(!canImportDocument(doc))}
-                            >
-                              Import
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenDocumentMenuId(null);
-                                setDocumentToDelete(doc);
-                              }}
-                              disabled={deletingDocumentId === doc.id}
-                              style={documentMenuDangerItemStyle(deletingDocumentId === doc.id)}
-                            >
-                              {deletingDocumentId === doc.id ? 'Deleting...' : 'Delete'}
-                            </button>
-                          </div>
-                        ) : null}
+                        <div style={documentMenuWrapStyle}>
+                          <button
+                            type="button"
+                            aria-label={`More actions for ${doc.fileName}`}
+                            aria-expanded={openDocumentMenuId === doc.id}
+                            onClick={() =>
+                              setOpenDocumentMenuId((current) =>
+                                current === doc.id ? null : doc.id,
+                              )
+                            }
+                            style={kebabButtonStyle}
+                          >
+                            ⋮
+                          </button>
+
+                          {openDocumentMenuId === doc.id ? (
+                            <div style={documentMenuStyle}>
+                              {actionModel.menuActions.map((action) => (
+                                <button
+                                  key={action.kind}
+                                  type="button"
+                                  onClick={() => handleDocumentAction(doc, action)}
+                                  disabled={action.disabled}
+                                  title={action.title ?? action.label}
+                                  style={
+                                    action.danger
+                                      ? documentMenuDangerItemStyle(Boolean(action.disabled))
+                                      : documentMenuItemStyle(Boolean(action.disabled))
+                                  }
+                                >
+                                  {action.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -1412,6 +1670,7 @@ function updateParsedActivityField(
                       <input
                         type="text"
                         value={item.recordDate.value ?? ''}
+                        placeholder={item.dateEstimated ? 'Missing date' : 'YYYY-MM-DD'}
                         onChange={(e) =>
                           updateParsedActivityField(index, 'recordDate', e.target.value)
                         }
@@ -1422,6 +1681,13 @@ function updateParsedActivityField(
                           ...getConfidenceStyle(item.recordDate.confidence),
                         }}
                       />
+                      {item.dateEstimated ? (
+                        <div style={dateWarningStyle}>
+                          {item.recordDate.value
+                            ? `${item.recordDate.value} (estimated)`
+                            : 'Missing date'}
+                        </div>
+                      ) : null}
                     </td>
 
                     <td style={tdStyle}>
@@ -1511,12 +1777,14 @@ function updateParsedActivityField(
             style={modalStyle}
           >
             <h2 id="delete-document-title" style={{ marginTop: 0 }}>
-              Delete uploaded document?
+              Delete this document and its imported activity records?
             </h2>
             <p style={{ color: '#475569', lineHeight: 1.6 }}>
               This will remove <strong>{documentToDelete.fileName}</strong> from Uploaded Documents and clear any extraction preview rows for this file.
             </p>
-            <p style={warningTextStyle}>Imported activity records will remain.</p>
+            <p style={warningTextStyle}>
+              This will remove the uploaded document and all activity records created from this document.
+            </p>
             <div style={modalActionRowStyle}>
               <button
                 type="button"
@@ -1552,7 +1820,7 @@ const stepBarStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const demoBannerStyle: React.CSSProperties = {
+const sampleBannerStyle: React.CSSProperties = {
   marginBottom: 24,
   padding: 16,
   borderRadius: 12,
@@ -1813,6 +2081,31 @@ function documentPrimaryActionButtonStyle(disabled: boolean): React.CSSPropertie
   };
 }
 
+function documentStatusBadgeStyle(status: string): React.CSSProperties {
+  const label = getDocumentStatusLabel(status);
+  const palette =
+    label === 'Imported'
+      ? { border: '#bbf7d0', background: '#f0fdf4', color: '#166534' }
+      : label === 'Ready for Review'
+      ? { border: '#bfdbfe', background: '#eff6ff', color: '#1d4ed8' }
+      : label === 'Needs Attention'
+      ? { border: '#fed7aa', background: '#fff7ed', color: '#9a3412' }
+      : { border: '#e2e8f0', background: '#f8fafc', color: '#334155' };
+
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '4px 8px',
+    borderRadius: 999,
+    border: `1px solid ${palette.border}`,
+    background: palette.background,
+    color: palette.color,
+    fontSize: 12,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  };
+}
+
 const documentMenuWrapStyle: React.CSSProperties = {
   position: 'relative',
 };
@@ -1951,6 +2244,14 @@ const deleteButtonStyle: React.CSSProperties = {
   background: '#fff',
   color: '#d33',
   cursor: 'pointer',
+};
+
+const dateWarningStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: '#92400e',
+  fontSize: 12,
+  fontWeight: 700,
+  whiteSpace: 'nowrap',
 };
 
 const modalBackdropStyle: React.CSSProperties = {

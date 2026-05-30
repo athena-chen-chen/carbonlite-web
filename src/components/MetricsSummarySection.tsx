@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import {
+  formatFuelUsageBreakdown,
   formatActivityUsageValue,
+  formatActivityTypeLabel,
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 
@@ -15,19 +17,20 @@ export type MetricsSummaryTableRow = {
   metricType: string;
   unit: string;
   totalValue: string;
-  count: number;
 };
 
 export type MissingFactorItem = {
   activityDataId?: string;
   activityType: string;
   unit: string;
+  availableUnitsForActivityType?: string[];
 };
 
 export type MissingFactorGroup = {
   activityType: string;
   unit: string;
   count: number;
+  availableUnitsForActivityType: string[];
 };
 
 export function groupMissingFactors(
@@ -43,15 +46,28 @@ export function groupMissingFactors(
       activityType,
       unit,
       count: 0,
+      availableUnitsForActivityType: [],
     };
 
     existing.count += 1;
+    item.availableUnitsForActivityType?.forEach((unit) => {
+      if (!existing.availableUnitsForActivityType.includes(unit)) {
+        existing.availableUnitsForActivityType.push(unit);
+      }
+    });
     groups.set(key, existing);
   });
 
-  return Array.from(groups.values()).sort((a, b) =>
-    `${a.activityType}:${a.unit}`.localeCompare(`${b.activityType}:${b.unit}`),
-  );
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      availableUnitsForActivityType: group.availableUnitsForActivityType.sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    }))
+    .sort((a, b) =>
+      `${a.activityType}:${a.unit}`.localeCompare(`${b.activityType}:${b.unit}`),
+    );
 }
 
 export function buildMetricsSummaryTableRows(input: {
@@ -65,34 +81,25 @@ export function buildMetricsSummaryTableRows(input: {
 
   const rows: MetricsSummaryTableRow[] = [
     {
-      metricType: 'CARBON_EMISSION',
+      metricType: 'Carbon Emissions',
       unit: 'kgCO2e',
-      totalValue: `${totalEstimatedEmissionsKgCO2e} kg CO2e`,
-      count: recordsIncluded,
+      totalValue: String(totalEstimatedEmissionsKgCO2e),
     },
   ];
 
-  if (Number(usageTotals.fuel) > 0) {
+  usageTotals.fuelUsageBreakdown.forEach((item) => {
     rows.push({
-      metricType: 'FUEL_USAGE',
-      unit: usageTotals.fuelUnitLabel,
-      totalValue: formatActivityUsageValue(
-        usageTotals.fuel,
-        usageTotals.fuelUnitLabel,
-      ),
-      count: recordsIncluded,
+      metricType: `Fuel Usage — ${formatActivityTypeLabel(item.activityType)}`,
+      unit: item.unit,
+      totalValue: String(item.total),
     });
-  }
+  });
 
   if (Number(usageTotals.electricity) > 0) {
     rows.push({
-      metricType: 'ELECTRICITY',
+      metricType: 'Electricity',
       unit: usageTotals.electricityUnitLabel,
-      totalValue: formatActivityUsageValue(
-        usageTotals.electricity,
-        usageTotals.electricityUnitLabel,
-      ),
-      count: recordsIncluded,
+      totalValue: String(usageTotals.electricity),
     });
   }
 
@@ -104,7 +111,7 @@ export function MetricsSummarySection({
   totalEstimatedEmissionsKgCO2e,
   countSummary,
   missingFactors = [],
-  emptyMessage = 'No metrics yet. Import activity records or use Demo Mode to preview a report-ready summary.',
+  emptyMessage = 'No metrics yet. Import activity records or load sample data to preview a report-ready summary.',
 }: {
   usageTotals: ActivityUsageTotals;
   totalEstimatedEmissionsKgCO2e: number;
@@ -138,9 +145,8 @@ export function MetricsSummarySection({
       <div style={gridStyle}>
         <MetricCard
           title="Fuel Usage"
-          value={formatActivityUsageValue(
-            usageTotals.fuel,
-            usageTotals.fuelUnitLabel,
+          value={formatFuelUsageBreakdown(
+            usageTotals.fuelUsageBreakdown,
           )}
           icon="⛽"
           color="#f59e0b"
@@ -183,11 +189,22 @@ export function MetricsSummarySection({
           <div style={missingFactorListStyle}>
             {missingFactorGroups.map((group) => (
               <div key={`${group.activityType}-${group.unit}`} style={missingFactorRowStyle}>
-                <span>
-                  <strong>{group.activityType} / {group.unit}</strong>
-                  {' — '}
-                  {group.count} {group.count === 1 ? 'record' : 'records'}
-                </span>
+                <div style={missingFactorTextStyle}>
+                  <div>
+                    <strong>{group.activityType} / {group.unit}</strong>
+                    {' — '}
+                    {group.count} {group.count === 1 ? 'record' : 'records'}
+                  </div>
+                  {group.availableUnitsForActivityType.length > 0 ? (
+                    <div style={missingFactorHintStyle}>
+                      A factor exists for {group.activityType} / {group.availableUnitsForActivityType.join(', ')}.
+                      You may create a custom factor for {group.activityType} / {group.unit} or convert {group.unit} to {group.availableUnitsForActivityType[0]} before import.
+                      {getUnitMismatchDensityHint(group) ? (
+                        <div>{getUnitMismatchDensityHint(group)}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <button
                   type="button"
                   onClick={() => handleCreateFactor(group)}
@@ -216,23 +233,21 @@ export function MetricsSummarySection({
               <th style={thStyle}>Type</th>
               <th style={thStyle}>Unit</th>
               <th style={thStyle}>Total</th>
-              <th style={thStyle}>Count</th>
             </tr>
           </thead>
           <tbody>
             {totalsByMetric.length === 0 ? (
               <tr>
-                <td colSpan={4} style={tdStyle}>
+                <td colSpan={3} style={tdStyle}>
                   {emptyMessage}
                 </td>
               </tr>
             ) : null}
             {totalsByMetric.map((item) => (
-              <tr key={item.metricType}>
+              <tr key={`${item.metricType}-${item.unit}-${item.totalValue}`}>
                 <td style={tdStyle}>{item.metricType}</td>
                 <td style={tdStyle}>{item.unit}</td>
                 <td style={tdStyle}>{item.totalValue}</td>
-                <td style={tdStyle}>{item.count}</td>
               </tr>
             ))}
           </tbody>
@@ -240,6 +255,24 @@ export function MetricsSummarySection({
       </div>
     </>
   );
+}
+
+function getUnitMismatchDensityHint(group: MissingFactorGroup) {
+  const activityType = group.activityType.toUpperCase();
+  const unit = group.unit.toLowerCase();
+  const availableUnits = group.availableUnitsForActivityType.map((item) =>
+    item.toLowerCase(),
+  );
+
+  if (
+    activityType === 'DIESEL' &&
+    ['ton', 'tons', 'tonne', 'tonnes', 't'].includes(unit) &&
+    availableUnits.some((item) => ['l', 'liter', 'liters', 'litre', 'litres'].includes(item))
+  ) {
+    return 'Informational guidance only: approximate diesel density is 1 ton diesel ≈ 1190 liters. CarbonLite will not auto-convert or auto-calculate emissions from this assumption.';
+  }
+
+  return '';
 }
 
 function MetricCard({
@@ -250,7 +283,7 @@ function MetricCard({
   highlight,
 }: {
   title: string;
-  value: string;
+  value: React.ReactNode;
   icon: string;
   color: string;
   highlight?: boolean;
@@ -267,9 +300,11 @@ function MetricCard({
       <div style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{title}</div>
       <div style={{
         marginTop: 6,
-        fontSize: 28,
+        fontSize: title === 'Fuel Usage' ? 18 : 28,
         fontWeight: 700,
         color: highlight ? color : '#111',
+        whiteSpace: 'pre-line',
+        lineHeight: title === 'Fuel Usage' ? 1.45 : 1.2,
       }}>
         {value}
       </div>
@@ -308,6 +343,19 @@ const missingFactorRowStyle: React.CSSProperties = {
   borderRadius: 10,
   background: '#fff',
   border: '1px solid #fed7aa',
+};
+
+const missingFactorTextStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  flex: '1 1 280px',
+};
+
+const missingFactorHintStyle: React.CSSProperties = {
+  color: '#7c2d12',
+  fontSize: 13,
+  lineHeight: 1.5,
+  fontWeight: 600,
 };
 
 const createFactorButtonStyle: React.CSSProperties = {

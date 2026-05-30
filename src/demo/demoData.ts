@@ -1,22 +1,4 @@
-export const DEMO_STORAGE_KEY = 'carbonliteDemoMode';
-
-export function isDemoMode() {
-  if (typeof window === 'undefined') return false;
-  return (
-    window.localStorage.getItem(DEMO_STORAGE_KEY) === 'enabled' ||
-    (window.location.search ?? '').includes('demo=1')
-  );
-}
-
-export function enableDemoMode() {
-  window.localStorage.setItem(DEMO_STORAGE_KEY, 'enabled');
-}
-
-export function disableDemoMode() {
-  window.localStorage.removeItem(DEMO_STORAGE_KEY);
-}
-
-export const demoDocuments = [
+export const sampleDocuments = [
   {
     id: 'demo-fuel-invoice',
     fileName: 'Prairie Logistics - diesel fuel invoice.pdf',
@@ -52,7 +34,7 @@ export const demoDocuments = [
   },
 ];
 
-export const demoParsedActivities = [
+export const sampleParsedActivities = [
   {
     activityType: { value: 'DIESEL', confidence: 'high' as const },
     recordDate: { value: '2026-03-27', confidence: 'high' as const },
@@ -97,7 +79,7 @@ export const demoParsedActivities = [
   },
 ];
 
-export const demoActivityRecords = demoParsedActivities.map((activity, index) => ({
+export const sampleActivityRecords = sampleParsedActivities.map((activity, index) => ({
   id: `demo-activity-${index + 1}`,
   activityType: activity.activityType.value,
   recordDate: activity.recordDate.value,
@@ -108,7 +90,7 @@ export const demoActivityRecords = demoParsedActivities.map((activity, index) =>
   notes: activity.notes.value,
 }));
 
-export const demoMetricsSummary = {
+export const sampleMetricsSummary = {
   totalsByMetric: [
     {
       metricType: 'FUEL_USAGE',

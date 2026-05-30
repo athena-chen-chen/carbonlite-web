@@ -15,6 +15,7 @@ import {
   FORMAL_REPORT_DISCLAIMER,
   FormalReportPreview,
   buildSourceEvidenceRows,
+  formatFuelUsageBreakdown,
   formatSourceType,
   type FormalActivityEmission,
   type FormalConversionFactorUsed,
@@ -259,24 +260,19 @@ function handleDownloadPDF() {
     recordsIncluded: countSummary.processedRecords,
   });
 
-  // Cover / Header
-  drawCarbonLitePdfLogo(doc, 14, 14);
-
-  doc.setFontSize(16);
-  doc.text('Formal Emissions Report', 14, 38);
-
-  doc.setFontSize(10);
-  doc.text(`Organization: ${organizationName}`, 14, 51);
-  doc.text(`Report Period: ${reportPeriod}`, 14, 58);
-  doc.text(`Generated Date: ${today}`, 14, 65);
-  doc.text(`Report Scope: ${reportScopeLabel}`, 14, 72);
-  doc.text(`Records Included: ${countSummary.processedRecords}`, 14, 79);
+  drawReportPdfHeader(doc, {
+    organizationName,
+    reportPeriod,
+    reportScopeLabel,
+    generatedDate: today,
+    recordsIncluded: countSummary.processedRecords,
+  });
 
   autoTable(doc, {
-    startY: 90,
+    startY: 74,
     head: [['Executive Summary', 'Value']],
     body: [
-      ['Fuel Usage', `${usageTotals.fuel} ${usageTotals.fuelUnitLabel}`],
+      ['Fuel Usage', formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown)],
       ['Electricity Consumption', `${usageTotals.electricity} ${usageTotals.electricityUnitLabel}`],
       ['Estimated Emissions', `${totalEstimatedEmissionsKgCO2e} kgCO2e`],
       ['Records Included', countSummary.processedRecords],
@@ -285,12 +281,11 @@ function handleDownloadPDF() {
 
   autoTable(doc, {
     startY: (doc as any).lastAutoTable.finalY + 10,
-    head: [['Metric Type', 'Unit', 'Total', 'Count']],
+    head: [['Metric Type', 'Unit', 'Total']],
     body: totalsByMetric.map((item) => [
       item.metricType,
       item.unit,
       item.totalValue,
-      item.count,
     ]),
   });
 
@@ -368,28 +363,50 @@ function handleDownloadPDF() {
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
 }
 
-function drawCarbonLitePdfLogo(doc: jsPDF, x: number, y: number) {
-  doc.setLineWidth(1.2);
-  doc.setDrawColor(15, 23, 42);
-  doc.circle(x + 7, y + 7, 7, 'S');
+function drawReportPdfHeader(
+  doc: jsPDF,
+  input: {
+    organizationName: string;
+    reportPeriod: string;
+    reportScopeLabel: string;
+    generatedDate: string;
+    recordsIncluded: number;
+  },
+) {
+  const x = 14;
+  const y = 14;
+
+  doc.setFillColor(6, 78, 59);
+  doc.roundedRect(x, y, 12, 12, 2, 2, 'F');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(22, 163, 74);
-  doc.text('C', x + 3.3, y + 11.2);
+  doc.setFontSize(7);
+  doc.setTextColor(255, 255, 255);
+  doc.text('CL', x + 3.1, y + 7.8);
 
-  doc.setFontSize(18);
   doc.setTextColor(15, 23, 42);
-  doc.text('Carbon', x + 20, y + 9);
-  doc.setTextColor(22, 163, 74);
-  doc.text('Lite', x + 46, y + 9);
+  doc.setFontSize(14);
+  doc.text('CarbonLite AI', x + 16, y + 5);
+
+  doc.setFontSize(8);
+  doc.setTextColor(4, 120, 87);
+  doc.text('Environmental Reporting Platform', x + 16, y + 10.5);
+
+  doc.setFontSize(12);
   doc.setTextColor(15, 23, 42);
-  doc.text(' AI', x + 62, y + 9);
+  doc.text('Generated Emissions Report', x, y + 26);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Carbon accounting made lighter', x + 20, y + 15);
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Generated: ${input.generatedDate}`, x, y + 35);
+  doc.text(`Organization: ${input.organizationName}`, x, y + 41);
+  doc.text(`Reporting Period: ${input.reportPeriod}`, x, y + 47);
+  doc.text(`Report Scope: ${input.reportScopeLabel}`, 112, y + 35);
+  doc.text(`Records Included: ${input.recordsIncluded}`, 112, y + 41);
+
+  doc.setDrawColor(203, 213, 225);
+  doc.line(x, y + 54, 196, y + 54);
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
 }

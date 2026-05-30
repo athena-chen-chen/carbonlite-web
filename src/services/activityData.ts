@@ -1,10 +1,9 @@
 import { apiFetch } from './api';
-import { demoActivityRecords, isDemoMode } from '../demo/demoData';
 import { clampApiPageSize } from '../config/api';
 
 export type ActivityDataInput = {
   activityType: string;
-  recordDate: string;
+  recordDate: string | null;
   quantity: number;
   unit: string;
   sourceType: string;
@@ -13,6 +12,9 @@ export type ActivityDataInput = {
   facilityId?: string;
   assetId?: string;
   documentId?: string;
+  sourceDocumentId?: string;
+  sourceFileName?: string;
+  dateEstimated?: boolean;
   customTypeLabel?: string;
   periodStart?: string;
   periodEnd?: string;
@@ -24,9 +26,12 @@ export type ActivityDataItem = {
   facilityId?: string | null;
   assetId?: string | null;
   documentId?: string | null;
+  sourceDocumentId?: string | null;
+  sourceFileName?: string | null;
+  dateEstimated?: boolean | null;
   activityType: string;
   customTypeLabel?: string | null;
-  recordDate: string;
+  recordDate: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
   quantity: string | number;
@@ -53,24 +58,7 @@ export type DeleteActivityDataResponse = void | {
 
 const ACTIVITY_DATA_PAGE_SIZE = 100;
 
-function shouldUseDemoActivityData() {
-  const hasToken =
-    typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
-
-  return isDemoMode() && !hasToken;
-}
-
 export async function createActivityData(data: any) {
-  if (shouldUseDemoActivityData()) {
-    return {
-      id: `demo-activity-${Date.now()}`,
-      organizationId: 'demo-org',
-      ...buildActivityDataPayload(data),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
   return apiFetch<ActivityDataItem>('/activity-data', {
     method: 'POST',
     body: JSON.stringify(buildActivityDataPayload(data)),
@@ -94,6 +82,9 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     facilityId: normalizeOptionalString(input.facilityId),
     assetId: normalizeOptionalString(input.assetId),
     documentId: normalizeOptionalString(input.documentId),
+    sourceDocumentId: normalizeOptionalString(input.sourceDocumentId),
+    sourceFileName: normalizeOptionalString(input.sourceFileName),
+    dateEstimated: Boolean(input.dateEstimated),
     customTypeLabel: normalizeOptionalString(input.customTypeLabel),
     periodStart: normalizeOptionalString(input.periodStart),
     periodEnd: normalizeOptionalString(input.periodEnd),
@@ -120,21 +111,6 @@ export async function getActivityDataList(params?: {
   dateTo?: string;
   search?: string;
 }) {
-  if (shouldUseDemoActivityData()) {
-    return {
-      items: demoActivityRecords.map((item) => ({
-        ...item,
-        organizationId: 'demo-org',
-        createdAt: '2026-03-31T14:10:00.000Z',
-        updatedAt: '2026-03-31T14:10:00.000Z',
-      })),
-      page: 1,
-      pageSize: demoActivityRecords.length,
-      total: demoActivityRecords.length,
-      totalPages: 1,
-    };
-  }
-
   const searchParams = new URLSearchParams();
   const safePageSize = params?.pageSize
     ? clampApiPageSize(params.pageSize)
@@ -189,16 +165,6 @@ export async function updateActivityData(
   id: string,
   input: ActivityDataInput,
 ) {
-  if (shouldUseDemoActivityData()) {
-    return {
-      id,
-      organizationId: 'demo-org',
-      ...buildActivityDataPayload(input),
-      createdAt: '2026-03-31T14:10:00.000Z',
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
   const payload = buildActivityDataPayload(input);
 
   return apiFetch<ActivityDataItem>(`/activity-data/${id}`, {
@@ -208,8 +174,6 @@ export async function updateActivityData(
 }
 
 export async function deleteActivityData(id: string) {
-  if (shouldUseDemoActivityData()) return { deletedCount: 1 };
-
   try {
     const path = `/activity-data/${id}`;
     const response = await apiFetch<DeleteActivityDataResponse>(path, {
@@ -242,8 +206,6 @@ export async function deleteActivityData(id: string) {
 }
 
 export async function bulkDeleteActivityData(ids: string[]) {
-  if (shouldUseDemoActivityData()) return { deletedCount: ids.length };
-
   try {
     const path = '/activity-data/bulk-delete';
     const response = await apiFetch<DeleteActivityDataResponse>(path, {

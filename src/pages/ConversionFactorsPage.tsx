@@ -177,6 +177,8 @@ export function ConversionFactorsPage() {
 
       setForm(initialForm);
       await loadItems();
+      window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+      window.dispatchEvent(new Event('carbonlite:metrics-stale'));
     } catch (err) {
       setError(
         err instanceof Error
@@ -236,6 +238,8 @@ export function ConversionFactorsPage() {
       await deleteConversionFactor(id);
       setSuccessMessage('Conversion factor deleted successfully.');
       await loadItems();
+      window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+      window.dispatchEvent(new Event('carbonlite:metrics-stale'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete conversion factor');
     } finally {

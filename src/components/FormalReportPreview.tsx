@@ -3,9 +3,12 @@ import {
   type MetricsCountSummary,
 } from './MetricsSummarySection';
 import {
+  formatFuelUsageBreakdown,
   formatActivityUsageValue,
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
+
+export { formatFuelUsageBreakdown };
 
 export const FORMAL_REPORT_DISCLAIMER =
   'Estimated emissions are calculated by multiplying activity quantities by applicable conversion factors. Conversion factors may include CarbonLite system defaults and organization-specific custom factors. Users should verify factors against applicable reporting requirements before using final reports for regulatory submission.';
@@ -120,13 +123,20 @@ export function FormalReportPreview({
   return (
     <section style={reportShellStyle}>
       <div style={reportHeaderStyle}>
-        <div>
-          <p style={eyebrowStyle}>Formal report preview</p>
-          <h2 style={{ margin: '4px 0 0', fontSize: 26 }}>
-            Consultant Report View
-          </h2>
+        <div style={brandBlockStyle}>
+          <div style={brandIconStyle}>CL</div>
+          <div>
+            <div style={brandNameStyle}>CarbonLite AI</div>
+            <div style={brandSubtitleStyle}>Environmental Reporting Platform</div>
+          </div>
         </div>
-        <div style={draftBadgeStyle}>Draft for review</div>
+        <div style={headerMetaStyle}>
+          <div style={reportTitleStyle}>Generated Emissions Report</div>
+          <div>Generated: {generatedAt}</div>
+          <div>Organization: {organizationName || 'Workspace'}</div>
+          <div>Reporting Period: {reportPeriod}</div>
+          <div>Report Scope: {scopeLabel}</div>
+        </div>
       </div>
 
       <ReportSection title="A. Report Scope">
@@ -143,7 +153,7 @@ export function FormalReportPreview({
         <div style={summaryGridStyle}>
           <Fact
             label="Fuel Usage"
-            value={formatActivityUsageValue(usageTotals.fuel, usageTotals.fuelUnitLabel)}
+            value={formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown)}
           />
           <Fact
             label="Electricity Consumption"
@@ -162,13 +172,12 @@ export function FormalReportPreview({
 
       <ReportSection title="C. Totals by Metric">
         <SimpleTable
-          headers={['Metric Type', 'Unit', 'Total', 'Count']}
+          headers={['Metric Type', 'Unit', 'Total']}
           emptyMessage="No metrics available for this report scope."
           rows={totalsByMetric.map((item) => [
             item.metricType,
             item.unit,
             item.totalValue,
-            item.count,
           ])}
         />
       </ReportSection>
@@ -260,7 +269,7 @@ function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div style={factStyle}>
       <div style={{ fontSize: 12, fontWeight: 800, color: '#475569' }}>{label}</div>
-      <div style={{ marginTop: 6, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
+      <div style={{ marginTop: 6, fontSize: 16, fontWeight: 800, color: '#0f172a', whiteSpace: 'pre-line' }}>
         {value || '-'}
       </div>
     </div>
@@ -311,41 +320,72 @@ function SimpleTable({
 const reportShellStyle: React.CSSProperties = {
   marginBottom: 24,
   padding: 20,
-  borderRadius: 18,
+  borderRadius: 12,
   border: '1px solid #cbd5e1',
-  background: '#f8fafc',
+  background: '#fff',
 };
 
 const reportHeaderStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
-  alignItems: 'flex-start',
+  alignItems: 'center',
   gap: 16,
-  marginBottom: 18,
+  marginBottom: 20,
+  paddingBottom: 16,
+  borderBottom: '1px solid #cbd5e1',
+  flexWrap: 'wrap',
 };
 
-const eyebrowStyle: React.CSSProperties = {
-  margin: 0,
+const brandBlockStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+};
+
+const brandIconStyle: React.CSSProperties = {
+  width: 40,
+  height: 40,
+  borderRadius: 10,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: '#064e3b',
+  color: '#fff',
+  fontSize: 13,
+  fontWeight: 900,
+};
+
+const brandNameStyle: React.CSSProperties = {
+  color: '#0f172a',
+  fontSize: 20,
+  fontWeight: 900,
+  lineHeight: 1.1,
+};
+
+const brandSubtitleStyle: React.CSSProperties = {
+  marginTop: 2,
   color: '#047857',
   fontSize: 12,
-  fontWeight: 900,
-  textTransform: 'uppercase',
-  letterSpacing: 0.5,
+  fontWeight: 800,
 };
 
-const draftBadgeStyle: React.CSSProperties = {
-  borderRadius: 999,
-  padding: '6px 12px',
-  background: '#dbeafe',
-  color: '#1d4ed8',
+const headerMetaStyle: React.CSSProperties = {
+  color: '#475569',
   fontSize: 12,
-  fontWeight: 800,
+  lineHeight: 1.55,
+  textAlign: 'right',
+};
+
+const reportTitleStyle: React.CSSProperties = {
+  color: '#0f172a',
+  fontSize: 15,
+  fontWeight: 900,
 };
 
 const reportSectionStyle: React.CSSProperties = {
   marginTop: 16,
   padding: 18,
-  borderRadius: 14,
+  borderRadius: 10,
   border: '1px solid #e2e8f0',
   background: '#fff',
 };

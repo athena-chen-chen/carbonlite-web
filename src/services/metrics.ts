@@ -1,5 +1,4 @@
 import { apiFetch } from './api';
-import { demoMetricsSummary, isDemoMode } from '../demo/demoData';
 import { clampApiPageSize } from '../config/api';
 
 export type CalculateMetricsResponse = {
@@ -55,20 +54,6 @@ export type MetricsSummaryResponse = {
 };
 
 export async function calculateMetrics(activityDataIds: string[]) {
-  if (isDemoMode()) {
-    return {
-      count: activityDataIds.length,
-      items: activityDataIds.map((id) => ({
-        activityDataId: id,
-        metricType: 'CARBON_EMISSION',
-        metricResultId: `${id}-metric`,
-        factorId: 'demo-factor',
-        value: '0',
-        unit: 'kg CO2e',
-      })),
-    };
-  }
-
   return apiFetch<CalculateMetricsResponse>('/metrics/calculate', {
     method: 'POST',
     body: JSON.stringify({
@@ -108,10 +93,6 @@ export async function getMetricsSummary(params?: {
   periodStart?: string;
   periodEnd?: string;
 }) {
-  if (isDemoMode()) {
-    return demoMetricsSummary;
-  }
-
   const searchParams = new URLSearchParams();
 
   if (params?.facilityId) searchParams.set('facilityId', params.facilityId);

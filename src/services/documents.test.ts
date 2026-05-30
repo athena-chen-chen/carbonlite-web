@@ -2,13 +2,24 @@ import { FALLBACK_API_BASE_URL } from '../config/api';
 import { deleteDocument } from './documents';
 
 describe('deleteDocument', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
   it('deletes the current user document with an authenticated request', async () => {
     localStorage.setItem('accessToken', 'owner-token');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({
+        deletedDocument: true,
+        deletedActivityRecords: 3,
+      }), { status: 200 }),
     );
 
-    await deleteDocument('doc-1');
+    await expect(deleteDocument('doc-1')).resolves.toEqual({
+      deletedDocument: true,
+      deletedActivityRecords: 3,
+    });
 
     expect(fetchMock).toHaveBeenCalledWith(
       `${FALLBACK_API_BASE_URL}/documents/doc-1`,
@@ -21,6 +32,17 @@ describe('deleteDocument', () => {
     );
   });
 
+  it('keeps old 204 delete responses working with zero related activity records', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+
+    await expect(deleteDocument('doc-without-activity')).resolves.toEqual({
+      deletedDocument: true,
+      deletedActivityRecords: 0,
+    });
+  });
+
   it('shows an ownership-friendly error when another organization document is rejected', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('forbidden', { status: 403 }),
@@ -31,12 +53,18 @@ describe('deleteDocument', () => {
     );
   });
 
-  it('does not delete imported activity data when deleting a document', async () => {
+  it('uses the document delete endpoint for backend cascade deletion', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({
+        deletedDocument: true,
+        deletedActivityRecords: 2,
+      }), { status: 200 }),
     );
 
-    await deleteDocument('imported-doc');
+    await expect(deleteDocument('imported-doc')).resolves.toEqual({
+      deletedDocument: true,
+      deletedActivityRecords: 2,
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(

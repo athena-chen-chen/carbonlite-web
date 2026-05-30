@@ -12,7 +12,6 @@ import{ExcelInputTable} from '../components/ExcelInputTable';
 import {
   activityTypes,
 } from '../constants/activityTypes';
-import { isDemoMode } from '../demo/demoData';
 
 const PAGE_SIZE = 15;
 
@@ -29,7 +28,6 @@ type ActivityDataItem = {
 
 export function ActivityDataPage() {
   const navigate = useNavigate();
-  const demoMode = isDemoMode();
   const [items, setItems] = useState<ActivityDataItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +163,8 @@ function handleGenerateReportFromSelection() {
     removeDeletedRows(idsToDelete);
     setSelectedIds([]);
     setSuccessMessage(formatDeletedMessage(deletedCount));
+    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
 
     const refreshedItems = await loadItems({ updateState: false });
     reconcileDeletedRowsAfterReload(refreshedItems, idsToDelete);
@@ -255,6 +255,8 @@ async function handleDelete(row: ActivityDataItem) {
     setLastDeleted(row);
     setSelectedIds((prev) => prev.filter((id) => id !== row.id));
     setSuccessMessage(formatDeletedMessage(deletedCount));
+    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
 
     const refreshedItems = await loadItems({ updateState: false });
     reconcileDeletedRowsAfterReload(refreshedItems, [row.id]);
@@ -444,12 +446,6 @@ const errorTextStyle: React.CSSProperties = {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Manage and review extracted or manually entered activity records.
       </p>
-      {demoMode ? (
-        <div style={demoNoticeStyle}>
-          Demo Mode is showing imported records from the sample fuel invoice, utility bill, and CSV activity data.
-        </div>
-      ) : null}
-
       {/* ⭐ Summary 卡片 */}
       <div
         style={{
@@ -480,6 +476,8 @@ const errorTextStyle: React.CSSProperties = {
     setReloadKey((k) => k + 1);
        //loadDocuments();
        loadItems();
+    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
     setSuccessMessage('Activity data saved. You can now review Metrics or Reports.');
   }}
 />
@@ -537,7 +535,7 @@ const errorTextStyle: React.CSSProperties = {
           <p>Loading...</p>
         ) : items.length === 0 ? (
           <div style={emptyStateStyle}>
-            No activity records yet. Import extracted rows from Upload or start Demo Mode to review sample data.
+            No activity records yet. Import extracted rows from Upload or load sample data to review an example workflow.
           </div>
         ) : (
           <>
@@ -797,16 +795,6 @@ const dismissButtonStyle: React.CSSProperties = {
   background: '#fff',
   color: '#374151',
   cursor: 'pointer',
-};
-
-const demoNoticeStyle: React.CSSProperties = {
-  marginBottom: 18,
-  padding: 12,
-  borderRadius: 10,
-  border: '1px solid #c7d2fe',
-  background: '#eef2ff',
-  color: '#3730a3',
-  fontWeight: 600,
 };
 
 const warningStyle: React.CSSProperties = {

@@ -282,6 +282,29 @@ describe('loadMetricsOverview', () => {
         activityDataId: 'activity-1',
         activityType: 'WASTE',
         unit: 'kg',
+        availableUnitsForActivityType: [],
+      },
+    ]);
+  });
+
+  it('adds available same-activity units when unit mismatch causes missing factor', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue(
+      [activity('activity-1', 'DIESEL', 1, 'tons')],
+    );
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({ activityType: 'DIESEL', unit: 'liters', factorValue: 2.68 }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('0', 1));
+
+    const overview = await loadMetricsOverview({ recalculate: true });
+
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(0);
+    expect(overview.missingFactors).toEqual([
+      {
+        activityDataId: 'activity-1',
+        activityType: 'DIESEL',
+        unit: 'tons',
+        availableUnitsForActivityType: ['liters'],
       },
     ]);
   });
@@ -307,6 +330,7 @@ describe('loadMetricsOverview', () => {
         activityDataId: 'activity-1',
         activityType: 'WATER',
         unit: 'm3',
+        availableUnitsForActivityType: [],
       },
     ]);
     expect(afterFactor.totalEstimatedEmissionsKgCO2e).toBe(5);
@@ -432,6 +456,32 @@ describe('loadMetricsOverview', () => {
     expect(calculateMetrics).toHaveBeenCalledWith(['activity-1', 'activity-2']);
   });
 
+  it('uses sourceDocumentId when filtering report totals by selected documents', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue([
+      {
+        ...activity('activity-1', 'DIESEL', 100, 'L'),
+        sourceDocumentId: 'doc-1',
+        sourceFileName: 'fuel.pdf',
+      },
+      activity('activity-2', 'ELECTRICITY', 200, 'kWh'),
+    ]);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({ activityType: 'DIESEL', unit: 'L', factorValue: 2 }),
+      factor({ activityType: 'ELECTRICITY', unit: 'kWh', factorValue: 0.5 }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('0', 1));
+
+    const overview = await loadMetricsOverview({
+      recalculate: true,
+      selectedDocumentIds: ['doc-1'],
+    });
+
+    expect(overview.activities.map((item) => item.id)).toEqual(['activity-1']);
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(200);
+    expect(overview.totalRecordsFound).toBe(1);
+    expect(calculateMetrics).toHaveBeenCalledWith(['activity-1']);
+  });
+
   it('changes totals consistently when the date range changes', async () => {
     vi.mocked(getAllActivityData)
       .mockResolvedValueOnce([
@@ -465,5 +515,32 @@ describe('loadMetricsOverview', () => {
     expect(february.usageTotals.fuel).toBe(0);
     expect(february.usageTotals.electricity).toBe(450);
     expect(february.carbonMetric?.totalValue).toBe('200');
+  });
+
+  it('includes estimated-date records returned by report date filtering', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue([
+      {
+        ...activity('activity-1', 'WATER', 10, 'm3'),
+        recordDate: '2026-05-29',
+        dateEstimated: true,
+      },
+    ]);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({ activityType: 'WATER', unit: 'm3', factorValue: 0.5 }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('5', 1));
+
+    const overview = await loadMetricsOverview({
+      recalculate: true,
+      dateFrom: '2026-05-01',
+      dateTo: '2026-05-31',
+    });
+
+    expect(getAllActivityData).toHaveBeenCalledWith({
+      dateFrom: '2026-05-01',
+      dateTo: '2026-05-31',
+    });
+    expect(overview.totalRecordsFound).toBe(1);
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(5);
   });
 });

@@ -1,10 +1,43 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
   bulkDeleteActivityData,
+  createActivityData,
   deleteActivityData,
   getAllActivityData,
   getActivityDataList,
 } from './activityData';
+
+describe('createActivityData', () => {
+  it('sends estimated date metadata for fallback dates', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await createActivityData({
+      activityType: 'WATER',
+      recordDate: '2026-05-29',
+      quantity: 10,
+      unit: 'm3',
+      sourceType: 'AI_EXTRACTION',
+      sourceDocumentId: 'doc-1',
+      sourceFileName: 'water.pdf',
+      dateEstimated: true,
+    });
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody).toMatchObject({
+      recordDate: '2026-05-29',
+      sourceDocumentId: 'doc-1',
+      sourceFileName: 'water.pdf',
+      dateEstimated: true,
+    });
+  });
+});
 
 describe('getActivityDataList', () => {
   it('clamps pageSize to backend maximum of 100', async () => {

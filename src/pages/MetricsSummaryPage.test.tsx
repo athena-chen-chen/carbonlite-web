@@ -1,17 +1,39 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { vi } from 'vitest';
 import {
   buildMetricsSummaryTableRows,
   groupMissingFactors,
   MetricsSummarySection,
 } from '../components/MetricsSummarySection';
+import { MetricsSummaryPage } from './MetricsSummaryPage';
+import { loadMetricsOverview } from '../services/metricsOverview';
+
+vi.mock('../services/metricsOverview', async () => {
+  const actual = await vi.importActual<typeof import('../services/metricsOverview')>(
+    '../services/metricsOverview',
+  );
+
+  return {
+    ...actual,
+    loadMetricsOverview: vi.fn(),
+  };
+});
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('buildMetricsSummaryTableRows', () => {
   const usageTotals = {
-    fuel: 1540,
+    fuel: 2110,
     electricity: 1800,
-    fuelUnitLabel: 'L / m3',
+    fuelUnitLabel: 'Grouped by type and unit',
     electricityUnitLabel: 'kWh',
+    fuelUsageBreakdown: [
+      { activityType: 'DIESEL', total: 1710, unit: 'L' },
+      { activityType: 'NATURAL_GAS', total: 400, unit: 'm3' },
+    ],
   };
 
   it('uses the same values shown in the Metrics Summary cards', () => {
@@ -23,22 +45,24 @@ describe('buildMetricsSummaryTableRows', () => {
 
     expect(rows).toEqual([
       {
-        metricType: 'CARBON_EMISSION',
+        metricType: 'Carbon Emissions',
         unit: 'kgCO2e',
-        totalValue: '1234.5 kg CO2e',
-        count: 8,
+        totalValue: '1234.5',
       },
       {
-        metricType: 'FUEL_USAGE',
-        unit: 'L / m3',
-        totalValue: '1540 L / m3',
-        count: 8,
+        metricType: 'Fuel Usage — Diesel',
+        unit: 'L',
+        totalValue: '1710',
       },
       {
-        metricType: 'ELECTRICITY',
+        metricType: 'Fuel Usage — Natural Gas',
+        unit: 'm3',
+        totalValue: '400',
+      },
+      {
+        metricType: 'Electricity',
         unit: 'kWh',
-        totalValue: '1800 kWh',
-        count: 8,
+        totalValue: '1800',
       },
     ]);
   });
@@ -48,8 +72,9 @@ describe('buildMetricsSummaryTableRows', () => {
       usageTotals: {
         fuel: 0,
         electricity: 0,
-        fuelUnitLabel: 'L / m3',
+        fuelUnitLabel: 'Grouped by type and unit',
         electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
       },
       totalEstimatedEmissionsKgCO2e: 268,
       recordsIncluded: 1,
@@ -68,9 +93,9 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          metricType: 'CARBON_EMISSION',
+          metricType: 'Carbon Emissions',
           unit: 'kgCO2e',
-          totalValue: '268 kg CO2e',
+          totalValue: '268',
         }),
       ]),
     );
@@ -94,9 +119,42 @@ describe('buildMetricsSummaryTableRows', () => {
     ]);
 
     expect(groups).toEqual([
-      { activityType: 'WASTE', unit: 'kg', count: 1 },
-      { activityType: 'WATER', unit: 'm3', count: 2 },
+      { activityType: 'WASTE', unit: 'kg', count: 1, availableUnitsForActivityType: [] },
+      { activityType: 'WATER', unit: 'm3', count: 2, availableUnitsForActivityType: [] },
     ]);
+  });
+
+  it('shows same-activity unit mismatch guidance for diesel tons', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 1,
+            processedRecords: 0,
+            skippedRecords: 1,
+            missingFactorRecords: 1,
+          }}
+          missingFactors={[
+            {
+              activityDataId: 'activity-1',
+              activityType: 'DIESEL',
+              unit: 'tons',
+              availableUnitsForActivityType: ['liters'],
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('DIESEL / tons')).toBeInTheDocument();
+    expect(screen.getByText(/A factor exists for DIESEL \/ liters/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/create a custom factor for DIESEL \/ tons or convert tons to liters before import/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1 ton diesel ≈ 1190 liters/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
   });
 
   it('renders the shared summary section with populated cards and totals table', () => {
@@ -116,14 +174,20 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getByText('Fuel Usage')).toBeInTheDocument();
-    expect(screen.getAllByText('1540 L / m3').length).toBeGreaterThan(0);
+    expect(screen.getByText(/1710 L Diesel/)).toBeInTheDocument();
+    expect(screen.getByText(/400 m3 Natural Gas/)).toBeInTheDocument();
+    expect(screen.queryByText(/L \/ m3/)).not.toBeInTheDocument();
     expect(screen.getByText('CO₂ Emissions')).toBeInTheDocument();
     expect(screen.getAllByText('1234.5 kg CO2e').length).toBeGreaterThan(0);
 
     const table = screen.getByRole('table');
-    expect(within(table).getByText('CARBON_EMISSION')).toBeInTheDocument();
-    expect(within(table).getByText('FUEL_USAGE')).toBeInTheDocument();
-    expect(within(table).getByText('ELECTRICITY')).toBeInTheDocument();
+    expect(within(table).queryByText('Count')).not.toBeInTheDocument();
+    expect(within(table).getByText('Carbon Emissions')).toBeInTheDocument();
+    expect(within(table).getByText('Fuel Usage — Diesel')).toBeInTheDocument();
+    expect(within(table).getByText('Fuel Usage — Natural Gas')).toBeInTheDocument();
+    expect(within(table).getByText('Electricity')).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: '1710' })).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: '400' })).toBeInTheDocument();
   });
 
   it('shows specific missing factor details and create factor action', () => {
@@ -152,5 +216,98 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('WATER / m3')).toBeInTheDocument();
     expect(screen.getByText(/2 records/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
+  });
+});
+
+describe('MetricsSummaryPage automatic refresh UX', () => {
+  const overview = {
+    summary: {
+      totalsByMetric: [],
+      totalsByFacility: [],
+    },
+    activities: [
+      { id: 'activity-1', activityType: 'DIESEL', quantity: 240, unit: 'L' },
+    ],
+    usageTotals: {
+      fuel: 240,
+      electricity: 0,
+      fuelUnitLabel: 'Grouped by type and unit',
+      electricityUnitLabel: 'kWh',
+      fuelUsageBreakdown: [
+        { activityType: 'DIESEL', total: 240, unit: 'L' },
+      ],
+    },
+    totalEstimatedEmissionsKgCO2e: 643.2,
+    totalRecordsFound: 1,
+    processedRecords: 1,
+    skippedRecords: 0,
+    missingFactorRecords: 0,
+    matchedFactorsCount: 1,
+    missingFactors: [],
+    matchedActivityEmissions: [],
+    conversionFactorsUsed: [],
+    totalRecords: 1,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(loadMetricsOverview).mockResolvedValue(overview as any);
+  });
+
+  it('auto loads metrics on page load and removes Generate Metrics', async () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('button', { name: /Generate Metrics/i })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(loadMetricsOverview).toHaveBeenCalledWith({
+        recalculate: true,
+        dateFrom: '2026-01-01',
+        dateTo: '2026-12-31',
+      });
+    });
+
+    expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
+  });
+
+  it('refreshes automatically when the date range changes', async () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByDisplayValue('2026-01-01'), {
+      target: { value: '2026-02-01' },
+    });
+
+    await waitFor(() => {
+      expect(loadMetricsOverview).toHaveBeenLastCalledWith({
+        recalculate: true,
+        dateFrom: '2026-02-01',
+        dateTo: '2026-12-31',
+      });
+    });
+  });
+
+  it('refreshes when activity or factor changes mark metrics stale', async () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(2));
   });
 });

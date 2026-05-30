@@ -21,6 +21,14 @@ describe('LandingPage auth buttons', () => {
     expect(screen.queryByRole('button', { name: /dashboard/i })).not.toBeInTheDocument();
   });
 
+  it('uses sample workflow wording without demo mode routing', () => {
+    renderLanding();
+
+    const sampleButton = screen.getByRole('button', { name: /see sample workflow/i });
+    expect(sampleButton).toBeInTheDocument();
+    expect(screen.queryByText(/start demo mode/i)).not.toBeInTheDocument();
+  });
+
   it('shows Dashboard and Logout instead of Login when authenticated', () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(

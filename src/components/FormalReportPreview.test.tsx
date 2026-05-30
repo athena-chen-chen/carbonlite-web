@@ -8,8 +8,11 @@ import {
 const usageTotals = {
   fuel: 120,
   electricity: 450,
-  fuelUnitLabel: 'L / m3',
+  fuelUnitLabel: 'Grouped by type and unit',
   electricityUnitLabel: 'kWh',
+  fuelUsageBreakdown: [
+    { activityType: 'DIESEL', total: 120, unit: 'L' },
+  ],
 };
 
 const countSummary = {
@@ -68,7 +71,12 @@ describe('FormalReportPreview', () => {
       />,
     );
 
-    expect(screen.getByText('Consultant Report View')).toBeInTheDocument();
+    expect(screen.getByText('CarbonLite AI')).toBeInTheDocument();
+    expect(screen.getByText('Environmental Reporting Platform')).toBeInTheDocument();
+    expect(screen.getByText('Generated Emissions Report')).toBeInTheDocument();
+    expect(screen.getByText('Organization: KACH CANADA LTD.')).toBeInTheDocument();
+    expect(screen.getByText('Reporting Period: 2026-01-01 to 2026-12-31')).toBeInTheDocument();
+    expect(screen.getByText('Report Scope: Date Range')).toBeInTheDocument();
     expect(screen.getByText('A. Report Scope')).toBeInTheDocument();
     expect(screen.getByText('B. Executive Summary')).toBeInTheDocument();
     expect(screen.getByText('C. Totals by Metric')).toBeInTheDocument();
@@ -81,7 +89,9 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
 
     const tables = screen.getAllByRole('table');
-    expect(within(tables[0]).getByText('CARBON_EMISSION')).toBeInTheDocument();
+    expect(within(tables[0]).getByText('Carbon Emissions')).toBeInTheDocument();
+    expect(within(tables[0]).getByText('Fuel Usage — Diesel')).toBeInTheDocument();
+    expect(within(tables[0]).queryByText('Count')).not.toBeInTheDocument();
   });
 
   it('shows empty states when no records or factors are available', () => {
@@ -94,8 +104,9 @@ describe('FormalReportPreview', () => {
         usageTotals={{
           fuel: 0,
           electricity: 0,
-          fuelUnitLabel: 'L / m3',
+          fuelUnitLabel: 'Grouped by type and unit',
           electricityUnitLabel: 'kWh',
+          fuelUsageBreakdown: [],
         }}
         totalEstimatedEmissionsKgCO2e={0}
         countSummary={{
