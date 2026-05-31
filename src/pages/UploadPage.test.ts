@@ -163,9 +163,23 @@ describe('document upload action model', () => {
     expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
   });
 
+  it('file missing documents require re-upload and disable extraction', () => {
+    const model = getDocumentActionModel({ status: 'FILE_MISSING' });
+
+    expect(model.statusLabel).toBe('Re-upload Required');
+    expect(model.primaryAction).toMatchObject({
+      kind: 'extract',
+      label: 'Re-upload Required',
+      disabled: true,
+      title: 'This uploaded file is no longer available. Please upload it again.',
+    });
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
+  });
+
   it('replaces technical status labels with user-friendly labels', () => {
     expect(getDocumentStatusLabel('PROCESSED')).toBe('Ready for Review');
     expect(getDocumentStatusLabel('IMPORTED')).toBe('Imported');
     expect(getDocumentStatusLabel('FAILED')).toBe('Needs Attention');
+    expect(getDocumentStatusLabel('FILE_MISSING')).toBe('Re-upload Required');
   });
 });

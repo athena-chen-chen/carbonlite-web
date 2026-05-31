@@ -74,6 +74,12 @@ export default function ReportingPage() {
     processedRecords: 0,
     skippedRecords: 0,
     missingFactorRecords: 0,
+    skippedReasons: {
+      missingFactor: 0,
+      outsideDateRange: 0,
+      outsideScope: 0,
+      invalidData: 0,
+    },
   });
   const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -119,6 +125,7 @@ const [selectedDocumentIds] = useState<string[]>(
         processedRecords: overview.processedRecords,
         skippedRecords: overview.skippedRecords,
         missingFactorRecords: overview.missingFactorRecords,
+        skippedReasons: overview.skippedReasons,
       });
       setMissingFactors(overview.missingFactors);
     } catch (err) {
@@ -536,8 +543,8 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
         </div>
       ) : null}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-        <button onClick={loadReportData} style={secondaryButtonStyle}>
-          Refresh
+        <button onClick={loadReportData} disabled={loading} style={secondaryButtonStyle}>
+          {loading ? 'Refreshing...' : 'Refresh'}
         </button>
 
         <button
@@ -560,7 +567,17 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
       {error ? <div style={errorStyle}>{error}</div> : null}
 
       {loading ? (
-        <p>Loading report data...</p>
+        <>
+          <div style={loadingNoticeStyle}>Loading summary...</div>
+          <MetricsSummarySection
+            usageTotals={usageTotals}
+            totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
+            countSummary={countSummary}
+            missingFactors={missingFactors}
+            emptyMessage="No calculated metrics available."
+            isLoading={!summary}
+          />
+        </>
       ) : (
         <>
           <MetricsSummarySection
@@ -742,6 +759,16 @@ const errorStyle: React.CSSProperties = {
   border: '1px solid #fecaca',
   background: '#fef2f2',
   color: '#991b1b',
+};
+
+const loadingNoticeStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1d4ed8',
+  fontWeight: 800,
 };
 
 const filterCardStyle: React.CSSProperties = {

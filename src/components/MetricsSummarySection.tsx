@@ -11,6 +11,12 @@ export type MetricsCountSummary = {
   processedRecords: number;
   skippedRecords: number;
   missingFactorRecords: number;
+  skippedReasons?: {
+    missingFactor: number;
+    outsideDateRange: number;
+    outsideScope: number;
+    invalidData: number;
+  };
 };
 
 export type MetricsSummaryTableRow = {
@@ -112,12 +118,14 @@ export function MetricsSummarySection({
   countSummary,
   missingFactors = [],
   emptyMessage = 'No metrics yet. Import activity records or load sample data to preview a report-ready summary.',
+  isLoading = false,
 }: {
   usageTotals: ActivityUsageTotals;
   totalEstimatedEmissionsKgCO2e: number;
   countSummary: MetricsCountSummary;
   missingFactors?: MissingFactorItem[];
   emptyMessage?: string;
+  isLoading?: boolean;
 }) {
   const navigate = useNavigate();
   const totalsByMetric = buildMetricsSummaryTableRows({
@@ -126,6 +134,15 @@ export function MetricsSummarySection({
     recordsIncluded: countSummary.processedRecords,
   });
   const missingFactorGroups = groupMissingFactors(missingFactors);
+  const skippedReasons = countSummary.skippedReasons ?? {
+    missingFactor: countSummary.missingFactorRecords,
+    outsideDateRange: 0,
+    outsideScope: 0,
+    invalidData: Math.max(
+      0,
+      countSummary.skippedRecords - countSummary.missingFactorRecords,
+    ),
+  };
 
   function handleCreateFactor(group: MissingFactorGroup) {
     navigate('/conversion-factors', {
@@ -145,11 +162,10 @@ export function MetricsSummarySection({
       <div style={gridStyle}>
         <MetricCard
           title="Fuel Usage"
-          value={formatFuelUsageBreakdown(
-            usageTotals.fuelUsageBreakdown,
-          )}
+          value={formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown)}
           icon="⛽"
           color="#f59e0b"
+          loading={isLoading}
         />
 
         <MetricCard
@@ -160,6 +176,7 @@ export function MetricsSummarySection({
           )}
           icon="⚡"
           color="#3b82f6"
+          loading={isLoading}
         />
 
         <MetricCard
@@ -168,6 +185,7 @@ export function MetricsSummarySection({
           icon="🌱"
           color="#10b981"
           highlight
+          loading={isLoading}
         />
 
         <MetricCard
@@ -175,7 +193,44 @@ export function MetricsSummarySection({
           value={String(countSummary.processedRecords)}
           icon="📄"
           color="#64748b"
+          loading={isLoading}
         />
+      </div>
+
+      <div style={reconciliationStyle}>
+        <div style={reconciliationHeaderStyle}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Record Reconciliation</h2>
+          <span
+            title="Records included in summary are records successfully used in emissions calculations."
+            style={helpBadgeStyle}
+          >
+            ?
+          </span>
+        </div>
+        <div style={reconciliationGridStyle}>
+          <div>
+            <strong>{countSummary.totalRecordsFound}</strong> total activity records found
+          </div>
+          <div>
+            <strong>{countSummary.processedRecords}</strong> records included in summary
+          </div>
+          <div>
+            <strong>{countSummary.skippedRecords}</strong> records skipped
+          </div>
+        </div>
+        {countSummary.skippedRecords > 0 ? (
+          <div style={reasonListStyle}>
+            <div style={{ fontWeight: 800, color: '#334155' }}>Reasons:</div>
+            {buildSkippedReasonRows(skippedReasons).map((reason) => (
+              <div key={reason.label} style={reasonRowStyle}>
+                <span>{reason.label}</span>
+                <strong>{reason.count}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={allIncludedStyle}>All records included</div>
+        )}
       </div>
 
       {missingFactorGroups.length > 0 ? (
@@ -236,14 +291,24 @@ export function MetricsSummarySection({
             </tr>
           </thead>
           <tbody>
-            {totalsByMetric.length === 0 ? (
+            {isLoading ? (
+              <>
+                {[0, 1, 2].map((index) => (
+                  <tr key={`metric-skeleton-${index}`}>
+                    <td style={tdStyle}><SkeletonLine width="75%" /></td>
+                    <td style={tdStyle}><SkeletonLine width="45%" /></td>
+                    <td style={tdStyle}><SkeletonLine width="55%" /></td>
+                  </tr>
+                ))}
+              </>
+            ) : totalsByMetric.length === 0 ? (
               <tr>
                 <td colSpan={3} style={tdStyle}>
                   {emptyMessage}
                 </td>
               </tr>
             ) : null}
-            {totalsByMetric.map((item) => (
+            {!isLoading && totalsByMetric.map((item) => (
               <tr key={`${item.metricType}-${item.unit}-${item.totalValue}`}>
                 <td style={tdStyle}>{item.metricType}</td>
                 <td style={tdStyle}>{item.unit}</td>
@@ -255,6 +320,17 @@ export function MetricsSummarySection({
       </div>
     </>
   );
+}
+
+function buildSkippedReasonRows(
+  skippedReasons: NonNullable<MetricsCountSummary['skippedReasons']>,
+) {
+  return [
+    { label: 'Missing conversion factors', count: skippedReasons.missingFactor },
+    { label: 'Outside selected date range', count: skippedReasons.outsideDateRange },
+    { label: 'Outside selected report scope', count: skippedReasons.outsideScope },
+    { label: 'Invalid data', count: skippedReasons.invalidData },
+  ].filter((reason) => reason.count > 0);
 }
 
 function getUnitMismatchDensityHint(group: MissingFactorGroup) {
@@ -281,12 +357,14 @@ function MetricCard({
   icon,
   color,
   highlight,
+  loading,
 }: {
   title: string;
   value: React.ReactNode;
   icon: string;
   color: string;
   highlight?: boolean;
+  loading?: boolean;
 }) {
   return (
     <div style={{
@@ -306,9 +384,31 @@ function MetricCard({
         whiteSpace: 'pre-line',
         lineHeight: title === 'Fuel Usage' ? 1.45 : 1.2,
       }}>
-        {value}
+        {loading ? (
+          <div aria-label={`Loading ${title}`}>
+            <SkeletonLine width={title === 'Fuel Usage' ? '82%' : '64%'} />
+            {title === 'Fuel Usage' ? <SkeletonLine width="58%" /> : null}
+          </div>
+        ) : (
+          value
+        )}
       </div>
     </div>
+  );
+}
+
+function SkeletonLine({ width = '100%' }: { width?: string }) {
+  return (
+    <span
+      style={{
+        display: 'block',
+        width,
+        height: 16,
+        margin: '6px 0',
+        borderRadius: 999,
+        background: 'linear-gradient(90deg, #e2e8f0 0%, #f8fafc 50%, #e2e8f0 100%)',
+      }}
+    />
   );
 }
 
@@ -317,6 +417,62 @@ const gridStyle: React.CSSProperties = {
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
   gap: 20,
   marginBottom: 30,
+};
+
+const reconciliationStyle: React.CSSProperties = {
+  marginBottom: 24,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #dbeafe',
+  background: '#f8fafc',
+};
+
+const reconciliationHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 12,
+};
+
+const helpBadgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 20,
+  height: 20,
+  borderRadius: 999,
+  background: '#dbeafe',
+  color: '#1d4ed8',
+  fontWeight: 900,
+  fontSize: 12,
+  cursor: 'help',
+};
+
+const reconciliationGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+  gap: 10,
+  color: '#475569',
+};
+
+const reasonListStyle: React.CSSProperties = {
+  marginTop: 12,
+  display: 'grid',
+  gap: 8,
+};
+
+const reasonRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 12,
+  maxWidth: 420,
+  color: '#475569',
+};
+
+const allIncludedStyle: React.CSSProperties = {
+  marginTop: 12,
+  color: '#047857',
+  fontWeight: 800,
 };
 
 const warningStyle: React.CSSProperties = {

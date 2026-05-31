@@ -195,6 +195,32 @@ function getExtractedDocumentDate(item: ParsedActivity | any) {
   );
 }
 
+function getExtractionFailureState(err: unknown): {
+  status: 'EXTRACTION_FAILED' | 'FILE_MISSING';
+  message: string;
+} {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+
+  if (/API 404/i.test(message) || /file is no longer available|file.*missing|not found/i.test(message)) {
+    return {
+      status: 'FILE_MISSING',
+      message: 'This uploaded file is no longer available. Please upload it again.',
+    };
+  }
+
+  if (/unsupported file type/i.test(message)) {
+    return {
+      status: 'EXTRACTION_FAILED',
+      message: 'Unsupported file type. Please upload a PDF, CSV, XLSX, PNG, or JPG file.',
+    };
+  }
+
+  return {
+    status: 'EXTRACTION_FAILED',
+    message: 'Extraction failed. Please try again or upload the file again.',
+  };
+}
+
 function normalizeDocumentStatus(status: string) {
   return String(status || '').toUpperCase();
 }
@@ -206,6 +232,7 @@ export function getDocumentStatusLabel(status: string) {
   if (['PROCESSED', 'EXTRACTED', 'REVIEW_REQUIRED'].includes(normalized)) {
     return 'Ready for Review';
   }
+  if (normalized === 'FILE_MISSING') return 'Re-upload Required';
   if (['FAILED', 'EXTRACTION_FAILED', 'NO_DATA_FOUND'].includes(normalized)) {
     return 'Needs Attention';
   }
@@ -274,6 +301,19 @@ export function getDocumentActionModel(input: {
         kind: 'reextract',
         label: 'Retry Extract',
         title: 'Run extraction again',
+      },
+      menuActions: [deleteAction],
+    };
+  }
+
+  if (status === 'FILE_MISSING') {
+    return {
+      statusLabel: 'Re-upload Required',
+      primaryAction: {
+        kind: 'extract',
+        label: 'Re-upload Required',
+        disabled: true,
+        title: 'This uploaded file is no longer available. Please upload it again.',
       },
       menuActions: [deleteAction],
     };
@@ -662,7 +702,7 @@ ${sampleRows.join('\n')}`,
       status: doc.status,
       canImport: canImportDocument(doc),
       hasPreview: hasPreviewForDocument(doc),
-      isExtracting: extractingId === doc.id,
+      isExtracting: extractingId === doc.id || extractingId === 'multiple',
       isImporting: confirmingId === doc.id,
       isGeneratingMetrics: generatingMetrics,
       isViewing: viewingDocumentId === doc.id,
@@ -959,9 +999,10 @@ ${sampleRows.join('\n')}`,
         setPreviewDocumentId(null);
         setPreviewDocumentIds([]);
         setParsedActivities([]);
-        setError('No emissions data detected. You can view the file or retry extraction.');
         setSuccessMessage(null);
         await loadDocuments();
+        updateDocumentStatuses(noDataDocumentIds, 'NO_DATA_FOUND');
+        setError('No emissions data detected. You can view the file or retry extraction.');
         return;
       }
 
@@ -971,6 +1012,8 @@ ${sampleRows.join('\n')}`,
       setPreviewDocumentIds(documentsToExtract.map((document) => document.id));
       setParsedActivities(extractedRows);
       await loadDocuments();
+      updateDocumentStatuses(noDataDocumentIds, 'NO_DATA_FOUND');
+      updateDocumentStatuses(reviewRequiredDocumentIds, 'REVIEW_REQUIRED');
 
       if (warnings.length > 0) {
         setError(warnings.join(' '));
@@ -983,13 +1026,13 @@ ${sampleRows.join('\n')}`,
         );
         setError(null);
       }
-    } catch {
-      updateDocumentStatuses(
-        documentsToExtract.map((document) => document.id),
-        'EXTRACTION_FAILED',
-      );
-      setError('Extraction could not identify valid activity rows.');
+    } catch (err) {
+      const failure = getExtractionFailureState(err);
+      const failedDocumentIds = documentsToExtract.map((document) => document.id);
+      setSuccessMessage(null);
       await loadDocuments();
+      updateDocumentStatuses(failedDocumentIds, failure.status);
+      setError(failure.message);
     } finally {
       setExtractingId(null);
     }
@@ -2090,6 +2133,8 @@ function documentStatusBadgeStyle(status: string): React.CSSProperties {
       ? { border: '#bfdbfe', background: '#eff6ff', color: '#1d4ed8' }
       : label === 'Needs Attention'
       ? { border: '#fed7aa', background: '#fff7ed', color: '#9a3412' }
+      : label === 'Re-upload Required'
+      ? { border: '#fecaca', background: '#fef2f2', color: '#991b1b' }
       : { border: '#e2e8f0', background: '#f8fafc', color: '#334155' };
 
   return {

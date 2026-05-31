@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -27,6 +27,12 @@ export function MetricsSummaryPage() {
     processedRecords: 0,
     skippedRecords: 0,
     missingFactorRecords: 0,
+    skippedReasons: {
+      missingFactor: 0,
+      outsideDateRange: 0,
+      outsideScope: 0,
+      invalidData: 0,
+    },
   });
   const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,6 +43,8 @@ export function MetricsSummaryPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [periodStart, setPeriodStart] = useState('2026-01-01');
   const [periodEnd, setPeriodEnd] = useState('2026-12-31');
+  const inFlightRequestKeyRef = useRef<string | null>(null);
+  const requestSequenceRef = useRef(0);
 
   useEffect(() => {
     loadSummary();
@@ -64,14 +72,26 @@ export function MetricsSummaryPage() {
   }, []);
 
   async function loadSummary() {
+    const request = {
+      recalculate: true,
+      dateFrom: periodStart,
+      dateTo: periodEnd,
+    };
+    const requestKey = JSON.stringify(request);
+
+    if (inFlightRequestKeyRef.current === requestKey) {
+      return;
+    }
+
+    inFlightRequestKeyRef.current = requestKey;
+    const requestSequence = requestSequenceRef.current + 1;
+    requestSequenceRef.current = requestSequence;
     setLoading(true);
     setError(null);
     try {
-      const overview = await loadMetricsOverview({
-        recalculate: true,
-        dateFrom: periodStart,
-        dateTo: periodEnd,
-      });
+      const overview = await loadMetricsOverview(request);
+      if (requestSequence !== requestSequenceRef.current) return;
+
       setSummary(overview.summary);
       setActivities(overview.activities);
       setUsageTotals(overview.usageTotals);
@@ -81,13 +101,21 @@ export function MetricsSummaryPage() {
         processedRecords: overview.processedRecords,
         skippedRecords: overview.skippedRecords,
         missingFactorRecords: overview.missingFactorRecords,
+        skippedReasons: overview.skippedReasons,
       });
       setMissingFactors(overview.missingFactors);
       setLastUpdated(new Date());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load summary');
+      if (requestSequence === requestSequenceRef.current) {
+        setError('Unable to load metrics summary. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      if (inFlightRequestKeyRef.current === requestKey) {
+        inFlightRequestKeyRef.current = null;
+      }
+      if (requestSequence === requestSequenceRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -213,6 +241,10 @@ function handleDownloadPDF() {
     totalEstimatedEmissionsKgCO2e,
     recordsIncluded: countSummary.processedRecords,
   });
+  const hasLoadedSummary = lastUpdated !== null || summary !== null;
+  const isInitialLoading = loading && !hasLoadedSummary;
+  const isRefreshing = loading && hasLoadedSummary;
+
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       <h1 style={{ marginBottom: 8 }}>Metrics Summary</h1>
@@ -227,7 +259,8 @@ function handleDownloadPDF() {
             type="date"
             value={periodStart}
             onChange={(e) => setPeriodStart(e.target.value)}
-            style={inputStyle}
+            disabled={loading}
+            style={dateInputStyle(loading)}
           />
         </div>
 
@@ -237,7 +270,8 @@ function handleDownloadPDF() {
             type="date"
             value={periodEnd}
             onChange={(e) => setPeriodEnd(e.target.value)}
-            style={inputStyle}
+            disabled={loading}
+            style={dateInputStyle(loading)}
           />
         </div>
 
@@ -247,7 +281,8 @@ function handleDownloadPDF() {
             setPeriodStart('2026-01-01');
             setPeriodEnd('2026-12-31');
           }}
-          style={secondaryButtonStyle}
+          disabled={loading}
+          style={secondaryButtonStyle(loading)}
         >
           2026 Full Year
         </button>
@@ -255,8 +290,10 @@ function handleDownloadPDF() {
  
       <div style={statusBarStyle}>
         <div style={statusTextStyle}>
-          {loading
-            ? 'Updating metrics automatically...'
+          {isInitialLoading
+            ? 'Calculating metrics...'
+            : isRefreshing
+            ? 'Refreshing metrics...'
             : lastUpdated
             ? `Last updated: ${formatLastUpdated(lastUpdated)}`
             : 'Updated automatically'}
@@ -302,6 +339,10 @@ function handleDownloadPDF() {
   Download PDF
 </button> */}
       </div>
+      {isInitialLoading ? (
+        <div style={loadingNoticeStyle}>Loading summary...</div>
+      ) : null}
+
       {error && <div style={warningStyle}>{error}</div>}
 
       <MetricsSummarySection
@@ -309,6 +350,7 @@ function handleDownloadPDF() {
         totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
         countSummary={countSummary}
         missingFactors={missingFactors}
+        isLoading={isInitialLoading}
       />
     </div>
   );
@@ -350,23 +392,28 @@ const labelStyle: React.CSSProperties = {
   fontWeight: 700,
 };
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 10px',
-  borderRadius: 8,
-  border: '1px solid #bfdbfe',
-  background: '#fff',
-  color: '#0f172a',
-};
+function dateInputStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '9px 10px',
+    borderRadius: 8,
+    border: '1px solid #bfdbfe',
+    background: disabled ? '#f8fafc' : '#fff',
+    color: disabled ? '#94a3b8' : '#0f172a',
+    cursor: disabled ? 'not-allowed' : 'text',
+  };
+}
 
-const secondaryButtonStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 10,
-  border: '1px solid #bfdbfe',
-  background: '#fff',
-  color: '#1d4ed8',
-  fontWeight: 700,
-  cursor: 'pointer',
-};
+function secondaryButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '10px 14px',
+    borderRadius: 10,
+    border: '1px solid #bfdbfe',
+    background: disabled ? '#f8fafc' : '#fff',
+    color: disabled ? '#94a3b8' : '#1d4ed8',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
 const statusBarStyle: React.CSSProperties = {
   display: 'flex',
@@ -381,6 +428,16 @@ const statusTextStyle: React.CSSProperties = {
   color: '#64748b',
   fontSize: 13,
   fontWeight: 700,
+};
+
+const loadingNoticeStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1d4ed8',
+  fontWeight: 800,
 };
 
 function refreshButtonStyle(disabled: boolean): React.CSSProperties {

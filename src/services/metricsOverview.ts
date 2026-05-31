@@ -37,8 +37,15 @@ export type MetricsOverview = {
   carbonMetric?: MetricsSummaryResponse['totalsByMetric'][number];
   totalEstimatedEmissionsKgCO2e: number;
   totalRecordsFound: number;
+  recordsIncluded: number;
   processedRecords: number;
   skippedRecords: number;
+  skippedReasons: {
+    missingFactor: number;
+    outsideDateRange: number;
+    outsideScope: number;
+    invalidData: number;
+  };
   missingFactorRecords: number;
   matchedFactorsCount: number;
   missingFactors: Array<{
@@ -86,27 +93,24 @@ export async function loadMetricsOverview(options?: {
   const selectedDocumentIds = options?.selectedDocumentIds ?? [];
   const hasSelectedRecords = selectedRecordIds.length > 0;
   const hasSelectedDocuments = selectedDocumentIds.length > 0;
-  const queriedActivities = await getAllActivityDataForMetrics(
-    hasSelectedRecords || hasSelectedDocuments
-      ? undefined
-      : {
-          dateFrom: options?.dateFrom,
-          dateTo: options?.dateTo,
-        },
-  );
+  const queriedActivities = await getAllActivityDataForMetrics();
   const selectedIdSet = new Set(selectedRecordIds);
   const selectedDocumentIdSet = new Set(selectedDocumentIds);
-  const activities = hasSelectedRecords
+  const scopeFilteredActivities = hasSelectedRecords
     ? queriedActivities.filter((item) => selectedIdSet.has(item.id))
     : hasSelectedDocuments
-    ? queriedActivities.filter((item) =>
-        item.sourceDocumentId
-          ? selectedDocumentIdSet.has(item.sourceDocumentId)
-          : item.documentId
-          ? selectedDocumentIdSet.has(item.documentId)
-          : false,
-      )
+    ? queriedActivities.filter((item) => isActivityFromSelectedDocument(item, selectedDocumentIdSet))
     : queriedActivities;
+  const outsideScope = queriedActivities.length - scopeFilteredActivities.length;
+  const activities = hasSelectedRecords || hasSelectedDocuments
+    ? scopeFilteredActivities
+    : scopeFilteredActivities.filter((item) =>
+        isActivityWithinDateRange(item, options?.dateFrom, options?.dateTo),
+      );
+  const outsideDateRange =
+    hasSelectedRecords || hasSelectedDocuments
+      ? 0
+      : scopeFilteredActivities.length - activities.length;
   const activityIds = activities.map((item) => item.id).filter(Boolean);
 
   if (options?.recalculate && activityIds.length > 0) {
@@ -124,7 +128,15 @@ export async function loadMetricsOverview(options?: {
   );
   const processedRecords = emissionsSummary.matchedFactorsCount;
   const missingFactorRecords = emissionsSummary.missingFactors.length;
-  const skippedRecords = activities.length - processedRecords;
+  const invalidDataRecords = emissionsSummary.invalidDataRecords;
+  const skippedRecords =
+    missingFactorRecords + outsideDateRange + outsideScope + invalidDataRecords;
+  const skippedReasons = {
+    missingFactor: missingFactorRecords,
+    outsideDateRange,
+    outsideScope,
+    invalidData: invalidDataRecords,
+  };
   const totalsByMetric = summary?.totalsByMetric ?? [];
   const carbonMetric = totalsByMetric.find((metric) =>
     String(metric.metricType).includes('CARBON'),
@@ -135,6 +147,7 @@ export async function loadMetricsOverview(options?: {
   console.log('[MetricsOverview] records after date filter', activities.length);
   console.log('[MetricsOverview] matched factors count', emissionsSummary.matchedFactorsCount);
   console.log('[MetricsOverview] missing factor count', emissionsSummary.missingFactors.length);
+  console.log('[MetricsOverview] skipped reasons', skippedReasons);
   console.log('[MetricsOverview] skipped records', skippedRecords);
   console.log(
     '[MetricsOverview] totalEstimatedEmissionsKgCO2e',
@@ -147,9 +160,11 @@ export async function loadMetricsOverview(options?: {
     usageTotals: aggregateActivityUsage(activities),
     carbonMetric,
     ...emissionsSummary,
-    totalRecordsFound: activities.length,
+    totalRecordsFound: queriedActivities.length,
+    recordsIncluded: processedRecords,
     processedRecords,
     skippedRecords,
+    skippedReasons,
     missingFactorRecords,
     totalRecords: activities.length,
   };
@@ -159,6 +174,10 @@ async function getAllActivityDataForMetrics(options?: {
   dateFrom?: string;
   dateTo?: string;
 }) {
+  if (!options?.dateFrom && !options?.dateTo) {
+    return getAllActivityData();
+  }
+
   return getAllActivityData({
     dateFrom: options?.dateFrom,
     dateTo: options?.dateTo,
@@ -171,12 +190,18 @@ function calculateEstimatedEmissions(
 ) {
   let totalEstimatedEmissionsKgCO2e = 0;
   let matchedFactorsCount = 0;
+  let invalidDataRecords = 0;
   const missingFactors: MetricsOverview['missingFactors'] = [];
   const matchedActivityEmissions: MetricsOverview['matchedActivityEmissions'] = [];
   const conversionFactorsById = new Map<string, MetricsOverview['conversionFactorsUsed'][number]>();
 
   activities.forEach((activity) => {
     const quantity = Number(activity.quantity ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      invalidDataRecords += 1;
+      return;
+    }
+
     const matchingFactor = findBestConversionFactorMatch({
       activityType: activity.activityType,
       inputUnit: activity.unit,
@@ -197,8 +222,6 @@ function calculateEstimatedEmissions(
       });
       return;
     }
-
-    if (!Number.isFinite(quantity)) return;
 
     const estimatedEmissionsKgCO2e = roundEmissions(
       quantity * Number(matchingFactor.factorValue),
@@ -235,10 +258,33 @@ function calculateEstimatedEmissions(
   return {
     totalEstimatedEmissionsKgCO2e: roundEmissions(totalEstimatedEmissionsKgCO2e),
     matchedFactorsCount,
+    invalidDataRecords,
     missingFactors,
     matchedActivityEmissions,
     conversionFactorsUsed: Array.from(conversionFactorsById.values()),
   };
+}
+
+function isActivityFromSelectedDocument(
+  item: ActivityDataItem,
+  selectedDocumentIdSet: Set<string>,
+) {
+  if (item.sourceDocumentId) return selectedDocumentIdSet.has(item.sourceDocumentId);
+  if (item.documentId) return selectedDocumentIdSet.has(item.documentId);
+  return false;
+}
+
+function isActivityWithinDateRange(
+  item: ActivityDataItem,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  if (!dateFrom && !dateTo) return true;
+  const recordDate = item.recordDate?.slice(0, 10);
+  if (!recordDate) return false;
+  if (dateFrom && recordDate < dateFrom) return false;
+  if (dateTo && recordDate > dateTo) return false;
+  return true;
 }
 
 function getAvailableUnitsForActivityType(

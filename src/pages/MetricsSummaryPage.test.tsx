@@ -135,6 +135,12 @@ describe('buildMetricsSummaryTableRows', () => {
             processedRecords: 0,
             skippedRecords: 1,
             missingFactorRecords: 1,
+            skippedReasons: {
+              missingFactor: 1,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
           }}
           missingFactors={[
             {
@@ -168,6 +174,12 @@ describe('buildMetricsSummaryTableRows', () => {
             processedRecords: 8,
             skippedRecords: 0,
             missingFactorRecords: 0,
+            skippedReasons: {
+              missingFactor: 0,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
           }}
         />
       </MemoryRouter>,
@@ -201,6 +213,12 @@ describe('buildMetricsSummaryTableRows', () => {
             processedRecords: 0,
             skippedRecords: 2,
             missingFactorRecords: 2,
+            skippedReasons: {
+              missingFactor: 2,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
           }}
           missingFactors={[
             { activityDataId: 'activity-1', activityType: 'WATER', unit: 'm3' },
@@ -216,6 +234,65 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('WATER / m3')).toBeInTheDocument();
     expect(screen.getByText(/2 records/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
+  });
+
+  it('shows record reconciliation and skipped reasons', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={1234.5}
+          countSummary={{
+            totalRecordsFound: 15,
+            processedRecords: 9,
+            skippedRecords: 6,
+            missingFactorRecords: 2,
+            skippedReasons: {
+              missingFactor: 2,
+              outsideDateRange: 3,
+              outsideScope: 1,
+              invalidData: 0,
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Record Reconciliation')).toBeInTheDocument();
+    expect(screen.getByText('15')).toBeInTheDocument();
+    expect(screen.getByText(/total activity records found/i)).toBeInTheDocument();
+    expect(screen.getAllByText('9').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/records included in summary/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('6').length).toBeGreaterThan(0);
+    expect(screen.getByText(/records skipped/i)).toBeInTheDocument();
+    expect(screen.getByText('Missing conversion factors')).toBeInTheDocument();
+    expect(screen.getByText('Outside selected date range')).toBeInTheDocument();
+    expect(screen.getByText('Outside selected report scope')).toBeInTheDocument();
+  });
+
+  it('shows all records included when nothing is skipped', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={1234.5}
+          countSummary={{
+            totalRecordsFound: 8,
+            processedRecords: 8,
+            skippedRecords: 0,
+            missingFactorRecords: 0,
+            skippedReasons: {
+              missingFactor: 0,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('All records included')).toBeInTheDocument();
   });
 });
 
@@ -242,6 +319,12 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     processedRecords: 1,
     skippedRecords: 0,
     missingFactorRecords: 0,
+    skippedReasons: {
+      missingFactor: 0,
+      outsideDateRange: 0,
+      outsideScope: 0,
+      invalidData: 0,
+    },
     matchedFactorsCount: 1,
     missingFactors: [],
     matchedActivityEmissions: [],
@@ -275,6 +358,34 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
   });
 
+  it('shows first-load loading state and skeletons', async () => {
+    let resolveOverview!: (value: any) => void;
+    vi.mocked(loadMetricsOverview).mockReturnValue(
+      new Promise((resolve) => {
+        resolveOverview = resolve;
+      }) as any,
+    );
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Calculating metrics...')).toBeInTheDocument();
+    expect(screen.getByText('Loading summary...')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading Fuel Usage')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading Electricity')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading CO₂ Emissions')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading Records Included in Summary')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-01-01')).toBeDisabled();
+    expect(screen.getByDisplayValue('2026-12-31')).toBeDisabled();
+
+    resolveOverview(overview);
+
+    expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
+  });
+
   it('refreshes automatically when the date range changes', async () => {
     render(
       <MemoryRouter>
@@ -297,6 +408,41 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     });
   });
 
+  it('keeps previous results visible with refreshing status on date change', async () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
+    expect(screen.getByText(/240 L Diesel/)).toBeInTheDocument();
+
+    let resolveRefresh!: (value: any) => void;
+    vi.mocked(loadMetricsOverview).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }) as any,
+    );
+
+    fireEvent.change(screen.getByDisplayValue('2026-01-01'), {
+      target: { value: '2026-02-01' },
+    });
+
+    expect(await screen.findByText('Refreshing metrics...')).toBeInTheDocument();
+    expect(screen.getByText(/240 L Diesel/)).toBeInTheDocument();
+
+    resolveRefresh(overview);
+
+    await waitFor(() => {
+      expect(loadMetricsOverview).toHaveBeenLastCalledWith({
+        recalculate: true,
+        dateFrom: '2026-02-01',
+        dateTo: '2026-12-31',
+      });
+    });
+  });
+
   it('refreshes when activity or factor changes mark metrics stale', async () => {
     render(
       <MemoryRouter>
@@ -309,5 +455,36 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows a friendly error when metrics fail to load', async () => {
+    vi.mocked(loadMetricsOverview).mockRejectedValueOnce(new Error('backend down'));
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText('Unable to load metrics summary. Please try again.'),
+    ).toBeInTheDocument();
+  });
+
+  it('does not fire duplicate identical requests while one is in progress', async () => {
+    vi.mocked(loadMetricsOverview).mockReturnValue(new Promise(() => undefined) as any);
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+    fireEvent.click(screen.getByRole('button', { name: /Refresh/i }));
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
   });
 });

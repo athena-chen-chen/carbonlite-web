@@ -2,13 +2,23 @@ import { getToken, handleUnauthorized } from './auth';
 import { buildApiUrl } from '../config/api';
 
 function buildApiErrorMessage(status: number, text: string) {
+  let message = text;
+
+  try {
+    const parsed = JSON.parse(text);
+    message = parsed?.message ?? parsed?.error ?? text;
+  } catch {
+    message = text;
+  }
+
+  const normalizedMessage = Array.isArray(message) ? message.join(', ') : String(message);
   const lowerText = text.toLowerCase();
 
   if (status === 400 && lowerText.includes('pagesize')) {
     return 'API 400: Page size is too large. Please refresh and try again.';
   }
 
-  return `API ${status}: ${text}`;
+  return `API ${status}: ${normalizedMessage}`;
 }
 
 export async function apiFetch<T>(

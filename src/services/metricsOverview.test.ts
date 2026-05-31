@@ -122,10 +122,7 @@ describe('loadMetricsOverview', () => {
     expect(overview.skippedRecords).toBe(2);
     expect(overview.missingFactorRecords).toBe(2);
     expect(calculateMetrics).toHaveBeenCalledWith(['activity-1', 'activity-2']);
-    expect(getAllActivityData).toHaveBeenCalledWith({
-      dateFrom: undefined,
-      dateTo: undefined,
-    });
+    expect(getAllActivityData).toHaveBeenCalledWith();
   });
 
   it('returns one CO2e total for Metrics Summary and Reports to share', async () => {
@@ -172,7 +169,7 @@ describe('loadMetricsOverview', () => {
       reportsOverview.totalEstimatedEmissionsKgCO2e,
     );
     expect(metricsSummaryOverview.totalRecords).toBe(reportsOverview.totalRecords);
-    expect(getAllActivityData).toHaveBeenCalledWith(dateRange);
+    expect(getAllActivityData).toHaveBeenCalledWith();
     expect(getMetricsSummary).toHaveBeenCalledWith({
       periodStart: dateRange.dateFrom,
       periodEnd: dateRange.dateTo,
@@ -421,8 +418,9 @@ describe('loadMetricsOverview', () => {
     expect(overview.usageTotals.fuel).toBe(100);
     expect(overview.usageTotals.electricity).toBe(200);
     expect(overview.totalEstimatedEmissionsKgCO2e).toBe(300);
-    expect(overview.totalRecordsFound).toBe(2);
+    expect(overview.totalRecordsFound).toBe(3);
     expect(overview.processedRecords).toBe(2);
+    expect(overview.skippedReasons.outsideScope).toBe(1);
     expect(calculateMetrics).toHaveBeenCalledWith(['activity-1', 'activity-2']);
   });
 
@@ -451,8 +449,9 @@ describe('loadMetricsOverview', () => {
     expect(overview.usageTotals.fuel).toBe(100);
     expect(overview.usageTotals.electricity).toBe(200);
     expect(overview.totalEstimatedEmissionsKgCO2e).toBe(300);
-    expect(overview.totalRecordsFound).toBe(2);
+    expect(overview.totalRecordsFound).toBe(3);
     expect(overview.processedRecords).toBe(2);
+    expect(overview.skippedReasons.outsideScope).toBe(1);
     expect(calculateMetrics).toHaveBeenCalledWith(['activity-1', 'activity-2']);
   });
 
@@ -478,18 +477,28 @@ describe('loadMetricsOverview', () => {
 
     expect(overview.activities.map((item) => item.id)).toEqual(['activity-1']);
     expect(overview.totalEstimatedEmissionsKgCO2e).toBe(200);
-    expect(overview.totalRecordsFound).toBe(1);
+    expect(overview.totalRecordsFound).toBe(2);
+    expect(overview.skippedReasons.outsideScope).toBe(1);
     expect(calculateMetrics).toHaveBeenCalledWith(['activity-1']);
   });
 
   it('changes totals consistently when the date range changes', async () => {
+    const januaryDiesel = {
+      ...activity('activity-1', 'DIESEL', 120, 'L'),
+      recordDate: '2026-01-10',
+    };
+    const februaryElectricity = {
+      ...activity('activity-2', 'ELECTRICITY', 450, 'kWh'),
+      recordDate: '2026-02-15',
+    };
     vi.mocked(getAllActivityData)
       .mockResolvedValueOnce([
-        activity('activity-1', 'DIESEL', 120, 'L'),
-        activity('activity-2', 'ELECTRICITY', 450, 'kWh'),
+        januaryDiesel,
+        februaryElectricity,
       ])
       .mockResolvedValueOnce([
-        activity('activity-2', 'ELECTRICITY', 450, 'kWh'),
+        januaryDiesel,
+        februaryElectricity,
       ]);
     vi.mocked(getMetricsSummary)
       .mockResolvedValueOnce(summary('770', 2))
@@ -512,6 +521,8 @@ describe('loadMetricsOverview', () => {
     expect(fullYear.carbonMetric?.totalValue).toBe('770');
 
     expect(february.totalRecords).toBe(1);
+    expect(february.totalRecordsFound).toBe(2);
+    expect(february.skippedReasons.outsideDateRange).toBe(1);
     expect(february.usageTotals.fuel).toBe(0);
     expect(february.usageTotals.electricity).toBe(450);
     expect(february.carbonMetric?.totalValue).toBe('200');
@@ -536,11 +547,57 @@ describe('loadMetricsOverview', () => {
       dateTo: '2026-05-31',
     });
 
-    expect(getAllActivityData).toHaveBeenCalledWith({
-      dateFrom: '2026-05-01',
-      dateTo: '2026-05-31',
-    });
+    expect(getAllActivityData).toHaveBeenCalledWith();
     expect(overview.totalRecordsFound).toBe(1);
     expect(overview.totalEstimatedEmissionsKgCO2e).toBe(5);
+  });
+
+  it('returns reconciliation reasons for missing factors and invalid data', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue([
+      activity('activity-1', 'DIESEL', 100, 'L'),
+      activity('activity-2', 'WATER', 20, 'm3'),
+      activity('activity-3', 'ELECTRICITY', Number.NaN, 'kWh'),
+    ]);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({ activityType: 'DIESEL', unit: 'L', factorValue: 2 }),
+      factor({ activityType: 'ELECTRICITY', unit: 'kWh', factorValue: 0.5 }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('200', 1));
+
+    const overview = await loadMetricsOverview({ recalculate: true });
+
+    expect(overview.totalRecordsFound).toBe(3);
+    expect(overview.recordsIncluded).toBe(1);
+    expect(overview.skippedRecords).toBe(2);
+    expect(overview.skippedReasons).toEqual({
+      missingFactor: 1,
+      outsideDateRange: 0,
+      outsideScope: 0,
+      invalidData: 1,
+    });
+  });
+
+  it('reports all records included when no records are skipped', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue([
+      activity('activity-1', 'DIESEL', 100, 'L'),
+      activity('activity-2', 'ELECTRICITY', 200, 'kWh'),
+    ]);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({ activityType: 'DIESEL', unit: 'L', factorValue: 2 }),
+      factor({ activityType: 'ELECTRICITY', unit: 'kWh', factorValue: 0.5 }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('300', 2));
+
+    const overview = await loadMetricsOverview({ recalculate: true });
+
+    expect(overview.totalRecordsFound).toBe(2);
+    expect(overview.recordsIncluded).toBe(2);
+    expect(overview.skippedRecords).toBe(0);
+    expect(overview.skippedReasons).toEqual({
+      missingFactor: 0,
+      outsideDateRange: 0,
+      outsideScope: 0,
+      invalidData: 0,
+    });
   });
 });
