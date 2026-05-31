@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
   EMPTY_ACTIVITY_USAGE_TOTALS,
+  loadDefaultMetricsDateRange,
   loadMetricsOverview,
 } from '../services/metricsOverview';
 import {
@@ -85,8 +86,11 @@ export default function ReportingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 const [reloadKey, setReloadKey] = useState(0);
-const [periodStart, setPeriodStart] = useState('2026-01-01');
+const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
 const [periodEnd, setPeriodEnd] = useState('2026-12-31');
+const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
+const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
+const [dateRangeReady, setDateRangeReady] = useState(false);
 const [reportScope, setReportScope] = useState<'dateRange' | 'selectedDocuments' | 'selectedRecords'>(
   initialSelectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
     ? 'selectedDocuments'
@@ -100,19 +104,26 @@ const [selectedRecordIds] = useState<string[]>(
 const [selectedDocumentIds] = useState<string[]>(
   initialSelectedDocumentIds,
 );
+const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+const inFlightRequestKeyRef = useRef<string | null>(null);
   async function loadReportData() {
+    const request = {
+      recalculate: true,
+      ...(reportScope === 'selectedRecords'
+        ? { selectedActivityRecordIds: selectedRecordIds }
+        : reportScope === 'selectedDocuments'
+        ? { selectedDocumentIds }
+        : { dateFrom: periodStart, dateTo: periodEnd }),
+    };
+    const requestKey = JSON.stringify(request);
+
+    if (inFlightRequestKeyRef.current === requestKey) return;
+    inFlightRequestKeyRef.current = requestKey;
     setLoading(true);
     setError(null);
 
     try {
-      const overview = await loadMetricsOverview({
-        recalculate: true,
-        ...(reportScope === 'selectedRecords'
-          ? { selectedActivityRecordIds: selectedRecordIds }
-          : reportScope === 'selectedDocuments'
-          ? { selectedDocumentIds }
-          : { dateFrom: periodStart, dateTo: periodEnd }),
-      });
+      const overview = await loadMetricsOverview(request);
 
       setSummary(overview.summary);
       setActivities(overview.activities);
@@ -131,12 +142,17 @@ const [selectedDocumentIds] = useState<string[]>(
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report data');
     } finally {
+      if (inFlightRequestKeyRef.current === requestKey) {
+        inFlightRequestKeyRef.current = null;
+      }
       setLoading(false);
     }
   }
 useEffect(() => {
+  if (!dateRangeReady) return;
   loadReportData();
 }, [
+  dateRangeReady,
   reloadKey,
   periodStart,
   periodEnd,
@@ -144,6 +160,69 @@ useEffect(() => {
   selectedRecordIds.join('|'),
   selectedDocumentIds.join('|'),
 ]);
+
+useEffect(() => {
+  initializeDateRange();
+
+  return () => {
+    if (dateCommitTimerRef.current) {
+      window.clearTimeout(dateCommitTimerRef.current);
+    }
+  };
+}, []);
+
+async function initializeDateRange() {
+  try {
+    const range = await loadDefaultMetricsDateRange();
+    setPeriodStart(range.startDate);
+    setPeriodEnd(range.endDate);
+    setDraftPeriodStart(range.startDate);
+    setDraftPeriodEnd(range.endDate);
+  } catch {
+    // Keep current-year fallback if activity records cannot be loaded.
+  } finally {
+    setDateRangeReady(true);
+  }
+}
+
+function commitDateRange(nextStart = draftPeriodStart, nextEnd = draftPeriodEnd) {
+  if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd)) return;
+  if (nextStart > nextEnd) return;
+  setPeriodStart(nextStart);
+  setPeriodEnd(nextEnd);
+}
+
+function scheduleDateCommit(nextStart: string, nextEnd: string) {
+  if (dateCommitTimerRef.current) {
+    window.clearTimeout(dateCommitTimerRef.current);
+  }
+
+  if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd) || nextStart > nextEnd) {
+    return;
+  }
+
+  dateCommitTimerRef.current = window.setTimeout(() => {
+    commitDateRange(nextStart, nextEnd);
+  }, 500);
+}
+
+function handleStartDateChange(value: string) {
+  setDraftPeriodStart(value);
+  scheduleDateCommit(value, draftPeriodEnd);
+}
+
+function handleEndDateChange(value: string) {
+  setDraftPeriodEnd(value);
+  scheduleDateCommit(draftPeriodStart, value);
+}
+
+function handleFullYear(year: string) {
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  setDraftPeriodStart(start);
+  setDraftPeriodEnd(end);
+  commitDateRange(start, end);
+}
 
 function classifyScope(activityType?: string) {
   const type = String(activityType ?? '').toUpperCase();
@@ -439,6 +518,20 @@ function getReportScopeLabel(
 
   return 'Date Range';
 }
+
+function isValidDateInput(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function getDefaultFallbackStartDate() {
+  return `${new Date().getFullYear() - 1}-01-01`;
+}
+
+function getFullYearShortcutYears() {
+  const currentYear = new Date().getFullYear();
+  return [String(currentYear - 1), String(currentYear)];
+}
+
 const organizationName = getOrganizationName(getCurrentUser());
 const generatedAt = new Date().toLocaleString();
 const reportScopeLabel = getReportScopeLabel(
@@ -498,10 +591,11 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
     <label style={labelStyle}>Start Date</label>
     <input
       type="date"
-      value={periodStart}
-      onChange={(e) => setPeriodStart(e.target.value)}
+      value={draftPeriodStart}
+      onChange={(e) => handleStartDateChange(e.target.value)}
+      onBlur={() => commitDateRange()}
       style={inputStyle}
-      disabled={reportScope !== 'dateRange'}
+      disabled={reportScope !== 'dateRange' || loading}
     />
   </div>
 
@@ -509,24 +603,25 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
     <label style={labelStyle}>End Date</label>
     <input
       type="date"
-      value={periodEnd}
-      onChange={(e) => setPeriodEnd(e.target.value)}
+      value={draftPeriodEnd}
+      onChange={(e) => handleEndDateChange(e.target.value)}
+      onBlur={() => commitDateRange()}
       style={inputStyle}
-      disabled={reportScope !== 'dateRange'}
+      disabled={reportScope !== 'dateRange' || loading}
     />
   </div>
 
-  <button
-    type="button"
-    onClick={() => {
-      setPeriodStart('2026-01-01');
-      setPeriodEnd('2026-12-31');
-    }}
-    style={secondaryButtonStyle}
-    disabled={reportScope !== 'dateRange'}
-  >
-    2026 Full Year
-  </button>
+  {getFullYearShortcutYears().map((year) => (
+    <button
+      key={year}
+      type="button"
+      onClick={() => handleFullYear(year)}
+      style={secondaryButtonStyle}
+      disabled={reportScope !== 'dateRange' || loading}
+    >
+      {year} Full Year
+    </button>
+  ))}
 </div>
       {reportScope === 'selectedDocuments' ? (
         <div style={selectionNoticeStyle}>
@@ -574,7 +669,11 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}
             missingFactors={missingFactors}
-            emptyMessage="No calculated metrics available."
+            emptyMessage={
+              activities.length === 0 && countSummary.totalRecordsFound > 0
+                ? 'No records found for selected period.'
+                : 'No calculated metrics available.'
+            }
             isLoading={!summary}
           />
         </>
@@ -585,7 +684,11 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}
             missingFactors={missingFactors}
-            emptyMessage="No calculated metrics available."
+            emptyMessage={
+              activities.length === 0 && countSummary.totalRecordsFound > 0
+                ? 'No records found for selected period.'
+                : 'No calculated metrics available.'
+            }
           />
 
           <FormalReportPreview

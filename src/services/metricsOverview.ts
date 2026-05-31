@@ -30,6 +30,12 @@ export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
   fuelUsageBreakdown: [],
 };
 
+export type MetricsDateRange = {
+  startDate: string;
+  endDate: string;
+  hasActivityRecords: boolean;
+};
+
 export type MetricsOverview = {
   activities: ActivityDataItem[];
   summary: MetricsSummaryResponse;
@@ -167,6 +173,49 @@ export async function loadMetricsOverview(options?: {
     skippedReasons,
     missingFactorRecords,
     totalRecords: activities.length,
+  };
+}
+
+export async function loadDefaultMetricsDateRange(): Promise<MetricsDateRange> {
+  const activities = await getAllActivityData();
+  return deriveMetricsDateRange(activities);
+}
+
+export function deriveMetricsDateRange(
+  activities: Array<{ recordDate?: string | null }>,
+  fallbackDate = new Date(),
+): MetricsDateRange {
+  const validDates = activities
+    .map((item) => item.recordDate?.slice(0, 10) ?? '')
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort();
+
+  if (validDates.length === 0) {
+    const year = fallbackDate.getFullYear();
+    return {
+      startDate: `${year - 1}-01-01`,
+      endDate: `${year}-12-31`,
+      hasActivityRecords: false,
+    };
+  }
+
+  const firstDate = validDates[0];
+  const lastDate = validDates[validDates.length - 1];
+  const firstYear = firstDate.slice(0, 4);
+  const lastYear = lastDate.slice(0, 4);
+
+  if (firstYear === lastYear) {
+    return {
+      startDate: `${firstYear}-01-01`,
+      endDate: `${firstYear}-12-31`,
+      hasActivityRecords: true,
+    };
+  }
+
+  return {
+    startDate: firstDate,
+    endDate: lastDate,
+    hasActivityRecords: true,
   };
 }
 

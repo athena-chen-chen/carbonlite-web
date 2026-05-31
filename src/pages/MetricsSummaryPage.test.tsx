@@ -7,7 +7,10 @@ import {
   MetricsSummarySection,
 } from '../components/MetricsSummarySection';
 import { MetricsSummaryPage } from './MetricsSummaryPage';
-import { loadMetricsOverview } from '../services/metricsOverview';
+import {
+  loadDefaultMetricsDateRange,
+  loadMetricsOverview,
+} from '../services/metricsOverview';
 
 vi.mock('../services/metricsOverview', async () => {
   const actual = await vi.importActual<typeof import('../services/metricsOverview')>(
@@ -16,6 +19,7 @@ vi.mock('../services/metricsOverview', async () => {
 
   return {
     ...actual,
+    loadDefaultMetricsDateRange: vi.fn(),
     loadMetricsOverview: vi.fn(),
   };
 });
@@ -334,6 +338,12 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({
+      startDate: '2025-01-01',
+      endDate: '2026-12-31',
+      hasActivityRecords: false,
+    });
     vi.mocked(loadMetricsOverview).mockResolvedValue(overview as any);
   });
 
@@ -349,7 +359,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     await waitFor(() => {
       expect(loadMetricsOverview).toHaveBeenCalledWith({
         recalculate: true,
-        dateFrom: '2026-01-01',
+        dateFrom: '2025-01-01',
         dateTo: '2026-12-31',
       });
     });
@@ -372,14 +382,14 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Calculating metrics...')).toBeInTheDocument();
+    expect(await screen.findByText('Calculating metrics...')).toBeInTheDocument();
     expect(screen.getByText('Loading summary...')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading Fuel Usage')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading Electricity')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading CO₂ Emissions')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading Records Included in Summary')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('2026-01-01')).toBeDisabled();
-    expect(screen.getByDisplayValue('2026-12-31')).toBeDisabled();
+    expect(screen.getByDisplayValue('2025-01-01')).not.toBeDisabled();
+    expect(screen.getByDisplayValue('2026-12-31')).not.toBeDisabled();
 
     resolveOverview(overview);
 
@@ -395,9 +405,10 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
 
-    fireEvent.change(screen.getByDisplayValue('2026-01-01'), {
+    fireEvent.change(screen.getByDisplayValue('2025-01-01'), {
       target: { value: '2026-02-01' },
     });
+    await waitForDateDebounce();
 
     await waitFor(() => {
       expect(loadMetricsOverview).toHaveBeenLastCalledWith({
@@ -425,9 +436,10 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       }) as any,
     );
 
-    fireEvent.change(screen.getByDisplayValue('2026-01-01'), {
+    fireEvent.change(screen.getByDisplayValue('2025-01-01'), {
       target: { value: '2026-02-01' },
     });
+    await waitForDateDebounce();
 
     expect(await screen.findByText('Refreshing metrics...')).toBeInTheDocument();
     expect(screen.getByText(/240 L Diesel/)).toBeInTheDocument();
@@ -441,6 +453,49 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
         dateTo: '2026-12-31',
       });
     });
+  });
+
+  it('does not refresh for temporary invalid date edits', async () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByDisplayValue('2025-01-01'), {
+      target: { value: '' },
+    });
+    await waitForDateDebounce();
+
+    expect(loadMetricsOverview).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses detected 2025 activity range by default', async () => {
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+      hasActivityRecords: true,
+    });
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(loadMetricsOverview).toHaveBeenCalledWith({
+        recalculate: true,
+        dateFrom: '2025-01-01',
+        dateTo: '2025-12-31',
+      });
+    });
+
+    expect(screen.getByDisplayValue('2025-01-01')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2025-12-31')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /2025 Full Year/i })).toBeInTheDocument();
   });
 
   it('refreshes when activity or factor changes mark metrics stale', async () => {
@@ -488,3 +543,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
   });
 });
+
+function waitForDateDebounce() {
+  return new Promise((resolve) => window.setTimeout(resolve, 550));
+}

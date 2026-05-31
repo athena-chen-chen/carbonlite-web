@@ -1,7 +1,10 @@
 import { getAllActivityData } from './activityData';
 import { getAllConversionFactors } from './conversionFactors';
 import { calculateMetrics, getMetricsSummary } from './metrics';
-import { loadMetricsOverview } from './metricsOverview';
+import {
+  deriveMetricsDateRange,
+  loadMetricsOverview,
+} from './metricsOverview';
 
 vi.mock('./activityData', () => ({
   getAllActivityData: vi.fn(),
@@ -97,6 +100,54 @@ function factor(overrides: Partial<{
     updatedAt: overrides.updatedAt ?? '2026-01-01T00:00:00.000Z',
   };
 }
+
+describe('deriveMetricsDateRange', () => {
+  it('defaults single-year records to that full year', () => {
+    expect(
+      deriveMetricsDateRange(
+        [
+          { recordDate: '2025-03-10' },
+          { recordDate: '2025-11-02' },
+        ],
+        new Date('2026-05-31T00:00:00.000Z'),
+      ),
+    ).toEqual({
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+      hasActivityRecords: true,
+    });
+  });
+
+  it('uses min and max record dates for mixed-year records', () => {
+    expect(
+      deriveMetricsDateRange(
+        [
+          { recordDate: '2025-11-02' },
+          { recordDate: '2026-02-15' },
+          { recordDate: '2024-12-31' },
+        ],
+        new Date('2026-05-31T00:00:00.000Z'),
+      ),
+    ).toEqual({
+      startDate: '2024-12-31',
+      endDate: '2026-02-15',
+      hasActivityRecords: true,
+    });
+  });
+
+  it('falls back to previous year through current year when no dated records exist', () => {
+    expect(
+      deriveMetricsDateRange(
+        [{ recordDate: null }, { recordDate: '' }],
+        new Date('2026-05-31T00:00:00.000Z'),
+      ),
+    ).toEqual({
+      startDate: '2025-01-01',
+      endDate: '2026-12-31',
+      hasActivityRecords: false,
+    });
+  });
+});
 
 describe('loadMetricsOverview', () => {
   beforeEach(() => {

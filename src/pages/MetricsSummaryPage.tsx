@@ -7,6 +7,7 @@ import {
 } from '../utils/activityAggregation';
 import {
   EMPTY_ACTIVITY_USAGE_TOTALS,
+  loadDefaultMetricsDateRange,
   loadMetricsOverview,
 } from '../services/metricsOverview';
 import {
@@ -41,14 +42,29 @@ export function MetricsSummaryPage() {
     () => (location.state as { metricsError?: string } | null)?.metricsError ?? null,
   );
   const [reloadKey, setReloadKey] = useState(0);
-  const [periodStart, setPeriodStart] = useState('2026-01-01');
+  const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
   const [periodEnd, setPeriodEnd] = useState('2026-12-31');
+  const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
+  const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
+  const [dateRangeReady, setDateRangeReady] = useState(false);
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestSequenceRef = useRef(0);
+  const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!dateRangeReady) return;
     loadSummary();
-  }, [reloadKey, periodStart, periodEnd]);
+  }, [dateRangeReady, reloadKey, periodStart, periodEnd]);
+
+  useEffect(() => {
+    initializeDateRange();
+
+    return () => {
+      if (dateCommitTimerRef.current) {
+        window.clearTimeout(dateCommitTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     function refreshMetrics() {
@@ -121,6 +137,59 @@ export function MetricsSummaryPage() {
 
   function handleRefresh() {
     setReloadKey((key) => key + 1);
+  }
+
+  async function initializeDateRange() {
+    try {
+      const range = await loadDefaultMetricsDateRange();
+      setPeriodStart(range.startDate);
+      setPeriodEnd(range.endDate);
+      setDraftPeriodStart(range.startDate);
+      setDraftPeriodEnd(range.endDate);
+    } catch {
+      // Keep current-year fallback if activity records cannot be loaded.
+    } finally {
+      setDateRangeReady(true);
+    }
+  }
+
+  function commitDateRange(nextStart = draftPeriodStart, nextEnd = draftPeriodEnd) {
+    if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd)) return;
+    if (nextStart > nextEnd) return;
+    setPeriodStart(nextStart);
+    setPeriodEnd(nextEnd);
+  }
+
+  function scheduleDateCommit(nextStart: string, nextEnd: string) {
+    if (dateCommitTimerRef.current) {
+      window.clearTimeout(dateCommitTimerRef.current);
+    }
+
+    if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd) || nextStart > nextEnd) {
+      return;
+    }
+
+    dateCommitTimerRef.current = window.setTimeout(() => {
+      commitDateRange(nextStart, nextEnd);
+    }, 500);
+  }
+
+  function handleStartDateChange(value: string) {
+    setDraftPeriodStart(value);
+    scheduleDateCommit(value, draftPeriodEnd);
+  }
+
+  function handleEndDateChange(value: string) {
+    setDraftPeriodEnd(value);
+    scheduleDateCommit(draftPeriodStart, value);
+  }
+
+  function handleFullYear(year: string) {
+    const start = `${year}-01-01`;
+    const end = `${year}-12-31`;
+    setDraftPeriodStart(start);
+    setDraftPeriodEnd(end);
+    commitDateRange(start, end);
   }
 
 // function handleDownloadCSV() {
@@ -257,10 +326,10 @@ function handleDownloadPDF() {
           <label style={labelStyle}>Start Date</label>
           <input
             type="date"
-            value={periodStart}
-            onChange={(e) => setPeriodStart(e.target.value)}
-            disabled={loading}
-            style={dateInputStyle(loading)}
+            value={draftPeriodStart}
+            onChange={(e) => handleStartDateChange(e.target.value)}
+            onBlur={() => commitDateRange()}
+            style={dateInputStyle(false)}
           />
         </div>
 
@@ -268,24 +337,23 @@ function handleDownloadPDF() {
           <label style={labelStyle}>End Date</label>
           <input
             type="date"
-            value={periodEnd}
-            onChange={(e) => setPeriodEnd(e.target.value)}
-            disabled={loading}
-            style={dateInputStyle(loading)}
+            value={draftPeriodEnd}
+            onChange={(e) => handleEndDateChange(e.target.value)}
+            onBlur={() => commitDateRange()}
+            style={dateInputStyle(false)}
           />
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setPeriodStart('2026-01-01');
-            setPeriodEnd('2026-12-31');
-          }}
-          disabled={loading}
-          style={secondaryButtonStyle(loading)}
-        >
-          2026 Full Year
-        </button>
+        {getFullYearShortcutYears().map((year) => (
+          <button
+            key={year}
+            type="button"
+            onClick={() => handleFullYear(year)}
+            style={secondaryButtonStyle(false)}
+          >
+            {year} Full Year
+          </button>
+        ))}
       </div>
  
       <div style={statusBarStyle}>
@@ -350,6 +418,11 @@ function handleDownloadPDF() {
         totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
         countSummary={countSummary}
         missingFactors={missingFactors}
+        emptyMessage={
+          activities.length === 0 && countSummary.totalRecordsFound > 0
+            ? 'No records found for selected period.'
+            : undefined
+        }
         isLoading={isInitialLoading}
       />
     </div>
@@ -361,6 +434,19 @@ function formatLastUpdated(date: Date) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function isValidDateInput(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function getDefaultFallbackStartDate() {
+  return `${new Date().getFullYear() - 1}-01-01`;
+}
+
+function getFullYearShortcutYears() {
+  const currentYear = new Date().getFullYear();
+  return [String(currentYear - 1), String(currentYear)];
 }
 
 const warningStyle: React.CSSProperties = {
