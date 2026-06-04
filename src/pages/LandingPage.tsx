@@ -37,33 +37,33 @@ export default function CarbonLiteLandingPage() {
   const reportSteps = [
     {
       title: 'Upload documents',
-      text: 'Upload invoices, utility bills, spreadsheets, or operational PDFs.',
+      text: 'Add invoices, utility bills, spreadsheets, or operational PDFs from your existing reporting workflow.',
     },
     {
-      title: 'Review extracted activity data',
-      text: 'Check extracted rows, source references, quantities, units, and uncertain values before import.',
+      title: 'Review activity data',
+      text: 'Check rows, source references, quantities, units, and uncertain values before they become reporting inputs.',
     },
     {
-      title: 'Generate summaries and reports',
-      text: 'Turn reviewed activity data into emissions summaries and report-ready outputs.',
+      title: 'Generate metrics and reports',
+      text: 'Turn reviewed activity data into emissions summaries, totals by metric, and report-ready outputs.',
     },
   ];
   const audienceCards = [
     {
       title: 'Environmental consultants',
-      text: 'Prepare client activity data faster while keeping source evidence traceable.',
+      text: 'Prepare client activity data with clearer traceability back to source documents.',
     },
     {
       title: 'SMEs preparing emissions reports',
-      text: 'Move from scattered bills and spreadsheets to structured report inputs.',
+      text: 'Move from scattered bills and spreadsheets into structured emissions reporting inputs.',
     },
     {
       title: 'Industrial operations teams',
-      text: 'Review fuel, electricity, water, and operational records before calculations.',
+      text: 'Organize fuel, electricity, water, and operational records before emissions calculations.',
     },
     {
       title: 'ESG and reporting teams',
-      text: 'Create report-ready summaries from documents your team already uses.',
+      text: 'Create report-ready summaries from the documents and spreadsheets your team already uses.',
     },
   ];
   const documentExamples = [
@@ -76,11 +76,11 @@ export default function CarbonLiteLandingPage() {
     'Report-ready summaries',
     'Source document traceability',
     'Review-before-import workflow',
-    'Designed for SME and consultant workflows',
+    'Built with environmental workflow feedback',
   ];
   const demoBullets = [
     'Upload invoices, utility bills, spreadsheets',
-    'AI extracts activity data',
+    'Extract structured activity data',
     'Review before import',
     'Generate emissions summaries and reports',
   ];
@@ -109,7 +109,7 @@ export default function CarbonLiteLandingPage() {
             <div>
               <div className="text-base font-bold tracking-tight">CarbonLite AI</div>
               <div className="text-xs text-slate-500">
-                {isAuthenticated ? `Workspace: ${workspaceName}` : 'Emissions report automation'}
+                {isAuthenticated ? `Workspace: ${workspaceName}` : 'SME emissions reporting workflow'}
               </div>
             </div>
           </div>
@@ -163,16 +163,16 @@ export default function CarbonLiteLandingPage() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Currently onboarding a limited number of pilot users in Alberta
+                Built with real environmental workflow feedback
               </div>
               <h1 className="mt-7 max-w-3xl text-5xl font-black tracking-tight text-slate-950 md:text-6xl lg:text-7xl">
-                Turn emissions documents into reviewed, report-ready summaries.
+                Simplify SME carbon reporting.
               </h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
-                Upload invoices, utility bills, spreadsheets, or operational PDFs. CarbonLite AI extracts activity data, lets your team review the rows, then generates emissions summaries and reports.
+                Turn invoices, utility bills, spreadsheets, and operational PDFs into structured emissions reporting workflows.
               </p>
               <p className="mt-4 max-w-2xl text-base leading-7 text-slate-700">
-                Built for pilot teams validating a practical workflow for source document traceability, review-before-import controls, and SME-friendly emissions reporting.
+                Upload documents, review extracted activity data, and generate emissions summaries with source document traceability before anything is imported.
               </p>
 
               <div className="mt-9 flex flex-wrap gap-4">
@@ -183,23 +183,23 @@ export default function CarbonLiteLandingPage() {
                 >
                   Request Pilot Access
                 </button>
-                <button
-                  type="button"
-                  onClick={() => navigate('/upload', { state: { loadSampleWorkspace: true } })}
-                  className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
-                >
-                  See Sample Workflow
-                </button>
                 <a
                   href="#demo-video"
-                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-7 py-3.5 text-sm font-bold text-emerald-800 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white"
+                  className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
                 >
-                  Watch Demo
+                  Watch Demo Video
                 </a>
                 <button
                   type="button"
+                  onClick={() => navigate('/upload', { state: { loadSampleWorkspace: true } })}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-7 py-3.5 text-sm font-bold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:text-emerald-700"
+                >
+                  Try Demo Workspace
+                </button>
+                <button
+                  type="button"
                   onClick={() => navigate(isAuthenticated ? '/upload' : '/login')}
-                  className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
+                  className="rounded-2xl border border-transparent bg-transparent px-4 py-3.5 text-sm font-bold text-slate-600 transition hover:text-emerald-700"
                 >
                   {isAuthenticated ? 'Dashboard' : 'Login'}
                 </button>
@@ -208,7 +208,7 @@ export default function CarbonLiteLandingPage() {
               <div className="mt-10 grid max-w-2xl grid-cols-3 gap-4">
                 {[
                   ['3 steps', 'upload to report'],
-                  ['AI', 'data extraction'],
+                  ['Review', 'before import'],
                   ['5-10', 'pilot users'],
                 ].map(([value, label]) => (
                   <div key={label} className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg shadow-slate-200/60 backdrop-blur">
@@ -261,7 +261,7 @@ export default function CarbonLiteLandingPage() {
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Product demo</p>
               <h2 className="mt-3 text-4xl font-black tracking-tight">See CarbonLite in Action</h2>
               <p className="mt-4 text-lg leading-8 text-slate-600">
-                Watch a real workflow from upload to emissions reporting.
+                Watch a practical workflow from document upload to emissions reporting.
               </p>
 
               <div className="mt-7 grid gap-3">
@@ -295,7 +295,7 @@ export default function CarbonLiteLandingPage() {
           <div className="mx-auto max-w-7xl px-6 py-20">
             <div className="max-w-3xl">
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">How it works</p>
-              <h2 className="mt-3 text-4xl font-black tracking-tight">From source documents to emissions summaries.</h2>
+              <h2 className="mt-3 text-4xl font-black tracking-tight">Upload → Review → Report</h2>
             </div>
 
             <div className="mt-12 grid gap-6 md:grid-cols-3">
@@ -317,7 +317,7 @@ export default function CarbonLiteLandingPage() {
             <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Pilot users</p>
             <h2 className="mt-3 text-4xl font-black tracking-tight">Built for real emissions workflows</h2>
             <p className="mt-4 text-lg leading-8 text-slate-600">
-              CarbonLite is designed for teams who already handle invoices, utility data, spreadsheets, and operational records, but need a clearer path to report-ready emissions outputs.
+              CarbonLite is for teams who already work with invoices, utility data, spreadsheets, and operational records, but need a clearer path to emissions reporting.
             </p>
           </div>
 
@@ -337,7 +337,7 @@ export default function CarbonLiteLandingPage() {
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Supported inputs</p>
               <h2 className="mt-3 text-4xl font-black tracking-tight">Upload the documents your workflow already uses.</h2>
               <p className="mt-4 text-lg leading-8 text-slate-600">
-                Pilot users can test common source documents and help shape extraction coverage for practical SME and consultant reporting workflows.
+                Pilot users can test common source documents and help shape coverage for practical SME and consultant reporting workflows.
               </p>
             </div>
 
@@ -393,7 +393,7 @@ export default function CarbonLiteLandingPage() {
               <div>
                 <h2 className="text-3xl font-black">Join the CarbonLite pilot</h2>
                 <p className="mt-4 max-w-2xl leading-8 text-slate-300">
-                  We are currently onboarding a small number of Alberta pilot users to test document extraction, review workflows, and report-ready summaries.
+                  Currently validating workflows with pilot users and environmental professionals. Help test document extraction, review steps, and report-ready summaries.
                 </p>
               </div>
               <button

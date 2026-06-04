@@ -52,6 +52,7 @@ type EditableParsedActivity = {
 type RawExtractionField = string | number | null | undefined | Record<string, any>;
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
 
 type DocumentActionKind =
   | 'view'
@@ -204,7 +205,7 @@ function getExtractionFailureState(err: unknown): {
   if (/API 404/i.test(message) || /file is no longer available|file.*missing|not found/i.test(message)) {
     return {
       status: 'FILE_MISSING',
-      message: 'This uploaded file is no longer available. Please upload it again.',
+      message: FILE_MISSING_MESSAGE,
     };
   }
 
@@ -313,7 +314,7 @@ export function getDocumentActionModel(input: {
         kind: 'extract',
         label: 'Re-upload Required',
         disabled: true,
-        title: 'This uploaded file is no longer available. Please upload it again.',
+        title: FILE_MISSING_MESSAGE,
       },
       menuActions: [deleteAction],
     };
@@ -814,7 +815,7 @@ ${sampleRows.join('\n')}`,
       viewerWindow?.close();
       setError(
         err instanceof Error && err.message === 'FILE_UNAVAILABLE'
-          ? 'This uploaded file is no longer available. Please upload it again.'
+          ? FILE_MISSING_MESSAGE
           : 'Unable to open document.',
       );
       setSuccessMessage(null);

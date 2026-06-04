@@ -172,7 +172,7 @@ describe('UploadPage sample workflow', () => {
 
     expect(extractDocument).toHaveBeenCalledWith('doc-1');
     expect(
-      await screen.findByText('This uploaded file is no longer available. Please upload it again.'),
+      await screen.findByText('This file is no longer available. Please upload it again.'),
     ).toBeInTheDocument();
     expect((await screen.findAllByText('Re-upload Required')).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Re-upload Required/i })).toBeDisabled();

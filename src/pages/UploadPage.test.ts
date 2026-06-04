@@ -171,7 +171,7 @@ describe('document upload action model', () => {
       kind: 'extract',
       label: 'Re-upload Required',
       disabled: true,
-      title: 'This uploaded file is no longer available. Please upload it again.',
+      title: 'This file is no longer available. Please upload it again.',
     });
     expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
   });
