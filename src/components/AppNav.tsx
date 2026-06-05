@@ -9,6 +9,9 @@ const navItems = [
   { to: '/conversion-factors', label: 'Conversion Factors' },
   { to: '/metrics-summary', label: 'Metrics Summary' },
   { to: '/reports', label: 'Reports' },
+  { to: '/feedback', label: 'Feedback' },
+  { to: '/user-activity', label: 'Activity' },
+  { to: '/audit-log', label: 'Audit Log' },
   
 ] as const;
 

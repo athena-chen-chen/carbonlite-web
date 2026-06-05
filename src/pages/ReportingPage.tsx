@@ -22,6 +22,8 @@ import {
   type FormalConversionFactorUsed,
 } from '../components/FormalReportPreview';
 import { getCurrentUser, getOrganizationName } from '../services/auth';
+import { createClientAuditLog } from '../services/auditLogs';
+import { trackActivityEvent } from '../services/activityEvents';
 
 type ActivityItem = {
   id: string;
@@ -106,6 +108,7 @@ const [selectedDocumentIds] = useState<string[]>(
 );
 const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 const inFlightRequestKeyRef = useRef<string | null>(null);
+const trackedReportViewRef = useRef(false);
   async function loadReportData() {
     const request = {
       recalculate: true,
@@ -170,6 +173,25 @@ useEffect(() => {
     }
   };
 }, []);
+
+useEffect(() => {
+  if (trackedReportViewRef.current) return;
+  trackedReportViewRef.current = true;
+
+  void trackActivityEvent({
+    eventName: 'REPORT_VIEWED',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'Report',
+    metadata: {
+      reportScope,
+      selectedRecordCount: selectedRecordIds.length,
+      selectedDocumentCount: selectedDocumentIds.length,
+    },
+  }).catch(() => {
+    // Usage tracking should never block report viewing.
+  });
+}, [location.pathname, reportScope, selectedDocumentIds.length, selectedRecordIds.length]);
 
 async function initializeDateRange() {
   try {
@@ -266,7 +288,7 @@ const scopeRows = useMemo(() => {
   return summary;
 }, [activities]);
 
-  function handleDownloadCSV() {
+function handleDownloadCSV() {
     const rows = [
       ['Scope', 'Activity Type', 'Quantity', 'Unit', 'Source'],
       ...scopeRows.map((r) => [
@@ -293,8 +315,21 @@ const scopeRows = useMemo(() => {
     link.click();
     document.body.removeChild(link);
 
-    URL.revokeObjectURL(url);
-  }
+  URL.revokeObjectURL(url);
+
+  void trackActivityEvent({
+    eventName: 'REPORT_EXPORTED_CSV',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'Report',
+    metadata: {
+      reportScope,
+      recordsIncluded: countSummary.processedRecords,
+    },
+  }).catch(() => {
+    // Export should not be blocked by usage tracking.
+  });
+}
  
 function buildScopeNarrative(scopeSummary: Record<string, number>) {
   const scope1 = scopeSummary['Scope 1'] ?? 0;
@@ -447,6 +482,26 @@ function handleDownloadPDF() {
   );
 
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
+  void createClientAuditLog({
+    action: 'EXPORT_PDF',
+    entityType: 'Report',
+    description: `Exported PDF report for ${reportScopeLabel}`,
+    page: location.pathname,
+  }).catch(() => {
+    // PDF export should not be blocked by audit logging.
+  });
+  void trackActivityEvent({
+    eventName: 'REPORT_EXPORTED_PDF',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'Report',
+    metadata: {
+      reportScope,
+      recordsIncluded: countSummary.processedRecords,
+    },
+  }).catch(() => {
+    // PDF export should not be blocked by usage tracking.
+  });
 }
 
 function drawReportPdfHeader(
