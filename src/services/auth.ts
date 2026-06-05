@@ -99,8 +99,23 @@ export async function login(input: LoginInput) {
 }
 
 export function logout() {
+  auditLogout();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+}
+
+function auditLogout() {
+  const token = getToken();
+  if (!token) return;
+
+  void fetch(buildApiUrl('/auth/logout'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }).catch(() => {
+    // Logout must not be blocked by audit logging.
+  });
 }
 
 export function handleUnauthorized() {

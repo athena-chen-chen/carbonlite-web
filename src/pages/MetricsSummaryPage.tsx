@@ -15,6 +15,7 @@ import {
   MetricsSummarySection,
   type MissingFactorItem,
 } from '../components/MetricsSummarySection';
+import { trackActivityEvent } from '../services/activityEvents';
 
 
 export function MetricsSummaryPage() {
@@ -50,6 +51,7 @@ export function MetricsSummaryPage() {
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestSequenceRef = useRef(0);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const trackedViewRef = useRef(false);
 
   useEffect(() => {
     if (!dateRangeReady) return;
@@ -65,6 +67,20 @@ export function MetricsSummaryPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (trackedViewRef.current) return;
+    trackedViewRef.current = true;
+
+    void trackActivityEvent({
+      eventName: 'METRICS_SUMMARY_VIEWED',
+      page: location.pathname,
+      url: window.location.href,
+      entityType: 'MetricsSummary',
+    }).catch(() => {
+      // Usage tracking should never block metrics loading.
+    });
+  }, [location.pathname]);
 
   useEffect(() => {
     function refreshMetrics() {

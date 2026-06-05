@@ -5,6 +5,9 @@ import { ConversionFactorsPage } from '../pages/ConversionFactorsPage';
 import { MetricsSummaryPage } from '../pages/MetricsSummaryPage';
 import { UploadPage } from '../pages/UploadPage';
 import { AppNav } from '../components/AppNav';
+import { FeedbackWidget } from '../components/FeedbackWidget';
+import { SentryRouteContext } from '../components/SentryRouteContext';
+import { SentryTestErrorButton } from '../components/SentryTestErrorButton';
 import ReportingPage from '../pages/ReportingPage';
 import CarbonLiteLandingPage from '../pages/LandingPage';
 import NotFound from '../pages/NotFound';
@@ -12,12 +15,17 @@ import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import PilotPage from '../pages/PilotPage';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
+import { FeedbackManagementPage } from '../pages/FeedbackManagementPage';
+import { AuditLogPage } from '../pages/AuditLogPage';
+import { UserActivityPage } from '../pages/UserActivityPage';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ minHeight: '100vh', background: '#fafafa' }}>
       <AppNav />
       <main style={{ padding: '24px 0' }}>{children}</main>
+      <FeedbackWidget />
+      <SentryTestErrorButton />
     </div>
   );
 }
@@ -25,6 +33,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <SentryRouteContext />
       <Routes>
         <Route path="/" element={<CarbonLiteLandingPage />} />
         <Route path="/pilot" element={<PilotPage />} />
@@ -92,6 +101,39 @@ export default function App() {
             <ProtectedRoute>
               <AppShell>
                 <ReportingPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/feedback"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <FeedbackManagementPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/audit-log"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <AuditLogPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/user-activity"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <UserActivityPage />
               </AppShell>
             </ProtectedRoute>
           }
