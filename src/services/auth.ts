@@ -6,6 +6,7 @@ const USER_KEY = 'currentUser';
 export type AuthUser = {
   id?: string;
   email: string;
+  role?: 'ADMIN' | 'USER';
   organizationId?: string;
   organizationName?: string;
   organization?: {
@@ -155,4 +156,12 @@ export function getOrganizationId(user: AuthUser | null) {
 
 export function getUserDisplayName(user: AuthUser | null) {
   return user?.name || user?.email || '';
+}
+
+export function getUserRole(user: AuthUser | null) {
+  return user?.role ?? 'USER';
+}
+
+export function isAdminUser(user: AuthUser | null) {
+  return getUserRole(user) === 'ADMIN';
 }

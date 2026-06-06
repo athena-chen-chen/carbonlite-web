@@ -18,6 +18,7 @@ import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { FeedbackManagementPage } from '../pages/FeedbackManagementPage';
 import { AuditLogPage } from '../pages/AuditLogPage';
 import { UserActivityPage } from '../pages/UserActivityPage';
+import { AdminRoute } from '../auth/AdminRoute';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -110,9 +111,11 @@ export default function App() {
           path="/feedback"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <FeedbackManagementPage />
-              </AppShell>
+              <AdminRoute>
+                <AppShell>
+                  <FeedbackManagementPage />
+                </AppShell>
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
@@ -121,9 +124,24 @@ export default function App() {
           path="/audit-log"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <AuditLogPage />
-              </AppShell>
+              <AdminRoute>
+                <AppShell>
+                  <AuditLogPage />
+                </AppShell>
+              </AdminRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/activity"
+          element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <AppShell>
+                  <UserActivityPage />
+                </AppShell>
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
@@ -132,9 +150,11 @@ export default function App() {
           path="/user-activity"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <UserActivityPage />
-              </AppShell>
+              <AdminRoute>
+                <AppShell>
+                  <UserActivityPage />
+                </AppShell>
+              </AdminRoute>
             </ProtectedRoute>
           }
         />
