@@ -6,6 +6,7 @@ import {
   logout as logoutRequest,
   register as registerRequest,
   type AuthUser,
+  isAdminUser,
 } from '../services/auth';
 
 type RegisterInput = {
@@ -17,6 +18,7 @@ type RegisterInput = {
 type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   logout: () => void;
@@ -25,6 +27,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   isAuthenticated: false,
+  isAdmin: false,
   login: async () => {},
   register: async () => {},
   logout: () => {},
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         isAuthenticated: Boolean(token),
+        isAdmin: isAdminUser(user),
         login,
         register,
         logout,

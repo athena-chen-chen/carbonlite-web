@@ -57,6 +57,54 @@ describe('AppNav logout flow', () => {
     expect(screen.queryByRole('button', { name: /exit demo/i })).not.toBeInTheDocument();
   });
 
+  it('hides internal navigation from normal users', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'user@example.com',
+        organizationName: 'Pilot Workspace',
+        role: 'USER',
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/upload']}>
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Feedback' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument();
+  });
+
+  it('shows internal navigation to administrators', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        organizationName: 'CarbonLite',
+        role: 'ADMIN',
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/upload']}>
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Feedback' })).toHaveAttribute('href', '/feedback');
+    expect(screen.getByRole('link', { name: 'Activity' })).toHaveAttribute('href', '/activity');
+    expect(screen.getByRole('link', { name: 'Audit Log' })).toHaveAttribute('href', '/audit-log');
+  });
+
 
   it('clears token and redirects to login when logging out', async () => {
     localStorage.setItem('accessToken', 'valid-token');

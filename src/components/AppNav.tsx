@@ -9,10 +9,12 @@ const navItems = [
   { to: '/conversion-factors', label: 'Conversion Factors' },
   { to: '/metrics-summary', label: 'Metrics Summary' },
   { to: '/reports', label: 'Reports' },
+] as const;
+
+const adminNavItems = [
   { to: '/feedback', label: 'Feedback' },
-  { to: '/user-activity', label: 'Activity' },
+  { to: '/activity', label: 'Activity' },
   { to: '/audit-log', label: 'Audit Log' },
-  
 ] as const;
 
 const headerStyle: React.CSSProperties = {
@@ -85,7 +87,7 @@ function getLinkStyle(isActive: boolean): React.CSSProperties {
 }
 
 export function AppNav() {
-  const { isAuthenticated, logout, user } = useAuth();
+  const { isAuthenticated, isAdmin, logout, user } = useAuth();
   const navigate = useNavigate();
   const workspaceName = getOrganizationName(user);
   const userLabel = getUserDisplayName(user);
@@ -116,6 +118,17 @@ export function AppNav() {
                 {item.label}
               </NavLink>
             ))}
+            {isAdmin
+              ? adminNavItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    style={({ isActive }) => getLinkStyle(isActive)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))
+              : null}
           </nav>
 
           {isAuthenticated ? (
