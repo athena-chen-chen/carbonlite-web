@@ -1,5 +1,6 @@
 import { apiFetch } from './api';
 import { track } from './analytics.service';
+import { trackEvent } from './ga4.service';
 
 export type UploadDocumentInput = {
   file: File;
@@ -44,6 +45,10 @@ export async function uploadDocument(input: UploadDocumentInput) {
   track('DOCUMENT_UPLOADED', {
     documentType: document.type,
     documentCount: 1,
+  });
+  trackEvent('DOCUMENT_UPLOADED', {
+    document_type: document.type,
+    document_count: 1,
   });
 
   return document;

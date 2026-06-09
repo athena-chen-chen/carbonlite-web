@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const requestPilotHref = 'mailto:carbonliteai@gmail.com?subject=CarbonLite Pilot Request';
 const bookDemoHref = 'mailto:carbonliteai@gmail.com?subject=CarbonLite Demo Request';
@@ -141,6 +141,25 @@ export default function PilotPage() {
           </div>
         </section>
       </main>
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <span>© {new Date().getFullYear()} KACH CANADA LTD.</span>
+          <nav className="flex flex-wrap gap-x-5 gap-y-2" aria-label="Company">
+            <Link to="/about" className="font-semibold text-slate-700 hover:text-emerald-700">
+              About CarbonLite
+            </Link>
+            <Link to="/privacy" className="font-semibold text-slate-700 hover:text-emerald-700">
+              Privacy Policy
+            </Link>
+            <Link to="/terms" className="font-semibold text-slate-700 hover:text-emerald-700">
+              Terms of Use
+            </Link>
+            <a href="mailto:carbonliteai@gmail.com" className="font-semibold text-slate-700 hover:text-emerald-700">
+              Contact Us
+            </a>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

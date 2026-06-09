@@ -75,7 +75,9 @@ function factor(overrides: Partial<{
   isSystemDefault: boolean;
   updatedAt: string;
   sourceAuthority: string;
+  sourceDocument: string;
   sourceYear: number;
+  verified: boolean;
 }> = {}) {
   return {
     id: overrides.id ?? 'factor-1',
@@ -91,7 +93,9 @@ function factor(overrides: Partial<{
     sourceName: null,
     sourceReference: null,
     sourceAuthority: overrides.sourceAuthority ?? null,
+    sourceDocument: overrides.sourceDocument ?? null,
     sourceYear: overrides.sourceYear ?? null,
+    verified: overrides.verified ?? false,
     effectiveFrom: null,
     effectiveTo: null,
     isDefault: overrides.isDefault ?? true,
@@ -290,6 +294,43 @@ describe('loadMetricsOverview', () => {
         factorValue: 2.68,
         inputUnit: 'L',
         factorType: 'System',
+      }),
+    ]);
+  });
+
+  it('returns traceability only for factors actually used by matched records', async () => {
+    vi.mocked(getAllActivityData).mockResolvedValue([
+      activity('activity-1', 'DIESEL', 100, 'L'),
+    ]);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      factor({
+        id: 'used-factor',
+        activityType: 'DIESEL',
+        unit: 'L',
+        factorValue: 2.68,
+        sourceAuthority: 'ECCC',
+        sourceDocument: 'National Inventory Report',
+        sourceYear: 2025,
+        verified: true,
+      }),
+      factor({
+        id: 'unused-factor',
+        activityType: 'ELECTRICITY',
+        unit: 'kWh',
+        factorValue: 0.5,
+      }),
+    ]);
+    vi.mocked(getMetricsSummary).mockResolvedValue(summary('0', 1));
+
+    const overview = await loadMetricsOverview();
+
+    expect(overview.conversionFactorsUsed).toEqual([
+      expect.objectContaining({
+        factorId: 'used-factor',
+        sourceAuthority: 'ECCC',
+        sourceDocument: 'National Inventory Report',
+        sourceYear: 2025,
+        verified: true,
       }),
     ]);
   });

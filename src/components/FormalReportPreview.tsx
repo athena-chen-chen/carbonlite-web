@@ -4,14 +4,20 @@ import {
 } from './MetricsSummarySection';
 import {
   formatFuelUsageBreakdown,
-  formatActivityUsageValue,
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 
 export { formatFuelUsageBreakdown };
 
 export const FORMAL_REPORT_DISCLAIMER =
-  'Estimated emissions are calculated by multiplying activity quantities by applicable conversion factors. Conversion factors may include CarbonLite system defaults and organization-specific custom factors. Users should verify factors against applicable reporting requirements before using final reports for regulatory submission.';
+  'Estimated emissions are calculated by multiplying activity quantities by applicable conversion factors. Conversion factors may include CarbonLite system defaults and organization-specific custom factors. Users should review factor sources and methodology before using reports for regulatory or client-facing submissions.';
+
+export const FORMAL_REPORT_METHODOLOGY = [
+  FORMAL_REPORT_DISCLAIMER,
+  'Activity data may come from uploaded documents, spreadsheets, or manual entry. Extracted and imported records should be reviewed for accuracy and completeness.',
+  'Records without matching conversion factors are excluded from estimated emissions totals and are identified as skipped or missing-factor records.',
+  'Users should review source documents, conversion factor traceability, and applicable reporting requirements before relying on this report.',
+];
 
 export type FormalActivityEmission = {
   activityDataId: string;
@@ -33,10 +39,69 @@ export type FormalConversionFactorUsed = {
   inputUnit: string;
   resultUnit: string;
   sourceAuthority: string;
+  sourceDocument?: string | null;
   sourceYear?: number | null;
   factorType: 'System' | 'Custom';
   verified: boolean;
 };
+
+export type ReportExecutiveSummary = {
+  estimatedEmissions: string;
+  recordsIncluded: number;
+  recordsSkipped: number;
+  primaryActivityTypes: string;
+  missingFactorCount: number;
+  dataQualityCoverage: string;
+};
+
+export function buildReportExecutiveSummary({
+  totalEstimatedEmissionsKgCO2e,
+  countSummary,
+  matchedActivityEmissions,
+}: {
+  totalEstimatedEmissionsKgCO2e: number;
+  countSummary: MetricsCountSummary;
+  matchedActivityEmissions: FormalActivityEmission[];
+}): ReportExecutiveSummary {
+  const primaryActivityTypes = Array.from(
+    new Set(
+      matchedActivityEmissions
+        .map((item) => String(item.activityType ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
+  const coverage =
+    countSummary.totalRecordsFound > 0
+      ? (countSummary.processedRecords / countSummary.totalRecordsFound) * 100
+      : 0;
+
+  return {
+    estimatedEmissions: `${totalEstimatedEmissionsKgCO2e} kgCO2e`,
+    recordsIncluded: countSummary.processedRecords,
+    recordsSkipped: countSummary.skippedRecords,
+    primaryActivityTypes: primaryActivityTypes.length
+      ? primaryActivityTypes.join(', ')
+      : 'None included',
+    missingFactorCount: countSummary.missingFactorRecords,
+    dataQualityCoverage: `${formatPercentage(coverage)}%`,
+  };
+}
+
+export function buildConversionFactorTraceabilityRows(
+  conversionFactorsUsed: FormalConversionFactorUsed[],
+) {
+  return conversionFactorsUsed.map((factor) => [
+    factor.activityType || 'Not specified',
+    factor.inputUnit || 'Not specified',
+    factor.factorValue,
+    factor.resultUnit || 'kgCO2e',
+    factor.sourceAuthority || 'Source not specified',
+    factor.sourceDocument || 'Source not specified',
+    factor.sourceYear || 'Source not specified',
+    factor.verified ? 'Verified' : 'Unverified / user review required',
+    factor.factorType,
+  ]);
+}
 
 export type SourceEvidenceRow = {
   sourceReference: string;
@@ -119,23 +184,36 @@ export function FormalReportPreview({
     totalEstimatedEmissionsKgCO2e,
     recordsIncluded: countSummary.processedRecords,
   });
+  const executiveSummary = buildReportExecutiveSummary({
+    totalEstimatedEmissionsKgCO2e,
+    countSummary,
+    matchedActivityEmissions,
+  });
+  const factorTraceabilityRows =
+    buildConversionFactorTraceabilityRows(conversionFactorsUsed);
 
   return (
     <section style={reportShellStyle}>
-      <div style={reportHeaderStyle}>
-        <div style={brandBlockStyle}>
-          <div style={brandIconStyle}>CL</div>
-          <div>
-            <div style={brandNameStyle}>CarbonLite AI</div>
-            <div style={brandSubtitleStyle}>Environmental Reporting Platform</div>
+      <div style={coverPageStyle}>
+        <div style={reportHeaderStyle}>
+          <div style={brandBlockStyle}>
+            <div style={brandIconStyle}>CL</div>
+            <div>
+              <div style={brandNameStyle}>CarbonLite AI</div>
+              <div style={brandSubtitleStyle}>Environmental Reporting Platform</div>
+            </div>
           </div>
+          <div style={coverLabelStyle}>Report Cover</div>
         </div>
-        <div style={headerMetaStyle}>
-          <div style={reportTitleStyle}>Generated Emissions Report</div>
-          <div>Generated: {generatedAt}</div>
-          <div>Organization: {organizationName || 'Workspace'}</div>
-          <div>Reporting Period: {reportPeriod}</div>
-          <div>Report Scope: {scopeLabel}</div>
+        <div style={coverBodyStyle}>
+          <div style={reportTitleStyle}>Emissions Summary Report</div>
+          <div style={coverOrganizationStyle}>{organizationName || 'Workspace'}</div>
+          <div style={coverFactsStyle}>
+            <div><strong>Reporting period:</strong> {reportPeriod}</div>
+            <div><strong>Report scope:</strong> {scopeLabel}</div>
+            <div><strong>Generated date:</strong> {generatedAt}</div>
+            <div><strong>Prepared by:</strong> CarbonLite AI</div>
+          </div>
         </div>
       </div>
 
@@ -151,22 +229,12 @@ export function FormalReportPreview({
 
       <ReportSection title="B. Executive Summary">
         <div style={summaryGridStyle}>
-          <Fact
-            label="Fuel Usage"
-            value={formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown)}
-          />
-          <Fact
-            label="Electricity Consumption"
-            value={formatActivityUsageValue(
-              usageTotals.electricity,
-              usageTotals.electricityUnitLabel,
-            )}
-          />
-          <Fact
-            label="Estimated Emissions"
-            value={`${totalEstimatedEmissionsKgCO2e} kgCO2e`}
-          />
-          <Fact label="Records Included" value={String(countSummary.processedRecords)} />
+          <Fact label="Estimated Emissions" value={executiveSummary.estimatedEmissions} />
+          <Fact label="Records Included" value={String(executiveSummary.recordsIncluded)} />
+          <Fact label="Records Skipped" value={String(executiveSummary.recordsSkipped)} />
+          <Fact label="Primary Activity Types" value={executiveSummary.primaryActivityTypes} />
+          <Fact label="Missing Factor Count" value={String(executiveSummary.missingFactorCount)} />
+          <Fact label="Data Quality Coverage" value={executiveSummary.dataQualityCoverage} />
         </div>
       </ReportSection>
 
@@ -206,25 +274,17 @@ export function FormalReportPreview({
         <SimpleTable
           headers={[
             'Activity Type',
-            'Factor Value',
             'Input Unit',
+            'Factor Value',
             'Result Unit',
             'Source Authority',
+            'Source Document',
             'Source Year',
-            'System / Custom',
             'Verified',
+            'System / Custom',
           ]}
           emptyMessage="No conversion factors found for this report scope."
-          rows={conversionFactorsUsed.map((factor) => [
-            factor.activityType || '-',
-            factor.factorValue,
-            factor.inputUnit || '-',
-            factor.resultUnit || '-',
-            factor.sourceAuthority || '-',
-            factor.sourceYear || '-',
-            factor.factorType,
-            factor.verified ? 'Verified' : 'Needs review',
-          ])}
+          rows={factorTraceabilityRows}
         />
       </ReportSection>
 
@@ -242,9 +302,13 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection title="G. Methodology and Disclaimer">
-        <p style={{ margin: 0, lineHeight: 1.7, color: '#475569' }}>
-          {FORMAL_REPORT_DISCLAIMER}
-        </p>
+        <div style={{ display: 'grid', gap: 10 }}>
+          {FORMAL_REPORT_METHODOLOGY.map((paragraph) => (
+            <p key={paragraph} style={{ margin: 0, lineHeight: 1.7, color: '#475569' }}>
+              {paragraph}
+            </p>
+          ))}
+        </div>
       </ReportSection>
     </section>
   );
@@ -325,15 +389,54 @@ const reportShellStyle: React.CSSProperties = {
   background: '#fff',
 };
 
+const coverPageStyle: React.CSSProperties = {
+  minHeight: 310,
+  padding: 24,
+  borderRadius: 10,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'space-between',
+};
+
 const reportHeaderStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
   gap: 16,
-  marginBottom: 20,
+  marginBottom: 0,
   paddingBottom: 16,
   borderBottom: '1px solid #cbd5e1',
   flexWrap: 'wrap',
+};
+
+const coverLabelStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: 'uppercase',
+};
+
+const coverBodyStyle: React.CSSProperties = {
+  paddingTop: 42,
+  maxWidth: 680,
+};
+
+const coverOrganizationStyle: React.CSSProperties = {
+  marginTop: 14,
+  color: '#047857',
+  fontSize: 20,
+  fontWeight: 800,
+};
+
+const coverFactsStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  marginTop: 28,
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.5,
 };
 
 const brandBlockStyle: React.CSSProperties = {
@@ -378,7 +481,7 @@ const headerMetaStyle: React.CSSProperties = {
 
 const reportTitleStyle: React.CSSProperties = {
   color: '#0f172a',
-  fontSize: 15,
+  fontSize: 30,
   fontWeight: 900,
 };
 
@@ -436,3 +539,7 @@ const emptyStyle: React.CSSProperties = {
   color: '#64748b',
   textAlign: 'center',
 };
+
+function formatPercentage(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}

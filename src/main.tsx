@@ -9,11 +9,13 @@ import { AuthProvider } from './auth/AuthProvider'; // from earlier step
 import { AppErrorFallback } from './components/AppErrorFallback';
 import { initSentry, SentryErrorBoundary } from './sentry';
 import { initAnalytics } from './services/analytics.service';
+import { initGA4 } from './services/ga4.service';
 
 import './index.css';
 
 initSentry();
 initAnalytics();
+initGA4();
 
 const qc = new QueryClient();
 ReactDOM.createRoot(document.getElementById('root')!).render(

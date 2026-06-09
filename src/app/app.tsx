@@ -20,6 +20,10 @@ import { AuditLogPage } from '../pages/AuditLogPage';
 import { UserActivityPage } from '../pages/UserActivityPage';
 import { AdminRoute } from '../auth/AdminRoute';
 import { AnalyticsRouteTracker } from '../components/AnalyticsRouteTracker';
+import { GA4RouteTracker } from '../components/GA4RouteTracker';
+import PrivacyPolicyPage from '../pages/PrivacyPolicyPage';
+import TermsOfUsePage from '../pages/TermsOfUsePage';
+import AboutPage from '../pages/AboutPage';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -37,11 +41,15 @@ export default function App() {
     <BrowserRouter>
       <SentryRouteContext />
       <AnalyticsRouteTracker />
+      <GA4RouteTracker />
       <Routes>
         <Route path="/" element={<CarbonLiteLandingPage />} />
         <Route path="/pilot" element={<PilotPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsOfUsePage />} />
+        <Route path="/about" element={<AboutPage />} />
 
         <Route
           path="/data-records"
