@@ -1,7 +1,8 @@
 
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getOrganizationName } from '../services/auth';
+import { trackEvent } from '../services/ga4.service';
 
 const demoVideoUrl = import.meta.env.VITE_DEMO_VIDEO_URL || 'https://www.youtube.com/embed/rninS2Y0FBo';
 const demoVideoEmbedUrl = getYouTubeEmbedUrl(demoVideoUrl);
@@ -185,7 +186,13 @@ export default function CarbonLiteLandingPage() {
                 </button>
                 <a
                   href="#demo-video"
-                  className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
+                  onClick={() =>
+                    trackEvent('DEMO_VIDEO_VIEWED', {
+                      video_name: 'CarbonLite AI demo',
+                      source: 'hero',
+                    })
+                  }
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-7 py-3.5 text-sm font-bold text-emerald-800 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white"
                 >
                   Watch Demo Video
                 </a>
@@ -194,7 +201,7 @@ export default function CarbonLiteLandingPage() {
                   onClick={() => navigate('/upload', { state: { loadSampleWorkspace: true } })}
                   className="rounded-2xl border border-slate-200 bg-slate-50 px-7 py-3.5 text-sm font-bold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:text-emerald-700"
                 >
-                  Try Demo Workspace
+                  See Sample Workflow
                 </button>
                 <button
                   type="button"
@@ -407,6 +414,37 @@ export default function CarbonLiteLandingPage() {
           </div>
         </section>
       </main>
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <span>© {new Date().getFullYear()} KACH CANADA LTD.</span>
+          <nav className="flex flex-wrap gap-x-5 gap-y-2" aria-label="Company">
+            <Link
+              to="/about"
+              className="font-semibold text-slate-700 transition hover:text-emerald-700"
+            >
+              About CarbonLite
+            </Link>
+            <Link
+              to="/privacy"
+              className="font-semibold text-slate-700 transition hover:text-emerald-700"
+            >
+              Privacy Policy
+            </Link>
+            <Link
+              to="/terms"
+              className="font-semibold text-slate-700 transition hover:text-emerald-700"
+            >
+              Terms of Use
+            </Link>
+            <a
+              href="mailto:carbonliteai@gmail.com"
+              className="font-semibold text-slate-700 transition hover:text-emerald-700"
+            >
+              Contact Us
+            </a>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

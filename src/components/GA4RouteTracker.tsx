@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { track } from '../services/analytics.service';
+import { trackPageView } from '../services/ga4.service';
 
-const pageNames: Record<string, string> = {
+const pageTitles: Record<string, string> = {
   '/': 'Home',
+  '/pilot': 'Pilot Program',
+  '/login': 'Login',
+  '/register': 'Register',
   '/privacy': 'Privacy Policy',
   '/terms': 'Terms of Use',
   '/about': 'About CarbonLite',
@@ -16,21 +19,16 @@ const pageNames: Record<string, string> = {
   '/reporting': 'Reports',
 };
 
-export function AnalyticsRouteTracker() {
+export function GA4RouteTracker() {
   const location = useLocation();
-  const lastTrackedPathRef = useRef<string | null>(null);
+  const lastTrackedRouteRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const pageName = pageNames[location.pathname];
     const route = `${location.pathname}${location.search}`;
+    if (lastTrackedRouteRef.current === route) return;
+    lastTrackedRouteRef.current = route;
 
-    if (!pageName || lastTrackedPathRef.current === route) return;
-    lastTrackedPathRef.current = route;
-
-    track('PAGE_VIEW', {
-      pageName,
-      route: location.pathname,
-    });
+    trackPageView(route, pageTitles[location.pathname] ?? 'CarbonLite AI');
   }, [location.pathname, location.search]);
 
   return null;

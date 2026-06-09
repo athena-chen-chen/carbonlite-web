@@ -79,6 +79,7 @@ export type MetricsOverview = {
     inputUnit: string;
     resultUnit: string;
     sourceAuthority: string;
+    sourceDocument?: string | null;
     sourceYear?: number | null;
     factorType: 'System' | 'Custom';
     verified: boolean;
@@ -298,6 +299,11 @@ function calculateEstimatedEmissions(
       inputUnit: matchingFactor.inputUnit || matchingFactor.unit || '',
       resultUnit: matchingFactor.resultUnit || 'kgCO2e',
       sourceAuthority: getFactorSourceAuthority(matchingFactor),
+      sourceDocument:
+        matchingFactor.sourceDocument ||
+        matchingFactor.sourceReference ||
+        matchingFactor.sourceName ||
+        null,
       sourceYear: matchingFactor.sourceYear,
       factorType: matchingFactor.isSystemDefault ? 'System' : 'Custom',
       verified: Boolean(matchingFactor.verified),

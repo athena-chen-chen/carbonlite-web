@@ -1,7 +1,13 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
+import { trackEvent } from '../services/ga4.service';
 import CarbonLiteLandingPage from './LandingPage';
+
+vi.mock('../services/ga4.service', () => ({
+  trackEvent: vi.fn(),
+}));
 
 function renderLanding() {
   return render(
@@ -27,6 +33,38 @@ describe('LandingPage auth buttons', () => {
     const sampleButton = screen.getByRole('button', { name: /see sample workflow/i });
     expect(sampleButton).toBeInTheDocument();
     expect(screen.queryByText(/start demo mode/i)).not.toBeInTheDocument();
+  });
+
+  it('shows public legal and contact links in the footer', () => {
+    renderLanding();
+
+    expect(screen.getByRole('link', { name: /about carbonlite/i })).toHaveAttribute(
+      'href',
+      '/about',
+    );
+    expect(screen.getByRole('link', { name: /privacy policy/i })).toHaveAttribute(
+      'href',
+      '/privacy',
+    );
+    expect(screen.getByRole('link', { name: /terms of use/i })).toHaveAttribute(
+      'href',
+      '/terms',
+    );
+    expect(screen.getByRole('link', { name: /contact us/i })).toHaveAttribute(
+      'href',
+      'mailto:carbonliteai@gmail.com',
+    );
+  });
+
+  it('tracks the demo video CTA', async () => {
+    renderLanding();
+
+    await userEvent.click(screen.getByRole('link', { name: /watch demo/i }));
+
+    expect(trackEvent).toHaveBeenCalledWith('DEMO_VIDEO_VIEWED', {
+      video_name: 'CarbonLite AI demo',
+      source: 'hero',
+    });
   });
 
   it('shows Dashboard and Logout instead of Login when authenticated', () => {

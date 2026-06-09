@@ -19,6 +19,7 @@ import {
   reset as resetAnalytics,
   track,
 } from '../services/analytics.service';
+import { trackEvent } from '../services/ga4.service';
 
 type RegisterInput = {
   organizationName: string;
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const currentUser = getCurrentUser();
     identify(currentUser);
     track('USER_LOGGED_IN');
+    trackEvent('LOGIN');
     setUser(currentUser);
     setToken(getToken());
   }, []);

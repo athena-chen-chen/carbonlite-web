@@ -1,4 +1,17 @@
 User-agent: *
 Allow: /
 
+Disallow: /upload
+Disallow: /data-records
+Disallow: /activity-data
+Disallow: /conversion-factors
+Disallow: /metrics
+Disallow: /metrics-summary
+Disallow: /reports
+Disallow: /reporting
+Disallow: /feedback
+Disallow: /activity
+Disallow: /user-activity
+Disallow: /audit-log
+
 Sitemap: https://carbonliteapp.ca/sitemap.xml

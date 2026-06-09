@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">CarbonLite AI</title>
+  <rect width="512" height="512" rx="112" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="206" fill="#ffffff" stroke="#0f2a52" stroke-width="28"/>
+  <path
+    d="M354 162a132 132 0 1 0 0 188"
+    fill="none"
+    stroke="#16a34a"
+    stroke-width="48"
+    stroke-linecap="round"
+  />
+  <path
+    d="M306 224v126h72"
+    fill="none"
+    stroke="#16a34a"
+    stroke-width="48"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

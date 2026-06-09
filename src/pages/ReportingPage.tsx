@@ -13,10 +13,11 @@ import {
   type MissingFactorItem,
 } from '../components/MetricsSummarySection';
 import {
-  FORMAL_REPORT_DISCLAIMER,
+  FORMAL_REPORT_METHODOLOGY,
   FormalReportPreview,
+  buildConversionFactorTraceabilityRows,
+  buildReportExecutiveSummary,
   buildSourceEvidenceRows,
-  formatFuelUsageBreakdown,
   formatSourceType,
   type FormalActivityEmission,
   type FormalConversionFactorUsed,
@@ -25,6 +26,7 @@ import { getCurrentUser, getOrganizationName } from '../services/auth';
 import { createClientAuditLog } from '../services/auditLogs';
 import { trackActivityEvent } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
+import { trackEvent } from '../services/ga4.service';
 
 type ActivityItem = {
   id: string;
@@ -147,6 +149,11 @@ const trackedReportViewRef = useRef(false);
         reportType: 'emissions',
         reportScope,
         recordCount: overview.processedRecords,
+      });
+      trackEvent('REPORT_GENERATED', {
+        report_type: 'emissions',
+        report_scope: reportScope,
+        record_count: overview.processedRecords,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report data');
@@ -390,28 +397,54 @@ function handleDownloadPDF() {
     totalEstimatedEmissionsKgCO2e,
     recordsIncluded: countSummary.processedRecords,
   });
+  const executiveSummary = buildReportExecutiveSummary({
+    totalEstimatedEmissionsKgCO2e,
+    countSummary,
+    matchedActivityEmissions,
+  });
+  const factorTraceabilityRows =
+    buildConversionFactorTraceabilityRows(conversionFactorsUsed);
 
-  drawReportPdfHeader(doc, {
+  drawReportPdfCover(doc, {
     organizationName,
     reportPeriod,
     reportScopeLabel,
     generatedDate: today,
-    recordsIncluded: countSummary.processedRecords,
   });
 
+  doc.addPage();
+  drawPdfSectionTitle(doc, 'Executive Summary', 18);
   autoTable(doc, {
-    startY: 74,
+    startY: 24,
     head: [['Executive Summary', 'Value']],
     body: [
-      ['Fuel Usage', formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown)],
-      ['Electricity Consumption', `${usageTotals.electricity} ${usageTotals.electricityUnitLabel}`],
-      ['Estimated Emissions', `${totalEstimatedEmissionsKgCO2e} kgCO2e`],
-      ['Records Included', countSummary.processedRecords],
+      ['Estimated Emissions', executiveSummary.estimatedEmissions],
+      ['Records Included', executiveSummary.recordsIncluded],
+      ['Records Skipped', executiveSummary.recordsSkipped],
+      ['Primary Activity Types', executiveSummary.primaryActivityTypes],
+      ['Missing Factor Count', executiveSummary.missingFactorCount],
+      ['Data Quality Coverage', executiveSummary.dataQualityCoverage],
     ],
   });
 
+  let nextY = (doc as any).lastAutoTable.finalY + 12;
+  drawPdfSectionTitle(doc, 'Methodology', nextY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  FORMAL_REPORT_METHODOLOGY.forEach((paragraph) => {
+    const lines = doc.splitTextToSize(paragraph, 180);
+    doc.text(lines, 14, nextY + 7);
+    nextY += lines.length * 4.4 + 6;
+  });
+
+  if (nextY > 235) {
+    doc.addPage();
+    nextY = 18;
+  }
+  drawPdfSectionTitle(doc, 'Totals by Metric', nextY);
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 10,
+    startY: nextY + 6,
     head: [['Metric Type', 'Unit', 'Total']],
     body: totalsByMetric.map((item) => [
       item.metricType,
@@ -420,9 +453,10 @@ function handleDownloadPDF() {
     ]),
   });
 
-  const activityStartY = (doc as any).lastAutoTable.finalY + 10;
+  const activityStartY = (doc as any).lastAutoTable.finalY + 14;
+  drawPdfSectionTitle(doc, 'Activity Breakdown', activityStartY);
   autoTable(doc, {
-    startY: activityStartY,
+    startY: activityStartY + 6,
     head: [['Activity Type', 'Quantity', 'Unit', 'Estimated Emissions', 'Source Reference']],
     body: matchedActivityEmissions.length
       ? matchedActivityEmissions.map((item) => [
@@ -435,27 +469,31 @@ function handleDownloadPDF() {
       : [['No activity records with matching conversion factors.', '', '', '', '']],
   });
 
-  let nextY = (doc as any).lastAutoTable?.finalY ?? 115;
+  nextY = (doc as any).lastAutoTable?.finalY ?? 115;
   if (nextY > 230) {
     doc.addPage();
-    nextY = 20;
+    nextY = 18;
   }
 
+  drawPdfSectionTitle(doc, 'Conversion Factors Used', nextY + 10);
   autoTable(doc, {
-    startY: nextY + 10,
-    head: [['Activity Type', 'Factor Value', 'Input Unit', 'Result Unit', 'Source Authority', 'Source Year', 'Type', 'Verified']],
-    body: conversionFactorsUsed.length
-      ? conversionFactorsUsed.map((factor) => [
-          factor.activityType ?? '',
-          factor.factorValue,
-          factor.inputUnit,
-          factor.resultUnit,
-          factor.sourceAuthority,
-          factor.sourceYear ?? '',
-          factor.factorType,
-          factor.verified ? 'Verified' : 'Needs review',
-        ])
-      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '']],
+    startY: nextY + 16,
+    head: [[
+      'Activity Type',
+      'Input Unit',
+      'Factor Value',
+      'Result Unit',
+      'Source Authority',
+      'Source Document',
+      'Source Year',
+      'Verified',
+      'System / Custom',
+    ]],
+    body: factorTraceabilityRows.length
+      ? factorTraceabilityRows
+      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '']],
+    styles: { fontSize: 6.5, cellPadding: 1.5 },
+    headStyles: { fillColor: [15, 23, 42] },
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 170;
@@ -479,17 +517,6 @@ function handleDownloadPDF() {
         ])
       : [['No source evidence available.', '', '', '']],
   });
-
-  doc.addPage();
-  doc.setFontSize(14);
-  doc.text('Methodology and Disclaimer', 14, 20);
-
-  doc.setFontSize(10);
-  doc.text(
-    doc.splitTextToSize(FORMAL_REPORT_DISCLAIMER, 180),
-    14,
-    32,
-  );
 
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
   void createClientAuditLog({
@@ -519,52 +546,71 @@ function handleDownloadPDF() {
   });
 }
 
-function drawReportPdfHeader(
+function drawReportPdfCover(
   doc: jsPDF,
   input: {
     organizationName: string;
     reportPeriod: string;
     reportScopeLabel: string;
     generatedDate: string;
-    recordsIncluded: number;
   },
 ) {
-  const x = 14;
-  const y = 14;
+  const x = 24;
+  const y = 24;
 
   doc.setFillColor(6, 78, 59);
-  doc.roundedRect(x, y, 12, 12, 2, 2, 'F');
+  doc.roundedRect(x, y, 14, 14, 2, 2, 'F');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.setTextColor(255, 255, 255);
-  doc.text('CL', x + 3.1, y + 7.8);
-
-  doc.setTextColor(15, 23, 42);
-  doc.setFontSize(14);
-  doc.text('CarbonLite AI', x + 16, y + 5);
-
   doc.setFontSize(8);
-  doc.setTextColor(4, 120, 87);
-  doc.text('Environmental Reporting Platform', x + 16, y + 10.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('CL', x + 3.6, y + 9);
 
-  doc.setFontSize(12);
   doc.setTextColor(15, 23, 42);
-  doc.text('Generated Emissions Report', x, y + 26);
+  doc.setFontSize(16);
+  doc.text('CarbonLite AI', x + 19, y + 6);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Generated: ${input.generatedDate}`, x, y + 35);
-  doc.text(`Organization: ${input.organizationName}`, x, y + 41);
-  doc.text(`Reporting Period: ${input.reportPeriod}`, x, y + 47);
-  doc.text(`Report Scope: ${input.reportScopeLabel}`, 112, y + 35);
-  doc.text(`Records Included: ${input.recordsIncluded}`, 112, y + 41);
+  doc.setFontSize(9);
+  doc.setTextColor(4, 120, 87);
+  doc.text('Environmental Reporting Platform', x + 19, y + 12);
 
   doc.setDrawColor(203, 213, 225);
-  doc.line(x, y + 54, 196, y + 54);
+  doc.line(x, y + 28, 186, y + 28);
+
+  doc.setFontSize(25);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Emissions Summary Report', x, y + 62);
+
+  doc.setFontSize(16);
+  doc.setTextColor(4, 120, 87);
+  doc.text(input.organizationName || 'Workspace', x, y + 78);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Reporting period: ${input.reportPeriod}`, x, y + 102);
+  doc.text(`Report scope: ${input.reportScopeLabel}`, x, y + 112);
+  doc.text(`Generated date: ${input.generatedDate}`, x, y + 122);
+  doc.text('Prepared by: CarbonLite AI', x, y + 132);
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(
+    'Prepared for review as part of a pilot emissions reporting workflow.',
+    x,
+    270,
+  );
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
+}
+
+function drawPdfSectionTitle(doc: jsPDF, title: string, y: number) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(15, 23, 42);
+  doc.text(title, 14, y);
+  doc.setDrawColor(16, 185, 129);
+  doc.line(14, y + 2, 52, y + 2);
 }
 function getScopeDescription(scope: string) {
   if (scope === 'Scope 1') return 'Direct fuel emissions';
@@ -612,6 +658,8 @@ const reportScopeLabel = getReportScopeLabel(
 const reportPeriod =
   reportScope === 'dateRange'
     ? `${periodStart} to ${periodEnd}`
+    : reportScope === 'selectedDocuments'
+    ? 'Selected documents'
     : 'Selected records';
 const sourceEvidenceRows = buildSourceEvidenceRows(activities);
 

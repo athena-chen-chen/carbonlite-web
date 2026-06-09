@@ -1,7 +1,10 @@
 import { render, screen, within } from '@testing-library/react';
 import {
   FORMAL_REPORT_DISCLAIMER,
+  FORMAL_REPORT_METHODOLOGY,
   FormalReportPreview,
+  buildConversionFactorTraceabilityRows,
+  buildReportExecutiveSummary,
   buildSourceEvidenceRows,
 } from './FormalReportPreview';
 
@@ -55,6 +58,7 @@ describe('FormalReportPreview', () => {
             inputUnit: 'L',
             resultUnit: 'kgCO2e',
             sourceAuthority: 'MVP Default',
+            sourceDocument: 'Pilot default factor library',
             sourceYear: 2025,
             factorType: 'System',
             verified: false,
@@ -71,12 +75,15 @@ describe('FormalReportPreview', () => {
       />,
     );
 
-    expect(screen.getByText('CarbonLite AI')).toBeInTheDocument();
+    expect(screen.getAllByText('CarbonLite AI').length).toBeGreaterThan(0);
     expect(screen.getByText('Environmental Reporting Platform')).toBeInTheDocument();
-    expect(screen.getByText('Generated Emissions Report')).toBeInTheDocument();
-    expect(screen.getByText('Organization: KACH CANADA LTD.')).toBeInTheDocument();
-    expect(screen.getByText('Reporting Period: 2026-01-01 to 2026-12-31')).toBeInTheDocument();
-    expect(screen.getByText('Report Scope: Date Range')).toBeInTheDocument();
+    expect(screen.getByText('Emissions Summary Report')).toBeInTheDocument();
+    expect(screen.getAllByText('KACH CANADA LTD.').length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('2026-01-01 to 2026-12-31').length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText('Date Range').length).toBeGreaterThan(0);
+    expect(screen.getByText('Prepared by:')).toBeInTheDocument();
     expect(screen.getByText('A. Report Scope')).toBeInTheDocument();
     expect(screen.getByText('B. Executive Summary')).toBeInTheDocument();
     expect(screen.getByText('C. Totals by Metric')).toBeInTheDocument();
@@ -86,7 +93,12 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('G. Methodology and Disclaimer')).toBeInTheDocument();
     expect(screen.getAllByText('321.6 kgCO2e').length).toBeGreaterThan(0);
     expect(screen.getByText('MVP Default')).toBeInTheDocument();
+    expect(screen.getByText('Pilot default factor library')).toBeInTheDocument();
+    expect(screen.getByText('Unverified / user review required')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.getAllByText('DIESEL').length).toBeGreaterThan(0);
     expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
+    expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
 
     const tables = screen.getAllByRole('table');
     expect(within(tables[0]).getByText('Carbon Emissions')).toBeInTheDocument();
@@ -125,6 +137,81 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('No activity records with matching conversion factors.')).toBeInTheDocument();
     expect(screen.getByText('No conversion factors found for this report scope.')).toBeInTheDocument();
     expect(screen.getByText('No source evidence available.')).toBeInTheDocument();
+  });
+});
+
+describe('Version 1 report presentation data', () => {
+  it('derives executive summary values from the same report records and metrics', () => {
+    expect(
+      buildReportExecutiveSummary({
+        totalEstimatedEmissionsKgCO2e: 268,
+        countSummary: {
+          totalRecordsFound: 4,
+          processedRecords: 3,
+          skippedRecords: 1,
+          missingFactorRecords: 1,
+        },
+        matchedActivityEmissions: [
+          {
+            activityDataId: 'activity-1',
+            activityType: 'DIESEL',
+            quantity: 100,
+            unit: 'L',
+            estimatedEmissionsKgCO2e: 268,
+            sourceType: 'MANUAL',
+            factorId: 'factor-1',
+          },
+          {
+            activityDataId: 'activity-2',
+            activityType: 'ELECTRICITY',
+            quantity: 100,
+            unit: 'kWh',
+            estimatedEmissionsKgCO2e: 40,
+            sourceType: 'CSV',
+            factorId: 'factor-2',
+          },
+        ],
+      }),
+    ).toEqual({
+      estimatedEmissions: '268 kgCO2e',
+      recordsIncluded: 3,
+      recordsSkipped: 1,
+      primaryActivityTypes: 'DIESEL, ELECTRICITY',
+      missingFactorCount: 1,
+      dataQualityCoverage: '75%',
+    });
+  });
+
+  it('formats factor traceability fallbacks and review status', () => {
+    expect(
+      buildConversionFactorTraceabilityRows([
+        {
+          factorId: 'factor-1',
+          activityType: 'DIESEL',
+          factorName: 'Diesel factor',
+          factorValue: 2.68,
+          inputUnit: 'L',
+          resultUnit: 'kgCO2e',
+          sourceAuthority: '',
+          sourceDocument: null,
+          sourceYear: null,
+          factorType: 'Custom',
+          verified: false,
+        },
+      ]),
+    ).toEqual([
+      [
+        'DIESEL',
+        'L',
+        2.68,
+        'kgCO2e',
+        'Source not specified',
+        'Source not specified',
+        'Source not specified',
+        'Unverified / user review required',
+        'Custom',
+      ],
+    ]);
   });
 });
 
