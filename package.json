@@ -17,6 +17,7 @@
     "axios": "^1.12.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
+    "posthog-js": "^1.383.2",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-hook-form": "^7.63.0",

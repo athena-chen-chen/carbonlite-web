@@ -14,6 +14,7 @@ import {
 } from '../constants/activityTypes';
 import { buildApiUrl } from '../config/api';
 import { getToken } from '../services/auth';
+import { track } from '../services/analytics.service';
 import {
   sampleDocuments,
   sampleParsedActivities,
@@ -753,6 +754,11 @@ ${sampleRows.join('\n')}`,
 
     if (isSampleDocumentId(doc.id) && doc.fileUrl?.startsWith('/demo/')) {
       window.open(doc.fileUrl, '_blank', 'noopener,noreferrer');
+      track('DOCUMENT_VIEWED', {
+        documentType: doc.type,
+        documentCount: 1,
+        source: 'sample',
+      });
       return;
     }
 
@@ -811,6 +817,10 @@ ${sampleRows.join('\n')}`,
       }
 
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      track('DOCUMENT_VIEWED', {
+        documentType: doc.type,
+        documentCount: 1,
+      });
     } catch (err) {
       viewerWindow?.close();
       setError(

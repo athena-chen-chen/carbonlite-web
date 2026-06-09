@@ -1,5 +1,6 @@
 import { apiFetch } from './api';
 import { clampApiPageSize } from '../config/api';
+import { track } from './analytics.service';
 
 export type ActivityDataInput = {
   activityType: string;
@@ -59,10 +60,17 @@ export type DeleteActivityDataResponse = void | {
 const ACTIVITY_DATA_PAGE_SIZE = 100;
 
 export async function createActivityData(data: any) {
-  return apiFetch<ActivityDataItem>('/activity-data', {
+  const created = await apiFetch<ActivityDataItem>('/activity-data', {
     method: 'POST',
     body: JSON.stringify(buildActivityDataPayload(data)),
   });
+
+  track('ACTIVITY_RECORD_CREATED', {
+    activityType: created.activityType,
+    recordCount: 1,
+  });
+
+  return created;
 }
 
 function normalizeOptionalString(value?: string) {
@@ -167,10 +175,17 @@ export async function updateActivityData(
 ) {
   const payload = buildActivityDataPayload(input);
 
-  return apiFetch<ActivityDataItem>(`/activity-data/${id}`, {
+  const updated = await apiFetch<ActivityDataItem>(`/activity-data/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+
+  track('ACTIVITY_RECORD_UPDATED', {
+    activityType: updated.activityType,
+    recordCount: 1,
+  });
+
+  return updated;
 }
 
 export async function deleteActivityData(id: string) {
@@ -188,6 +203,10 @@ export async function deleteActivityData(id: string) {
     if (deletedCount <= 0) {
       throw new Error('No activity record was deleted.');
     }
+
+    track('ACTIVITY_RECORD_DELETED', {
+      recordCount: deletedCount,
+    });
 
     return response;
   } catch (err) {
@@ -221,6 +240,11 @@ export async function bulkDeleteActivityData(ids: string[]) {
     if (deletedCount <= 0) {
       throw new Error('No activity records were deleted.');
     }
+
+    track('ACTIVITY_RECORD_DELETED', {
+      source: 'bulk_delete',
+      recordCount: deletedCount,
+    });
 
     return response;
   } catch (err) {

@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { track } from './analytics.service';
 
 export type UploadDocumentInput = {
   file: File;
@@ -35,10 +36,17 @@ export async function uploadDocument(input: UploadDocumentInput) {
   formData.append('file', input.file);
   formData.append('type', input.type);
 
-  return apiFetch<DocumentItem>('/documents/upload', {
+  const document = await apiFetch<DocumentItem>('/documents/upload', {
     method: 'POST',
     body: formData,
   });
+
+  track('DOCUMENT_UPLOADED', {
+    documentType: document.type,
+    documentCount: 1,
+  });
+
+  return document;
 }
 
 export async function getDocuments() {
