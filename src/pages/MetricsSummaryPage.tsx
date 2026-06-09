@@ -16,6 +16,7 @@ import {
   type MissingFactorItem,
 } from '../components/MetricsSummarySection';
 import { trackActivityEvent } from '../services/activityEvents';
+import { track } from '../services/analytics.service';
 
 
 export function MetricsSummaryPage() {
@@ -79,6 +80,9 @@ export function MetricsSummaryPage() {
       entityType: 'MetricsSummary',
     }).catch(() => {
       // Usage tracking should never block metrics loading.
+    });
+    track('METRICS_SUMMARY_VIEWED', {
+      page: 'Metrics Summary',
     });
   }, [location.pathname]);
 

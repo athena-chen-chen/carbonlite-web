@@ -19,6 +19,7 @@ import { FeedbackManagementPage } from '../pages/FeedbackManagementPage';
 import { AuditLogPage } from '../pages/AuditLogPage';
 import { UserActivityPage } from '../pages/UserActivityPage';
 import { AdminRoute } from '../auth/AdminRoute';
+import { AnalyticsRouteTracker } from '../components/AnalyticsRouteTracker';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -35,6 +36,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <SentryRouteContext />
+      <AnalyticsRouteTracker />
       <Routes>
         <Route path="/" element={<CarbonLiteLandingPage />} />
         <Route path="/pilot" element={<PilotPage />} />

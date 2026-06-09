@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 import {
   getCurrentUser,
   getToken,
@@ -8,6 +14,11 @@ import {
   type AuthUser,
   isAdminUser,
 } from '../services/auth';
+import {
+  identify,
+  reset as resetAnalytics,
+  track,
+} from '../services/analytics.service';
 
 type RegisterInput = {
   organizationName: string;
@@ -37,19 +48,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getCurrentUser());
   const [token, setToken] = useState<string | null>(() => getToken());
 
+  useEffect(() => {
+    if (token && user) {
+      identify(user);
+    }
+  }, [token, user]);
+
   const login = useCallback(async (email: string, password: string) => {
     await loginRequest({ email, password });
-    setUser(getCurrentUser());
+    const currentUser = getCurrentUser();
+    identify(currentUser);
+    track('USER_LOGGED_IN');
+    setUser(currentUser);
     setToken(getToken());
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
     await registerRequest(input);
-    setUser(getCurrentUser());
+    const currentUser = getCurrentUser();
+    identify(currentUser);
+    setUser(currentUser);
     setToken(getToken());
   }, []);
 
   const logout = useCallback(() => {
+    track('USER_LOGGED_OUT');
+    resetAnalytics();
     logoutRequest();
     setUser(null);
     setToken(null);

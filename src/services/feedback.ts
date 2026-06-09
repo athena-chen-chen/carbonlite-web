@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { track } from './analytics.service';
 
 export type FeedbackType = 'BUG' | 'SUGGESTION' | 'QUESTION' | 'OTHER';
 export type FeedbackStatus = 'NEW' | 'REVIEWED' | 'CLOSED';
@@ -34,11 +35,18 @@ export type FeedbackListResponse = {
   totalPages: number;
 };
 
-export function submitFeedback(input: CreateFeedbackInput) {
-  return apiFetch<FeedbackItem>('/feedback', {
+export async function submitFeedback(input: CreateFeedbackInput) {
+  const feedback = await apiFetch<FeedbackItem>('/feedback', {
     method: 'POST',
     body: JSON.stringify(input),
   });
+
+  track('FEEDBACK_SUBMITTED', {
+    feedbackType: feedback.type,
+    page: feedback.page,
+  });
+
+  return feedback;
 }
 
 export function getFeedbackList(status?: FeedbackStatus) {

@@ -24,6 +24,7 @@ import {
 import { getCurrentUser, getOrganizationName } from '../services/auth';
 import { createClientAuditLog } from '../services/auditLogs';
 import { trackActivityEvent } from '../services/activityEvents';
+import { track } from '../services/analytics.service';
 
 type ActivityItem = {
   id: string;
@@ -142,6 +143,11 @@ const trackedReportViewRef = useRef(false);
         skippedReasons: overview.skippedReasons,
       });
       setMissingFactors(overview.missingFactors);
+      track('REPORT_GENERATED', {
+        reportType: 'emissions',
+        reportScope,
+        recordCount: overview.processedRecords,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report data');
     } finally {
@@ -190,6 +196,10 @@ useEffect(() => {
     },
   }).catch(() => {
     // Usage tracking should never block report viewing.
+  });
+  track('REPORT_VIEWED', {
+    reportType: 'emissions',
+    reportScope,
   });
 }, [location.pathname, reportScope, selectedDocumentIds.length, selectedRecordIds.length]);
 
@@ -501,6 +511,11 @@ function handleDownloadPDF() {
     },
   }).catch(() => {
     // PDF export should not be blocked by usage tracking.
+  });
+  track('REPORT_PDF_EXPORTED', {
+    reportType: 'emissions',
+    reportScope,
+    recordCount: countSummary.processedRecords,
   });
 }
 

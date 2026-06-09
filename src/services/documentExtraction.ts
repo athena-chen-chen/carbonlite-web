@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { track } from './analytics.service';
 
 export type ParsedActivity = {
   activityType: string;
@@ -30,21 +31,54 @@ export type ConfirmImportResponse = {
 };
 
 export async function extractDocument(documentId: string) {
-  return apiFetch<ExtractResponse>('/document-extraction/extract', {
-    method: 'POST',
-    body: JSON.stringify({ documentId }),
+  track('EXTRACTION_STARTED', {
+    documentCount: 1,
   });
+
+  try {
+    const response = await apiFetch<ExtractResponse>('/document-extraction/extract', {
+      method: 'POST',
+      body: JSON.stringify({ documentId }),
+    });
+
+    if (response.extractedRowCount > 0) {
+      track('EXTRACTION_SUCCEEDED', {
+        recordCount: response.extractedRowCount,
+      });
+    } else {
+      track('EXTRACTION_FAILED', {
+        reason: 'NO_DATA_FOUND',
+        recordCount: 0,
+      });
+    }
+
+    return response;
+  } catch (error) {
+    track('EXTRACTION_FAILED', {
+      reason: 'REQUEST_FAILED',
+    });
+    throw error;
+  }
 }
 
 export async function confirmDocumentImport(
   documentId: string,
   activities: ParsedActivity[],
 ) {
-  return apiFetch<ConfirmImportResponse>('/document-extraction/confirm', {
+  const response = await apiFetch<ConfirmImportResponse>('/document-extraction/confirm', {
     method: 'POST',
     body: JSON.stringify({
       documentId,
       activities,
     }),
   });
+
+  if (response.count > 0) {
+    track('ACTIVITY_RECORD_CREATED', {
+      source: 'document_import',
+      recordCount: response.count,
+    });
+  }
+
+  return response;
 }
