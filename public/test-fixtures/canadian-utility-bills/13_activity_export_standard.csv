@@ -1,0 +1,5 @@
+activityType,recordDate,quantity,unit,sourceReference,notes
+ELECTRICITY,2025-01-31,3650,kWh,ENMAX Jan 2025,Main Calgary site
+NATURAL_GAS,2025-03-31,2860,m3,ATCO Mar 2025,Boiler gas
+DIESEL,2025-06-14,1240,L,Petro-Canada invoice SYN-PC-77102,Fleet fuel
+GASOLINE,2025-10-22,480,L,Parkland ticket SYN-PKL-8102,Light vehicles

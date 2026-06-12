@@ -1,0 +1,14 @@
+HYDRO-QUÉBEC / BUSINESS ACCOUNT / COMPTE AFFAIRES
+DOCUMENT SYNTHÉTIQUE - TEST SEULEMENT
+
+Client / Customer: Atelier Test Laurentien inc.
+No compte: SYN-HQ-550019
+Période: du 2025-09-04 au 2025-10-03
+
+ÉLECTRICITÉ CONSOMMÉE
+lecture antérieure  88 901
+lecture actuelle    95 141
+consommation        6 240  kWh
+
+Montant total ::: 1 522,16 $
+notes: accents + French labels + comma currency + irregular spacing

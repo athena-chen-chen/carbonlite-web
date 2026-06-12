@@ -15,6 +15,7 @@ export type ActivityDataInput = {
   documentId?: string;
   sourceDocumentId?: string;
   sourceFileName?: string;
+  importBatchId?: string;
   dateEstimated?: boolean;
   customTypeLabel?: string;
   periodStart?: string;
@@ -29,6 +30,7 @@ export type ActivityDataItem = {
   documentId?: string | null;
   sourceDocumentId?: string | null;
   sourceFileName?: string | null;
+  importBatchId?: string | null;
   dateEstimated?: boolean | null;
   activityType: string;
   customTypeLabel?: string | null;
@@ -92,6 +94,7 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     documentId: normalizeOptionalString(input.documentId),
     sourceDocumentId: normalizeOptionalString(input.sourceDocumentId),
     sourceFileName: normalizeOptionalString(input.sourceFileName),
+    importBatchId: normalizeOptionalString(input.importBatchId),
     dateEstimated: Boolean(input.dateEstimated),
     customTypeLabel: normalizeOptionalString(input.customTypeLabel),
     periodStart: normalizeOptionalString(input.periodStart),

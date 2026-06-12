@@ -1,14 +1,20 @@
 import { getToken, handleUnauthorized } from './auth';
 import { buildApiUrl } from '../config/api';
 
-function buildApiErrorMessage(status: number, text: string) {
+function parseApiErrorBody(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function buildApiErrorMessage(status: number, text: string, parsedBody: unknown) {
   let message = text;
 
-  try {
-    const parsed = JSON.parse(text);
-    message = parsed?.message ?? parsed?.error ?? text;
-  } catch {
-    message = text;
+  if (parsedBody && typeof parsedBody === 'object') {
+    const parsed = parsedBody as Record<string, unknown>;
+    message = parsed.message ?? parsed.error ?? text;
   }
 
   const normalizedMessage = Array.isArray(message) ? message.join(', ') : String(message);
@@ -19,6 +25,17 @@ function buildApiErrorMessage(status: number, text: string) {
   }
 
   return `API ${status}: ${normalizedMessage}`;
+}
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly data: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
 }
 
 export async function apiFetch<T>(
@@ -44,7 +61,12 @@ export async function apiFetch<T>(
     }
 
     const text = await response.text();
-    throw new Error(buildApiErrorMessage(response.status, text));
+    const parsedBody = parseApiErrorBody(text);
+    throw new ApiError(
+      response.status,
+      buildApiErrorMessage(response.status, text, parsedBody),
+      parsedBody,
+    );
   }
 
   if (response.status === 204) {

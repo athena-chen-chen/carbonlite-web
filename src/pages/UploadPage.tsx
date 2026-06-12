@@ -1,6 +1,12 @@
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
-import { deleteDocument, getDocuments, uploadDocument } from '../services/documents';
 import {
+  DuplicateDocumentError,
+  deleteDocument,
+  getDocuments,
+  uploadDocument,
+} from '../services/documents';
+import {
+  DuplicateDocumentImportError,
   confirmDocumentImport,
   extractDocument,
   type ParsedActivity,
@@ -30,6 +36,8 @@ type DocumentItem = {
   type: string;
   status: string;
   createdAt: string;
+  importedAt?: string | null;
+  importBatchId?: string | null;
 };
 
 type EditableConfidenceField<T> = {
@@ -80,6 +88,16 @@ type DocumentActionModel = {
 
 export function getDocumentDownloadUrl(documentId: string) {
   return buildApiUrl(`/documents/${documentId}/download`);
+}
+
+export function formatDuplicateDocumentMessage(input: {
+  fileName: string;
+  createdAt?: string | null;
+}) {
+  const uploadedDate = input.createdAt?.slice(0, 10);
+  return uploadedDate
+    ? `${input.fileName} was already uploaded on ${uploadedDate}.`
+    : `${input.fileName} appears to have already been uploaded.`;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
@@ -599,16 +617,46 @@ ${sampleRows.join('\n')}`,
     try {
       const uploadedDocuments: DocumentItem[] = [];
 
-      try {
-        for (const file of selectedFiles) {
+      for (const file of selectedFiles) {
+        try {
           const uploadedDocument = await uploadDocument({
             file,
             type: selectedFiles.length > 1 ? getDocumentTypeFromFile(file) : documentType,
           });
           uploadedDocuments.push(uploadedDocument);
+        } catch (uploadError) {
+          if (uploadError instanceof DuplicateDocumentError) {
+            const duplicateMessage = formatDuplicateDocumentMessage({
+              fileName:
+                uploadError.existingDocument?.fileName || file.name,
+              createdAt: uploadError.existingDocument?.createdAt,
+            });
+            const keepSeparateCopy = window.confirm(
+              `${duplicateMessage}\n\nThis file appears to have already been uploaded. Select OK to keep it as a separate copy, or Cancel to prevent the duplicate.`,
+            );
+
+            if (!keepSeparateCopy) {
+              setError(`${duplicateMessage} Duplicate upload cancelled.`);
+              continue;
+            }
+
+            const duplicateCopy = await uploadDocument({
+              file,
+              type:
+                selectedFiles.length > 1
+                  ? getDocumentTypeFromFile(file)
+                  : documentType,
+              allowDuplicate: true,
+            });
+            uploadedDocuments.push(duplicateCopy);
+            continue;
+          }
+
+          throw uploadError;
         }
-      } catch {
-        setError('Upload failed. Please try again.');
+      }
+
+      if (uploadedDocuments.length === 0) {
         setSuccessMessage(null);
         return;
       }
@@ -1057,6 +1105,18 @@ ${sampleRows.join('\n')}`,
         ? [documentId]
         : [];
 
+    const alreadyImportedDocument = documents.find(
+      (document) =>
+        activeDocumentIds.includes(document.id) &&
+        normalizeDocumentStatus(document.status) === 'IMPORTED',
+    );
+
+    if (alreadyImportedDocument) {
+      setError('This document has already been imported.');
+      setSuccessMessage(null);
+      return;
+    }
+
     if (!parsedActivities.length || activeDocumentIds.length === 0) {
       setError('No extracted activities to confirm.');
       return;
@@ -1127,6 +1187,7 @@ ${sampleRows.join('\n')}`,
       const createdActivityIds: string[] = [];
 
       for (const [activityDocumentId, activities] of activitiesByDocument) {
+        const importBatchId = `document-${activityDocumentId}`;
         const sourceFileName =
           activities[0]?.documentFileName ??
           documents.find((d) => d.id === activityDocumentId)?.fileName ??
@@ -1141,6 +1202,7 @@ ${sampleRows.join('\n')}`,
           documentId: activityDocumentId,
           sourceDocumentId: activityDocumentId,
           sourceFileName,
+          importBatchId,
           dateEstimated: item.dateEstimated,
           notes: `Imported from AI extraction. Document ID: ${activityDocumentId}`,
         }));
@@ -1150,6 +1212,7 @@ ${sampleRows.join('\n')}`,
         const result = await confirmDocumentImport(
           activityDocumentId,
           normalizedActivities,
+          importBatchId,
         );
         importedCount += result.count;
         createdActivityIds.push(...(result.createdIds ?? []));
@@ -1191,7 +1254,13 @@ ${sampleRows.join('\n')}`,
         setGeneratingMetrics(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Confirm import failed');
+      setError(
+        err instanceof DuplicateDocumentImportError
+          ? 'This document has already been imported.'
+          : err instanceof Error
+          ? err.message
+          : 'Confirm import failed',
+      );
     } finally {
       setConfirmingId(null);
     }

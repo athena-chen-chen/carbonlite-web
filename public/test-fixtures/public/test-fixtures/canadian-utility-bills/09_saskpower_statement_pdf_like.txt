@@ -1,0 +1,14 @@
+SASKPOWER BUSINESS STATEMENT
+Synthetic test fixture - not a real bill
+
+Account: SYN-SKP-102884
+Customer: Prairie Grain Test Terminal
+Statement Period: 2025/08/01 - 2025/08/31
+Service Province: Saskatchewan
+
+Electricity consumption ............. 18 760 kWh
+Peak demand ......................... 71.4 kW
+Amount due .......................... $7,244.90
+Payment due ......................... 2025/09/21
+
+Source note: PDF-like plain text export with dotted leaders and spaces in numbers.

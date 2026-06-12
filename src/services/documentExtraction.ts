@@ -1,4 +1,4 @@
-import { apiFetch } from './api';
+import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
 
 export type ParsedActivity = {
@@ -10,6 +10,7 @@ export type ParsedActivity = {
   sourceReference?: string | null;
   sourceDocumentId?: string | null;
   sourceFileName?: string | null;
+  importBatchId?: string | null;
   dateEstimated?: boolean;
   notes?: string | null;
 };
@@ -28,7 +29,16 @@ export type ExtractResponse = {
 export type ConfirmImportResponse = {
   count: number;
   createdIds: string[];
+  importBatchId?: string;
+  alreadyImported?: boolean;
 };
+
+export class DuplicateDocumentImportError extends Error {
+  constructor() {
+    super('This document has already been imported.');
+    this.name = 'DuplicateDocumentImportError';
+  }
+}
 
 export async function extractDocument(documentId: string) {
   track('EXTRACTION_STARTED', {
@@ -64,21 +74,39 @@ export async function extractDocument(documentId: string) {
 export async function confirmDocumentImport(
   documentId: string,
   activities: ParsedActivity[],
+  importBatchId?: string,
 ) {
-  const response = await apiFetch<ConfirmImportResponse>('/document-extraction/confirm', {
-    method: 'POST',
-    body: JSON.stringify({
-      documentId,
-      activities,
-    }),
-  });
-
-  if (response.count > 0) {
-    track('ACTIVITY_RECORD_CREATED', {
-      source: 'document_import',
-      recordCount: response.count,
+  try {
+    const response = await apiFetch<ConfirmImportResponse>('/document-extraction/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        documentId,
+        importBatchId,
+        activities,
+      }),
     });
-  }
 
-  return response;
+    if (response.alreadyImported) {
+      throw new DuplicateDocumentImportError();
+    }
+
+    if (response.count > 0) {
+      track('ACTIVITY_RECORD_CREATED', {
+        source: 'document_import',
+        recordCount: response.count,
+      });
+    }
+
+    return response;
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.status === 409 &&
+      /already been imported|duplicate import/i.test(error.message)
+    ) {
+      throw new DuplicateDocumentImportError();
+    }
+
+    throw error;
+  }
 }

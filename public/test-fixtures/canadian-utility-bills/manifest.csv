@@ -1,0 +1,21 @@
+File Name,Category,Format,Provider,Test Scenario,Expected Behavior,Size Bytes
+01_enmax_electricity_bill_jan_2025.pdf,Electricity bill,PDF,ENMAX Energy,Complete structured bill,Extract ELECTRICITY 3650 kWh dated 2025-01-31,5595
+02_enmax_electricity_bill_DUPLICATE.pdf,Electricity bill,PDF,ENMAX Energy,Exact byte duplicate of file 01,Duplicate hash should be detected,5595
+03_epcor_electricity_bill_feb_2025.pdf,Electricity bill,PDF,EPCOR,Complete bill with alternate labels,Extract ELECTRICITY 12840 kWh,5434
+04_atco_natural_gas_statement_mar_2025.pdf,Natural gas statement,PDF,ATCO Gas,Complete gas statement,Extract NATURAL_GAS 2860 m3,5566
+05_fortisalberta_bill_missing_account.pdf,Electricity bill,PDF,FortisAlberta,Missing account number,Extract usage despite missing metadata,5156
+06_bc_hydro_bill_dec_2025.pdf,Electricity bill,PDF,BC Hydro,Different Canadian jurisdiction,Extract ELECTRICITY 21440 kWh,5410
+07_petro_canada_diesel_invoice.pdf,Fuel invoice,PDF,Petro-Canada,Complete diesel invoice,Extract DIESEL 1240 L,5543
+08_irving_oil_invoice_poor_format.pdf,Fuel invoice,PDF,Irving Oil,Poor formatting and ambiguous values,Extract diesel cautiously; flag review,5564
+09_saskpower_statement_pdf_like.txt,Electricity statement,TXT,SaskPower,PDF-like text export,Extract ELECTRICITY 18760 kWh,483
+10_manitoba_hydro_missing_date.txt,Electricity statement,TXT,Manitoba Hydro,Missing all dates,Extract quantity and warn about missing date,461
+11_hydro_quebec_bilingual_messy.txt,Electricity statement,TXT,Hydro-Québec,Bilingual/OCR-like formatting,Extract ELECTRICITY 6240 kWh,412
+12_parkland_fuel_delivery_ticket.txt,Fuel delivery ticket,TXT,Parkland,Multiple fuel types and abbreviated labels,Extract DIESEL 2050 L and GASOLINE 480 L,345
+13_activity_export_standard.csv,Activity export,CSV,Multiple providers,Clean normalized CSV,Import 4 records,321
+14_activity_export_DUPLICATE.csv,Activity export,CSV,Multiple providers,Exact byte duplicate of file 13,Duplicate hash should be detected,321
+15_activity_export_missing_fields.csv,Activity export,CSV,Multiple providers,"Missing date, quantity, unit, and type",Import valid rows only; show row validation,242
+16_activity_export_mixed_units_bad_headers.csv,Activity export,CSV,Multiple providers,"Bad headers, mixed units, negative value",Normalize units/types and reject negative quantity,287
+17_electricity_records_2025.xlsx,Activity workbook,XLSX,Multiple providers,Clean electricity workbook,Import 5 electricity records,9462
+18_fuel_and_gas_records_2025.xlsx,Activity workbook,XLSX,Multiple providers,Mixed fuel and gas types,Import 5 records and group incompatible fuel units,9502
+19_records_missing_dates_and_notes.xlsx,Activity workbook,XLSX,Multiple providers,Missing dates and optional metadata,Allow import with date warnings,9353
+20_operations_export_multisheet.xlsx,Operations workbook,XLSX,Multiple providers,Multiple sheets plus irrelevant cost data,Import activity sheet only; do not treat costs as quantities,11431

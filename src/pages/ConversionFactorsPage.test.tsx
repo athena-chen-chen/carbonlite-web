@@ -6,6 +6,7 @@ import {
 } from '../services/conversionFactors';
 import {
   getFactorTraceability,
+  getFactorJurisdiction,
   ConversionFactorsPage,
 } from './ConversionFactorsPage';
 
@@ -56,6 +57,24 @@ describe('ConversionFactorsPage traceability', () => {
     });
   });
 
+  it('uses canonical jurisdiction and falls back to legacy region/country fields', () => {
+    expect(
+      getFactorJurisdiction({
+        ...baseFactor,
+        jurisdiction: 'Alberta, Canada',
+        region: 'Legacy region',
+      }),
+    ).toBe('Alberta, Canada');
+    expect(
+      getFactorJurisdiction({
+        ...baseFactor,
+        jurisdiction: null,
+        region: 'British Columbia',
+        country: 'Canada',
+      }),
+    ).toBe('British Columbia, Canada');
+  });
+
   it('displays system factor traceability and verified badge only for verified factors', async () => {
     vi.mocked(getConversionFactors).mockResolvedValue({
       items: [
@@ -66,6 +85,7 @@ describe('ConversionFactorsPage traceability', () => {
           organizationId: 'org-1',
           name: 'Custom electricity',
           activityType: 'ELECTRICITY',
+          jurisdiction: 'Alberta, Canada',
           unit: 'kWh',
           sourceAuthority: 'Environment and Climate Change Canada',
           sourceDocument: 'Canada National Inventory Report',
@@ -91,14 +111,44 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByText('MVP Default')).toBeInTheDocument();
     expect(screen.getByText('Environment and Climate Change Canada')).toBeInTheDocument();
-    expect(screen.getAllByText(/^Verified$/)).toHaveLength(1);
-    expect(screen.getByText('Needs review')).toBeInTheDocument();
+    expect(screen.getByText('Verified', { selector: 'span' })).toBeInTheDocument();
+    expect(screen.getByText('Unverified')).toBeInTheDocument();
+    expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Details' })[1]);
 
     expect(screen.getByText('Canada National Inventory Report')).toBeInTheDocument();
     expect(screen.getByText('ISO-aligned methodology review.')).toBeInTheDocument();
     expect(screen.getByText('Reviewed by consultant.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('sends activity type, jurisdiction, and year filters to the backend', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('No conversion factors yet.');
+    await userEvent.selectOptions(screen.getByLabelText('Activity Type'), 'ELECTRICITY');
+    await userEvent.type(screen.getByLabelText('Jurisdiction'), 'Alberta');
+    await userEvent.type(screen.getByLabelText('Source Year'), '2025');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+
+    expect(getConversionFactors).toHaveBeenLastCalledWith({
+      activityType: 'ELECTRICITY',
+      jurisdiction: 'Alberta',
+      sourceYear: 2025,
+    });
   });
 
   it('prefills a custom factor form from missing factor route state', async () => {

@@ -54,10 +54,11 @@ describe('FormalReportPreview', () => {
             factorId: 'factor-1',
             activityType: 'DIESEL',
             factorName: 'Diesel factor',
-            factorValue: 2.68,
-            inputUnit: 'L',
-            resultUnit: 'kgCO2e',
-            sourceAuthority: 'MVP Default',
+          factorValue: 2.68,
+          inputUnit: 'L',
+          resultUnit: 'kgCO2e',
+          jurisdiction: 'Alberta, Canada',
+          sourceAuthority: 'MVP Default',
             sourceDocument: 'Pilot default factor library',
             sourceYear: 2025,
             factorType: 'System',
@@ -70,6 +71,35 @@ describe('FormalReportPreview', () => {
             sourceType: 'AI Extraction',
             recordCount: 1,
             notes: 'Imported from AI extraction.',
+          },
+        ]}
+        calculationDetails={[
+          {
+            activityDataId: 'activity-1',
+            activityType: 'DIESEL',
+            recordDate: '2025-01-31T00:00:00.000Z',
+            dateEstimated: false,
+            reportingYear: 2025,
+            jurisdiction: 'Alberta, Canada',
+            activityQuantity: 100,
+            activityUnit: 'L',
+            factorId: 'factor-1',
+            factorName: 'Diesel factor',
+            factorValue: 2.68,
+            factorInputUnit: 'L',
+            factorResultUnit: 'kgCO2e',
+            factorPriority: 'UNVERIFIED_SYSTEM',
+            factorSource: 'MVP Default',
+            sourceAuthority: 'MVP Default',
+            sourceDocument: 'Pilot default factor library',
+            sourceUrl: null,
+            sourceYear: 2025,
+            factorVerified: false,
+            factorType: 'System',
+            calculatedEmissionsKgCO2e: 268,
+            status: 'CALCULATED',
+            sourceType: 'MANUAL',
+            sourceReference: 'fuel-invoice.pdf',
           },
         ]}
       />,
@@ -86,16 +116,19 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('Prepared by:')).toBeInTheDocument();
     expect(screen.getByText('A. Report Scope')).toBeInTheDocument();
     expect(screen.getByText('B. Executive Summary')).toBeInTheDocument();
-    expect(screen.getByText('C. Totals by Metric')).toBeInTheDocument();
-    expect(screen.getByText('D. Activity Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('E. Conversion Factors Used')).toBeInTheDocument();
-    expect(screen.getByText('F. Source Evidence')).toBeInTheDocument();
-    expect(screen.getByText('G. Methodology and Disclaimer')).toBeInTheDocument();
+    expect(screen.getByText('C. Calculation Quality Summary')).toBeInTheDocument();
+    expect(screen.getByText('D. Totals by Metric')).toBeInTheDocument();
+    expect(screen.getByText('E. Activity Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('F. Conversion Factors Used')).toBeInTheDocument();
+    expect(screen.getByText('G. Calculation Details')).toBeInTheDocument();
+    expect(screen.getByText('H. Source Evidence')).toBeInTheDocument();
+    expect(screen.getByText('I. Methodology and Disclaimer')).toBeInTheDocument();
     expect(screen.getAllByText('321.6 kgCO2e').length).toBeGreaterThan(0);
-    expect(screen.getByText('MVP Default')).toBeInTheDocument();
+    expect(screen.getAllByText('MVP Default').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
     expect(screen.getByText('Pilot default factor library')).toBeInTheDocument();
     expect(screen.getByText('Unverified / user review required')).toBeInTheDocument();
-    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.getAllByText('100%').length).toBeGreaterThan(0);
     expect(screen.getAllByText('DIESEL').length).toBeGreaterThan(0);
     expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
@@ -130,6 +163,7 @@ describe('FormalReportPreview', () => {
         matchedActivityEmissions={[]}
         conversionFactorsUsed={[]}
         sourceEvidenceRows={[]}
+        calculationDetails={[]}
       />,
     );
 
@@ -202,9 +236,11 @@ describe('Version 1 report presentation data', () => {
     ).toEqual([
       [
         'DIESEL',
+        'Not specified',
         'L',
         2.68,
         'kgCO2e',
+        'Source not specified',
         'Source not specified',
         'Source not specified',
         'Source not specified',

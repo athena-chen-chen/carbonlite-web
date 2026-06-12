@@ -1,0 +1,18 @@
+MANITOBA HYDRO - COMMERCIAL ACCOUNT SUMMARY
+SYNTHETIC / TEST ONLY
+
+Customer Name: Red River Test Bakery
+Account: SYN-MBH-30072
+Service: Winnipeg, Manitoba
+
+Meter number MH-88017
+Previous reading 311004
+Current reading 316492
+Energy used 5488 kWh
+
+Statement date:
+Billing period:
+Amount due $1,040.27
+
+This fixture intentionally omits all dates. CarbonLite should allow review/import
+with a missing or estimated date warning rather than inventing a source date.

@@ -1,0 +1,11 @@
+PARKLAND COMMERCIAL FUELS
+*** SYNTHETIC DELIVERY TICKET ***
+TICKET SYN-PKL-8102        DROP 2025-10-22 06:41
+CUSTOMER: NORTHERN TEST EXCAVATION
+
+PROD        QTY       UOM       TANK
+CLR DSL     2,050     litres    T-01
+REG GAS       480     L         T-02
+
+Driver notes: meter reset? handwritten total looked like 2530
+Invoice total unavailable

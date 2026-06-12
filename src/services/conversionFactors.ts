@@ -5,6 +5,7 @@ export type ConversionFactorInput = {
   name: string;
   type: string;
   activityType?: string;
+  jurisdiction?: string;
   region?: string;
   country?: string;
   inputUnit?: string;
@@ -32,6 +33,7 @@ export type ConversionFactorItem = {
   name: string;
   type: string;
   activityType?: string | null;
+  jurisdiction?: string | null;
   region?: string | null;
   country?: string | null;
   inputUnit?: string | null;
@@ -76,6 +78,8 @@ export async function getConversionFactors(params?: {
   pageSize?: number;
   type?: string;
   activityType?: string;
+  jurisdiction?: string;
+  sourceYear?: number;
   search?: string;
 }) {
   const searchParams = new URLSearchParams();
@@ -87,6 +91,8 @@ export async function getConversionFactors(params?: {
   if (safePageSize) searchParams.set('pageSize', String(safePageSize));
   if (params?.type) searchParams.set('type', params.type);
   if (params?.activityType) searchParams.set('activityType', params.activityType);
+  if (params?.jurisdiction) searchParams.set('jurisdiction', params.jurisdiction);
+  if (params?.sourceYear) searchParams.set('sourceYear', String(params.sourceYear));
   if (params?.search) searchParams.set('search', params.search);
 
   const query = searchParams.toString();
@@ -98,6 +104,8 @@ export async function getConversionFactors(params?: {
 export async function getAllConversionFactors(params?: {
   type?: string;
   activityType?: string;
+  jurisdiction?: string;
+  sourceYear?: number;
   search?: string;
 }) {
   const firstPage = await getConversionFactors({

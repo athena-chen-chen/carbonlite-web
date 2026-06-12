@@ -27,6 +27,7 @@ import { createClientAuditLog } from '../services/auditLogs';
 import { trackActivityEvent } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
 import { trackEvent } from '../services/ga4.service';
+import type { CalculationAuditDetail } from '../services/metrics';
 
 type ActivityItem = {
   id: string;
@@ -73,6 +74,7 @@ export default function ReportingPage() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [matchedActivityEmissions, setMatchedActivityEmissions] = useState<FormalActivityEmission[]>([]);
   const [conversionFactorsUsed, setConversionFactorsUsed] = useState<FormalConversionFactorUsed[]>([]);
+  const [calculationDetails, setCalculationDetails] = useState<CalculationAuditDetail[]>([]);
   const [usageTotals, setUsageTotals] = useState(EMPTY_ACTIVITY_USAGE_TOTALS);
   const [totalEstimatedEmissionsKgCO2e, setTotalEstimatedEmissionsKgCO2e] = useState(0);
   const [countSummary, setCountSummary] = useState({
@@ -135,6 +137,7 @@ const trackedReportViewRef = useRef(false);
       setActivities(overview.activities);
       setMatchedActivityEmissions(overview.matchedActivityEmissions);
       setConversionFactorsUsed(overview.conversionFactorsUsed);
+      setCalculationDetails(overview.calculationDetails);
       setUsageTotals(overview.usageTotals);
       setTotalEstimatedEmissionsKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
       setCountSummary({
@@ -428,6 +431,29 @@ function handleDownloadPDF() {
   });
 
   let nextY = (doc as any).lastAutoTable.finalY + 12;
+  drawPdfSectionTitle(doc, 'Calculation Quality Summary', nextY);
+  autoTable(doc, {
+    startY: nextY + 6,
+    head: [['Quality Measure', 'Value']],
+    body: [
+      ['Total Records Found', countSummary.totalRecordsFound],
+      ['Records Calculated', countSummary.processedRecords],
+      ['Records Skipped', countSummary.skippedRecords],
+      ['Missing Factors', countSummary.missingFactorRecords],
+      ['Invalid Records', countSummary.skippedReasons.invalidData],
+      [
+        'Data Quality Coverage',
+        countSummary.totalRecordsFound > 0
+          ? `${Math.round(
+              (countSummary.processedRecords / countSummary.totalRecordsFound) *
+                1000,
+            ) / 10}%`
+          : '0%',
+      ],
+    ],
+  });
+
+  nextY = (doc as any).lastAutoTable.finalY + 12;
   drawPdfSectionTitle(doc, 'Methodology', nextY);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
@@ -480,18 +506,59 @@ function handleDownloadPDF() {
     startY: nextY + 16,
     head: [[
       'Activity Type',
+      'Jurisdiction',
       'Input Unit',
       'Factor Value',
       'Result Unit',
       'Source Authority',
       'Source Document',
+      'Source URL',
       'Source Year',
       'Verified',
       'System / Custom',
     ]],
     body: factorTraceabilityRows.length
       ? factorTraceabilityRows
-      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '']],
+      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '', '', '']],
+    styles: { fontSize: 6.5, cellPadding: 1.5 },
+    headStyles: { fillColor: [15, 23, 42] },
+  });
+
+  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (nextY > 230) {
+    doc.addPage();
+    nextY = 20;
+  }
+
+  drawPdfSectionTitle(doc, 'Calculation Details', nextY + 10);
+  autoTable(doc, {
+    startY: nextY + 16,
+    head: [[
+      'Activity Type',
+      'Quantity',
+      'Unit',
+      'Factor Used',
+      'Source',
+      'Year',
+      'Jurisdiction',
+      'Emissions kgCO2e',
+      'Status',
+    ]],
+    body: calculationDetails.length
+      ? calculationDetails.map((item) => [
+          item.activityType,
+          item.activityQuantity,
+          item.activityUnit,
+          item.factorValue === null || item.factorValue === undefined
+            ? ''
+            : `${item.factorValue} ${item.factorResultUnit || ''} / ${item.factorInputUnit || item.activityUnit}`,
+          item.factorSource,
+          item.sourceYear ?? item.reportingYear,
+          item.jurisdiction,
+          item.calculatedEmissionsKgCO2e ?? '',
+          item.status,
+        ])
+      : [['No calculation details available.', '', '', '', '', '', '', '', '']],
     styles: { fontSize: 6.5, cellPadding: 1.5 },
     headStyles: { fillColor: [15, 23, 42] },
   });
@@ -820,6 +887,7 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
             matchedActivityEmissions={matchedActivityEmissions}
             conversionFactorsUsed={conversionFactorsUsed}
             sourceEvidenceRows={sourceEvidenceRows}
+            calculationDetails={calculationDetails}
           />
 
           <Section title="Scope Breakdown">

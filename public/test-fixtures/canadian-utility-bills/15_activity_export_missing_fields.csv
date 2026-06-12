@@ -1,0 +1,5 @@
+Type,Date,Amount,Unit,Source,Notes
+ELECTRICITY,,5488,kWh,Manitoba Hydro,Missing date
+NATURAL_GAS,2025-04-30,,m3,ATCO,Missing quantity
+DIESEL,2025-07-03,875,,Irving Oil,Missing unit
+,2025-09-15,1200,kWh,Unknown statement,Missing activity type

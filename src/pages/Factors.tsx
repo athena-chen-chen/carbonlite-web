@@ -7,41 +7,62 @@ type Factor = {
   scope: string;
   unit: string;
   value: number;
-  source: string;
+  jurisdiction: string;
+  sourceAuthority: string;
+  sourceDocument: string;
+  sourceYear: number;
+  verified: boolean;
+  notes: string;
   updatedAt: string;
 };
 
+export const demoFactors: Factor[] = [
+  {
+    id: "1",
+    name: "Diesel combustion — demo",
+    scope: "Scope 1",
+    unit: "kg CO₂e / L",
+    value: 2.68,
+    jurisdiction: "Canada",
+    sourceAuthority: "Demo / Placeholder",
+    sourceDocument: "Pilot demo factor library",
+    sourceYear: 2025,
+    verified: false,
+    notes: "Demo factor — verify before reporting.",
+    updatedAt: "2025-09-12",
+  },
+  {
+    id: "2",
+    name: "Natural gas combustion — demo",
+    scope: "Scope 1",
+    unit: "kg CO₂e / m³",
+    value: 1.89,
+    jurisdiction: "Canada",
+    sourceAuthority: "Demo / Placeholder",
+    sourceDocument: "Pilot demo factor library",
+    sourceYear: 2025,
+    verified: false,
+    notes: "Demo factor — verify before reporting.",
+    updatedAt: "2025-09-10",
+  },
+  {
+    id: "3",
+    name: "Electricity — Alberta grid",
+    scope: "Scope 2",
+    unit: "kg CO₂e / kWh",
+    value: 0.53,
+    jurisdiction: "Alberta, Canada",
+    sourceAuthority: "Demo / Placeholder",
+    sourceDocument: "Pilot demo factor library",
+    sourceYear: 2025,
+    verified: false,
+    notes: "Electricity factors vary by province and reporting year. Replace with verified jurisdiction-specific factors before client or regulatory reporting.",
+    updatedAt: "2025-09-30",
+  },
+];
+
 export default function Factors() {
-  // temp mock data, normally you'd fetch this from API
-  const [factors, setFactors] = useState<Factor[]>([
-    {
-      id: "1",
-      name: "Diesel combustion (stationary)",
-      scope: "Scope 1",
-      unit: "kg CO₂e / L",
-      value: 2.68,
-      source: "Canada NIR 2024 (AB adj.)",
-      updatedAt: "2025-09-12",
-    },
-    {
-      id: "2",
-      name: "Natural gas combustion (industrial)",
-      scope: "Scope 1",
-      unit: "kg CO₂e / m³",
-      value: 1.89,
-      source: "Canada NIR 2024",
-      updatedAt: "2025-09-10",
-    },
-    {
-      id: "3",
-      name: "Alberta grid electricity",
-      scope: "Scope 2",
-      unit: "kg CO₂e / kWh",
-      value: 0.53,
-      source: "Alberta Grid Intensity Sept 2025",
-      updatedAt: "2025-09-30",
-    },
-  ]);
+  const [factors, setFactors] = useState<Factor[]>(demoFactors);
 
   // Track which row is currently being edited
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -73,7 +94,12 @@ export default function Factors() {
                   draft.value !== undefined
                     ? Number(draft.value)
                     : f.value,
-                source: draft.source ?? f.source,
+                jurisdiction: draft.jurisdiction ?? f.jurisdiction,
+                sourceAuthority: draft.sourceAuthority ?? f.sourceAuthority,
+                sourceDocument: draft.sourceDocument ?? f.sourceDocument,
+                sourceYear: draft.sourceYear ?? f.sourceYear,
+                verified: draft.verified ?? f.verified,
+                notes: draft.notes ?? f.notes,
               }
             : f
         )
@@ -93,7 +119,12 @@ export default function Factors() {
       scope: "Scope 1",
       unit: "kg CO₂e / unit",
       value: 0,
-      source: "User-defined",
+      jurisdiction: "",
+      sourceAuthority: "User-defined",
+      sourceDocument: "",
+      sourceYear: new Date().getFullYear(),
+      verified: false,
+      notes: "Verify the source and jurisdiction before reporting.",
       updatedAt: new Date().toISOString().slice(0, 10), // yyyy-mm-dd
     };
     setFactors((prev) => [newFactor, ...prev]);
@@ -126,9 +157,9 @@ export default function Factors() {
           </div>
 
           <div className="text-[11px] text-[rgb(var(--muted))] leading-snug mt-3">
-            When you update a factor, future calculations use the new value.
-            Past emissions should remain historically correct (don’t retroactively
-            rewrite audit history).
+            Demo factors are provided for workflow validation only. Users should
+            verify applicable regional emission factors before relying on final
+            reports.
           </div>
         </div>
       </section>
@@ -138,7 +169,7 @@ export default function Factors() {
         <div className="card-body">
           <div className="card-row">
             <div className="page-title">Active Factors</div>
-            <div className="page-hint">Internal only</div>
+            <div className="page-hint">Demo factor library</div>
           </div>
 
           <div className="overflow-x-auto -mx-4 sm:-mx-6 md:mx-0">
@@ -149,7 +180,10 @@ export default function Factors() {
                   <th className="py-2 px-4 whitespace-nowrap">Scope</th>
                   <th className="py-2 px-4 whitespace-nowrap">Unit</th>
                   <th className="py-2 px-4 whitespace-nowrap">Value</th>
-                  <th className="py-2 px-4 whitespace-nowrap">Source</th>
+                  <th className="py-2 px-4 whitespace-nowrap">Jurisdiction / Region</th>
+                  <th className="py-2 px-4 whitespace-nowrap">Source Authority</th>
+                  <th className="py-2 px-4 whitespace-nowrap">Source Year</th>
+                  <th className="py-2 px-4 whitespace-nowrap">Verified</th>
                   <th className="py-2 px-4 whitespace-nowrap text-right">Updated</th>
                   <th className="py-2 px-4 whitespace-nowrap text-right">Actions</th>
                 </tr>
@@ -229,23 +263,95 @@ export default function Factors() {
                         )}
                       </td>
 
-                      {/* Source */}
+                      {/* Jurisdiction */}
                       <td className="py-3 px-4">
                         {isEditing ? (
                           <input
                             className="input"
-                            value={draft.source ?? ""}
-                            onChange={(e) => updateDraft("source", e.target.value)}
+                            value={draft.jurisdiction ?? ""}
+                            placeholder="e.g. Alberta, Canada"
+                            onChange={(e) => updateDraft("jurisdiction", e.target.value)}
                           />
+                        ) : (
+                          <div className="text-[rgb(var(--text))] text-xs font-medium leading-snug">
+                            {f.jurisdiction || "Not specified"}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Source authority */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <div className="grid gap-2">
+                            <input
+                              className="input"
+                              value={draft.sourceAuthority ?? ""}
+                              placeholder="Source authority"
+                              onChange={(e) => updateDraft("sourceAuthority", e.target.value)}
+                            />
+                            <input
+                              className="input"
+                              value={draft.sourceDocument ?? ""}
+                              placeholder="Source document"
+                              onChange={(e) => updateDraft("sourceDocument", e.target.value)}
+                            />
+                          </div>
                         ) : (
                           <>
                             <div className="text-[rgb(var(--text))] text-xs font-medium leading-snug">
-                              {f.source}
+                              {f.sourceAuthority || "Source not specified"}
                             </div>
                             <div className="text-[10px] text-[rgb(var(--muted))] leading-snug">
-                              method: static
+                              {f.sourceDocument || "Source not specified"}
                             </div>
                           </>
+                        )}
+                      </td>
+
+                      {/* Source year */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <input
+                            className="input"
+                            type="number"
+                            value={draft.sourceYear ?? ""}
+                            onChange={(e) => updateDraft("sourceYear", Number(e.target.value))}
+                          />
+                        ) : (
+                          <div className="text-[rgb(var(--text))] text-xs">
+                            {f.sourceYear || "Not specified"}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Verified */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <label className="inline-flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(draft.verified)}
+                              onChange={(e) => updateDraft("verified", e.target.checked)}
+                            />
+                            Verified
+                          </label>
+                        ) : (
+                          <div>
+                            <span
+                              className={
+                                f.verified
+                                  ? "inline-flex rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-800"
+                                  : "inline-flex rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-800"
+                              }
+                            >
+                              {f.verified ? "Verified" : "Unverified"}
+                            </span>
+                            {f.notes ? (
+                              <div className="mt-2 max-w-64 text-[10px] leading-snug text-[rgb(var(--muted))]">
+                                {f.notes}
+                              </div>
+                            ) : null}
+                          </div>
                         )}
                       </td>
 

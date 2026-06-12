@@ -1,4 +1,4 @@
-import { Fragment, FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   createConversionFactor,
@@ -26,6 +26,7 @@ const initialForm: ConversionFactorInput = {
   name: '',
   type: 'EMISSION',
   activityType: '',
+  jurisdiction: '',
   unit: '',
   factorValue: '' as unknown as number,
   resultUnit: 'kgCO2e',
@@ -42,8 +43,14 @@ const initialForm: ConversionFactorInput = {
   isDefault: true,
 };
 
+export function getFactorJurisdiction(item: ConversionFactorItem) {
+  if (item.jurisdiction?.trim()) return item.jurisdiction.trim();
+  return [item.region, item.country].filter(Boolean).join(', ') || '';
+}
+
 export function getFactorTraceability(item: ConversionFactorItem) {
   return {
+    jurisdiction: getFactorJurisdiction(item),
     sourceAuthority:
       item.sourceAuthority ||
       item.sourceName ||
@@ -77,16 +84,31 @@ export function ConversionFactorsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFactorForm, setShowFactorForm] = useState(false);
-  const [expandedFactorId, setExpandedFactorId] = useState<string | null>(null);
+  const [selectedFactor, setSelectedFactor] = useState<ConversionFactorItem | null>(null);
+  const [activityTypeFilter, setActivityTypeFilter] = useState('');
+  const [jurisdictionFilter, setJurisdictionFilter] = useState('');
+  const [sourceYearFilter, setSourceYearFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  async function loadItems() {
+  async function loadItems(filters?: {
+    activityType?: string;
+    jurisdiction?: string;
+    sourceYear?: string;
+  }) {
     setLoading(true);
     setError(null);
 
     try {
-      const data = (await getConversionFactors()) as ConversionFactorListResponse;
+      const data = (await getConversionFactors({
+        activityType:
+          (filters?.activityType ?? activityTypeFilter) || undefined,
+        jurisdiction:
+          (filters?.jurisdiction ?? jurisdictionFilter).trim() || undefined,
+        sourceYear: (filters?.sourceYear ?? sourceYearFilter)
+          ? Number(filters?.sourceYear ?? sourceYearFilter)
+          : undefined,
+      })) as ConversionFactorListResponse;
       setItems(data.items ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load conversion factors');
@@ -201,6 +223,7 @@ export function ConversionFactorsPage() {
       name: item.name,
       type: item.type,
       activityType: item.activityType ?? '',
+      jurisdiction: getFactorJurisdiction(item),
       unit: item.unit,
       factorValue: Number(item.factorValue),
       resultUnit: item.resultUnit,
@@ -415,6 +438,16 @@ export function ConversionFactorsPage() {
             />
           </Field>
 
+          <Field label="Jurisdiction / Region">
+            <input
+              type="text"
+              value={form.jurisdiction ?? ''}
+              onChange={(e) => updateField('jurisdiction', e.target.value)}
+              style={inputStyle}
+              placeholder="e.g. Alberta, Canada"
+            />
+          </Field>
+
           <Field label="Factor Value">
             <input
               type="number"
@@ -594,6 +627,68 @@ export function ConversionFactorsPage() {
           </div>
         </div>
 
+        <form
+          className="no-print"
+          style={filterBarStyle}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void loadItems();
+          }}
+        >
+          <Field label="Activity Type">
+            <select
+              value={activityTypeFilter}
+              onChange={(event) => setActivityTypeFilter(event.target.value)}
+              style={inputStyle}
+            >
+              <option value="">All activity types</option>
+              {activityTypes.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Jurisdiction">
+            <input
+              value={jurisdictionFilter}
+              onChange={(event) => setJurisdictionFilter(event.target.value)}
+              style={inputStyle}
+              placeholder="e.g. Alberta"
+            />
+          </Field>
+          <Field label="Source Year">
+            <input
+              type="number"
+              min="1900"
+              max="2100"
+              value={sourceYearFilter}
+              onChange={(event) => setSourceYearFilter(event.target.value)}
+              style={inputStyle}
+              placeholder="e.g. 2025"
+            />
+          </Field>
+          <div style={filterActionsStyle}>
+            <button type="submit" disabled={loading} style={primaryButtonStyle(loading)}>
+              Apply Filters
+            </button>
+            <button
+              type="button"
+              style={cancelButtonStyle}
+              onClick={() => {
+                setActivityTypeFilter('');
+                setJurisdictionFilter('');
+                setSourceYearFilter('');
+                void loadItems({
+                  activityType: '',
+                  jurisdiction: '',
+                  sourceYear: '',
+                });
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </form>
+
         {loading ? (
           <div style={{ padding: 16 }}>Loading conversion factors...</div>
         ) : (
@@ -603,28 +698,27 @@ export function ConversionFactorsPage() {
                 <th style={thStyle}>Activity Type</th>
                 <th style={thStyle}>Factor</th>
                 <th style={thStyle}>Unit</th>
-                <th style={thStyle}>Source Authority</th>
-                <th style={thStyle}>Source Year</th>
+                <th style={thStyle}>Jurisdiction</th>
+                <th style={thStyle}>Source</th>
+                <th style={thStyle}>Year</th>
                 <th style={thStyle}>Factor Type</th>
-                <th style={thStyle}>Verification</th>
+                <th style={thStyle}>Verified</th>
                 <th className="no-print" style={thStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
+                  <td colSpan={9} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
                     No conversion factors yet.
                   </td>
                 </tr>
               ) : (
                 items.map((item) => {
                   const traceability = getFactorTraceability(item);
-                  const isExpanded = expandedFactorId === item.id;
 
                   return (
-                    <Fragment key={item.id}>
-                      <tr>
+                      <tr key={item.id}>
                         <td style={tdStyle}>{item.activityType ?? '-'}</td>
                         <td style={tdStyle}>
                           <div style={{ fontWeight: 600 }}>{item.name}</div>
@@ -633,6 +727,7 @@ export function ConversionFactorsPage() {
                           </div>
                         </td>
                         <td style={tdStyle}>{item.unit}</td>
+                        <td style={tdStyle}>{traceability.jurisdiction || '-'}</td>
                         <td style={tdStyle}>{traceability.sourceAuthority || '-'}</td>
                         <td style={tdStyle}>{traceability.sourceYear ?? '-'}</td>
                         <td style={tdStyle}>
@@ -646,7 +741,7 @@ export function ConversionFactorsPage() {
                           {traceability.verified ? (
                             <Badge label="Verified" color="#047857" background="#d1fae5" />
                           ) : (
-                            <Badge label="Needs review" color="#92400e" background="#fef3c7" />
+                            <Badge label="Unverified" color="#9a3412" background="#ffedd5" />
                           )}
                         </td>
                         <td className="no-print" style={tdStyle}>
@@ -657,14 +752,10 @@ export function ConversionFactorsPage() {
                           ) : null}
                           <button
                             type="button"
-                            onClick={() =>
-                              setExpandedFactorId((current) =>
-                                current === item.id ? null : item.id,
-                              )
-                            }
+                            onClick={() => setSelectedFactor(item)}
                             style={detailsButtonStyle}
                           >
-                            {isExpanded ? 'Hide Details' : 'Details'}
+                            Details
                           </button>
                           <button
                             type="button"
@@ -690,14 +781,6 @@ export function ConversionFactorsPage() {
                           </button>
                         </td>
                       </tr>
-                      {isExpanded ? (
-                        <tr className="no-print">
-                          <td colSpan={8} style={traceabilityCellStyle}>
-                            <TraceabilityDetails item={item} />
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
                   );
                 })
               )}
@@ -710,6 +793,13 @@ export function ConversionFactorsPage() {
         <div>Generated by CarbonLite AI</div>
         <div>For environmental reporting reference</div>
       </div>
+
+      {selectedFactor ? (
+        <FactorDetailsModal
+          item={selectedFactor}
+          onClose={() => setSelectedFactor(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -747,12 +837,10 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
-        {label}
-      </label>
+    <label style={{ display: 'block', fontWeight: 600 }}>
+      <span style={{ display: 'block', marginBottom: 6 }}>{label}</span>
       {children}
-    </div>
+    </label>
   );
 }
 
@@ -783,27 +871,64 @@ function Badge({
   );
 }
 
-function TraceabilityDetails({ item }: { item: ConversionFactorItem }) {
+function FactorDetailsModal({
+  item,
+  onClose,
+}: {
+  item: ConversionFactorItem;
+  onClose: () => void;
+}) {
   const traceability = getFactorTraceability(item);
 
   return (
-    <div style={traceabilityDetailsStyle}>
-      <DetailItem label="Source Document" value={traceability.sourceDocument} />
-      <DetailItem
-        label="Source URL"
-        value={
-          traceability.sourceUrl ? (
-            <a href={traceability.sourceUrl} target="_blank" rel="noreferrer">
-              {traceability.sourceUrl}
-            </a>
-          ) : (
-            ''
-          )
-        }
-      />
-      <DetailItem label="Methodology" value={traceability.methodology} />
-      <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
-      <DetailItem label="Notes" value={traceability.notes} />
+    <div className="no-print" style={modalBackdropStyle} role="presentation" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="factor-details-title"
+        style={modalStyle}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div style={modalHeaderStyle}>
+          <div>
+            <div style={{ color: '#047857', fontWeight: 700, fontSize: 13 }}>
+              {item.activityType || 'Conversion Factor'}
+            </div>
+            <h2 id="factor-details-title" style={{ margin: '4px 0 0' }}>{item.name}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close factor details" style={modalCloseStyle}>
+            ×
+          </button>
+        </div>
+        <div style={traceabilityDetailsStyle}>
+          <DetailItem label="Factor Value" value={`${item.factorValue} ${item.resultUnit}`} />
+          <DetailItem label="Input Unit" value={item.unit} />
+          <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
+          <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
+          <DetailItem label="Source Document" value={traceability.sourceDocument} />
+          <DetailItem label="Source Year" value={traceability.sourceYear} />
+          <DetailItem
+            label="Source URL"
+            value={
+              traceability.sourceUrl ? (
+                <a href={traceability.sourceUrl} target="_blank" rel="noreferrer">
+                  Open source
+                </a>
+              ) : ''
+            }
+          />
+          <DetailItem
+            label="Verified"
+            value={traceability.verified ? 'Verified' : 'Unverified / user review required'}
+          />
+          <DetailItem label="Methodology" value={traceability.methodology} />
+          <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
+          <DetailItem label="Notes" value={traceability.notes} />
+        </div>
+        <div style={{ marginTop: 20, textAlign: 'right' }}>
+          <button type="button" onClick={onClose} style={cancelButtonStyle}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -908,6 +1033,22 @@ const sourceSectionStyle: React.CSSProperties = {
   marginTop: 20,
   paddingTop: 18,
   borderTop: '1px solid #e5e7eb',
+};
+
+const filterBarStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  alignItems: 'end',
+  gap: 12,
+  padding: 16,
+  borderBottom: '1px solid #e5e7eb',
+  background: '#f8fafc',
+};
+
+const filterActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
 };
 
 const pilotDisclaimerStyle: React.CSSProperties = {
@@ -1047,16 +1188,53 @@ const detailsButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-const traceabilityCellStyle: React.CSSProperties = {
-  padding: 14,
-  borderBottom: '1px solid #e5e7eb',
-  background: '#f8fafc',
-};
-
 const traceabilityDetailsStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
   gap: 14,
+};
+
+const modalBackdropStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 1000,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 20,
+  background: 'rgba(15, 23, 42, 0.48)',
+};
+
+const modalStyle: React.CSSProperties = {
+  width: 'min(760px, 100%)',
+  maxHeight: '85vh',
+  overflowY: 'auto',
+  padding: 24,
+  borderRadius: 8,
+  background: '#fff',
+  boxShadow: '0 24px 70px rgba(15, 23, 42, 0.24)',
+};
+
+const modalHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 16,
+  marginBottom: 20,
+  paddingBottom: 16,
+  borderBottom: '1px solid #e2e8f0',
+};
+
+const modalCloseStyle: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  border: '1px solid #cbd5e1',
+  borderRadius: 6,
+  background: '#fff',
+  color: '#334155',
+  fontSize: 24,
+  lineHeight: 1,
+  cursor: 'pointer',
 };
 
 const printStyles = `

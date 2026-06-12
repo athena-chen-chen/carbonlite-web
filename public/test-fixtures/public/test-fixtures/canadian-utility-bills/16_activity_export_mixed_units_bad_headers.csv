@@ -1,0 +1,6 @@
+UTILITY kind ,period end,usage value,uom???,vendor/ref
+diesel fuel,31-01-2025,"1,190",litres,Synthetic bulk tank
+DIESEL,2025/02/28,1,ton,Incompatible unit fixture
+electric,Mar 31 2025,9500,KWH,EPCOR
+natural gas,2025-04-30,450.5,M³,ATCO
+water,2025-05-31,-12,m3,Negative quantity fixture

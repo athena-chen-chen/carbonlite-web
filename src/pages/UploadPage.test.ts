@@ -1,10 +1,22 @@
 import {
   formatSourceReference,
+  formatDuplicateDocumentMessage,
   getDocumentActionModel,
   getDocumentStatusLabel,
   getDocumentDownloadUrl,
   resolveActivityRecordDate,
 } from './UploadPage';
+
+describe('duplicate document messaging', () => {
+  it('shows the existing filename and upload date', () => {
+    expect(
+      formatDuplicateDocumentMessage({
+        fileName: 'utility.xlsx',
+        createdAt: '2026-05-30T10:30:00.000Z',
+      }),
+    ).toBe('utility.xlsx was already uploaded on 2026-05-30.');
+  });
+});
 
 describe('formatSourceReference', () => {
   it('keeps string source references readable', () => {

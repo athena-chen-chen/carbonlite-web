@@ -6,6 +6,7 @@ import {
   formatFuelUsageBreakdown,
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
+import type { CalculationAuditDetail } from '../services/metrics';
 
 export { formatFuelUsageBreakdown };
 
@@ -13,6 +14,7 @@ export const FORMAL_REPORT_DISCLAIMER =
   'Estimated emissions are calculated by multiplying activity quantities by applicable conversion factors. Conversion factors may include CarbonLite system defaults and organization-specific custom factors. Users should review factor sources and methodology before using reports for regulatory or client-facing submissions.';
 
 export const FORMAL_REPORT_METHODOLOGY = [
+  'Estimated emissions are calculated by multiplying activity quantities by applicable conversion factors. CarbonLite applies factor matching based on activity type, unit, jurisdiction, and reporting year. Records without a matching factor are excluded from emissions totals and listed in the quality summary for user review.',
   FORMAL_REPORT_DISCLAIMER,
   'Activity data may come from uploaded documents, spreadsheets, or manual entry. Extracted and imported records should be reviewed for accuracy and completeness.',
   'Records without matching conversion factors are excluded from estimated emissions totals and are identified as skipped or missing-factor records.',
@@ -38,9 +40,12 @@ export type FormalConversionFactorUsed = {
   factorValue: string | number;
   inputUnit: string;
   resultUnit: string;
+  jurisdiction?: string | null;
   sourceAuthority: string;
   sourceDocument?: string | null;
+  sourceUrl?: string | null;
   sourceYear?: number | null;
+  reportingYear?: number | null;
   factorType: 'System' | 'Custom';
   verified: boolean;
 };
@@ -92,11 +97,13 @@ export function buildConversionFactorTraceabilityRows(
 ) {
   return conversionFactorsUsed.map((factor) => [
     factor.activityType || 'Not specified',
+    factor.jurisdiction || 'Not specified',
     factor.inputUnit || 'Not specified',
     factor.factorValue,
     factor.resultUnit || 'kgCO2e',
     factor.sourceAuthority || 'Source not specified',
     factor.sourceDocument || 'Source not specified',
+    factor.sourceUrl || 'Source not specified',
     factor.sourceYear || 'Source not specified',
     factor.verified ? 'Verified' : 'Unverified / user review required',
     factor.factorType,
@@ -167,6 +174,7 @@ export function FormalReportPreview({
   matchedActivityEmissions,
   conversionFactorsUsed,
   sourceEvidenceRows,
+  calculationDetails,
 }: {
   organizationName: string;
   reportPeriod: string;
@@ -178,6 +186,7 @@ export function FormalReportPreview({
   matchedActivityEmissions: FormalActivityEmission[];
   conversionFactorsUsed: FormalConversionFactorUsed[];
   sourceEvidenceRows: SourceEvidenceRow[];
+  calculationDetails: CalculationAuditDetail[];
 }) {
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
@@ -238,7 +247,29 @@ export function FormalReportPreview({
         </div>
       </ReportSection>
 
-      <ReportSection title="C. Totals by Metric">
+      <ReportSection title="C. Calculation Quality Summary">
+        <div style={summaryGridStyle}>
+          <Fact label="Total Records Found" value={String(countSummary.totalRecordsFound)} />
+          <Fact label="Records Calculated" value={String(countSummary.processedRecords)} />
+          <Fact label="Records Skipped" value={String(countSummary.skippedRecords)} />
+          <Fact label="Missing Factors" value={String(countSummary.missingFactorRecords)} />
+          <Fact
+            label="Invalid Records"
+            value={String(countSummary.skippedReasons?.invalidData ?? 0)}
+          />
+          <Fact label="Data Quality Coverage" value={executiveSummary.dataQualityCoverage} />
+        </div>
+        {countSummary.skippedRecords > 0 ? (
+          <div style={qualityReasonStyle}>
+            <strong>Skipped reasons:</strong>{' '}
+            {formatSkippedReasons(countSummary)}
+          </div>
+        ) : (
+          <div style={qualitySuccessStyle}>All in-scope records were calculated.</div>
+        )}
+      </ReportSection>
+
+      <ReportSection title="D. Totals by Metric">
         <SimpleTable
           headers={['Metric Type', 'Unit', 'Total']}
           emptyMessage="No metrics available for this report scope."
@@ -250,7 +281,7 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="D. Activity Breakdown">
+      <ReportSection title="E. Activity Breakdown">
         <SimpleTable
           headers={[
             'Activity Type',
@@ -270,15 +301,17 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="E. Conversion Factors Used">
+      <ReportSection title="F. Conversion Factors Used">
         <SimpleTable
           headers={[
             'Activity Type',
+            'Jurisdiction',
             'Input Unit',
             'Factor Value',
             'Result Unit',
             'Source Authority',
             'Source Document',
+            'Source URL',
             'Source Year',
             'Verified',
             'System / Custom',
@@ -288,7 +321,44 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="F. Source Evidence">
+      <ReportSection title="G. Calculation Details">
+        <details>
+          <summary style={detailsSummaryStyle}>
+            Show calculation audit ({calculationDetails.length} records)
+          </summary>
+          <div style={{ marginTop: 14 }}>
+            <SimpleTable
+              headers={[
+                'Activity Type',
+                'Quantity',
+                'Unit',
+                'Factor Used',
+                'Source',
+                'Year',
+                'Jurisdiction',
+                'Emissions kgCO2e',
+                'Status',
+              ]}
+              emptyMessage="No calculation details available."
+              rows={calculationDetails.map((item) => [
+                item.activityType,
+                item.activityQuantity,
+                item.activityUnit,
+                item.factorValue === null || item.factorValue === undefined
+                  ? '-'
+                  : `${item.factorValue} ${item.factorResultUnit || ''} / ${item.factorInputUnit || item.activityUnit}`.trim(),
+                item.factorSource || '-',
+                item.sourceYear ?? item.reportingYear,
+                item.jurisdiction || '-',
+                item.calculatedEmissionsKgCO2e ?? '-',
+                item.status,
+              ])}
+            />
+          </div>
+        </details>
+      </ReportSection>
+
+      <ReportSection title="H. Source Evidence">
         <SimpleTable
           headers={['Source Document / File', 'Source Type', 'Record Count', 'Notes']}
           emptyMessage="No source evidence available."
@@ -301,7 +371,7 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="G. Methodology and Disclaimer">
+      <ReportSection title="I. Methodology and Disclaimer">
         <div style={{ display: 'grid', gap: 10 }}>
           {FORMAL_REPORT_METHODOLOGY.map((paragraph) => (
             <p key={paragraph} style={{ margin: 0, lineHeight: 1.7, color: '#475569' }}>
@@ -312,6 +382,20 @@ export function FormalReportPreview({
       </ReportSection>
     </section>
   );
+}
+
+function formatSkippedReasons(countSummary: MetricsCountSummary) {
+  const reasons = countSummary.skippedReasons;
+  if (!reasons) return 'Not specified';
+  return [
+    ['Missing factor', reasons.missingFactor],
+    ['Invalid data', reasons.invalidData],
+    ['Outside date range', reasons.outsideDateRange],
+    ['Outside scope', reasons.outsideScope],
+  ]
+    .filter(([, count]) => Number(count) > 0)
+    .map(([label, count]) => `${label}: ${count}`)
+    .join('; ');
 }
 
 function ReportSection({
@@ -491,6 +575,27 @@ const reportSectionStyle: React.CSSProperties = {
   borderRadius: 10,
   border: '1px solid #e2e8f0',
   background: '#fff',
+};
+
+const qualityReasonStyle: React.CSSProperties = {
+  marginTop: 14,
+  padding: 12,
+  border: '1px solid #fed7aa',
+  borderRadius: 8,
+  background: '#fff7ed',
+  color: '#9a3412',
+};
+
+const qualitySuccessStyle: React.CSSProperties = {
+  marginTop: 14,
+  color: '#047857',
+  fontWeight: 700,
+};
+
+const detailsSummaryStyle: React.CSSProperties = {
+  cursor: 'pointer',
+  color: '#0f766e',
+  fontWeight: 800,
 };
 
 const factsGridStyle: React.CSSProperties = {
