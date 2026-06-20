@@ -1,0 +1,2 @@
+activityType,recordDate,quantity,unit,sourceReference
+ELECTRICITY,2026-05-31,4280,kWh,enmax-electricity.csv

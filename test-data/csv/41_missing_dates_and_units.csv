@@ -1,0 +1,4 @@
+activityType,recordDate,quantity,unit,facility,sourceReference
+ELECTRICITY,,7730,,Edmonton Test Lab,EPCOR
+NATURAL_GAS,,1730,m3,Fort McMurray Service Shop,ATCO
+WATER,2025-07-31,415,,Toronto Office,City of Toronto

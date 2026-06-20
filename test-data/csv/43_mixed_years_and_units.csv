@@ -1,0 +1,4 @@
+activityType,recordDate,quantity,unit,facility,sourceReference
+DIESEL,2024-06-14,1240,L,Fleet A,Petro-Canada
+DIESEL,2025-06-14,1.5,tonnes,Fleet B,Shell Canada
+ELECTRICITY,2026-02-14,21440,kWh,Burnaby Cold Storage,BC Hydro

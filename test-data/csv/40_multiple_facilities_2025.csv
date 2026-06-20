@@ -1,0 +1,4 @@
+activityType,recordDate,quantity,unit,facility,sourceReference
+ELECTRICITY,2025-03-31,6120,kWh,Toronto Office,Hydro One
+ELECTRICITY,2025-03-31,12300,kWh,Hamilton Workshop,Hydro One
+WATER,2025-05-31,910,m3,Calgary Plant,City of Calgary

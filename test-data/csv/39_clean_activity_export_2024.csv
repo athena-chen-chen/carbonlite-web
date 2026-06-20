@@ -1,0 +1,4 @@
+activityType,recordDate,quantity,unit,facility,sourceReference
+ELECTRICITY,2024-01-31,4280,kWh,Calgary Fabrication Plant,ENMAX
+NATURAL_GAS,2024-01-31,2860,m3,Red Deer Packaging Plant,ATCO
+DIESEL,2024-06-14,1240,L,Rocky Route Logistics,Petro-Canada

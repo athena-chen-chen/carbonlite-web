@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test --config apps/web-e2e/playwright.config.ts",
+    "test:e2e:ui": "playwright test --config apps/web-e2e/playwright.config.ts --ui",
+    "test:regression": "playwright test --config apps/web-e2e/playwright.config.ts --grep @smoke",
+    "verify:deployment": "pnpm test && pnpm build && pnpm test:regression"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -26,6 +30,7 @@
     "zod": "^4.1.9"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.1.16",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

@@ -1,0 +1,51 @@
+ID,File,Category,Format,Provider,Scenario,Facility,Jurisdiction,Reporting Period,Expected Extraction,Pages/Sheets,Size Bytes
+1,electricity/01_enmax_electricity_bill.pdf,Electricity,PDF,ENMAX,Clean bill,Calgary Fabrication Plant,"Alberta, Canada",2024-01-01 to 2024-01-31,ELECTRICITY: 4280 kWh,1,4954
+2,electricity/02_epcor_electricity_statement.pdf,Electricity,PDF,EPCOR,Clean alternate labels,Edmonton Distribution Centre,"Alberta, Canada",2025-02-01 to 2025-02-28,ELECTRICITY: 12840 kWh,1,4975
+3,electricity/03_fortisalberta_distribution_bill.pdf,Electricity,PDF,FortisAlberta,Missing dates,Lethbridge Warehouse,"Alberta, Canada",Missing,ELECTRICITY: 2205 kWh,1,4949
+4,electricity/04_bc_hydro_commercial_bill.pdf,Electricity,PDF,BC Hydro,Clean different jurisdiction,Burnaby Cold Storage,"British Columbia, Canada",2026-01-15 to 2026-02-14,ELECTRICITY: 21440 kWh,1,4982
+5,electricity/05_hydro_one_multi_site_bill.pdf,Electricity,PDF,Hydro One,Multi-page and multiple facilities,Ontario Operations,"Ontario, Canada",2025-03-01 to 2025-03-31,ELECTRICITY: 18420 kWh,2,5967
+6,electricity/06_enmax_ocr_scan.pdf,Electricity,PDF,ENMAX,OCR errors: O/0 substitution and split unit,Calgary Assembly Site,"Alberta, Canada",2025-04-01 to 2025-04-30,ELECTRICITY: 9O5O kW h,1,4984
+7,duplicates/enmax_bill_exact_copy_different_name.pdf,Electricity,PDF,ENMAX,Exact duplicate of file 01 under a different filename,Calgary Fabrication Plant,"Alberta, Canada",2024-01-01 to 2024-01-31,Duplicate hash should match file 01,1,4954
+8,electricity/08_fortisalberta_two_meter_bill.pdf,Electricity,PDF,FortisAlberta,Multi-page with two meters,Red Deer Manufacturing Campus,"Alberta, Canada",2024-06-01 to 2024-06-30,ELECTRICITY: 15990 kWh,2,5967
+9,name-collisions/batch-a/utility_bill.pdf,Electricity,PDF,ENMAX,"Same filename, different content: batch A",Calgary North Facility,"Alberta, Canada",2025-07-01 to 2025-07-31,ELECTRICITY: 6300 kWh,1,4992
+10,name-collisions/batch-b/utility_bill.pdf,Electricity,PDF,BC Hydro,"Same filename, different content: batch B",Vancouver Test Facility,"British Columbia, Canada",2025-07-01 to 2025-07-31,ELECTRICITY: 9100 kWh,1,5005
+11,natural-gas/11_atco_natural_gas_statement.pdf,Natural Gas,PDF,ATCO,Clean gas statement,Red Deer Packaging Plant,"Alberta, Canada",2024-01-01 to 2024-01-31,NATURAL_GAS: 2860 m3,1,4964
+12,natural-gas/12_enmax_natural_gas_bill.pdf,Natural Gas,PDF,ENMAX,Clean gas bill,Calgary Food Processing,"Alberta, Canada",2025-02-01 to 2025-02-28,NATURAL_GAS: 4410 m3,1,4955
+13,natural-gas/13_atco_gas_statement_missing_date.pdf,Natural Gas,PDF,ATCO,Missing dates,Fort McMurray Service Shop,"Alberta, Canada",Missing,NATURAL_GAS: 1730 m3,1,4945
+14,natural-gas/14_fortisbc_natural_gas_statement.pdf,Natural Gas,PDF,FortisBC,Clean BC jurisdiction,Surrey Distribution Hub,"British Columbia, Canada",2026-03-01 to 2026-03-31,NATURAL_GAS: 3180 m3,1,4982
+15,natural-gas/15_atco_ocr_statement.pdf,Natural Gas,PDF,ATCO,OCR error: S/5 substitution,Grande Prairie Yard,"Alberta, Canada",2025-04-01 to 2025-04-30,"NATURAL_GAS: 2,8S0 m³",1,4960
+16,natural-gas/16_enmax_multi_facility_gas_summary.pdf,Natural Gas,PDF,ENMAX,Multi-page facility summary,Calgary Facilities,"Alberta, Canada",2025-05-01 to 2025-05-31,NATURAL_GAS: 5900 m3,2,5934
+17,natural-gas/17_atco_statement_without_unit.pdf,Natural Gas,PDF,ATCO,Missing unit,Medicine Hat Warehouse,"Alberta, Canada",2024-11-01 to 2024-11-30,NATURAL_GAS: 950 [missing unit],1,4876
+18,diesel/18_commercial_diesel_invoice.pdf,Diesel,PDF,Petro-Canada,Clean diesel invoice,Rocky Route Logistics,"Alberta, Canada",2024-06-14 to 2024-06-14,DIESEL: 1240 L,1,4963
+19,diesel/19_bulk_diesel_delivery_invoice.pdf,Diesel,PDF,Shell Canada,Clean bulk delivery,Edmonton Fleet Depot,"Alberta, Canada",2025-01-18 to 2025-01-18,DIESEL: 3500 litres,1,4969
+20,diesel/20_diesel_delivery_ticket.pdf,Diesel,PDF,Parkland,Delivery ticket,Northern Excavation Yard,"Alberta, Canada",2025-03-22 to 2025-03-22,DIESEL: 2050 L,1,4954
+21,diesel/21_diesel_invoice_ocr_copy.pdf,Diesel,PDF,Irving Oil,OCR error and alternate unit,Moncton Service Yard,"New Brunswick, Canada",2025-07-03 to 2025-07-03,"DIESEL: 875,O LTR",1,4975
+22,diesel/22_diesel_invoice_missing_date.pdf,Diesel,PDF,Petro-Canada,Missing dates,Calgary Fleet Shop,"Alberta, Canada",Missing,DIESEL: 760 L,1,4934
+23,diesel/23_diesel_invoice_in_tonnes.pdf,Diesel,PDF,Shell Canada,Incompatible unit; must not auto-convert,Industrial Test Site,"Alberta, Canada",2026-02-10 to 2026-02-10,DIESEL: 1.5 tonnes,1,4993
+24,fuel-receipts/24_fleet_fuel_receipt.pdf,Fuel Receipts,PDF,Petro-Canada,Clean receipt,Vehicle AB-TEST-101,"Alberta, Canada",2024-08-15 to 2024-08-15,GASOLINE: 62.4 L,1,4949
+25,fuel-receipts/25_fuel_card_receipt.pdf,Fuel Receipts,PDF,Shell Canada,Clean receipt,Vehicle ON-TEST-204,"Ontario, Canada",2025-09-04 to 2025-09-04,DIESEL: 88.7 L,1,4946
+26,fuel-receipts/26_faded_gasoline_receipt.pdf,Fuel Receipts,PDF,Esso,OCR error: B/8 substitution,Vehicle BC-TEST-330,"British Columbia, Canada",2025-10-11 to 2025-10-11,GASOLINE: 4B.2 L,1,4968
+27,fuel-receipts/27_receipt_missing_fuel_unit.pdf,Fuel Receipts,PDF,Husky,Missing unit,Vehicle AB-TEST-410,"Alberta, Canada",2026-01-19 to 2026-01-19,DIESEL: 105.3 [missing unit],1,4869
+28,fuel-receipts/28_combined_fuel_receipt.pdf,Fuel Receipts,PDF,Parkland,Multi-product receipt,Mixed Fleet,"Alberta, Canada",2025-12-02 to 2025-12-02,DIESEL: 230 L; GASOLINE: 94 L,2,6178
+29,water/29_commercial_water_bill.pdf,Water,PDF,EPCOR Water,Clean water bill,Edmonton Office,"Alberta, Canada",2024-04-01 to 2024-04-30,WATER: 620 m3,1,4947
+30,water/30_water_utility_statement.pdf,Water,PDF,City of Calgary Water Services,Clean municipal bill,Calgary Plant,"Alberta, Canada",2025-05-01 to 2025-05-31,WATER: 910 m3,1,4970
+31,water/31_water_services_statement.pdf,Water,PDF,Metro Vancouver,Clean BC water bill,Burnaby Facility,"British Columbia, Canada",2026-06-01 to 2026-06-30,WATER: 780 m3,1,4967
+32,water/32_water_bill_missing_date.pdf,Water,PDF,EPCOR Water,Missing dates,Edmonton Warehouse,"Alberta, Canada",Missing,WATER: 340 m3,1,4929
+33,water/33_water_statement_without_unit.pdf,Water,PDF,City of Toronto Water,Missing unit,Toronto Office,"Ontario, Canada",2025-07-01 to 2025-07-31,WATER: 415 [missing unit],1,4880
+34,utility-summaries/34_annual_utility_summary_2024.pdf,Utility Summaries,PDF,ENMAX,Clean annual summary,Calgary Campus,"Alberta, Canada",2024-01-01 to 2024-12-31,ELECTRICITY: 58200 kWh; NATURAL_GAS: 22100 m3,1,5249
+35,utility-summaries/35_multi_facility_utility_report_2025.pdf,Utility Summaries,PDF,EPCOR,Multi-page and multiple facilities,Edmonton Operations,"Alberta, Canada",2025-01-01 to 2025-12-31,ELECTRICITY: 98400 kWh; WATER: 8140 m3,3,7188
+36,utility-summaries/36_ontario_energy_summary_2026.pdf,Utility Summaries,PDF,Hydro One,Clean annual report,Ontario Facilities,"Ontario, Canada",2026-01-01 to 2026-12-31,ELECTRICITY: 110200 kWh,1,4967
+37,utility-summaries/37_mixed_utility_report_missing_units.pdf,Utility Summaries,PDF,FortisAlberta / ATCO,Missing units,Alberta Test Group,"Alberta, Canada",2025-01-01 to 2025-12-31,ELECTRICITY: 44200 [missing unit]; NATURAL_GAS: 18900 [missing unit],1,5109
+38,utility-summaries/38_poorly_formatted_utility_rollup.pdf,Utility Summaries,PDF,CarbonLite Test Export,OCR errors and mixed labels,Canada-wide Test Portfolio,Canada,2024-01-01 to 2024-12-31,"ELECTRIC1TY: 67,4OO kW h; NATURAL GAS: 12 8S0 m³; WATER: 4,220 m3",1,5525
+39,csv/39_clean_activity_export_2024.csv,CSV export,CSV,Mixed Canadian providers,Clean normalized CSV,See rows,Multiple,2024-2026,3 data rows,1,248
+40,csv/40_multiple_facilities_2025.csv,CSV export,CSV,Mixed Canadian providers,Multiple facilities,See rows,Multiple,2024-2026,3 data rows,1,235
+41,csv/41_missing_dates_and_units.csv,CSV export,CSV,Mixed Canadian providers,Missing dates and units,See rows,Multiple,2024-2026,3 data rows,1,212
+42,csv/42_ocr_and_bad_headers.csv,CSV export,CSV,Mixed Canadian providers,OCR errors and poor headers,See rows,Multiple,2024-2026,2 data rows,1,170
+43,csv/43_mixed_years_and_units.csv,CSV export,CSV,Mixed Canadian providers,Multiple years and incompatible units,See rows,Multiple,2024-2026,3 data rows,1,222
+44,csv/44_clean_activity_export_copy.csv,CSV export,CSV,Mixed Canadian providers,Exact duplicate of file 39 under a different filename,See rows,Multiple,2024,Exact SHA-256 duplicate of file 39,1,248
+45,xlsx/45_electricity_workbook_2024_2026.xlsx,Excel spreadsheet,XLSX,Mixed Canadian providers,Clean multi-year electricity workbook,See workbook,Multiple,2024-2026,1 sheet(s),1,9264
+46,xlsx/46_natural_gas_multi_facility.xlsx,Excel spreadsheet,XLSX,Mixed Canadian providers,"Natural gas, multiple facilities",See workbook,Multiple,2024-2026,1 sheet(s),1,9099
+47,xlsx/47_fuel_purchase_export.xlsx,Excel spreadsheet,XLSX,Mixed Canadian providers,Diesel and gasoline workbook,See workbook,Multiple,2024-2026,1 sheet(s),1,9113
+48,xlsx/48_water_and_utility_missing_fields.xlsx,Excel spreadsheet,XLSX,Mixed Canadian providers,"Missing dates, units, and optional metadata",See workbook,Multiple,2024-2026,1 sheet(s),1,9237
+49,xlsx/49_operations_multisheet_report.xlsx,Excel spreadsheet,XLSX,Mixed Canadian providers,Multiple sheets and irrelevant cost data,See workbook,Multiple,2024-2026,3 sheet(s),3,11055
+50,xlsx/50_poor_formatting_and_ocr.xlsx,Excel spreadsheet,XLSX,Mixed Canadian providers,"Poor headers, OCR errors, and incompatible units",See workbook,Multiple,2024-2026,1 sheet(s),1,9260
