@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -110,10 +110,10 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('CarbonLite system defaults')).toBeInTheDocument();
+    expect(await screen.findByText('CarbonLite')).toBeInTheDocument();
     expect(screen.getByText('Environment and Climate Change Canada')).toBeInTheDocument();
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Details' })[1]);
+    await userEvent.click(screen.getAllByRole('button', { name: 'View' })[1]);
 
     expect(screen.getAllByText('Verified').length).toBeGreaterThan(0);
     expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
@@ -155,13 +155,54 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.queryByRole('columnheader', { name: 'Verified' })).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-value-factor-1')).toHaveTextContent('2.68');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Details' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
 
     expect(screen.getByText('kgCO2e')).toBeInTheDocument();
     expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
     expect(screen.getByText('2025')).toBeInTheDocument();
     expect(screen.getByText('https://example.com/factor-source')).toBeInTheDocument();
     expect(screen.getByText('Review before reporting.')).toBeInTheDocument();
+  });
+
+  it('renders consultant-friendly activity, factor, and source labels in the table', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        {
+          ...baseFactor,
+          id: 'factor-gasoline',
+          name: 'Gasoline emission factor',
+          activityType: 'GASOLINE',
+          sourceAuthority: 'CarbonLite system defaults',
+        },
+        {
+          ...baseFactor,
+          id: 'factor-natural-gas',
+          name: 'Natural gas combustion factor',
+          activityType: 'NATURAL_GAS',
+          sourceAuthority: 'CarbonLite system defaults',
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 2,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId('factor-row-factor-gasoline');
+    const table = screen.getByRole('table');
+
+    expect(await within(table).findAllByText('Gasoline')).not.toHaveLength(0);
+    expect(within(table).getAllByText('Natural Gas')).not.toHaveLength(0);
+    expect(within(table).queryByText('GASOLINE')).not.toBeInTheDocument();
+    expect(within(table).queryByText('NATURAL_GAS')).not.toBeInTheDocument();
+    expect(within(table).queryByText('Gasoline emission factor')).not.toBeInTheDocument();
+    expect(within(table).getAllByText('CarbonLite').length).toBeGreaterThan(0);
   });
 
   it('uses an overflow menu for edit and delete actions', async () => {
@@ -179,7 +220,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Diesel default');
+    await screen.findByTestId('factor-row-factor-1');
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
 
@@ -223,7 +264,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Diesel default');
+    await screen.findByTestId('factor-row-factor-1');
     await userEvent.selectOptions(screen.getByLabelText('Sort by Factor Value'), 'asc');
 
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
@@ -258,13 +299,13 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Diesel default')).toBeInTheDocument();
-    expect(screen.getByText('Electricity default')).toBeInTheDocument();
+    expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-2')).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('Min Factor Value'), '2');
 
-    expect(screen.getByText('Diesel default')).toBeInTheDocument();
-    expect(screen.queryByText('Electricity default')).not.toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('factor-row-factor-2')).not.toBeInTheDocument();
   });
 
   it('defaults custom factors to unverified when the create form opens', async () => {

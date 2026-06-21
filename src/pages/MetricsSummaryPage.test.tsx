@@ -201,6 +201,33 @@ describe('buildMetricsSummaryTableRows', () => {
               invalidData: 0,
             },
           }}
+          calculationDetails={[
+            {
+              activityDataId: 'activity-1',
+              activityType: 'GASOLINE',
+              recordDate: '2026-01-01',
+              dateEstimated: false,
+              reportingYear: 2026,
+              jurisdiction: 'Alberta, Canada',
+              activityQuantity: 100,
+              activityUnit: 'liters',
+              factorId: 'factor-1',
+              factorName: 'Gasoline factor',
+              factorValue: 2.31,
+              factorInputUnit: 'liters',
+              factorResultUnit: 'kgCO2e',
+              factorPriority: 'CUSTOM',
+              factorSource: 'ECCC',
+              sourceAuthority: 'ECCC',
+              sourceYear: 2025,
+              factorVerified: true,
+              factorType: 'Custom',
+              calculatedEmissionsKgCO2e: 231,
+              status: 'CALCULATED',
+              sourceType: 'MANUAL',
+              sourceReference: null,
+            },
+          ]}
         />
       </MemoryRouter>,
     );
@@ -208,13 +235,18 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('Calculation Summary')).toBeInTheDocument();
     expect(screen.getByText('One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.')).toBeInTheDocument();
     expect(screen.getByText('Input Data')).toBeInTheDocument();
-    expect(screen.getByText('100 liters')).toBeInTheDocument();
+    expect(screen.getAllByText('100 liters').length).toBeGreaterThan(0);
     expect(screen.getByText('Gasoline')).toBeInTheDocument();
     expect(screen.getByLabelText('Calculation relationship')).toHaveTextContent('↓');
     expect(screen.getByText('Calculated Result')).toBeInTheDocument();
     expect(screen.getByText('Carbon Emissions')).toBeInTheDocument();
     expect(screen.getByText('231')).toBeInTheDocument();
     expect(screen.getByText('kgCO2e')).toBeInTheDocument();
+    expect(
+      screen.getByText('Calculated from: 100 liters gasoline × 2.31 kgCO2e/liters'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Source references used in summary')).toBeInTheDocument();
+    expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(0);
   });
 
   it('renders the shared summary section with multiple records and populated calculation table', () => {

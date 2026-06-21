@@ -6,8 +6,25 @@ import {
   getDocumentActionModel,
   getDocumentStatusLabel,
   getDocumentDownloadUrl,
+  getImportValidationIssues,
   resolveActivityRecordDate,
 } from './UploadPage';
+
+function buildImportRow(overrides: Record<string, any> = {}) {
+  return {
+    selected: true,
+    documentId: 'doc-1',
+    documentFileName: 'utility.pdf',
+    dateEstimated: false,
+    activityType: { value: 'DIESEL', confidence: 'high' },
+    recordDate: { value: '2026-05-29', confidence: 'high' },
+    quantity: { value: 100, confidence: 'high' },
+    unit: { value: 'L', confidence: 'high' },
+    sourceReference: { value: 'utility.pdf', confidence: 'high' },
+    notes: { value: '', confidence: 'medium' },
+    ...overrides,
+  };
+}
 
 describe('duplicate document messaging', () => {
   it('shows the existing filename and upload date', () => {
@@ -17,6 +34,68 @@ describe('duplicate document messaging', () => {
         createdAt: '2026-05-30T10:30:00.000Z',
       }),
     ).toBe('utility.xlsx was already uploaded on 2026-05-30.');
+  });
+});
+
+describe('import row validation', () => {
+  it('requires unit before import', () => {
+    expect(
+      getImportValidationIssues([
+        buildImportRow({ unit: { value: '', confidence: 'low' } }),
+      ]),
+    ).toEqual([
+      {
+        rowIndex: 0,
+        field: 'unit',
+        message: 'Unit is required.',
+      },
+    ]);
+  });
+
+  it('requires quantity before import', () => {
+    expect(
+      getImportValidationIssues([
+        buildImportRow({ quantity: { value: null, confidence: 'low' } }),
+      ]),
+    ).toEqual([
+      {
+        rowIndex: 0,
+        field: 'quantity',
+        message: 'Quantity is required.',
+      },
+    ]);
+  });
+
+  it('returns multiple required-field errors with row numbers preserved', () => {
+    expect(
+      getImportValidationIssues([
+        buildImportRow({ activityType: { value: '', confidence: 'low' } }),
+        buildImportRow({
+          recordDate: { value: '', confidence: 'low' },
+          unit: { value: '', confidence: 'low' },
+        }),
+      ]),
+    ).toEqual([
+      {
+        rowIndex: 0,
+        field: 'activityType',
+        message: 'Activity type is required.',
+      },
+      {
+        rowIndex: 1,
+        field: 'unit',
+        message: 'Unit is required.',
+      },
+      {
+        rowIndex: 1,
+        field: 'recordDate',
+        message: 'Date is required.',
+      },
+    ]);
+  });
+
+  it('allows valid selected rows', () => {
+    expect(getImportValidationIssues([buildImportRow()])).toEqual([]);
   });
 });
 

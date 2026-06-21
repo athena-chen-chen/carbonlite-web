@@ -5,6 +5,8 @@ import {
   formatActivityTypeLabel,
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
+import type { CalculationAuditDetail } from '../services/metrics';
+import { buildCalculatedFromLine } from '../utils/calculationTraceability';
 
 export type MetricsCountSummary = {
   totalRecordsFound: number;
@@ -124,6 +126,7 @@ export function MetricsSummarySection({
   totalEstimatedEmissionsKgCO2e,
   countSummary,
   missingFactors = [],
+  calculationDetails = [],
   emptyMessage = 'No metrics yet. Import activity records or load sample data to preview a report-ready summary.',
   isLoading = false,
 }: {
@@ -131,6 +134,7 @@ export function MetricsSummarySection({
   totalEstimatedEmissionsKgCO2e: number;
   countSummary: MetricsCountSummary;
   missingFactors?: MissingFactorItem[];
+  calculationDetails?: CalculationAuditDetail[];
   emptyMessage?: string;
   isLoading?: boolean;
 }) {
@@ -144,6 +148,10 @@ export function MetricsSummarySection({
   const calculatedMetricRows = totalsByMetric.filter(
     (item) => item.category === 'calculated',
   );
+  const firstCalculatedDetail = calculationDetails.find(
+    (detail) => detail.status === 'CALCULATED',
+  );
+  const calculatedFromLine = buildCalculatedFromLine(firstCalculatedDetail);
   const missingFactorGroups = groupMissingFactors(missingFactors);
   const skippedReasons = countSummary.skippedReasons ?? {
     missingFactor: countSummary.missingFactorRecords,
@@ -197,6 +205,7 @@ export function MetricsSummarySection({
           color="#10b981"
           highlight
           loading={isLoading}
+          traceText={calculatedFromLine ? `Calculated from: ${calculatedFromLine}` : undefined}
         />
 
         <MetricCard
@@ -376,8 +385,50 @@ export function MetricsSummarySection({
           </tbody>
         </table>
       </div>
+
+      {calculationDetails.length > 0 ? (
+        <details style={sourceDetailsStyle}>
+          <summary style={sourceDetailsSummaryStyle}>Source references used in summary</summary>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 12 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                <th style={thStyle}>Activity Type</th>
+                <th style={thStyle}>Quantity</th>
+                <th style={thStyle}>Source File</th>
+                <th style={thStyle}>Source Reference</th>
+                <th style={thStyle}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {calculationDetails.map((detail) => (
+                <tr key={detail.activityDataId}>
+                  <td style={tdStyle}>{detail.activityType}</td>
+                  <td style={tdStyle}>{detail.activityQuantity} {detail.activityUnit}</td>
+                  <td style={tdStyle}>
+                    {detail.sourceFileName || (detail.sourceType === 'MANUAL' ? 'Manual entry' : 'Source not specified')}
+                  </td>
+                  <td style={tdStyle}>{formatCalculationSourceReference(detail)}</td>
+                  <td style={tdStyle}>{detail.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
     </>
   );
+}
+
+function formatCalculationSourceReference(detail: CalculationAuditDetail) {
+  if (detail.sourceType === 'MANUAL') return 'Manual entry';
+
+  const parts = [
+    detail.sourceReference,
+    detail.sourcePage ? `Page ${detail.sourcePage}` : '',
+    detail.sourceRow ? `Line item ${detail.sourceRow}` : '',
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(' · ') : 'Source not specified';
 }
 
 function MetricRelationshipLabel({ item }: { item: MetricsSummaryTableRow }) {
@@ -429,6 +480,7 @@ function MetricCard({
   color,
   highlight,
   loading,
+  traceText,
 }: {
   title: string;
   value: React.ReactNode;
@@ -436,6 +488,7 @@ function MetricCard({
   color: string;
   highlight?: boolean;
   loading?: boolean;
+  traceText?: string;
 }) {
   return (
     <div style={{
@@ -464,6 +517,9 @@ function MetricCard({
           value
         )}
       </div>
+      {!loading && traceText ? (
+        <div style={traceTextStyle}>{traceText}</div>
+      ) : null}
     </div>
   );
 }
@@ -496,6 +552,29 @@ const reconciliationStyle: React.CSSProperties = {
   borderRadius: 12,
   border: '1px solid #dbeafe',
   background: '#f8fafc',
+};
+
+const traceTextStyle: React.CSSProperties = {
+  marginTop: 10,
+  paddingTop: 10,
+  borderTop: '1px solid #dcfce7',
+  color: '#166534',
+  fontSize: 12,
+  lineHeight: 1.45,
+};
+
+const sourceDetailsStyle: React.CSSProperties = {
+  marginTop: 18,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #dbeafe',
+  background: '#fff',
+};
+
+const sourceDetailsSummaryStyle: React.CSSProperties = {
+  cursor: 'pointer',
+  color: '#0f766e',
+  fontWeight: 800,
 };
 
 const reconciliationHeaderStyle: React.CSSProperties = {

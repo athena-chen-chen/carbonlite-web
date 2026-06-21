@@ -57,7 +57,18 @@ type EditableParsedActivity = {
   quantity: EditableConfidenceField<number>;
   unit: EditableConfidenceField<string>;
   sourceReference: EditableConfidenceField<string>;
+  sourcePage?: string | number | null;
+  sourceRow?: string | number | null;
+  sourceTextSnippet?: string | null;
   notes: EditableConfidenceField<string>;
+};
+
+type ImportValidationField = 'activityType' | 'quantity' | 'unit' | 'recordDate';
+
+type ImportValidationIssue = {
+  rowIndex: number;
+  field: ImportValidationField;
+  message: string;
 };
 
 type RawExtractionField = string | number | null | undefined | Record<string, any>;
@@ -94,6 +105,68 @@ type DocumentActionModel = {
 
 export function getDocumentDownloadUrl(documentId: string) {
   return buildApiUrl(`/documents/${documentId}/download`);
+}
+
+export function getImportValidationIssues(rows: EditableParsedActivity[]) {
+  const issues: ImportValidationIssue[] = [];
+
+  rows.forEach((row, index) => {
+    if (!row.selected) return;
+
+    if (!String(row.activityType.value ?? '').trim()) {
+      issues.push({
+        rowIndex: index,
+        field: 'activityType',
+        message: 'Activity type is required.',
+      });
+    }
+
+    if (
+      row.quantity.value === null ||
+      row.quantity.value === undefined ||
+      !String(row.quantity.value).trim()
+    ) {
+      issues.push({
+        rowIndex: index,
+        field: 'quantity',
+        message: 'Quantity is required.',
+      });
+    } else {
+      const quantity = Number(row.quantity.value);
+
+      if (!Number.isFinite(quantity)) {
+        issues.push({
+          rowIndex: index,
+          field: 'quantity',
+          message: 'Quantity is required.',
+        });
+      } else if (quantity < 0) {
+        issues.push({
+          rowIndex: index,
+          field: 'quantity',
+          message: 'Quantity cannot be negative.',
+        });
+      }
+    }
+
+    if (!String(row.unit.value ?? '').trim()) {
+      issues.push({
+        rowIndex: index,
+        field: 'unit',
+        message: 'Unit is required.',
+      });
+    }
+
+    if (!String(row.recordDate.value ?? '').trim()) {
+      issues.push({
+        rowIndex: index,
+        field: 'recordDate',
+        message: 'Date is required.',
+      });
+    }
+  });
+
+  return issues;
 }
 
 export function formatDuplicateDocumentMessage(input: {
@@ -440,6 +513,15 @@ export function UploadPage() {
   const uploadDragDepthRef = useRef(0);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
   const hasMissingFiles = documents.some((doc) => isMissingFileStatus(doc.status));
+  const importValidationIssues = getImportValidationIssues(parsedActivities);
+  const selectedParsedActivitiesCount = parsedActivities.filter((item) => item.selected).length;
+  const hasImportValidationErrors = importValidationIssues.length > 0;
+  const canConfirmImport =
+    confirmingId === null &&
+    !generatingMetrics &&
+    parsedActivities.length > 0 &&
+    selectedParsedActivitiesCount > 0 &&
+    !hasImportValidationErrors;
   async function loadDocuments() {
     setLoading(true);
     setError(null);
@@ -531,6 +613,9 @@ export function UploadPage() {
           value: formatSourceReference(item.sourceReference, document.fileName),
           confidence: extractFieldConfidence(item.sourceReference),
         },
+        sourcePage: getFieldValue(item.sourcePage, null) as string | number | null,
+        sourceRow: getFieldValue(item.sourceRow, null) as string | number | null,
+        sourceTextSnippet: formatOptionalExtractionField(item.sourceTextSnippet),
         notes: {
           value: formatOptionalExtractionField(item.notes),
           confidence: extractFieldConfidence(item.notes),
@@ -1262,15 +1347,16 @@ ${sampleRows.join('\n')}`,
     }
 
     const selectedActivities = parsedActivities.filter((item) => item.selected);
-    const invalidQuantityIndex = selectedActivities.findIndex((item) => {
-      const quantity = Number(item.quantity.value);
-      return !Number.isFinite(quantity) || quantity < 0;
-    });
+    const validationIssues = getImportValidationIssues(parsedActivities);
 
-    if (invalidQuantityIndex !== -1) {
-      setError(
-        `Quantity cannot be negative. Please fix selected row ${invalidQuantityIndex + 1} before importing.`,
-      );
+    if (selectedActivities.length === 0) {
+      setError('Please select at least one activity to import.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (validationIssues.length > 0) {
+      setError('Please fix validation errors before importing.');
       setSuccessMessage(null);
       return;
     }
@@ -1341,6 +1427,9 @@ ${sampleRows.join('\n')}`,
           documentId: activityDocumentId,
           sourceDocumentId: activityDocumentId,
           sourceFileName,
+          sourcePage: item.sourcePage ?? undefined,
+          sourceRow: item.sourceRow ?? undefined,
+          sourceTextSnippet: item.sourceTextSnippet ?? undefined,
           importBatchId,
           dateEstimated: item.dateEstimated,
           notes: `Imported from AI extraction. Document ID: ${activityDocumentId}`,
@@ -1405,6 +1494,20 @@ ${sampleRows.join('\n')}`,
     }
   }
 
+  function getRowValidationIssues(rowIndex: number) {
+    return importValidationIssues.filter((issue) => issue.rowIndex === rowIndex);
+  }
+
+  function getFieldValidationMessage(rowIndex: number, field: ImportValidationField) {
+    return importValidationIssues.find(
+      (issue) => issue.rowIndex === rowIndex && issue.field === field,
+    )?.message;
+  }
+
+  function getRowStatusLabel(rowIndex: number) {
+    return getRowValidationIssues(rowIndex).length > 0 ? 'Validation Error' : 'Ready';
+  }
+
   function getConfidenceStyle(confidence: string): React.CSSProperties {
     if (confidence === 'low') {
       return {
@@ -1439,7 +1542,9 @@ function updateParsedActivityField(
         const currentField = item[field] as EditableConfidenceField<any>;
         const nextValue =
           field === 'quantity'
-            ? Number(value)
+            ? value.trim() === ''
+              ? null
+              : Number(value)
             : formatOptionalExtractionField(value);
 
         return {
@@ -1902,12 +2007,15 @@ function updateParsedActivityField(
               <button
                 type="button"
                 onClick={() => handleConfirmImport()}
-                disabled={
-                  confirmingId !== null ||
-                  generatingMetrics ||
-                  parsedActivities.length === 0
+                disabled={!canConfirmImport}
+                title={
+                  hasImportValidationErrors
+                    ? 'Please fix validation errors before importing.'
+                    : selectedParsedActivitiesCount === 0
+                    ? 'Please select at least one activity to import.'
+                    : undefined
                 }
-                style={confirmButtonStyle(parsedActivities.length > 0)}
+                style={confirmButtonStyle(canConfirmImport)}
               >
                 {generatingMetrics
                   ? 'Generating metrics...'
@@ -1921,11 +2029,25 @@ function updateParsedActivityField(
           {parsedActivities.length === 0 ? (
             <div style={{ padding: 16 }}>No extracted activities.</div>
           ) : (
+            <>
+            {hasImportValidationErrors ? (
+              <div style={validationSummaryStyle} role="alert">
+                <strong>Please correct the following:</strong>
+                <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                  {importValidationIssues.map((issue) => (
+                    <li key={`${issue.rowIndex}-${issue.field}`}>
+                      Row {issue.rowIndex + 1}: {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div style={previewTableWrapStyle}>
             <table style={previewTableStyle}>
               <thead>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>Select</th>
+                  <th style={thStyle}>Status</th>
                   <th style={activityTypeThStyle}>Activity Type</th>
                   <th style={thStyle}>Record Date</th>
                   <th style={thStyle}>Quantity</th>
@@ -1936,7 +2058,14 @@ function updateParsedActivityField(
                 </tr>
               </thead>
               <tbody>
-                {parsedActivities.map((item, index) => (
+                {parsedActivities.map((item, index) => {
+                  const activityTypeError = getFieldValidationMessage(index, 'activityType');
+                  const recordDateError = getFieldValidationMessage(index, 'recordDate');
+                  const quantityError = getFieldValidationMessage(index, 'quantity');
+                  const unitError = getFieldValidationMessage(index, 'unit');
+                  const rowStatusLabel = getRowStatusLabel(index);
+
+                  return (
                   <tr key={`parsed-${index}`}>
                     <td style={tdStyle}>
                       <input
@@ -1948,13 +2077,22 @@ function updateParsedActivityField(
                       />
                     </td>
 
+                    <td style={tdStyle}>
+                      <span style={rowStatusBadgeStyle(rowStatusLabel)}>
+                        {rowStatusLabel}
+                      </span>
+                    </td>
+
                     <td style={activityTypeTdStyle}>
                       <select
                         value={item.activityType.value ?? ''}
                         onChange={(e) =>
                           updateParsedActivityField(index, 'activityType', e.target.value)
                         }
-                        style={activityTypeSelectStyle(item.activityType.confidence)}
+                        style={validatedInputStyle(
+                          activityTypeSelectStyle(item.activityType.confidence),
+                          Boolean(activityTypeError),
+                        )}
                       >
                         <option value="">-- Select --</option>
                         {activityTypes.map((type) => (
@@ -1963,6 +2101,9 @@ function updateParsedActivityField(
                           </option>
                         ))}
                       </select>
+                      {activityTypeError ? (
+                        <div style={fieldErrorStyle}>{activityTypeError}</div>
+                      ) : null}
                     </td>
 
                     <td style={tdStyle}>
@@ -1978,8 +2119,12 @@ function updateParsedActivityField(
                           padding: 8,
                           borderRadius: 6,
                           ...getConfidenceStyle(item.recordDate.confidence),
+                          ...(recordDateError ? validationInputOverrideStyle : {}),
                         }}
                       />
+                      {recordDateError ? (
+                        <div style={fieldErrorStyle}>{recordDateError}</div>
+                      ) : null}
                       {item.dateEstimated ? (
                         <div style={dateWarningStyle}>
                           {item.recordDate.value
@@ -2002,8 +2147,12 @@ function updateParsedActivityField(
                           padding: 8,
                           borderRadius: 6,
                           ...getConfidenceStyle(item.quantity.confidence),
+                          ...(quantityError ? validationInputOverrideStyle : {}),
                         }}
                       />
+                      {quantityError ? (
+                        <div style={fieldErrorStyle}>{quantityError}</div>
+                      ) : null}
                     </td>
 
                     <td style={tdStyle}>
@@ -2018,8 +2167,12 @@ function updateParsedActivityField(
                           padding: 8,
                           borderRadius: 6,
                           ...getConfidenceStyle(item.unit.confidence),
+                          ...(unitError ? validationInputOverrideStyle : {}),
                         }}
                       />
+                      {unitError ? (
+                        <div style={fieldErrorStyle}>{unitError}</div>
+                      ) : null}
                     </td>
 
                     <td style={tdStyle}>
@@ -2059,10 +2212,12 @@ function updateParsedActivityField(
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             </div>
+            </>
           )}
         </div>
       ) : null}
@@ -2366,6 +2521,16 @@ function activityTypeSelectStyle(confidence: string): React.CSSProperties {
   };
 }
 
+function validatedInputStyle(
+  baseStyle: React.CSSProperties,
+  hasError: boolean,
+): React.CSSProperties {
+  return {
+    ...baseStyle,
+    ...(hasError ? validationInputOverrideStyle : {}),
+  };
+}
+
 function getPreviewConfidenceStyle(confidence: string): React.CSSProperties {
   if (confidence === 'low') {
     return {
@@ -2384,6 +2549,44 @@ function getPreviewConfidenceStyle(confidence: string): React.CSSProperties {
   return {
     background: '#f6fff7',
     border: '1px solid #b7e4c7',
+  };
+}
+
+const validationInputOverrideStyle: React.CSSProperties = {
+  background: '#fff1f2',
+  border: '1px solid #ef4444',
+};
+
+const fieldErrorStyle: React.CSSProperties = {
+  marginTop: 5,
+  color: '#b91c1c',
+  fontSize: 12,
+  fontWeight: 600,
+};
+
+const validationSummaryStyle: React.CSSProperties = {
+  margin: '0 16px 14px',
+  padding: '12px 14px',
+  borderRadius: 8,
+  border: '1px solid #fecaca',
+  background: '#fff1f2',
+  color: '#991b1b',
+  fontSize: 14,
+};
+
+function rowStatusBadgeStyle(status: string): React.CSSProperties {
+  const isError = status === 'Validation Error';
+
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    whiteSpace: 'nowrap',
+    borderRadius: 999,
+    padding: '3px 8px',
+    fontSize: 12,
+    fontWeight: 700,
+    color: isError ? '#b91c1c' : '#047857',
+    background: isError ? '#fee2e2' : '#d1fae5',
   };
 }
 

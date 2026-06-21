@@ -67,9 +67,12 @@ describe('FormalReportPreview', () => {
         ]}
         sourceEvidenceRows={[
           {
-            sourceReference: 'fuel-invoice.pdf',
+            activityType: 'DIESEL',
+            quantity: '120',
+            unit: 'L',
+            sourceFile: 'fuel-invoice.pdf',
+            sourceReference: 'fuel-invoice.pdf · Page 1 · Line item 3',
             sourceType: 'AI Extraction',
-            recordCount: 1,
             notes: 'Imported from AI extraction.',
           },
         ]}
@@ -120,7 +123,7 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('D. Calculation Summary')).toBeInTheDocument();
     expect(screen.getByText('E. Activity Breakdown')).toBeInTheDocument();
     expect(screen.getByText('F. Conversion Factors Used')).toBeInTheDocument();
-    expect(screen.getByText('G. Calculation Details')).toBeInTheDocument();
+    expect(screen.getByText('G. Calculation Methodology')).toBeInTheDocument();
     expect(screen.getByText('H. Source Evidence')).toBeInTheDocument();
     expect(screen.getByText('I. Methodology and Disclaimer')).toBeInTheDocument();
     expect(screen.getAllByText('321.6 kgCO2e').length).toBeGreaterThan(0);
@@ -132,6 +135,11 @@ describe('FormalReportPreview', () => {
     expect(screen.getAllByText('DIESEL').length).toBeGreaterThan(0);
     expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
+    expect(screen.getByText('100 × 2.68')).toBeInTheDocument();
+    expect(screen.getByText('100 × 2.68 = 268 kgCO2e')).toBeInTheDocument();
+    expect(screen.getByText('2.68 kgCO2e/L')).toBeInTheDocument();
+    expect(screen.getByText('Source File')).toBeInTheDocument();
+    expect(screen.getByText('fuel-invoice.pdf · Page 1 · Line item 3')).toBeInTheDocument();
 
     const tables = screen.getAllByRole('table');
     expect(within(tables[0]).getAllByText('Input Data').length).toBeGreaterThan(0);
@@ -254,26 +262,45 @@ describe('Version 1 report presentation data', () => {
 });
 
 describe('buildSourceEvidenceRows', () => {
-  it('groups source evidence by source reference and source type', () => {
+  it('keeps source evidence per activity and preserves source references', () => {
     expect(
       buildSourceEvidenceRows([
         {
+          activityType: 'ELECTRICITY',
+          quantity: 500,
+          unit: 'kWh',
+          sourceFileName: 'utility.pdf',
           sourceReference: 'utility.pdf',
+          sourcePage: 2,
+          sourceRow: 3,
           sourceType: 'AI_EXTRACTION',
-          notes: 'Page 1',
+          sourceTextSnippet: 'Metered usage 500 kWh',
         },
         {
-          sourceReference: 'utility.pdf',
-          sourceType: 'AI_EXTRACTION',
-          notes: 'Page 2',
+          activityType: 'GASOLINE',
+          quantity: 100,
+          unit: 'L',
+          sourceType: 'MANUAL',
         },
       ]),
     ).toEqual([
       {
-        sourceReference: 'utility.pdf',
+        activityType: 'ELECTRICITY',
+        quantity: '500',
+        unit: 'kWh',
+        sourceFile: 'utility.pdf',
+        sourceReference: 'utility.pdf · Page 2 · Line item 3',
         sourceType: 'AI Extraction',
-        recordCount: 2,
-        notes: 'Page 1; Page 2',
+        notes: 'Metered usage 500 kWh',
+      },
+      {
+        activityType: 'GASOLINE',
+        quantity: '100',
+        unit: 'L',
+        sourceFile: 'Manual entry',
+        sourceReference: 'Manual entry',
+        sourceType: 'Manual entry',
+        notes: '',
       },
     ]);
   });

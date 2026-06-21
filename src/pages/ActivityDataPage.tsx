@@ -23,6 +23,9 @@ type ActivityDataItem = {
   unit: string;
   sourceType: string;
   sourceReference?: string | null;
+  sourceFileName?: string | null;
+  sourcePage?: string | number | null;
+  sourceRow?: string | number | null;
   notes?: string | null;
 };
 
@@ -41,6 +44,7 @@ const [selectedIds, setSelectedIds] = useState<string[]>([]);
 const [reloadKey, setReloadKey] = useState(0);
 const [currentPage, setCurrentPage] = useState(1);
 const [bulkDeleting, setBulkDeleting] = useState(false);
+const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
     setLoading(true);
@@ -140,6 +144,41 @@ function handleGenerateReportFromSelection() {
     },
   });
 }
+
+function handleViewCalculation(rowId: string) {
+  navigate('/reports', {
+    state: {
+      reportScope: 'selectedRecords',
+      selectedActivityRecordIds: [rowId],
+      selectedRecordIds: [rowId],
+    },
+  });
+}
+
+function formatActivitySourceType(sourceType?: string | null) {
+  switch (sourceType) {
+    case 'DOCUMENT_AI':
+    case 'AI_EXTRACTION':
+      return 'Document';
+    case 'MANUAL':
+      return 'Manual Entry';
+    default:
+      return sourceType || '-';
+  }
+}
+
+function formatActivitySourceReference(row: ActivityDataItem) {
+  if (row.sourceType === 'MANUAL') return 'Manual Entry';
+
+  const parts = [
+    row.sourceFileName,
+    row.sourceReference,
+    row.sourcePage ? `Page ${row.sourcePage}` : '',
+    row.sourceRow ? `Line item ${row.sourceRow}` : '',
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(' · ') : 'Source not specified';
+}
   async function handleBulkDelete() {
   if (!selectedIds.length) return;
 
@@ -179,6 +218,7 @@ function handleGenerateReportFromSelection() {
   }
 }
 function startEdit(row: any) {
+  setOpenActionMenuId(null);
   setEditingId(row.id);
   setEditRow({
     ...row,
@@ -236,6 +276,7 @@ function validateEditRow(row: any) {
   return errors;
 }
 async function handleDelete(row: ActivityDataItem) {
+  setOpenActionMenuId(null);
   if (!confirm('Delete this record?')) return;
 
   setError(null);
@@ -325,15 +366,47 @@ function renderNormalRow(row){
       <td style={tdStyle}>{row.activityType}</td>
       <td style={tdStyle}>{row.quantity}</td>
       <td style={tdStyle}>{row.unit}</td>
-      <td style={tdStyle}>{row.sourceType}</td>
-      <td style={tdStyle}>
+      <td style={tdStyle}>{formatActivitySourceType(row.sourceType)}</td>
+      <td style={sourceReferenceCellStyle}>{formatActivitySourceReference(row)}</td>
+      <td style={actionsCellStyle}>
         <div style={rowActionStyle}>
-          <button onClick={() => startEdit(row)} style={secondaryActionBtn}>
-            Edit
+          <button onClick={() => handleViewCalculation(row.id)} style={secondaryActionBtn}>
+            View Calculation
           </button>
-          <button onClick={() => handleDelete(row)} style={dangerActionBtn}>
-            Delete
-          </button>
+          <div style={overflowMenuWrapperStyle}>
+            <button
+              type="button"
+              aria-label={`More actions for ${row.activityType} ${row.recordDate?.slice(0, 10) ?? ''}`}
+              aria-haspopup="menu"
+              aria-expanded={openActionMenuId === row.id}
+              onClick={() =>
+                setOpenActionMenuId((current) => (current === row.id ? null : row.id))
+              }
+              style={overflowButtonStyle}
+            >
+              ⋮
+            </button>
+            {openActionMenuId === row.id ? (
+              <div role="menu" style={overflowMenuStyle}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => startEdit(row)}
+                  style={menuItemStyle}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleDelete(row)}
+                  style={menuItemDangerStyle}
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </td>
     </tr>
@@ -413,6 +486,15 @@ function renderEditRow(row){
           <option value="DOCUMENT_AI">AI</option>
           <option value="AI_EXTRACTION">AI Extraction</option>
         </select>
+      </td>
+
+      <td style={tdStyle}>
+        <input
+          value={editRow.sourceReference ?? ''}
+          onChange={(e) => updateEditField('sourceReference', e.target.value)}
+          style={getEditInputStyle('sourceReference')}
+          placeholder="Source reference"
+        />
       </td>
 
       <td style={tdStyle}>
@@ -557,6 +639,7 @@ const errorTextStyle: React.CSSProperties = {
                   <th style={thStyle}>Quantity</th>
                   <th style={thStyle}>Unit</th>
                   <th style={thStyle}>Source</th>
+                  <th style={thStyle}>Source Reference</th>
                   <th style={thStyle}></th>
                 </tr>
               </thead>
@@ -638,9 +721,10 @@ const quickEntryIntroStyle: React.CSSProperties = {
 
 const rowActionStyle = {
   display: 'flex',
-  gap: 8,
+  gap: 6,
   alignItems: 'center',
-  flexWrap: 'wrap',
+  flexWrap: 'nowrap' as const,
+  whiteSpace: 'nowrap' as const,
 };
 
 const editRowActionStyle = {
@@ -669,11 +753,12 @@ const primaryActionBtn = {
 };
 
 const secondaryActionBtn = {
-  padding: '8px 14px',
+  padding: '6px 10px',
   borderRadius: 8,
   border: '1px solid #d1d5db',
   background: '#fff',
   color: '#111827',
+  fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
 };
@@ -721,18 +806,87 @@ function generateReportButtonStyle(selectedCount: number): React.CSSProperties {
 
 const thStyle = {
   textAlign: 'left' as const,
-  padding: '12px 14px',
+  padding: '9px 12px',
   background: '#f8fafc',
   color: '#475569',
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 700,
   borderBottom: '1px solid #e5e7eb',
 };
 
 const tdStyle = {
-  padding: '12px 14px',
+  padding: '8px 12px',
   borderBottom: '1px solid #f1f5f9',
-  verticalAlign: 'top' as const,
+  verticalAlign: 'middle' as const,
+  fontSize: 13,
+  lineHeight: 1.25,
+};
+
+const sourceReferenceCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  minWidth: 220,
+  maxWidth: 320,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: '#475569',
+};
+
+const actionsCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  width: 180,
+  position: 'relative',
+};
+
+const overflowMenuWrapperStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+};
+
+const overflowButtonStyle: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#0f172a',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const overflowMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 6px)',
+  right: 0,
+  zIndex: 20,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  minWidth: 96,
+  padding: 6,
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#fff',
+  boxShadow: '0 14px 30px rgba(15, 23, 42, 0.14)',
+};
+
+const menuItemStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '8px 10px',
+  border: 'none',
+  borderRadius: 8,
+  background: '#fff',
+  color: '#0f172a',
+  textAlign: 'left',
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+
+const menuItemDangerStyle: React.CSSProperties = {
+  ...menuItemStyle,
+  color: '#b91c1c',
 };
 
 const paginationStyle: React.CSSProperties = {

@@ -7,6 +7,12 @@ import {
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 import type { CalculationAuditDetail } from '../services/metrics';
+import {
+  buildCalculatedFormula,
+  buildFormulaInputs,
+  formatTraceabilitySource,
+  formatTraceableFactor,
+} from '../utils/calculationTraceability';
 
 export { formatFuelUsageBreakdown };
 
@@ -111,42 +117,58 @@ export function buildConversionFactorTraceabilityRows(
 }
 
 export type SourceEvidenceRow = {
+  activityType: string;
+  quantity: string;
+  unit: string;
+  sourceFile: string;
   sourceReference: string;
   sourceType: string;
-  recordCount: number;
   notes: string;
 };
 
 export function buildSourceEvidenceRows(
   activities: Array<{
+    activityType?: string | null;
+    quantity?: string | number | null;
+    unit?: string | null;
     sourceReference?: string | null;
     sourceType?: string | null;
+    sourceFileName?: string | null;
+    sourcePage?: string | number | null;
+    sourceRow?: string | number | null;
+    sourceTextSnippet?: string | null;
     notes?: string | null;
   }>,
 ) {
-  const evidence = new Map<string, SourceEvidenceRow>();
-
-  activities.forEach((activity) => {
-    const sourceReference =
-      activity.sourceReference?.trim() || 'No source reference provided';
+  return activities.map((activity) => {
     const sourceType = formatSourceType(activity.sourceType);
-    const key = `${sourceType}:${sourceReference}`;
-    const existing = evidence.get(key) ?? {
-      sourceReference,
+    const isManual = sourceType === 'Manual entry';
+    const sourceReferenceParts = [
+      activity.sourceReference?.trim(),
+      activity.sourcePage ? `Page ${activity.sourcePage}` : '',
+      activity.sourceRow ? `Line item ${activity.sourceRow}` : '',
+    ].filter(Boolean);
+
+    return {
+      activityType: activity.activityType || 'Not specified',
+      quantity:
+        activity.quantity === null || activity.quantity === undefined
+          ? '-'
+          : String(activity.quantity),
+      unit: activity.unit || '-',
+      sourceFile:
+        activity.sourceFileName?.trim() ||
+        (isManual ? 'Manual entry' : 'Source not specified'),
+      sourceReference: isManual
+        ? 'Manual entry'
+        : sourceReferenceParts.join(' · ') || 'Source not specified',
       sourceType,
-      recordCount: 0,
-      notes: '',
+      notes:
+        activity.sourceTextSnippet ||
+        activity.notes ||
+        '',
     };
-
-    existing.recordCount += 1;
-    if (activity.notes && !existing.notes.includes(activity.notes)) {
-      existing.notes = [existing.notes, activity.notes].filter(Boolean).join('; ');
-    }
-
-    evidence.set(key, existing);
   });
-
-  return Array.from(evidence.values());
 }
 
 export function formatSourceType(sourceType?: string | null) {
@@ -154,7 +176,7 @@ export function formatSourceType(sourceType?: string | null) {
 
   const value = sourceType.toUpperCase();
 
-  if (value === 'MANUAL') return 'Manual';
+  if (value === 'MANUAL') return 'Manual entry';
   if (value === 'CSV') return 'CSV Import';
   if (value === 'EXCEL') return 'Excel Import';
   if (value === 'PASTE') return 'Pasted from Excel';
@@ -322,7 +344,10 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="G. Calculation Details">
+      <ReportSection title="G. Calculation Methodology">
+        <p style={sectionHelperStyle}>
+          Each calculated row shows the activity quantity, matched conversion factor, source, formula, and emissions result.
+        </p>
         <details>
           <summary style={detailsSummaryStyle}>
             Show calculation audit ({calculationDetails.length} records)
@@ -332,26 +357,24 @@ export function FormalReportPreview({
               headers={[
                 'Activity Type',
                 'Quantity',
-                'Unit',
-                'Factor Used',
+                'Factor',
                 'Source',
                 'Year',
                 'Jurisdiction',
-                'Emissions kgCO2e',
+                'Formula',
+                'Result',
                 'Status',
               ]}
               emptyMessage="No calculation details available."
               rows={calculationDetails.map((item) => [
                 item.activityType,
-                item.activityQuantity,
-                item.activityUnit,
-                item.factorValue === null || item.factorValue === undefined
-                  ? '-'
-                  : `${item.factorValue} ${item.factorResultUnit || ''} / ${item.factorInputUnit || item.activityUnit}`.trim(),
-                item.factorSource || '-',
+                `${item.activityQuantity} ${item.activityUnit}`,
+                formatTraceableFactor(item),
+                formatTraceabilitySource(item),
                 item.sourceYear ?? item.reportingYear,
                 item.jurisdiction || '-',
-                item.calculatedEmissionsKgCO2e ?? '-',
+                buildFormulaInputs(item),
+                buildCalculatedFormula(item),
                 item.status,
               ])}
             />
@@ -361,12 +384,15 @@ export function FormalReportPreview({
 
       <ReportSection title="H. Source Evidence">
         <SimpleTable
-          headers={['Source Document / File', 'Source Type', 'Record Count', 'Notes']}
+          headers={['Activity Type', 'Quantity', 'Unit', 'Source File', 'Source Reference', 'Source Type', 'Notes']}
           emptyMessage="No source evidence available."
           rows={sourceEvidenceRows.map((item) => [
+            item.activityType,
+            item.quantity,
+            item.unit,
+            item.sourceFile,
             item.sourceReference,
             item.sourceType,
-            item.recordCount,
             item.notes || '-',
           ])}
         />
@@ -591,6 +617,12 @@ const qualitySuccessStyle: React.CSSProperties = {
   marginTop: 14,
   color: '#047857',
   fontWeight: 700,
+};
+
+const sectionHelperStyle: React.CSSProperties = {
+  margin: '0 0 12px',
+  color: '#475569',
+  lineHeight: 1.55,
 };
 
 const detailsSummaryStyle: React.CSSProperties = {

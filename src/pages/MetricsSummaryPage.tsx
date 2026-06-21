@@ -10,6 +10,7 @@ import {
   loadDefaultMetricsDateRange,
   loadMetricsOverview,
 } from '../services/metricsOverview';
+import type { CalculationAuditDetail } from '../services/metrics';
 import {
   buildMetricsSummaryTableRows,
   MetricsSummarySection,
@@ -38,6 +39,7 @@ export function MetricsSummaryPage() {
     },
   });
   const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
+  const [calculationDetails, setCalculationDetails] = useState<CalculationAuditDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(
@@ -140,6 +142,7 @@ export function MetricsSummaryPage() {
         skippedReasons: overview.skippedReasons,
       });
       setMissingFactors(overview.missingFactors);
+      setCalculationDetails(overview.calculationDetails);
       setLastUpdated(new Date());
     } catch (err) {
       if (requestSequence === requestSequenceRef.current) {
@@ -439,6 +442,7 @@ function handleDownloadPDF() {
         totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
         countSummary={countSummary}
         missingFactors={missingFactors}
+        calculationDetails={calculationDetails}
         emptyMessage={
           activities.length === 0 && countSummary.totalRecordsFound > 0
             ? 'No records found for selected period.'

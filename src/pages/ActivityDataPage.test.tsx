@@ -39,6 +39,10 @@ describe('ActivityDataPage delete flows', () => {
       quantity: 200,
       unit: 'kWh',
       sourceType: 'AI_EXTRACTION',
+      sourceFileName: 'utility.pdf',
+      sourceReference: 'Utility bill usage',
+      sourcePage: 1,
+      sourceRow: 3,
     },
   ];
 
@@ -77,6 +81,11 @@ describe('ActivityDataPage delete flows', () => {
         <ActivityDataPage />
       </MemoryRouter>,
     );
+  }
+
+  async function clickFirstRowDeleteAction() {
+    await userEvent.click(screen.getAllByLabelText(/More actions for/i)[0]);
+    await userEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));
   }
 
   it('uses neutral disabled state when no rows are selected and red enabled state when selected', async () => {
@@ -143,7 +152,7 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     await screen.findByText('DIESEL');
-    await userEvent.click(screen.getAllByRole('button', { name: /^Delete$/i })[0]);
+    await clickFirstRowDeleteAction();
 
     expect(deleteActivityData).toHaveBeenCalledWith('activity-1');
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
@@ -196,9 +205,20 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     await screen.findByText('DIESEL');
-    await userEvent.click(screen.getAllByRole('button', { name: /^Delete$/i })[0]);
+    await clickFirstRowDeleteAction();
 
     expect(await screen.findByText('You can only delete your own activity records.')).toBeInTheDocument();
     expect(screen.getByText('DIESEL')).toBeInTheDocument();
+  });
+
+  it('shows source references for imported records and manual fallback for manual records', async () => {
+    renderPage();
+
+    expect(await screen.findByText('Source Reference')).toBeInTheDocument();
+    expect(screen.getAllByText('Manual Entry').length).toBeGreaterThan(0);
+    expect(screen.getByText('Document')).toBeInTheDocument();
+    expect(
+      screen.getByText('utility.pdf · Utility bill usage · Page 1 · Line item 3'),
+    ).toBeInTheDocument();
   });
 });

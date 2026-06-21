@@ -10,6 +10,9 @@ export type ParsedActivity = {
   sourceReference?: string | null;
   sourceDocumentId?: string | null;
   sourceFileName?: string | null;
+  sourcePage?: string | number | null;
+  sourceRow?: string | number | null;
+  sourceTextSnippet?: string | null;
   importBatchId?: string | null;
   dateEstimated?: boolean;
   notes?: string | null;

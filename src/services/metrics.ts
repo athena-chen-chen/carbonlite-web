@@ -96,6 +96,10 @@ export type MetricsSummaryResponse = {
     estimatedEmissionsKgCO2e: number;
     sourceType: string;
     sourceReference?: string | null;
+    sourceFileName?: string | null;
+    sourcePage?: string | number | null;
+    sourceRow?: string | number | null;
+    sourceTextSnippet?: string | null;
     notes?: string | null;
     factorId: string;
   }>;
@@ -127,6 +131,9 @@ export type MetricsSummaryResponse = {
     notes?: string | null;
     sourceDocumentId?: string | null;
     sourceFileName?: string | null;
+    sourcePage?: string | number | null;
+    sourceRow?: string | number | null;
+    sourceTextSnippet?: string | null;
   }>;
 };
 
@@ -164,6 +171,9 @@ export type CalculationAuditDetail = {
   sourceType: string;
   sourceReference?: string | null;
   sourceFileName?: string | null;
+  sourcePage?: string | number | null;
+  sourceRow?: string | number | null;
+  sourceTextSnippet?: string | null;
   sourceDocumentId?: string | null;
   notes?: string | null;
 };

@@ -8,6 +8,9 @@ export type ApiErrorCode =
   | 'EXTRACTION_FAILED'
   | 'TIMEOUT'
   | 'PAGE_SIZE_TOO_LARGE'
+  | 'MISSING_UNIT'
+  | 'MISSING_QUANTITY'
+  | 'MISSING_ACTIVITY_TYPE'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'NOT_FOUND'
@@ -57,6 +60,23 @@ function getApiErrorCode(
     return 'PAGE_SIZE_TOO_LARGE';
   }
 
+  if (status === 400 && /\bunit\b.*required|required.*\bunit\b/.test(lowerMessage)) {
+    return 'MISSING_UNIT';
+  }
+
+  if (status === 400 && /\bquantity\b.*required|required.*\bquantity\b/.test(lowerMessage)) {
+    return 'MISSING_QUANTITY';
+  }
+
+  if (
+    status === 400 &&
+    /activity\s*type.*required|required.*activity\s*type|activitytype.*required|required.*activitytype/.test(
+      lowerMessage,
+    )
+  ) {
+    return 'MISSING_ACTIVITY_TYPE';
+  }
+
   if (status === 401) return 'UNAUTHORIZED';
   if (status === 403) return 'FORBIDDEN';
   if (status === 404) return 'NOT_FOUND';
@@ -77,6 +97,12 @@ function getFriendlyApiErrorMessage(code: ApiErrorCode) {
       return 'The request took too long. Please retry.';
     case 'PAGE_SIZE_TOO_LARGE':
       return 'Too many records were requested. Please refresh and try again.';
+    case 'MISSING_UNIT':
+      return 'Unit is required.';
+    case 'MISSING_QUANTITY':
+      return 'Quantity is required.';
+    case 'MISSING_ACTIVITY_TYPE':
+      return 'Activity type is required.';
     case 'UNAUTHORIZED':
       return 'Your session has expired. Please log in again.';
     case 'FORBIDDEN':

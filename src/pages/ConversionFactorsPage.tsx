@@ -97,6 +97,29 @@ function formatAuditDate(value?: string | null) {
   return date.toLocaleString();
 }
 
+function formatActivityTypeDisplay(value?: string | null) {
+  if (!value) return '-';
+
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatFactorNameDisplay(item: ConversionFactorItem) {
+  const activityTypeLabel = item.activityType ? formatActivityTypeDisplay(item.activityType) : '';
+
+  return activityTypeLabel || item.name;
+}
+
+function formatTableSourceAuthority(value?: string | null) {
+  if (!value) return '-';
+  if (value.toLowerCase().includes('carbonlite')) return 'CarbonLite';
+
+  return value;
+}
+
 export function ConversionFactorsPage() {
   const location = useLocation();
   const prefillFactor = (location.state as ConversionFactorRouteState)?.prefillFactor;
@@ -821,9 +844,9 @@ export function ConversionFactorsPage() {
 
                   return (
                       <tr key={item.id} data-testid={`factor-row-${item.id}`}>
-                        <td style={tdStyle}>{item.activityType ?? '-'}</td>
-                        <td style={tdStyle}>
-                          <div style={{ fontWeight: 600 }}>{item.name}</div>
+                        <td style={tdStyle}>{formatActivityTypeDisplay(item.activityType)}</td>
+                        <td style={factorNameCellStyle}>
+                          {formatFactorNameDisplay(item)}
                         </td>
                         <td
                           style={factorValueCellStyle}
@@ -832,7 +855,9 @@ export function ConversionFactorsPage() {
                           {formatFactorValue(item.factorValue)}
                         </td>
                         <td style={tdStyle}>{item.unit}</td>
-                        <td style={tdStyle}>{traceability.sourceAuthority || '-'}</td>
+                        <td style={sourceAuthorityCellStyle}>
+                          {formatTableSourceAuthority(traceability.sourceAuthority)}
+                        </td>
                         <td style={tdStyle}>
                           {item.isSystemDefault ? (
                             <Badge label="System" color="#1d4ed8" background="#dbeafe" />
@@ -846,7 +871,7 @@ export function ConversionFactorsPage() {
                             onClick={() => setSelectedFactor(item)}
                             style={detailsButtonStyle}
                           >
-                            Details
+                            View
                           </button>
                           <div style={overflowMenuWrapperStyle}>
                             <button
@@ -981,8 +1006,8 @@ function Badge({
         display: 'inline-flex',
         alignItems: 'center',
         borderRadius: 999,
-        padding: '4px 10px',
-        fontSize: 12,
+        padding: '2px 7px',
+        fontSize: 11,
         fontWeight: 700,
         color,
         background,
@@ -1283,33 +1308,54 @@ const tableHeaderStyle: React.CSSProperties = {
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
-  padding: '10px 12px',
+  padding: '8px 12px',
   borderBottom: '1px solid #ddd',
   color: '#475569',
-  fontSize: 13,
+  fontSize: 12,
+  fontWeight: 800,
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: '9px 12px',
+  padding: '7px 12px',
   borderBottom: '1px solid #eee',
   verticalAlign: 'middle',
+  fontSize: 13,
+  lineHeight: 1.25,
 };
 
 const factorValueCellStyle: React.CSSProperties = {
   ...tdStyle,
   color: '#065f46',
-  fontSize: 19,
-  fontWeight: 800,
+  fontSize: 22,
+  fontWeight: 900,
   letterSpacing: 0,
+};
+
+const factorNameCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  maxWidth: 180,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontWeight: 700,
+};
+
+const sourceAuthorityCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  maxWidth: 150,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: '#475569',
 };
 
 const actionsCellStyle: React.CSSProperties = {
   ...tdStyle,
   display: 'flex',
   alignItems: 'center',
-  gap: 8,
+  gap: 6,
   position: 'relative',
-  width: 128,
+  width: 108,
 };
 
 const overflowMenuWrapperStyle: React.CSSProperties = {
@@ -1318,8 +1364,8 @@ const overflowMenuWrapperStyle: React.CSSProperties = {
 };
 
 const overflowButtonStyle: React.CSSProperties = {
-  width: 34,
-  height: 34,
+  width: 30,
+  height: 30,
   borderRadius: 8,
   border: '1px solid #cbd5e1',
   background: '#fff',
@@ -1373,11 +1419,12 @@ function menuItemDangerStyle(disabled: boolean): React.CSSProperties {
 }
 
 const detailsButtonStyle: React.CSSProperties = {
-  padding: '8px 11px',
+  padding: '6px 10px',
   borderRadius: 8,
   border: '1px solid #cbd5e1',
   background: '#fff',
   color: '#0f172a',
+  fontSize: 12,
   fontWeight: 700,
   cursor: 'pointer',
 };

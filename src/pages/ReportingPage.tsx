@@ -28,6 +28,12 @@ import { trackActivityEvent } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
 import { trackEvent } from '../services/ga4.service';
 import type { CalculationAuditDetail } from '../services/metrics';
+import {
+  buildCalculatedFormula,
+  buildFormulaInputs,
+  formatTraceabilitySource,
+  formatTraceableFactor,
+} from '../utils/calculationTraceability';
 
 type ActivityItem = {
   id: string;
@@ -536,32 +542,30 @@ function handleDownloadPDF() {
     nextY = 20;
   }
 
-  drawPdfSectionTitle(doc, 'Calculation Details', nextY + 10);
+  drawPdfSectionTitle(doc, 'Calculation Methodology', nextY + 10);
   autoTable(doc, {
     startY: nextY + 16,
     head: [[
       'Activity Type',
       'Quantity',
-      'Unit',
-      'Factor Used',
+      'Factor',
       'Source',
       'Year',
       'Jurisdiction',
-      'Emissions kgCO2e',
+      'Formula',
+      'Result',
       'Status',
     ]],
     body: calculationDetails.length
       ? calculationDetails.map((item) => [
           item.activityType,
-          item.activityQuantity,
-          item.activityUnit,
-          item.factorValue === null || item.factorValue === undefined
-            ? ''
-            : `${item.factorValue} ${item.factorResultUnit || ''} / ${item.factorInputUnit || item.activityUnit}`,
-          item.factorSource,
+          `${item.activityQuantity} ${item.activityUnit}`,
+          formatTraceableFactor(item),
+          formatTraceabilitySource(item),
           item.sourceYear ?? item.reportingYear,
           item.jurisdiction,
-          item.calculatedEmissionsKgCO2e ?? '',
+          buildFormulaInputs(item),
+          buildCalculatedFormula(item),
           item.status,
         ])
       : [['No calculation details available.', '', '', '', '', '', '', '', '']],
@@ -580,15 +584,18 @@ function handleDownloadPDF() {
 
   autoTable(doc, {
     startY: nextY + 18,
-    head: [['Source Document / File', 'Source Type', 'Record Count', 'Notes']],
+    head: [['Activity Type', 'Quantity', 'Unit', 'Source File', 'Source Reference', 'Source Type', 'Notes']],
     body: sourceEvidenceRows.length
       ? sourceEvidenceRows.map((item) => [
+          item.activityType,
+          item.quantity,
+          item.unit,
+          item.sourceFile,
           item.sourceReference,
           item.sourceType,
-          item.recordCount,
           item.notes,
         ])
-      : [['No source evidence available.', '', '', '']],
+      : [['No source evidence available.', '', '', '', '', '', '']],
   });
 
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
@@ -903,6 +910,7 @@ const exportDisabledTitle = exportDisabled
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}
             missingFactors={missingFactors}
+            calculationDetails={calculationDetails}
             emptyMessage={
               activities.length === 0 && countSummary.totalRecordsFound > 0
                 ? 'No records found for selected period.'
@@ -918,6 +926,7 @@ const exportDisabledTitle = exportDisabled
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}
             missingFactors={missingFactors}
+            calculationDetails={calculationDetails}
             emptyMessage={
               activities.length === 0 && countSummary.totalRecordsFound > 0
                 ? 'No records found for selected period.'
