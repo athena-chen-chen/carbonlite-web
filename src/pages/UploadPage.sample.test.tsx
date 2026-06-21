@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { UploadPage } from './UploadPage';
 import { getDocuments } from '../services/documents';
-import { extractDocument } from '../services/documentExtraction';
+import { ApiError } from '../services/api';
+import { extractDocument, getDocumentExtraction } from '../services/documentExtraction';
 
 vi.mock('../services/documents', () => ({
   deleteDocument: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../services/documents', () => ({
 vi.mock('../services/documentExtraction', () => ({
   confirmDocumentImport: vi.fn(),
   extractDocument: vi.fn(),
+  getDocumentExtraction: vi.fn(),
 }));
 
 vi.mock('../services/metrics', () => ({
@@ -44,6 +46,7 @@ describe('UploadPage sample workflow', () => {
     localStorage.clear();
     vi.mocked(getDocuments).mockReset();
     vi.mocked(extractDocument).mockReset();
+    vi.mocked(getDocumentExtraction).mockReset();
     vi.mocked(getDocuments).mockResolvedValue({
       items: [],
       page: 1,
@@ -132,7 +135,13 @@ describe('UploadPage sample workflow', () => {
       totalPages: 1,
     });
     vi.mocked(extractDocument).mockRejectedValue(
-      new Error('API 500: Internal server error'),
+      new ApiError(
+        500,
+        'The document could not be processed. Please try again.',
+        null,
+        'EXTRACTION_FAILED',
+        'Internal server error',
+      ),
     );
 
     render(
@@ -159,7 +168,13 @@ describe('UploadPage sample workflow', () => {
       totalPages: 1,
     });
     vi.mocked(extractDocument).mockRejectedValue(
-      new Error('API 404: Uploaded file is no longer available. Please upload it again.'),
+      new ApiError(
+        404,
+        'The original file is no longer available. Please upload it again.',
+        null,
+        'FILE_MISSING',
+        'Uploaded file is no longer available. Please upload it again.',
+      ),
     );
 
     render(
@@ -176,6 +191,44 @@ describe('UploadPage sample workflow', () => {
     ).toBeInTheDocument();
     expect((await screen.findAllByText('Re-upload Required')).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Re-upload Required/i })).toBeDisabled();
+  });
+
+  it('shows a friendly error when saved extraction preview is missing', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          status: 'REVIEW_REQUIRED',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(getDocumentExtraction).mockRejectedValue(
+      new ApiError(
+        404,
+        'Preview data is no longer available. Please extract the document again.',
+        null,
+        'EXTRACTION_NOT_FOUND',
+        'Cannot GET /api/document-extraction/doc-1',
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Preview Data/i }));
+
+    expect(getDocumentExtraction).toHaveBeenCalledWith('doc-1');
+    expect(
+      await screen.findByText('Preview data is no longer available. Please extract the document again.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Cannot GET|API 404|document-extraction/i)).not.toBeInTheDocument();
   });
 
   it('keeps document available and shows no-data message when retry finds no rows', async () => {

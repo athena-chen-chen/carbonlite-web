@@ -23,6 +23,8 @@ export type MetricsSummaryTableRow = {
   metricType: string;
   unit: string;
   totalValue: string;
+  category: 'input' | 'calculated';
+  activityType?: string;
 };
 
 export type MissingFactorItem = {
@@ -85,19 +87,15 @@ export function buildMetricsSummaryTableRows(input: {
 
   if (recordsIncluded <= 0) return [];
 
-  const rows: MetricsSummaryTableRow[] = [
-    {
-      metricType: 'Carbon Emissions',
-      unit: 'kgCO2e',
-      totalValue: String(totalEstimatedEmissionsKgCO2e),
-    },
-  ];
+  const rows: MetricsSummaryTableRow[] = [];
 
   usageTotals.fuelUsageBreakdown.forEach((item) => {
     rows.push({
       metricType: `Fuel Usage — ${formatActivityTypeLabel(item.activityType)}`,
       unit: item.unit,
       totalValue: String(item.total),
+      category: 'input',
+      activityType: item.activityType,
     });
   });
 
@@ -106,8 +104,17 @@ export function buildMetricsSummaryTableRows(input: {
       metricType: 'Electricity',
       unit: usageTotals.electricityUnitLabel,
       totalValue: String(usageTotals.electricity),
+      category: 'input',
+      activityType: 'ELECTRICITY',
     });
   }
+
+  rows.push({
+    metricType: 'Carbon Emissions',
+    unit: 'kgCO2e',
+    totalValue: String(totalEstimatedEmissionsKgCO2e),
+    category: 'calculated',
+  });
 
   return rows;
 }
@@ -133,6 +140,10 @@ export function MetricsSummarySection({
     totalEstimatedEmissionsKgCO2e,
     recordsIncluded: countSummary.processedRecords,
   });
+  const inputMetricRows = totalsByMetric.filter((item) => item.category === 'input');
+  const calculatedMetricRows = totalsByMetric.filter(
+    (item) => item.category === 'calculated',
+  );
   const missingFactorGroups = groupMissingFactors(missingFactors);
   const skippedReasons = countSummary.skippedReasons ?? {
     missingFactor: countSummary.missingFactorRecords,
@@ -279,7 +290,10 @@ export function MetricsSummarySection({
 
       <div style={tableCardStyle}>
         <div style={{ padding: 16, borderBottom: '1px solid #eee' }}>
-          <h2 style={{ margin: 0 }}>Totals by Metric</h2>
+          <h2 style={{ margin: 0 }}>Calculation Summary</h2>
+          <p style={summaryHelperTextStyle}>
+            One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.
+          </p>
         </div>
 
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -308,18 +322,75 @@ export function MetricsSummarySection({
                 </td>
               </tr>
             ) : null}
-            {!isLoading && totalsByMetric.map((item) => (
-              <tr key={`${item.metricType}-${item.unit}-${item.totalValue}`}>
-                <td style={tdStyle}>{item.metricType}</td>
-                <td style={tdStyle}>{item.unit}</td>
-                <td style={tdStyle}>{item.totalValue}</td>
-              </tr>
-            ))}
+            {!isLoading && totalsByMetric.length > 0 ? (
+              <>
+                {inputMetricRows.length > 0 ? (
+                  <>
+                    <tr>
+                      <td colSpan={3} style={metricGroupHeaderStyle}>
+                        Input Data
+                      </td>
+                    </tr>
+                    {inputMetricRows.map((item) => (
+                      <tr key={`${item.metricType}-${item.unit}-${item.totalValue}`}>
+                        <td style={tdStyle}>
+                          <MetricRelationshipLabel item={item} />
+                        </td>
+                        <td style={tdStyle}>{item.unit}</td>
+                        <td style={tdStyle}>{item.totalValue}</td>
+                      </tr>
+                    ))}
+                  </>
+                ) : null}
+
+                {inputMetricRows.length > 0 && calculatedMetricRows.length > 0 ? (
+                  <tr aria-label="Calculation relationship">
+                    <td colSpan={3} style={relationshipArrowStyle}>↓</td>
+                  </tr>
+                ) : null}
+
+                {calculatedMetricRows.length > 0 ? (
+                  <>
+                    <tr>
+                      <td colSpan={3} style={metricGroupHeaderStyle}>
+                        Calculated Result
+                      </td>
+                    </tr>
+                    {calculatedMetricRows.map((item) => (
+                      <tr
+                        key={`${item.metricType}-${item.unit}-${item.totalValue}`}
+                        style={calculatedMetricRowStyle}
+                      >
+                        <td style={calculatedMetricCellStyle}>
+                          <span aria-hidden="true" style={leafIconStyle}>🌱</span>
+                          {item.metricType}
+                        </td>
+                        <td style={calculatedMetricCellStyle}>{item.unit}</td>
+                        <td style={calculatedMetricTotalStyle}>{item.totalValue}</td>
+                      </tr>
+                    ))}
+                  </>
+                ) : null}
+              </>
+            ) : null}
           </tbody>
         </table>
       </div>
     </>
   );
+}
+
+function MetricRelationshipLabel({ item }: { item: MetricsSummaryTableRow }) {
+  if (item.category === 'input' && item.activityType) {
+    return (
+      <span>
+        <strong>{item.totalValue} {item.unit}</strong>{' '}
+        {formatActivityTypeLabel(item.activityType)}
+      </span>
+    );
+  }
+
+  return <span>{item.metricType}</span>;
 }
 
 function buildSkippedReasonRows(
@@ -530,6 +601,54 @@ const tableCardStyle: React.CSSProperties = {
   background: '#fff',
   overflow: 'hidden',
   marginBottom: 20,
+};
+
+const summaryHelperTextStyle: React.CSSProperties = {
+  margin: '6px 0 0',
+  color: '#64748b',
+  lineHeight: 1.5,
+  fontSize: 14,
+};
+
+const metricGroupHeaderStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  borderBottom: '1px solid #e5e7eb',
+  background: '#f8fafc',
+  color: '#334155',
+  fontSize: 13,
+  fontWeight: 900,
+  textTransform: 'uppercase',
+  letterSpacing: 0,
+};
+
+const relationshipArrowStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  textAlign: 'center',
+  color: '#10b981',
+  fontSize: 22,
+  fontWeight: 900,
+  borderBottom: '1px solid #d1fae5',
+  background: '#f0fdf4',
+};
+
+const calculatedMetricRowStyle: React.CSSProperties = {
+  background: '#ecfdf5',
+};
+
+const calculatedMetricCellStyle: React.CSSProperties = {
+  padding: 12,
+  borderBottom: '1px solid #bbf7d0',
+  color: '#047857',
+  fontWeight: 800,
+};
+
+const calculatedMetricTotalStyle: React.CSSProperties = {
+  ...calculatedMetricCellStyle,
+  fontSize: 16,
+};
+
+const leafIconStyle: React.CSSProperties = {
+  marginRight: 8,
 };
 
 const thStyle: React.CSSProperties = {

@@ -116,7 +116,9 @@ describe('apiFetch authenticated requests', () => {
       new Response('unauthorized', { status: 401 }),
     );
 
-    await expect(apiFetch('/documents')).rejects.toThrow(/api 401/i);
+    await expect(apiFetch('/documents')).rejects.toThrow(
+      'Your session has expired. Please log in again.',
+    );
 
     expect(localStorage.getItem('accessToken')).toBeNull();
     expect(localStorage.getItem('currentUser')).toBeNull();
@@ -138,7 +140,56 @@ describe('apiFetch authenticated requests', () => {
     );
 
     await expect(apiFetch('/activity-data?pageSize=1000')).rejects.toThrow(
-      'Page size is too large. Please refresh and try again.',
+      'Too many records were requested. Please refresh and try again.',
     );
+  });
+
+  it('maps missing extraction previews to a friendly message and internal code', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Cannot GET /api/document-extraction/doc-1', { status: 404 }),
+    );
+
+    await expect(apiFetch('/document-extraction/doc-1')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 404,
+      code: 'EXTRACTION_NOT_FOUND',
+      message: 'Preview data is no longer available. Please extract the document again.',
+    });
+  });
+
+  it('maps missing files to a friendly message and internal code', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message: 'Uploaded file is no longer available. Please upload it again.',
+          error: 'File Missing',
+          statusCode: 404,
+        }),
+        { status: 404 },
+      ),
+    );
+
+    await expect(apiFetch('/documents/doc-1/download')).rejects.toMatchObject({
+      status: 404,
+      code: 'FILE_MISSING',
+      message: 'The original file is no longer available. Please upload it again.',
+    });
+  });
+
+  it('maps extraction server errors to a friendly message without endpoint details', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Internal server error at /api/document-extraction/extract', {
+        status: 500,
+      }),
+    );
+
+    await expect(apiFetch('/document-extraction/extract')).rejects.toMatchObject({
+      status: 500,
+      code: 'EXTRACTION_FAILED',
+      message: 'The document could not be processed. Please try again.',
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { apiFetch } from './api';
+import { ApiError, apiFetch } from './api';
 import { clampApiPageSize } from '../config/api';
 import { track } from './analytics.service';
 
@@ -215,11 +215,14 @@ export async function deleteActivityData(id: string) {
   } catch (err) {
     const message = err instanceof Error ? err.message : '';
 
-    if (/api 403/i.test(message)) {
+    if (err instanceof ApiError && err.status === 403) {
       throw new Error('You can only delete your own activity records.');
     }
 
-    if (/api 404/i.test(message) || message === 'No activity record was deleted.') {
+    if (
+      (err instanceof ApiError && err.status === 404) ||
+      message === 'No activity record was deleted.'
+    ) {
       throw new Error('Activity record was not deleted. Please refresh and try again.');
     }
 
@@ -253,11 +256,14 @@ export async function bulkDeleteActivityData(ids: string[]) {
   } catch (err) {
     const message = err instanceof Error ? err.message : '';
 
-    if (/api 403/i.test(message)) {
+    if (err instanceof ApiError && err.status === 403) {
       throw new Error('You can only delete your own activity records.');
     }
 
-    if (/api 404/i.test(message) || message === 'No activity records were deleted.') {
+    if (
+      (err instanceof ApiError && err.status === 404) ||
+      message === 'No activity records were deleted.'
+    ) {
       throw new Error('Activity records were not deleted. Please refresh and try again.');
     }
 

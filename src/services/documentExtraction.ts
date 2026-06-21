@@ -20,10 +20,11 @@ export type ExtractResponse = {
   status: string;
   openaiFileId?: string;
   parsedActivities: ParsedActivity[];
-    sourceRowCount:number;
-  extractedRowCount:number;
-  possibleMissingRows:number;
-  warning:string|null;
+  sourceRowCount: number;
+  extractedRowCount: number;
+  possibleMissingRows: boolean;
+  warning: string | null;
+  extractedAt?: string;
 };
 
 export type ConfirmImportResponse = {
@@ -71,6 +72,10 @@ export async function extractDocument(documentId: string) {
   }
 }
 
+export async function getDocumentExtraction(documentId: string) {
+  return apiFetch<ExtractResponse>(`/document-extraction/${documentId}`);
+}
+
 export async function confirmDocumentImport(
   documentId: string,
   activities: ParsedActivity[],
@@ -99,10 +104,18 @@ export async function confirmDocumentImport(
 
     return response;
   } catch (error) {
+    const data =
+      error instanceof ApiError && error.data && typeof error.data === 'object'
+        ? (error.data as Record<string, unknown>)
+        : {};
+
     if (
       error instanceof ApiError &&
       error.status === 409 &&
-      /already been imported|duplicate import/i.test(error.message)
+      (/already been imported|duplicate import/i.test(
+        String(data.message ?? data.error ?? error.technicalMessage ?? ''),
+      ) ||
+        Boolean(data.alreadyImported))
     ) {
       throw new DuplicateDocumentImportError();
     }

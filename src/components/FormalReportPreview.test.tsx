@@ -58,7 +58,7 @@ describe('FormalReportPreview', () => {
           inputUnit: 'L',
           resultUnit: 'kgCO2e',
           jurisdiction: 'Alberta, Canada',
-          sourceAuthority: 'MVP Default',
+          sourceAuthority: 'CarbonLite system defaults',
             sourceDocument: 'Pilot default factor library',
             sourceYear: 2025,
             factorType: 'System',
@@ -89,8 +89,8 @@ describe('FormalReportPreview', () => {
             factorInputUnit: 'L',
             factorResultUnit: 'kgCO2e',
             factorPriority: 'UNVERIFIED_SYSTEM',
-            factorSource: 'MVP Default',
-            sourceAuthority: 'MVP Default',
+            factorSource: 'CarbonLite system defaults',
+            sourceAuthority: 'CarbonLite system defaults',
             sourceDocument: 'Pilot default factor library',
             sourceUrl: null,
             sourceYear: 2025,
@@ -117,14 +117,14 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('A. Report Scope')).toBeInTheDocument();
     expect(screen.getByText('B. Executive Summary')).toBeInTheDocument();
     expect(screen.getByText('C. Calculation Quality Summary')).toBeInTheDocument();
-    expect(screen.getByText('D. Totals by Metric')).toBeInTheDocument();
+    expect(screen.getByText('D. Calculation Summary')).toBeInTheDocument();
     expect(screen.getByText('E. Activity Breakdown')).toBeInTheDocument();
     expect(screen.getByText('F. Conversion Factors Used')).toBeInTheDocument();
     expect(screen.getByText('G. Calculation Details')).toBeInTheDocument();
     expect(screen.getByText('H. Source Evidence')).toBeInTheDocument();
     expect(screen.getByText('I. Methodology and Disclaimer')).toBeInTheDocument();
     expect(screen.getAllByText('321.6 kgCO2e').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('MVP Default').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('CarbonLite system defaults').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
     expect(screen.getByText('Pilot default factor library')).toBeInTheDocument();
     expect(screen.getByText('Unverified / user review required')).toBeInTheDocument();
@@ -134,6 +134,8 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
 
     const tables = screen.getAllByRole('table');
+    expect(within(tables[0]).getAllByText('Input Data').length).toBeGreaterThan(0);
+    expect(within(tables[0]).getByText('Calculated Result')).toBeInTheDocument();
     expect(within(tables[0]).getByText('Carbon Emissions')).toBeInTheDocument();
     expect(within(tables[0]).getByText('Fuel Usage — Diesel')).toBeInTheDocument();
     expect(within(tables[0]).queryByText('Count')).not.toBeInTheDocument();
@@ -236,16 +238,16 @@ describe('Version 1 report presentation data', () => {
     ).toEqual([
       [
         'DIESEL',
-        'Not specified',
-        'L',
         2.68,
+        'L',
         'kgCO2e',
-        'Source not specified',
-        'Source not specified',
+        'Not specified',
         'Source not specified',
         'Source not specified',
         'Unverified / user review required',
         'Custom',
+        'Source not specified',
+        'Source not specified',
       ],
     ]);
   });

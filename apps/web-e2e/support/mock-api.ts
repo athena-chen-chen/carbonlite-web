@@ -62,6 +62,7 @@ export type CarbonLiteApiState = {
   documents: TestDocument[];
   activities: TestActivity[];
   conversionFactors: TestConversionFactor[];
+  extractionResults: Record<string, unknown>;
   uploadRequests: number;
   extractionRequests: number;
   importRequests: number;
@@ -85,6 +86,7 @@ export function createCarbonLiteApiState(): CarbonLiteApiState {
     documents: [],
     activities: [],
     conversionFactors: [buildSystemConversionFactor()],
+    extractionResults: {},
     uploadRequests: 0,
     extractionRequests: 0,
     importRequests: 0,
@@ -164,7 +166,7 @@ export async function installCarbonLiteApiMock(
         status: 'REVIEW_REQUIRED',
         updatedAt: now,
       }));
-      await fulfillJson(route, {
+      const response = {
         documentId: 'document-1',
         status: 'REVIEW_REQUIRED',
         parsedActivities: [
@@ -187,7 +189,23 @@ export async function installCarbonLiteApiMock(
         extractedRowCount: 1,
         possibleMissingRows: 0,
         warning: null,
-      });
+        extractedAt: now,
+      };
+      state.extractionResults['document-1'] = response;
+      await fulfillJson(route, response);
+      return;
+    }
+
+    if (method === 'GET' && path.startsWith('/document-extraction/')) {
+      const documentId = path.split('/').pop() ?? '';
+      const result = state.extractionResults[documentId];
+      if (!result) {
+        await fulfillJson(route, {
+          message: 'No extraction results found for this document.',
+        }, 404);
+        return;
+      }
+      await fulfillJson(route, result);
       return;
     }
 
@@ -244,7 +262,7 @@ export async function installCarbonLiteApiMock(
 
     if (method === 'GET' && path === '/metrics/calculation-summary') {
       state.summaryRequests += 1;
-      await fulfillJson(route, buildCalculationSummary(state.activities));
+      await fulfillJson(route, buildCalculationSummary(state.activities, url.searchParams));
       return;
     }
 
@@ -398,11 +416,40 @@ export function seedFailedDocument(state: CarbonLiteApiState) {
   ];
 }
 
-function buildCalculationSummary(activities: TestActivity[]) {
+export function seedMissingFileDocument(state: CarbonLiteApiState) {
+  state.documents = [
+    {
+      id: 'document-1',
+      fileName: 'old-enmax-electricity.csv',
+      fileUrl: '/storage/old-enmax-electricity.csv',
+      mimeType: 'text/csv',
+      fileSize: 113,
+      type: 'SPREADSHEET',
+      status: 'FILE_MISSING',
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
+function buildCalculationSummary(
+  allActivities: TestActivity[],
+  searchParams = new URLSearchParams(),
+) {
+  const periodStart = searchParams.get('periodStart');
+  const periodEnd = searchParams.get('periodEnd');
+  const activities = allActivities.filter((activity) => {
+    const date = activity.recordDate.slice(0, 10);
+    if (periodStart && date < periodStart) return false;
+    if (periodEnd && date > periodEnd) return false;
+    return true;
+  });
   const hasRecords = activities.length > 0;
-  const records = hasRecords ? 1 : 0;
+  const totalRecordsFound = allActivities.length;
+  const records = hasRecords ? activities.length : 0;
   const emissions = hasRecords ? 2140 : 0;
   const electricity = hasRecords ? 4280 : 0;
+  const outsideDateRange = totalRecordsFound - records;
 
   return {
     totalsByMetric: hasRecords
@@ -423,12 +470,12 @@ function buildCalculationSummary(activities: TestActivity[]) {
       : [],
     totalsByFacility: [],
     totalEstimatedEmissionsKgCO2e: emissions,
-    totalRecordsFound: records,
+    totalRecordsFound,
     recordsInScope: records,
     recordsCalculated: records,
     recordsIncluded: records,
     processedRecords: records,
-    skippedRecords: 0,
+    skippedRecords: outsideDateRange,
     missingFactorCount: 0,
     missingFactorRecords: 0,
     invalidRecordCount: 0,
@@ -438,7 +485,7 @@ function buildCalculationSummary(activities: TestActivity[]) {
       invalidQuantity: 0,
       invalidUnit: 0,
       outsideScope: 0,
-      outsideDateRange: 0,
+      outsideDateRange,
       invalidData: 0,
     },
     usageTotals: {

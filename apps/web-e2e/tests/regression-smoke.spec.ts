@@ -4,6 +4,7 @@ import {
   installCarbonLiteApiMock,
   seedFailedDocument,
   seedImportedDocument,
+  seedMissingFileDocument,
 } from '../support/mock-api';
 import {
   authenticateTestUser,
@@ -66,6 +67,106 @@ test('@smoke deleting a document removes its related imported records', async ({
   expect(api.documentDeleteRequests).toBe(1);
   expect(api.documents).toHaveLength(0);
   expect(api.activities).toHaveLength(0);
+  failures.assertClean(api.unexpectedRequests);
+});
+
+test('@smoke missing uploaded files explain re-upload and keep delete available', async ({ page }) => {
+  const api = createCarbonLiteApiState();
+  seedMissingFileDocument(api);
+  const failures = monitorCriticalFailures(page);
+  await authenticateTestUser(page);
+  await installCarbonLiteApiMock(page, api);
+
+  await page.goto('/upload');
+  await expect(page.getByText(
+    'This file is no longer available on the server. This may happen after system updates or temporary storage cleanup. Please upload the file again if you need to extract or review it.',
+  )).toBeVisible();
+
+  const documentRow = page.getByRole('row').filter({
+    hasText: 'old-enmax-electricity.csv',
+  });
+  await expect(documentRow).toContainText('Re-upload Required');
+  await expect(documentRow).toContainText('SPREADSHEET');
+  await expect(documentRow).toContainText('113');
+
+  await expect(documentRow.getByRole('button', {
+    name: 'Re-upload Required',
+  })).toBeDisabled();
+  await expect(documentRow.getByRole('button', {
+    name: /extract/i,
+  })).toHaveCount(0);
+  await expect(documentRow.getByRole('button', {
+    name: /preview data/i,
+  })).toHaveCount(0);
+
+  await documentRow.locator(
+    'span[title="The original uploaded file is no longer available. Please upload it again."]',
+  ).click();
+  await expect(page.getByText(
+    'This file is no longer available. Please upload it again.',
+  )).toBeVisible();
+
+  await documentRow.getByRole('button', {
+    name: 'More actions for old-enmax-electricity.csv',
+  }).click();
+  await expect(documentRow.getByRole('button', { name: 'Delete' })).toBeVisible();
+  failures.assertClean(api.unexpectedRequests);
+});
+
+test('@smoke reports show first-report empty state for an empty organization', async ({ page }) => {
+  const api = createCarbonLiteApiState();
+  const failures = monitorCriticalFailures(page);
+  await authenticateTestUser(page);
+  await installCarbonLiteApiMock(page, api);
+
+  await page.goto('/reports');
+  await expect(page.getByRole('heading', {
+    name: 'No reporting data found.',
+  })).toBeVisible();
+  await expect(page.getByText(
+    'Upload and import activity data to generate your first emissions report.',
+  )).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Go to Upload' })).toBeVisible();
+
+  await expect(page.getByRole('button', { name: 'Generate Report' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Download PDF' })).toHaveAttribute(
+    'title',
+    'Generate a report before exporting.',
+  );
+  await expect(page.getByText('Emissions Summary Report')).toHaveCount(0);
+  await expect(page.getByText('Scope Breakdown')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Go to Upload' }).click();
+  await expect(page).toHaveURL(/\/upload$/);
+  failures.assertClean(api.unexpectedRequests);
+});
+
+test('@smoke reports show selected-period empty state separately from no data', async ({ page }) => {
+  const api = createCarbonLiteApiState();
+  seedImportedDocument(api);
+  const failures = monitorCriticalFailures(page);
+  await authenticateTestUser(page);
+  await installCarbonLiteApiMock(page, api);
+
+  await page.goto('/reports');
+  await expect(page.getByText('Emissions Summary Report')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
+
+  const dateInputs = page.locator('input[type="date"]');
+  await dateInputs.nth(0).fill('2025-01-01');
+  await dateInputs.nth(1).fill('2025-12-31');
+  await dateInputs.nth(1).blur();
+
+  await expect(page.getByText('No records found for the selected period.')).toBeVisible();
+  await expect(page.getByRole('heading', {
+    name: 'No reporting data found.',
+  })).toHaveCount(0);
+  await expect(page.getByText('Emissions Summary Report')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Generate Report' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
   failures.assertClean(api.unexpectedRequests);
 });
 

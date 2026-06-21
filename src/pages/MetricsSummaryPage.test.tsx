@@ -49,24 +49,31 @@ describe('buildMetricsSummaryTableRows', () => {
 
     expect(rows).toEqual([
       {
-        metricType: 'Carbon Emissions',
-        unit: 'kgCO2e',
-        totalValue: '1234.5',
-      },
-      {
         metricType: 'Fuel Usage — Diesel',
         unit: 'L',
         totalValue: '1710',
+        category: 'input',
+        activityType: 'DIESEL',
       },
       {
         metricType: 'Fuel Usage — Natural Gas',
         unit: 'm3',
         totalValue: '400',
+        category: 'input',
+        activityType: 'NATURAL_GAS',
       },
       {
         metricType: 'Electricity',
         unit: 'kWh',
         totalValue: '1800',
+        category: 'input',
+        activityType: 'ELECTRICITY',
+      },
+      {
+        metricType: 'Carbon Emissions',
+        unit: 'kgCO2e',
+        totalValue: '1234.5',
+        category: 'calculated',
       },
     ]);
   });
@@ -100,6 +107,7 @@ describe('buildMetricsSummaryTableRows', () => {
           metricType: 'Carbon Emissions',
           unit: 'kgCO2e',
           totalValue: '268',
+          category: 'calculated',
         }),
       ]),
     );
@@ -167,7 +175,49 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
   });
 
-  it('renders the shared summary section with populated cards and totals table', () => {
+  it('renders one record as input data flowing to calculated emissions', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 100,
+            electricity: 0,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [
+              { activityType: 'GASOLINE', total: 100, unit: 'liters' },
+            ],
+          }}
+          totalEstimatedEmissionsKgCO2e={231}
+          countSummary={{
+            totalRecordsFound: 1,
+            processedRecords: 1,
+            skippedRecords: 0,
+            missingFactorRecords: 0,
+            skippedReasons: {
+              missingFactor: 0,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Calculation Summary')).toBeInTheDocument();
+    expect(screen.getByText('One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.')).toBeInTheDocument();
+    expect(screen.getByText('Input Data')).toBeInTheDocument();
+    expect(screen.getByText('100 liters')).toBeInTheDocument();
+    expect(screen.getByText('Gasoline')).toBeInTheDocument();
+    expect(screen.getByLabelText('Calculation relationship')).toHaveTextContent('↓');
+    expect(screen.getByText('Calculated Result')).toBeInTheDocument();
+    expect(screen.getByText('Carbon Emissions')).toBeInTheDocument();
+    expect(screen.getByText('231')).toBeInTheDocument();
+    expect(screen.getByText('kgCO2e')).toBeInTheDocument();
+  });
+
+  it('renders the shared summary section with multiple records and populated calculation table', () => {
     render(
       <MemoryRouter>
         <MetricsSummarySection
@@ -198,9 +248,14 @@ describe('buildMetricsSummaryTableRows', () => {
 
     const table = screen.getByRole('table');
     expect(within(table).queryByText('Count')).not.toBeInTheDocument();
+    expect(within(table).getByText('Input Data')).toBeInTheDocument();
+    expect(within(table).getByText('Calculated Result')).toBeInTheDocument();
     expect(within(table).getByText('Carbon Emissions')).toBeInTheDocument();
-    expect(within(table).getByText('Fuel Usage — Diesel')).toBeInTheDocument();
-    expect(within(table).getByText('Fuel Usage — Natural Gas')).toBeInTheDocument();
+    expect(within(table).getByText('1710 L')).toBeInTheDocument();
+    expect(within(table).getByText('Diesel')).toBeInTheDocument();
+    expect(within(table).getByText('400 m3')).toBeInTheDocument();
+    expect(within(table).getByText('Natural Gas')).toBeInTheDocument();
+    expect(within(table).getByText('1800 kWh')).toBeInTheDocument();
     expect(within(table).getByText('Electricity')).toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: '1710' })).toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: '400' })).toBeInTheDocument();

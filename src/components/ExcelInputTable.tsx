@@ -27,12 +27,12 @@ type Row = {
   factorSourceYear?: string | number | null;
   factorStatus?: 'matched' | 'missing';
   errors?: string[];
+  status?: 'draft' | 'saved' | 'error' | 'saving';
+  savedActivityId?: string;
 };
 
 export function ExcelInputTable({ onSuccess }: { onSuccess: () => void }) {
-  const [rows, setRows] = useState<Row[]>([
-    createEmptyRow(),
-  ]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const [entrySourceType, setEntrySourceType] = useState<'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE'>('MANUAL');
@@ -52,6 +52,22 @@ const [conversionFactors, setConversionFactors] = useState<any[]>([]);
 useEffect(() => {
   setRows((prev) => prev.map(applyFactorToRow));
 }, [conversionFactors]);
+
+const hasUnsavedRows = rows.some(
+  (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
+);
+
+useEffect(() => {
+  function handleBeforeUnload(event: BeforeUnloadEvent) {
+    if (!hasUnsavedRows) return;
+
+    event.preventDefault();
+    event.returnValue = 'You have unsaved activity rows.';
+  }
+
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+}, [hasUnsavedRows]);
 
 function importFile(file: File) {
   const fileName = file.name.toLowerCase();
@@ -130,6 +146,19 @@ function findMatchingFactor(activityType: string, unit: string) {
 
 
 function applyFactorToRow(row: Row): Row {
+  if (isRowCompletelyEmpty(row) || !row.activityType || !row.unit) {
+    return {
+      ...row,
+      factorId: undefined,
+      factorName: undefined,
+      factorValue: undefined,
+      factorSourceLabel: undefined,
+      factorSourceAuthority: undefined,
+      factorSourceYear: undefined,
+      factorStatus: undefined,
+    };
+  }
+
   const match = findMatchingFactor(row.activityType, row.unit);
 
   if (!match) {
@@ -189,7 +218,7 @@ function importExcelFile(file: File) {
    setRows(
   importedRows.length
     ? importedRows.map(applyFactorToRow)
-    : [applyFactorToRow(createEmptyRow())],
+    : [],
 );
   };
 
@@ -258,7 +287,7 @@ function parseCSVText(text: string) {
  setRows(
   importedRows.length
     ? importedRows.map(applyFactorToRow)
-    : [applyFactorToRow(createEmptyRow())],
+    : [],
 );
 }
 function validateRow(row: Row) {
@@ -273,6 +302,45 @@ function validateRow(row: Row) {
 
   return errors;
 }
+
+function isRowReadyToSave(row: Row) {
+  return !isRowCompletelyEmpty(row) && validateRow(row).length === 0;
+}
+
+function isRowSaveDisabled(row: Row) {
+  return row.status === 'saved' || row.status === 'saving' || !isRowReadyToSave(row);
+}
+
+function getRowSaveLabel(row: Row) {
+  if (row.status === 'saving') return 'Saving...';
+  if (row.status === 'saved') return 'Saved';
+  return 'Save';
+}
+
+function buildActivityPayload(row: Row) {
+  return {
+    activityType: row.activityType,
+    recordDate: row.recordDate,
+    quantity: Number(row.quantity),
+    unit: row.unit,
+    sourceType: entrySourceType,
+    sourceReference: entrySourceType.toLowerCase(),
+    notes: `Created from ${entrySourceType}. Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
+  };
+}
+
+function updateRowStatus(id: string, patch: Partial<Row>) {
+  setRows((prev) =>
+    prev.map((row) =>
+      row.id === id
+        ? {
+            ...row,
+            ...patch,
+          }
+        : row,
+    ),
+  );
+}
 function createEmptyRow(): Row {
   return {
     id: Math.random().toString(),
@@ -280,8 +348,84 @@ function createEmptyRow(): Row {
     quantity: '',
     unit: '',
     recordDate: new Date().toISOString().slice(0, 10),
+    status: 'draft',
   };
 }
+function isRowCompletelyEmpty(row: Row) {
+  return !row.activityType && !row.quantity && !row.unit;
+}
+
+function hasRowStarted(row: Row) {
+  return Boolean(row.activityType || row.quantity || row.unit);
+}
+
+function canRemoveRow(row: Row) {
+  if (rows.length === 1 && isRowCompletelyEmpty(row)) return false;
+  return Boolean(row.activityType || row.quantity);
+}
+
+function renderStatusCell(row: Row) {
+  if (row.status === 'saved') {
+    return <span style={{ color: '#047857', fontSize: 12, fontWeight: 700 }}>Saved</span>;
+  }
+
+  if (row.status === 'saving') {
+    return <span style={{ color: '#0369a1', fontSize: 12, fontWeight: 700 }}>Saving...</span>;
+  }
+
+  if (row.errors?.length) {
+    return (
+      <div style={{ color: '#be123c', fontSize: 12 }}>
+        <strong>Error</strong>
+        <br />
+        {row.errors.join(', ')}
+      </div>
+    );
+  }
+
+  if (!hasRowStarted(row)) {
+    return <span style={{ color: '#94a3b8', fontSize: 12 }}>-</span>;
+  }
+
+  return <span style={{ color: '#475569', fontSize: 12, fontWeight: 700 }}>Draft</span>;
+}
+
+function renderFactorCell(row: Row) {
+  if (isRowCompletelyEmpty(row) || !row.activityType) {
+    return <span style={{ color: '#94a3b8', fontSize: 12 }}>-</span>;
+  }
+
+  if (row.factorStatus === 'matched') {
+    return (
+      <div style={{ color: '#047857', fontSize: 12 }}>
+        Matched: {row.factorName}
+        <br />
+        Factor: {row.factorValue}
+        <br />
+        Source: {row.factorSourceLabel}
+        {row.factorSourceAuthority ? (
+          <>
+            <br />
+            Authority: {row.factorSourceAuthority}
+          </>
+        ) : null}
+        {row.factorSourceYear ? (
+          <>
+            <br />
+            Year: {row.factorSourceYear}
+          </>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: '#be123c', fontSize: 12 }}>
+      No matching factor
+    </div>
+  );
+}
+
 function getDefaultUnit(activityType: string) {
   return activityTypeDefaultUnits[activityType] ?? '';
 }
@@ -293,6 +437,9 @@ function getDefaultUnit(activityType: string) {
       const updated = {
         ...row,
         [key]: value,
+        status: 'draft' as const,
+        savedActivityId: undefined,
+        errors: undefined,
       };
 
       if (key === 'activityType') {
@@ -306,17 +453,11 @@ function getDefaultUnit(activityType: string) {
 }
 
   function addRow() {
-    setRows((prev) => [...prev, createEmptyRow()]);
+    setRows((prev) => [...prev, applyFactorToRow(createEmptyRow())]);
   }
 
 function removeRow(id: string) {
-  setRows((prev) => {
-    if (prev.length <= 1) {
-      return [applyFactorToRow(createEmptyRow())];
-    }
-
-    return prev.filter((row) => row.id !== id);
-  });
+  setRows((prev) => prev.filter((row) => row.id !== id));
   setEntrySourceType('MANUAL');
 }
 
@@ -389,8 +530,43 @@ function handleImportExcel(event: React.ChangeEvent<HTMLInputElement>) {
   event.target.value = '';
   setEntrySourceType('EXCEL');
 }
+async function saveRow(row: Row) {
+  const errors = validateRow(row);
+
+  if (errors.length > 0) {
+    updateRowStatus(row.id, {
+      errors,
+      status: 'error',
+    });
+    return;
+  }
+
+  updateRowStatus(row.id, {
+    errors: undefined,
+    status: 'saving',
+  });
+
+  try {
+    const saved = await createActivityData(buildActivityPayload(row));
+    updateRowStatus(row.id, {
+      errors: undefined,
+      status: 'saved',
+      savedActivityId: (saved as { id?: string })?.id,
+    });
+    onSuccess();
+  } catch (err) {
+    updateRowStatus(row.id, {
+      errors: [err instanceof Error ? err.message : 'Failed to save row'],
+      status: 'error',
+    });
+  }
+}
+
 async function saveAll() {
-  const validatedRows = rows.map((row) => ({
+  const rowsToSave = rows.filter(
+    (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
+  );
+  const validatedRows = rowsToSave.map((row) => ({
     ...row,
     errors: validateRow(row),
   }));
@@ -398,33 +574,51 @@ async function saveAll() {
   const hasErrors = validatedRows.some((row) => row.errors?.length);
 
   if (hasErrors) {
-    setRows(validatedRows);
+    setRows((prev) =>
+      prev.map((row) =>
+        validatedRows.find((validatedRow) => validatedRow.id === row.id) ?? row,
+      ),
+    );
     alert('Some rows have errors. Please fix highlighted rows before saving.');
     return;
   }
-setRows([applyFactorToRow(createEmptyRow())]);
-onSuccess();
-alert('Saved! Metrics and Reports are ready to refresh.');
+
   try {
+    const savedRows: Array<{ rowId: string; savedActivityId?: string }> = [];
+
     for (const row of validatedRows) {
-    await createActivityData({
-  activityType: row.activityType,
-  recordDate: row.recordDate,
-  quantity: Number(row.quantity),
-  unit: row.unit,
-  sourceType: entrySourceType,
-  sourceReference: entrySourceType.toLowerCase(),
-  notes: `Created from ${entrySourceType}. Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
-});
+      const saved = await createActivityData(buildActivityPayload(row));
+      savedRows.push({
+        rowId: row.id,
+        savedActivityId: (saved as { id?: string })?.id,
+      });
     }
 
-    setRows([applyFactorToRow(createEmptyRow())]);
+    setRows((prev) =>
+      prev.map((row) => {
+        const savedRow = savedRows.find((item) => item.rowId === row.id);
+
+        if (!savedRow) return row;
+
+        return {
+          ...row,
+          errors: undefined,
+          status: 'saved',
+          savedActivityId: savedRow.savedActivityId,
+        };
+      }),
+    );
     onSuccess();
     alert('Saved!');
   } catch (err) {
     alert(err instanceof Error ? err.message : 'Failed to save');
   }
 }
+
+const rowsToSave = rows.filter(
+  (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
+);
+const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
 
   return (
 
@@ -447,6 +641,12 @@ alert('Saved! Metrics and Reports are ready to refresh.');
   </div>
 
   <div style={{ overflowX: 'auto' }}>
+    {rows.length === 0 ? (
+      <div style={quickEntryEmptyStyle}>
+        <strong>No activity rows.</strong>
+        <span>Click "+ Add Row" to begin.</span>
+      </div>
+    ) : (
     <table style={tableStyle} onPaste={handlePasteRows} onKeyDown={handleQuickEntryKeyDown}>
       <thead>
         <tr>
@@ -477,6 +677,9 @@ alert('Saved! Metrics and Reports are ready to refresh.');
                             ...r,
                             activityType,
                             unit: getDefaultUnit(activityType),
+                            status: 'draft',
+                            savedActivityId: undefined,
+                            errors: undefined,
                           })
                         : r,
                     ),
@@ -521,55 +724,39 @@ alert('Saved! Metrics and Reports are ready to refresh.');
               />
             </td>
             <td style={tdStyle}>
-  {row.errors?.length ? (
-    <div style={{ color: '#be123c', fontSize: 12 }}>
-      {row.errors.join(', ')}
-    </div>
-  ) : (
-    <span style={{ color: '#047857', fontSize: 12 }}>Ready</span>
-  )}
+  {renderStatusCell(row)}
 </td>
 <td style={tdStyle}>
-  {row.factorStatus === 'matched' ? (
-    <div style={{ color: '#047857', fontSize: 12 }}>
-      Matched: {row.factorName}
-      <br />
-      Factor: {row.factorValue}
-      <br />
-      Source: {row.factorSourceLabel}
-      {row.factorSourceAuthority ? (
-        <>
-          <br />
-          Authority: {row.factorSourceAuthority}
-        </>
-      ) : null}
-      {row.factorSourceYear ? (
-        <>
-          <br />
-          Year: {row.factorSourceYear}
-        </>
-      ) : null}
-    </div>
-  ) : (
-    <div style={{ color: '#be123c', fontSize: 12 }}>
-      No matching factor
-    </div>
-  )}
+  {renderFactorCell(row)}
 </td>
 <td style={tdStyle}>
-  <button
-    type="button"
-    onClick={() => removeRow(row.id)}
-    aria-label={`Remove row ${index + 1}`}
-    style={removeButtonStyle}
-  >
-    Remove
-  </button>
+  <div style={rowActionStyle}>
+    <button
+      type="button"
+      onClick={() => saveRow(row)}
+      disabled={isRowSaveDisabled(row)}
+      aria-label={`Save row ${index + 1}`}
+      style={rowSaveButtonStyle(isRowSaveDisabled(row), row.status === 'saved')}
+    >
+      {getRowSaveLabel(row)}
+    </button>
+    {canRemoveRow(row) ? (
+      <button
+        type="button"
+        onClick={() => removeRow(row.id)}
+        aria-label={`Remove row ${index + 1}`}
+        style={removeButtonStyle}
+      >
+        Remove
+      </button>
+    ) : null}
+  </div>
 </td>
           </tr>
         ))}
       </tbody>
     </table>
+    )}
   </div>
 
   <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
@@ -577,7 +764,12 @@ alert('Saved! Metrics and Reports are ready to refresh.');
       + Add Row
     </button>
 
-    <button type="button" onClick={saveAll} style={primaryButtonStyle}>
+    <button
+      type="button"
+      onClick={saveAll}
+      disabled={!hasValidRows}
+      style={primaryButtonStyle(!hasValidRows)}
+    >
       Save All
     </button>
     {/* <label style={secondaryButtonStyle}>
@@ -662,15 +854,27 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 };
 
-const primaryButtonStyle: React.CSSProperties = {
-  padding: '10px 16px',
-  borderRadius: 10,
-  border: 'none',
-  background: '#10b981',
-  color: '#fff',
-  fontWeight: 700,
-  cursor: 'pointer',
+const quickEntryEmptyStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  padding: 24,
+  border: '1px dashed #cbd5e1',
+  borderRadius: 12,
+  background: '#f8fafc',
+  color: '#475569',
 };
+
+function primaryButtonStyle(disabled = false): React.CSSProperties {
+  return {
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: 'none',
+    background: disabled ? '#9ca3af' : '#10b981',
+    color: '#fff',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '10px 16px',
@@ -681,6 +885,25 @@ const secondaryButtonStyle: React.CSSProperties = {
   fontWeight: 700,
   cursor: 'pointer',
 };
+
+const rowActionStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
+function rowSaveButtonStyle(disabled: boolean, saved: boolean): React.CSSProperties {
+  return {
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: saved ? '1px solid #bbf7d0' : '1px solid #10b981',
+    background: saved ? '#ecfdf5' : disabled ? '#f3f4f6' : '#10b981',
+    color: saved ? '#047857' : disabled ? '#6b7280' : '#fff',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
 const removeButtonStyle: React.CSSProperties = {
   padding: '8px 12px',

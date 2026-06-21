@@ -22,13 +22,34 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
   await authenticateTestUser(page);
   await installCarbonLiteApiMock(page, api);
 
+  async function expectExtractedPreview() {
+    await expect(page.getByRole('heading', {
+      name: 'Review & Edit Data Before Import',
+    })).toBeVisible();
+    await expect(page.getByText('Extracted rows: 1')).toBeVisible();
+    const previewRow = page.getByRole('row').filter({
+      has: page.getByRole('option', { name: 'ELECTRICITY' }),
+    });
+    await expect(previewRow.getByRole('combobox')).toHaveValue('ELECTRICITY');
+    await expect(previewRow.locator('input[type="number"]')).toHaveValue('4280');
+    await expect(previewRow.locator('input[type="text"]').nth(1)).toHaveValue('kWh');
+  }
+
+  async function openPersistedPreview() {
+    const documentRow = page.getByRole('row').filter({
+      hasText: 'enmax-electricity.csv',
+    });
+    await documentRow.getByRole('button', { name: 'Preview Data' }).click();
+    await expectExtractedPreview();
+  }
+
   await test.step('upload document', async () => {
     await page.goto('/upload');
     await expect(page.getByRole('heading', { name: /upload & extract carbon data/i }))
       .toBeVisible();
 
     await page.locator('#document-upload-input').setInputFiles(fixturePath);
-    await page.getByRole('button', { name: 'Upload & Extract' }).click();
+    await page.getByRole('button', { name: 'Extract Data' }).click();
 
     const documentRow = page.getByRole('row').filter({
       hasText: 'enmax-electricity.csv',
@@ -44,18 +65,40 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
       hasText: 'enmax-electricity.csv',
     });
 
-    await expect(page.getByRole('heading', {
-      name: 'Review & Edit Data Before Import',
-    })).toBeVisible();
-    await expect(page.getByText('Extracted rows: 1')).toBeVisible();
-    const previewRow = page.getByRole('row').filter({
-      has: page.getByRole('option', { name: 'ELECTRICITY' }),
-    });
-    await expect(previewRow.getByRole('combobox')).toHaveValue('ELECTRICITY');
-    await expect(previewRow.locator('input[type="number"]')).toHaveValue('4280');
-    await expect(previewRow.locator('input[type="text"]').nth(1)).toHaveValue('kWh');
+    await expectExtractedPreview();
     await expect(documentRow).toContainText('Ready for Review');
     expect(api.extractionRequests).toBe(1);
+  });
+
+  await test.step('persist extracted preview across refresh, navigation, and login restore', async () => {
+    await page.reload();
+    await openPersistedPreview();
+
+    await page.getByRole('link', { name: 'Metrics Summary', exact: true }).click();
+    await expect(page).toHaveURL(/\/metrics-summary$/);
+    await page.getByRole('link', { name: 'Upload', exact: true }).click();
+    await openPersistedPreview();
+
+    await page.evaluate(() => {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('currentUser');
+    });
+    await page.goto('/login');
+    await page.evaluate(() => {
+      localStorage.setItem('accessToken', 'playwright-access-token');
+      localStorage.setItem(
+        'currentUser',
+        JSON.stringify({
+          id: 'user-1',
+          email: 'pilot@carbonliteapp.ca',
+          role: 'USER',
+          organizationId: 'organization-1',
+          organizationName: 'CarbonLite E2E Workspace',
+        }),
+      );
+    });
+    await page.goto('/upload');
+    await openPersistedPreview();
   });
 
   await test.step('import activity records once and generate metrics', async () => {

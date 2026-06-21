@@ -97,16 +97,16 @@ export function buildConversionFactorTraceabilityRows(
 ) {
   return conversionFactorsUsed.map((factor) => [
     factor.activityType || 'Not specified',
-    factor.jurisdiction || 'Not specified',
-    factor.inputUnit || 'Not specified',
     factor.factorValue,
+    factor.inputUnit || 'Not specified',
     factor.resultUnit || 'kgCO2e',
+    factor.jurisdiction || 'Not specified',
     factor.sourceAuthority || 'Source not specified',
-    factor.sourceDocument || 'Source not specified',
-    factor.sourceUrl || 'Source not specified',
     factor.sourceYear || 'Source not specified',
     factor.verified ? 'Verified' : 'Unverified / user review required',
     factor.factorType,
+    factor.sourceDocument || 'Source not specified',
+    factor.sourceUrl || 'Source not specified',
   ]);
 }
 
@@ -269,11 +269,12 @@ export function FormalReportPreview({
         )}
       </ReportSection>
 
-      <ReportSection title="D. Totals by Metric">
+      <ReportSection title="D. Calculation Summary">
         <SimpleTable
-          headers={['Metric Type', 'Unit', 'Total']}
+          headers={['Category', 'Metric Type', 'Unit', 'Total']}
           emptyMessage="No metrics available for this report scope."
           rows={totalsByMetric.map((item) => [
+            item.category === 'calculated' ? 'Calculated Result' : 'Input Data',
             item.metricType,
             item.unit,
             item.totalValue,
@@ -305,16 +306,16 @@ export function FormalReportPreview({
         <SimpleTable
           headers={[
             'Activity Type',
-            'Jurisdiction',
-            'Input Unit',
             'Factor Value',
+            'Input Unit',
             'Result Unit',
+            'Jurisdiction',
             'Source Authority',
-            'Source Document',
-            'Source URL',
             'Source Year',
             'Verified',
             'System / Custom',
+            'Source Document',
+            'Source URL',
           ]}
           emptyMessage="No conversion factors found for this report scope."
           rows={factorTraceabilityRows}

@@ -1,4 +1,6 @@
 import {
+  FILE_MISSING_EXPLANATION,
+  FILE_MISSING_TOOLTIP,
   formatSourceReference,
   formatDuplicateDocumentMessage,
   getDocumentActionModel,
@@ -183,9 +185,24 @@ describe('document upload action model', () => {
       kind: 'extract',
       label: 'Re-upload Required',
       disabled: true,
-      title: 'This file is no longer available. Please upload it again.',
+      title: FILE_MISSING_TOOLTIP,
     });
     expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
+  });
+
+  it('handles backend REUPLOAD_REQUIRED status the same as FILE_MISSING', () => {
+    const model = getDocumentActionModel({ status: 'REUPLOAD_REQUIRED' });
+
+    expect(model.statusLabel).toBe('Re-upload Required');
+    expect(model.primaryAction).toMatchObject({
+      label: 'Re-upload Required',
+      disabled: true,
+      title: FILE_MISSING_TOOLTIP,
+    });
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
+    expect(FILE_MISSING_EXPLANATION).toContain(
+      'system updates or temporary storage cleanup',
+    );
   });
 
   it('replaces technical status labels with user-friendly labels', () => {
@@ -193,5 +210,6 @@ describe('document upload action model', () => {
     expect(getDocumentStatusLabel('IMPORTED')).toBe('Imported');
     expect(getDocumentStatusLabel('FAILED')).toBe('Needs Attention');
     expect(getDocumentStatusLabel('FILE_MISSING')).toBe('Re-upload Required');
+    expect(getDocumentStatusLabel('REUPLOAD_REQUIRED')).toBe('Re-upload Required');
   });
 });

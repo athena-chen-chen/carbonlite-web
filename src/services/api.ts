@@ -1,5 +1,18 @@
 import { getToken, handleUnauthorized } from './auth';
 import { buildApiUrl } from '../config/api';
+import { captureFrontendException } from '../sentry';
+
+export type ApiErrorCode =
+  | 'FILE_MISSING'
+  | 'EXTRACTION_NOT_FOUND'
+  | 'EXTRACTION_FAILED'
+  | 'TIMEOUT'
+  | 'PAGE_SIZE_TOO_LARGE'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'SERVER_ERROR'
+  | 'REQUEST_FAILED';
 
 function parseApiErrorBody(text: string) {
   try {
@@ -9,22 +22,72 @@ function parseApiErrorBody(text: string) {
   }
 }
 
-function buildApiErrorMessage(status: number, text: string, parsedBody: unknown) {
-  let message = text;
+function extractBackendMessage(text: string, parsedBody: unknown) {
+  let message: unknown = text;
 
   if (parsedBody && typeof parsedBody === 'object') {
     const parsed = parsedBody as Record<string, unknown>;
     message = parsed.message ?? parsed.error ?? text;
   }
 
-  const normalizedMessage = Array.isArray(message) ? message.join(', ') : String(message);
-  const lowerText = text.toLowerCase();
+  return Array.isArray(message) ? message.join(', ') : String(message);
+}
 
-  if (status === 400 && lowerText.includes('pagesize')) {
-    return 'API 400: Page size is too large. Please refresh and try again.';
+function getApiErrorCode(
+  status: number,
+  path: string,
+  backendMessage: string,
+): ApiErrorCode {
+  const lowerMessage = backendMessage.toLowerCase();
+  const lowerPath = path.toLowerCase();
+
+  if (/file is no longer available|file.*missing|uploaded file.*available/i.test(backendMessage)) {
+    return 'FILE_MISSING';
   }
 
-  return `API ${status}: ${normalizedMessage}`;
+  if (status === 404 && lowerPath.includes('/document-extraction/')) {
+    return 'EXTRACTION_NOT_FOUND';
+  }
+
+  if (status >= 500 && lowerPath.includes('/document-extraction')) {
+    return 'EXTRACTION_FAILED';
+  }
+
+  if (status === 400 && lowerMessage.includes('pagesize')) {
+    return 'PAGE_SIZE_TOO_LARGE';
+  }
+
+  if (status === 401) return 'UNAUTHORIZED';
+  if (status === 403) return 'FORBIDDEN';
+  if (status === 404) return 'NOT_FOUND';
+  if (status >= 500) return 'SERVER_ERROR';
+
+  return 'REQUEST_FAILED';
+}
+
+function getFriendlyApiErrorMessage(code: ApiErrorCode) {
+  switch (code) {
+    case 'FILE_MISSING':
+      return 'The original file is no longer available. Please upload it again.';
+    case 'EXTRACTION_NOT_FOUND':
+      return 'Preview data is no longer available. Please extract the document again.';
+    case 'EXTRACTION_FAILED':
+      return 'The document could not be processed. Please try again.';
+    case 'TIMEOUT':
+      return 'The request took too long. Please retry.';
+    case 'PAGE_SIZE_TOO_LARGE':
+      return 'Too many records were requested. Please refresh and try again.';
+    case 'UNAUTHORIZED':
+      return 'Your session has expired. Please log in again.';
+    case 'FORBIDDEN':
+      return 'You do not have permission to perform this action.';
+    case 'NOT_FOUND':
+      return 'The requested information is no longer available.';
+    case 'SERVER_ERROR':
+      return 'Something went wrong on our side. Please try again.';
+    default:
+      return 'Unable to complete the request. Please try again.';
+  }
 }
 
 export class ApiError extends Error {
@@ -32,6 +95,8 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly data: unknown,
+    public readonly code: ApiErrorCode,
+    public readonly technicalMessage?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -46,14 +111,34 @@ export async function apiFetch<T>(
   const isFormData = options?.body instanceof FormData;
   const url = buildApiUrl(path);
 
-  const response = await fetch(url, {
-    headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options?.headers ?? {}),
-    },
-    ...options,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options?.headers ?? {}),
+      },
+      ...options,
+    });
+  } catch (error) {
+    const isTimeout =
+      error instanceof DOMException && error.name === 'AbortError';
+    const apiError = new ApiError(
+      0,
+      getFriendlyApiErrorMessage(isTimeout ? 'TIMEOUT' : 'REQUEST_FAILED'),
+      null,
+      isTimeout ? 'TIMEOUT' : 'REQUEST_FAILED',
+      error instanceof Error ? error.message : String(error),
+    );
+    captureFrontendException(apiError, {
+      path,
+      code: apiError.code,
+      technicalMessage: apiError.technicalMessage,
+    });
+    throw apiError;
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -62,11 +147,26 @@ export async function apiFetch<T>(
 
     const text = await response.text();
     const parsedBody = parseApiErrorBody(text);
-    throw new ApiError(
+    const backendMessage = extractBackendMessage(text, parsedBody);
+    const code = getApiErrorCode(response.status, path, backendMessage);
+    const apiError = new ApiError(
       response.status,
-      buildApiErrorMessage(response.status, text, parsedBody),
+      getFriendlyApiErrorMessage(code),
       parsedBody,
+      code,
+      backendMessage,
     );
+
+    if (response.status >= 500 || code === 'EXTRACTION_FAILED') {
+      captureFrontendException(apiError, {
+        path,
+        status: response.status,
+        code,
+        technicalMessage: backendMessage,
+      });
+    }
+
+    throw apiError;
   }
 
   if (response.status === 204) {

@@ -9,6 +9,7 @@ import {
   DuplicateDocumentImportError,
   confirmDocumentImport,
   extractDocument,
+  getDocumentExtraction,
   type ParsedActivity,
 } from '../services/documentExtraction';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -19,6 +20,7 @@ import {
   defaultActivityType,
 } from '../constants/activityTypes';
 import { buildApiUrl } from '../config/api';
+import { ApiError } from '../services/api';
 import { getToken } from '../services/auth';
 import { track } from '../services/analytics.service';
 import {
@@ -62,6 +64,10 @@ type RawExtractionField = string | number | null | undefined | Record<string, an
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
+export const FILE_MISSING_EXPLANATION =
+  'This file is no longer available on the server. This may happen after system updates or temporary storage cleanup. Please upload the file again if you need to extract or review it.';
+export const FILE_MISSING_TOOLTIP =
+  'The original uploaded file is no longer available. Please upload it again.';
 
 type DocumentActionKind =
   | 'view'
@@ -219,9 +225,33 @@ function getExtractionFailureState(err: unknown): {
   status: 'EXTRACTION_FAILED' | 'FILE_MISSING';
   message: string;
 } {
+  if (err instanceof ApiError) {
+    if (err.code === 'FILE_MISSING') {
+      return {
+        status: 'FILE_MISSING',
+        message: FILE_MISSING_MESSAGE,
+      };
+    }
+
+    if (err.code === 'TIMEOUT') {
+      return {
+        status: 'EXTRACTION_FAILED',
+        message: 'The extraction took too long. Please retry.',
+      };
+    }
+
+    return {
+      status: 'EXTRACTION_FAILED',
+      message: 'Extraction failed. Please try again or upload the file again.',
+    };
+  }
+
   const message = err instanceof Error ? err.message : String(err ?? '');
 
-  if (/API 404/i.test(message) || /file is no longer available|file.*missing|not found/i.test(message)) {
+  if (
+    /API 404/i.test(message) ||
+    /file is no longer available|file.*missing|not found|file missing/i.test(message)
+  ) {
     return {
       status: 'FILE_MISSING',
       message: FILE_MISSING_MESSAGE,
@@ -245,6 +275,10 @@ function normalizeDocumentStatus(status: string) {
   return String(status || '').toUpperCase();
 }
 
+function isMissingFileStatus(status: string) {
+  return ['FILE_MISSING', 'REUPLOAD_REQUIRED'].includes(normalizeDocumentStatus(status));
+}
+
 export function getDocumentStatusLabel(status: string) {
   const normalized = normalizeDocumentStatus(status);
 
@@ -252,7 +286,7 @@ export function getDocumentStatusLabel(status: string) {
   if (['PROCESSED', 'EXTRACTED', 'REVIEW_REQUIRED'].includes(normalized)) {
     return 'Ready for Review';
   }
-  if (normalized === 'FILE_MISSING') return 'Re-upload Required';
+  if (isMissingFileStatus(normalized)) return 'Re-upload Required';
   if (['FAILED', 'EXTRACTION_FAILED', 'NO_DATA_FOUND'].includes(normalized)) {
     return 'Needs Attention';
   }
@@ -326,14 +360,14 @@ export function getDocumentActionModel(input: {
     };
   }
 
-  if (status === 'FILE_MISSING') {
+  if (isMissingFileStatus(status)) {
     return {
       statusLabel: 'Re-upload Required',
       primaryAction: {
         kind: 'extract',
         label: 'Re-upload Required',
         disabled: true,
-        title: FILE_MISSING_MESSAGE,
+        title: FILE_MISSING_TOOLTIP,
       },
       menuActions: [deleteAction],
     };
@@ -384,6 +418,7 @@ export function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [uploadExtractInProgress, setUploadExtractInProgress] = useState(false);
 
   const [extractingId, setExtractingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -404,6 +439,7 @@ export function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDragDepthRef = useRef(0);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
+  const hasMissingFiles = documents.some((doc) => isMissingFileStatus(doc.status));
   async function loadDocuments() {
     setLoading(true);
     setError(null);
@@ -441,6 +477,66 @@ export function UploadPage() {
       dateEstimated: false,
       ...item,
     }));
+  }
+
+  function getFieldValue<T>(value: RawExtractionField, fallback: T): T {
+    if (isRecord(value) && 'value' in value) {
+      return (value.value ?? fallback) as T;
+    }
+
+    return (value ?? fallback) as T;
+  }
+
+  function buildEditableParsedActivities(
+    extractedActivities: Array<ParsedActivity | any>,
+    document: { id: string; fileName: string; createdAt?: string | null },
+  ): EditableParsedActivity[] {
+    return extractedActivities.map((item) => {
+      const documentUploadDate =
+        document.createdAt ??
+        documents.find((doc) => doc.id === document.id)?.createdAt ??
+        null;
+      const resolvedDate = resolveActivityRecordDate({
+        recordDate: item.recordDate,
+        extractedDocumentDate: getExtractedDocumentDate(item),
+        uploadDate: documentUploadDate,
+      });
+
+      const quantityValue = Number(getFieldValue(item.quantity, 0));
+
+      return {
+        selected: true,
+        documentId: document.id,
+        documentFileName: document.fileName,
+        dateEstimated: resolvedDate.dateEstimated || Boolean(item.dateEstimated),
+        activityType: {
+          value: String(getFieldValue(item.activityType, '')),
+          confidence: extractFieldConfidence(item.activityType),
+        },
+        recordDate: {
+          value: resolvedDate.value,
+          confidence: resolvedDate.dateEstimated
+            ? 'low'
+            : extractFieldConfidence(item.recordDate),
+        },
+        quantity: {
+          value: Number.isFinite(quantityValue) ? quantityValue : 0,
+          confidence: extractFieldConfidence(item.quantity),
+        },
+        unit: {
+          value: String(getFieldValue(item.unit, '')),
+          confidence: extractFieldConfidence(item.unit),
+        },
+        sourceReference: {
+          value: formatSourceReference(item.sourceReference, document.fileName),
+          confidence: extractFieldConfidence(item.sourceReference),
+        },
+        notes: {
+          value: formatOptionalExtractionField(item.notes),
+          confidence: extractFieldConfidence(item.notes),
+        },
+      };
+    });
   }
 
   function loadSampleWorkspace() {
@@ -593,7 +689,7 @@ ${sampleRows.join('\n')}`,
     setSelectedFiles([file]);
     setDocumentType('SPREADSHEET');
     setError(null);
-    setSuccessMessage('Sample CSV loaded. Click Upload & Extract.');
+    setSuccessMessage('Sample CSV loaded. Click Extract Data.');
   }
 
   async function uploadSelectedFile(options?: { extractAfterUpload?: boolean }) {
@@ -714,7 +810,12 @@ ${sampleRows.join('\n')}`,
     fileInputRef.current?.click();
   }
   async function handleUploadAndExtract() {
-    await uploadSelectedFile({ extractAfterUpload: true });
+    setUploadExtractInProgress(true);
+    try {
+      await uploadSelectedFile({ extractAfterUpload: true });
+    } finally {
+      setUploadExtractInProgress(false);
+    }
   }
 
   function updateDocumentStatuses(documentIds: string[], status: string) {
@@ -742,8 +843,11 @@ ${sampleRows.join('\n')}`,
 
   function hasPreviewForDocument(doc: DocumentItem) {
     return (
-      parsedActivities.some((item) => item.documentId === doc.id) &&
-      (previewDocumentId === doc.id || previewDocumentIds.includes(doc.id))
+      ['PROCESSED', 'EXTRACTED', 'REVIEW_REQUIRED'].includes(
+        normalizeDocumentStatus(doc.status),
+      ) ||
+      (parsedActivities.some((item) => item.documentId === doc.id) &&
+        (previewDocumentId === doc.id || previewDocumentIds.includes(doc.id)))
     );
   }
 
@@ -761,7 +865,13 @@ ${sampleRows.join('\n')}`,
   }
 
   function handleDocumentAction(doc: DocumentItem, action: DocumentActionConfig) {
-    if (action.disabled) return;
+    if (action.disabled) {
+      if (isMissingFileStatus(doc.status)) {
+        setError(FILE_MISSING_MESSAGE);
+        setSuccessMessage(null);
+      }
+      return;
+    }
     setOpenDocumentMenuId(null);
 
     switch (action.kind) {
@@ -769,11 +879,7 @@ ${sampleRows.join('\n')}`,
         handleViewDocument(doc);
         return;
       case 'preview':
-        if (hasPreviewForDocument(doc)) {
-          setPreviewDocumentId(doc.id);
-          setPreviewDocumentIds([doc.id]);
-          setSuccessMessage('Review the extracted activity rows below, then confirm import.');
-        }
+        void handlePreviewDocument(doc);
         return;
       case 'import':
         handleConfirmImport(doc.id);
@@ -794,6 +900,71 @@ ${sampleRows.join('\n')}`,
         return;
       default:
         return;
+    }
+  }
+
+  async function handlePreviewDocument(doc: DocumentItem) {
+    const localRows = parsedActivities.filter((item) => item.documentId === doc.id);
+
+    if (localRows.length > 0) {
+      setPreviewDocumentId(doc.id);
+      setPreviewDocumentIds([doc.id]);
+      setSuccessMessage('Review the extracted activity rows below, then confirm import.');
+      setError(null);
+      return;
+    }
+
+    if (isSampleDocumentId(doc.id)) {
+      const sampleRows = buildSampleReviewRows().filter((item) => item.documentId === doc.id);
+      setParsedActivities(sampleRows);
+      setPreviewDocumentId(doc.id);
+      setPreviewDocumentIds([doc.id]);
+      setSuccessMessage('Review the extracted activity rows below, then confirm import.');
+      setError(null);
+      return;
+    }
+
+    setExtractingId(doc.id);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const result = await getDocumentExtraction(doc.id);
+      const extractedRows = buildEditableParsedActivities(
+        result.parsedActivities ?? [],
+        {
+          id: doc.id,
+          fileName: doc.fileName,
+          createdAt: doc.createdAt,
+        },
+      );
+
+      if (extractedRows.length === 0) {
+        setError('No emissions data detected. You can view the file or retry extraction.');
+        setSuccessMessage(null);
+        return;
+      }
+
+      setParsedActivities((prev) => [
+        ...prev.filter((item) => item.documentId !== doc.id),
+        ...extractedRows,
+      ]);
+      setPreviewDocumentId(doc.id);
+      setPreviewDocumentIds([doc.id]);
+      updateDocumentStatuses([doc.id], result.status || 'REVIEW_REQUIRED');
+      setSuccessMessage('Review the extracted activity rows below, then confirm import.');
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'EXTRACTION_NOT_FOUND') {
+        setError('Preview data is no longer available. Please extract the document again.');
+      } else if (err instanceof ApiError && err.code === 'FILE_MISSING') {
+        setError(FILE_MISSING_MESSAGE);
+        updateDocumentStatuses([doc.id], 'FILE_MISSING');
+      } else {
+        setError('Extraction preview could not be loaded. Please retry extraction.');
+      }
+      setSuccessMessage(null);
+    } finally {
+      setExtractingId(null);
     }
   }
 
@@ -1006,39 +1177,7 @@ ${sampleRows.join('\n')}`,
         }
 
         extractedRows.push(
-          ...extractedActivities.map((item: ParsedActivity | any) => {
-            const documentUploadDate =
-              document.createdAt ??
-              documents.find((doc) => doc.id === document.id)?.createdAt ??
-              null;
-            const resolvedDate = resolveActivityRecordDate({
-              recordDate: item.recordDate,
-              extractedDocumentDate: getExtractedDocumentDate(item),
-              uploadDate: documentUploadDate,
-            });
-
-            return {
-              selected: true,
-              documentId: document.id,
-              documentFileName: document.fileName,
-              ...item,
-              dateEstimated: resolvedDate.dateEstimated || Boolean(item.dateEstimated),
-              recordDate: {
-                value: resolvedDate.value,
-                confidence: resolvedDate.dateEstimated
-                  ? 'low'
-                  : extractFieldConfidence(item.recordDate),
-              },
-              sourceReference: {
-                value: formatSourceReference(item.sourceReference, document.fileName),
-                confidence: extractFieldConfidence(item.sourceReference),
-              },
-              notes: {
-                value: formatOptionalExtractionField(item.notes),
-                confidence: extractFieldConfidence(item.notes),
-              },
-            };
-          }),
+          ...buildEditableParsedActivities(extractedActivities, document),
         );
 
         if (result.possibleMissingRows) {
@@ -1417,18 +1556,32 @@ function updateParsedActivityField(
       <div style={uploadCardStyle}>
         <h2 style={{ marginTop: 0 }}>Upload your documents</h2>
         <p style={{ color: '#666' }}>
-          Drop documents here, choose documents with the file picker, or use a sample file to test the workflow.
+          Select a document and click Extract Data.
         </p>
 
         <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
           <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (!isProcessing) handleChooseFile();
+            }}
+            onKeyDown={(event) => {
+              if (isProcessing) return;
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleChooseFile();
+              }
+            }}
             onDragEnter={handleUploadDragEnter}
             onDragOver={handleUploadDragOver}
             onDragLeave={handleUploadDragLeave}
             onDrop={handleUploadDrop}
             style={uploadDropzoneStyle(isDraggingUpload, isProcessing)}
           >
-            <strong>{isDraggingUpload ? 'Drop to select files' : 'Drag and drop files here'}</strong>
+            <strong>
+              {isDraggingUpload ? 'Drop to select files' : 'Drag and drop files here or browse files'}
+            </strong>
             <span style={{ color: '#666' }}>
               PDF, CSV, XLSX, PNG, or JPG files are supported. Max 10 MB.
             </span>
@@ -1455,9 +1608,6 @@ function updateParsedActivityField(
             </div>
           </div>
 
-   
-
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
            <input
             ref={fileInputRef}
             id="document-upload-input"
@@ -1468,38 +1618,10 @@ function updateParsedActivityField(
             multiple
           />
 
-            <button
-              type="button"
-             onClick={handleChooseFile}
-              disabled={isProcessing}
-              style={secondaryActionButtonStyle(isProcessing)}
-            >
-              {uploading ? 'Uploading...' : 'Upload File'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleUseSampleCSV}
-              disabled={isProcessing}
-              style={secondaryActionButtonStyle(isProcessing)}
-            >
-              Use Sample CSV
-            </button>
-
-            <button
-              type="button"
-              onClick={handleUploadAndExtract}
-              disabled={isProcessing}
-              style={primaryButtonStyle(isProcessing)}
-            >
-              {isProcessing ? 'Processing...' : 'Upload & Extract'}
-            </button>
-          </div>
-
           {selectedFiles.length > 0 ? (
             <div style={fileInfoStyle}>
               <strong>
-                Selected {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'}:
+                Selected file{selectedFiles.length === 1 ? '' : 's'}:
               </strong>
               <ul style={selectedFileListStyle}>
                 {selectedFiles.map((file) => (
@@ -1510,6 +1632,43 @@ function updateParsedActivityField(
               </ul>
             </div>
           ) : null}
+
+          <div style={uploadWorkflowStyle}>
+            {['Select document', 'Extract data', 'Review results', 'Import records', 'Generate reports'].map((step, index) => (
+              <div key={step} style={uploadWorkflowStepStyle}>
+                <span style={uploadWorkflowNumberStyle}>{index + 1}</span>
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={uploadActionStackStyle}>
+            <button
+              type="button"
+              onClick={handleUploadAndExtract}
+              disabled={isProcessing || selectedFiles.length === 0}
+              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0)}
+              title={
+                selectedFiles.length === 0
+                  ? 'Select a document before extracting data.'
+                  : 'Upload the selected document and extract activity data.'
+              }
+            >
+              {uploadExtractInProgress ? 'Extracting...' : 'Extract Data'}
+            </button>
+
+            <div style={sampleCsvRowStyle}>
+              <span style={{ color: '#64748b' }}>Need an example?</span>
+              <button
+                type="button"
+                onClick={handleUseSampleCSV}
+                disabled={isProcessing}
+                style={linkButtonStyle(isProcessing)}
+              >
+                Use Sample CSV
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1543,6 +1702,12 @@ function updateParsedActivityField(
             </p>
           </div>
         ) : (
+          <>
+          {hasMissingFiles ? (
+            <div style={missingFileNoticeStyle}>
+              {FILE_MISSING_EXPLANATION}
+            </div>
+          ) : null}
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <colgroup>
               <col style={{ width: 52 }} />
@@ -1607,17 +1772,27 @@ function updateParsedActivityField(
                     <td style={tdStyle}>{doc.createdAt}</td>
                     <td style={documentActionTdStyle}>
                       <div style={documentActionRowCompactStyle}>
-                        <button
-                          type="button"
-                          onClick={() => handleDocumentAction(doc, primaryAction)}
-                          disabled={primaryAction.disabled}
+                        <span
                           title={primaryAction.title ?? primaryAction.label}
-                          style={documentPrimaryActionButtonStyle(
-                            Boolean(primaryAction.disabled),
-                          )}
+                          onClick={() => {
+                            if (primaryAction.disabled) {
+                              handleDocumentAction(doc, primaryAction);
+                            }
+                          }}
+                          style={primaryAction.disabled ? disabledActionWrapStyle : undefined}
                         >
-                          {primaryAction.label}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDocumentAction(doc, primaryAction)}
+                            disabled={primaryAction.disabled}
+                            title={primaryAction.title ?? primaryAction.label}
+                            style={documentPrimaryActionButtonStyle(
+                              Boolean(primaryAction.disabled),
+                            )}
+                          >
+                            {primaryAction.label}
+                          </button>
+                        </span>
 
                         <div style={documentMenuWrapStyle}>
                           <button
@@ -1662,6 +1837,7 @@ function updateParsedActivityField(
               })}
             </tbody>
           </table>
+          </>
         )}
       </div>
       <br/>
@@ -1987,6 +2163,66 @@ const selectedFileListStyle: React.CSSProperties = {
   lineHeight: 1.7,
 };
 
+const uploadWorkflowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+  gap: 10,
+  padding: 12,
+  borderRadius: 12,
+  border: '1px solid #dbeafe',
+  background: '#f8fafc',
+};
+
+const uploadWorkflowStepStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  color: '#334155',
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const uploadWorkflowNumberStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 24,
+  height: 24,
+  borderRadius: '50%',
+  background: '#e0f2fe',
+  color: '#075985',
+  fontSize: 12,
+  fontWeight: 800,
+  flex: '0 0 auto',
+};
+
+const uploadActionStackStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  justifyItems: 'start',
+};
+
+const sampleCsvRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  fontSize: 14,
+};
+
+function linkButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    border: 0,
+    background: 'transparent',
+    color: disabled ? '#94a3b8' : '#047857',
+    padding: 0,
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    textDecoration: 'underline',
+    textUnderlineOffset: 3,
+  };
+}
+
 const documentTypeLabelStyle: React.CSSProperties = {
   display: 'block',
   marginBottom: 8,
@@ -2040,7 +2276,7 @@ const uploadDropzoneStyle = (
   border: `2px dashed ${isDragging ? '#10b981' : '#cbd5e1'}`,
   background: isDragging ? '#ecfdf5' : '#f8fafc',
   color: isProcessing ? '#94a3b8' : '#0f172a',
-  cursor: isProcessing ? 'not-allowed' : 'copy',
+  cursor: isProcessing ? 'not-allowed' : 'pointer',
   opacity: isProcessing ? 0.72 : 1,
   transition: 'border-color 120ms ease, background 120ms ease, color 120ms ease',
 });
@@ -2186,6 +2422,22 @@ const documentActionRowCompactStyle: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
+const disabledActionWrapStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  cursor: 'not-allowed',
+};
+
+const missingFileNoticeStyle: React.CSSProperties = {
+  margin: '0 16px 12px',
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+  fontWeight: 600,
+  lineHeight: 1.5,
+};
+
 function documentPrimaryActionButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     display: 'inline-flex',
@@ -2201,6 +2453,7 @@ function documentPrimaryActionButtonStyle(disabled: boolean): React.CSSPropertie
     fontSize: 14,
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
+    pointerEvents: disabled ? 'none' : 'auto',
   };
 }
 

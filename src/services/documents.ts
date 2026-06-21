@@ -130,9 +130,7 @@ export async function deleteDocument(id: string) {
       deletedActivityRecords: 0,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : '';
-
-    if (/api 403/i.test(message)) {
+    if (err instanceof ApiError && err.status === 403) {
       throw new Error('You can only delete your own uploaded documents.');
     }
 

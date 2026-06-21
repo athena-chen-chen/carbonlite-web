@@ -54,7 +54,7 @@ export function getFactorTraceability(item: ConversionFactorItem) {
     sourceAuthority:
       item.sourceAuthority ||
       item.sourceName ||
-      (item.isSystemDefault ? 'MVP Default' : ''),
+      (item.isSystemDefault ? 'CarbonLite system defaults' : ''),
     sourceDocument:
       item.sourceDocument ||
       item.sourceReference ||
@@ -68,8 +68,33 @@ export function getFactorTraceability(item: ConversionFactorItem) {
         : ''),
     confidenceLevel: item.confidenceLevel ?? '',
     verified: Boolean(item.verified),
-    notes: item.notes ?? '',
+    notes:
+      item.notes ||
+      (item.isSystemDefault
+        ? 'Demo factor. Verify before client or regulatory reporting.'
+        : ''),
   };
+}
+
+function formatFactorValue(value: ConversionFactorItem['factorValue']) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return String(value ?? '-');
+  }
+
+  return numericValue.toLocaleString(undefined, {
+    maximumFractionDigits: 6,
+  });
+}
+
+function formatAuditDate(value?: string | null) {
+  if (!value) return 'Not available';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString();
 }
 
 export function ConversionFactorsPage() {
@@ -88,6 +113,10 @@ export function ConversionFactorsPage() {
   const [activityTypeFilter, setActivityTypeFilter] = useState('');
   const [jurisdictionFilter, setJurisdictionFilter] = useState('');
   const [sourceYearFilter, setSourceYearFilter] = useState('');
+  const [minFactorValueFilter, setMinFactorValueFilter] = useState('');
+  const [maxFactorValueFilter, setMaxFactorValueFilter] = useState('');
+  const [factorValueSort, setFactorValueSort] = useState<'none' | 'asc' | 'desc'>('none');
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -159,6 +188,46 @@ export function ConversionFactorsPage() {
 
     return types.size;
   }, [items]);
+
+  const displayedItems = useMemo(() => {
+    const minValue = minFactorValueFilter.trim() === ''
+      ? null
+      : Number(minFactorValueFilter);
+    const maxValue = maxFactorValueFilter.trim() === ''
+      ? null
+      : Number(maxFactorValueFilter);
+
+    const filtered = items.filter((item) => {
+      const value = Number(item.factorValue);
+
+      if (!Number.isFinite(value)) {
+        return minValue === null && maxValue === null;
+      }
+
+      if (minValue !== null && Number.isFinite(minValue) && value < minValue) {
+        return false;
+      }
+
+      if (maxValue !== null && Number.isFinite(maxValue) && value > maxValue) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (factorValueSort === 'none') return filtered;
+
+    return [...filtered].sort((a, b) => {
+      const aValue = Number(a.factorValue);
+      const bValue = Number(b.factorValue);
+
+      if (!Number.isFinite(aValue) && !Number.isFinite(bValue)) return 0;
+      if (!Number.isFinite(aValue)) return 1;
+      if (!Number.isFinite(bValue)) return -1;
+
+      return factorValueSort === 'asc' ? aValue - bValue : bValue - aValue;
+    });
+  }, [factorValueSort, items, maxFactorValueFilter, minFactorValueFilter]);
 
   function updateField<K extends keyof ConversionFactorInput>(
     key: K,
@@ -289,6 +358,7 @@ export function ConversionFactorsPage() {
   return (
     <div className="conversion-factors-page" style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       <style>{printStyles}</style>
+      <style>{responsiveStyles}</style>
       <div className="print-report-header" style={printHeaderStyle}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800 }}>CarbonLite AI</div>
@@ -628,7 +698,7 @@ export function ConversionFactorsPage() {
         </div>
 
         <form
-          className="no-print"
+          className="no-print conversion-factor-filters"
           style={filterBarStyle}
           onSubmit={(event) => {
             event.preventDefault();
@@ -666,17 +736,51 @@ export function ConversionFactorsPage() {
               placeholder="e.g. 2025"
             />
           </Field>
-          <div style={filterActionsStyle}>
+          <Field label="Min Factor Value">
+            <input
+              type="number"
+              step="any"
+              value={minFactorValueFilter}
+              onChange={(event) => setMinFactorValueFilter(event.target.value)}
+              style={inputStyle}
+              placeholder="e.g. 0.5"
+            />
+          </Field>
+          <Field label="Max Factor Value">
+            <input
+              type="number"
+              step="any"
+              value={maxFactorValueFilter}
+              onChange={(event) => setMaxFactorValueFilter(event.target.value)}
+              style={inputStyle}
+              placeholder="e.g. 3"
+            />
+          </Field>
+          <Field label="Sort by Factor Value">
+            <select
+              value={factorValueSort}
+              onChange={(event) => setFactorValueSort(event.target.value as 'none' | 'asc' | 'desc')}
+              style={inputStyle}
+            >
+              <option value="none">Default order</option>
+              <option value="asc">Lowest first</option>
+              <option value="desc">Highest first</option>
+            </select>
+          </Field>
+          <div className="conversion-factor-filter-actions" style={filterActionsStyle}>
             <button type="submit" disabled={loading} style={primaryButtonStyle(loading)}>
               Apply Filters
             </button>
             <button
               type="button"
-              style={cancelButtonStyle}
+              style={filterClearButtonStyle}
               onClick={() => {
                 setActivityTypeFilter('');
                 setJurisdictionFilter('');
                 setSourceYearFilter('');
+                setMinFactorValueFilter('');
+                setMaxFactorValueFilter('');
+                setFactorValueSort('none');
                 void loadItems({
                   activityType: '',
                   jurisdiction: '',
@@ -697,39 +801,38 @@ export function ConversionFactorsPage() {
               <tr style={{ background: '#f8fafc' }}>
                 <th style={thStyle}>Activity Type</th>
                 <th style={thStyle}>Factor</th>
-                <th style={thStyle}>Unit</th>
-                <th style={thStyle}>Jurisdiction</th>
-                <th style={thStyle}>Source</th>
-                <th style={thStyle}>Year</th>
+                <th style={thStyle}>Factor Value</th>
+                <th style={thStyle}>Input Unit</th>
+                <th style={thStyle}>Source Authority</th>
                 <th style={thStyle}>Factor Type</th>
-                <th style={thStyle}>Verified</th>
                 <th className="no-print" style={thStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 ? (
+              {displayedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
+                  <td colSpan={7} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
                     No conversion factors yet.
                   </td>
                 </tr>
               ) : (
-                items.map((item) => {
+                displayedItems.map((item) => {
                   const traceability = getFactorTraceability(item);
 
                   return (
-                      <tr key={item.id}>
+                      <tr key={item.id} data-testid={`factor-row-${item.id}`}>
                         <td style={tdStyle}>{item.activityType ?? '-'}</td>
                         <td style={tdStyle}>
                           <div style={{ fontWeight: 600 }}>{item.name}</div>
-                          <div style={{ marginTop: 4, fontSize: 12, color: '#475569' }}>
-                            {item.factorValue} {item.resultUnit}
-                          </div>
+                        </td>
+                        <td
+                          style={factorValueCellStyle}
+                          data-testid={`factor-value-${item.id}`}
+                        >
+                          {formatFactorValue(item.factorValue)}
                         </td>
                         <td style={tdStyle}>{item.unit}</td>
-                        <td style={tdStyle}>{traceability.jurisdiction || '-'}</td>
                         <td style={tdStyle}>{traceability.sourceAuthority || '-'}</td>
-                        <td style={tdStyle}>{traceability.sourceYear ?? '-'}</td>
                         <td style={tdStyle}>
                           {item.isSystemDefault ? (
                             <Badge label="System" color="#1d4ed8" background="#dbeafe" />
@@ -737,19 +840,7 @@ export function ConversionFactorsPage() {
                             <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
                           )}
                         </td>
-                        <td style={tdStyle}>
-                          {traceability.verified ? (
-                            <Badge label="Verified" color="#047857" background="#d1fae5" />
-                          ) : (
-                            <Badge label="Unverified" color="#9a3412" background="#ffedd5" />
-                          )}
-                        </td>
-                        <td className="no-print" style={tdStyle}>
-                          {item.isSystemDefault ? (
-                            <div style={{ marginBottom: 6, fontSize: 12, color: '#64748b' }}>
-                              Locked
-                            </div>
-                          ) : null}
+                        <td className="no-print" style={actionsCellStyle}>
                           <button
                             type="button"
                             onClick={() => setSelectedFactor(item)}
@@ -757,28 +848,59 @@ export function ConversionFactorsPage() {
                           >
                             Details
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditFactor(item)}
-                            disabled={item.isSystemDefault || deletingId === item.id || submitting}
-                            style={editButtonStyle(item.isSystemDefault)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteFactor(item)}
-                            disabled={
-                              item.isSystemDefault ||
-                              deletingId === item.id ||
-                              editingId === item.id
-                            }
-                            style={deleteButtonStyle(
-                              item.isSystemDefault || deletingId === item.id,
-                            )}
-                          >
-                            {deletingId === item.id ? 'Deleting...' : 'Delete'}
-                          </button>
+                          <div style={overflowMenuWrapperStyle}>
+                            <button
+                              type="button"
+                              aria-label={`More actions for ${item.name}`}
+                              aria-haspopup="menu"
+                              aria-expanded={openActionMenuId === item.id}
+                              onClick={() =>
+                                setOpenActionMenuId((current) =>
+                                  current === item.id ? null : item.id,
+                                )
+                              }
+                              style={overflowButtonStyle}
+                            >
+                              ⋮
+                            </button>
+                            {openActionMenuId === item.id ? (
+                              <div role="menu" style={overflowMenuStyle}>
+                                {item.isSystemDefault ? (
+                                  <div style={lockedMenuLabelStyle}>Locked</div>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    handleEditFactor(item);
+                                  }}
+                                  disabled={item.isSystemDefault || deletingId === item.id || submitting}
+                                  style={menuItemButtonStyle(item.isSystemDefault)}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    void handleDeleteFactor(item);
+                                  }}
+                                  disabled={
+                                    item.isSystemDefault ||
+                                    deletingId === item.id ||
+                                    editingId === item.id
+                                  }
+                                  style={menuItemDangerStyle(
+                                    item.isSystemDefault || deletingId === item.id,
+                                  )}
+                                >
+                                  {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                   );
@@ -903,6 +1025,7 @@ function FactorDetailsModal({
         <div style={traceabilityDetailsStyle}>
           <DetailItem label="Factor Value" value={`${item.factorValue} ${item.resultUnit}`} />
           <DetailItem label="Input Unit" value={item.unit} />
+          <DetailItem label="Result Unit" value={item.resultUnit} />
           <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
           <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
           <DetailItem label="Source Document" value={traceability.sourceDocument} />
@@ -912,7 +1035,7 @@ function FactorDetailsModal({
             value={
               traceability.sourceUrl ? (
                 <a href={traceability.sourceUrl} target="_blank" rel="noreferrer">
-                  Open source
+                  {traceability.sourceUrl}
                 </a>
               ) : ''
             }
@@ -924,6 +1047,10 @@ function FactorDetailsModal({
           <DetailItem label="Methodology" value={traceability.methodology} />
           <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
           <DetailItem label="Notes" value={traceability.notes} />
+          <DetailItem
+            label="Audit History"
+            value={`Created: ${formatAuditDate(item.createdAt)}\nUpdated: ${formatAuditDate(item.updatedAt)}`}
+          />
         </div>
         <div style={{ marginTop: 20, textAlign: 'right' }}>
           <button type="button" onClick={onClose} style={cancelButtonStyle}>Close</button>
@@ -945,7 +1072,7 @@ function DetailItem({
       <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
         {label}
       </div>
-      <div style={{ marginTop: 4, color: '#0f172a' }}>{value || '-'}</div>
+      <div style={{ marginTop: 4, color: '#0f172a', whiteSpace: 'pre-line' }}>{value || '-'}</div>
     </div>
   );
 }
@@ -1037,10 +1164,11 @@ const sourceSectionStyle: React.CSSProperties = {
 
 const filterBarStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))',
   alignItems: 'end',
-  gap: 12,
-  padding: 16,
+  gap: 10,
+  rowGap: 14,
+  padding: '12px 16px 14px',
   borderBottom: '1px solid #e5e7eb',
   background: '#f8fafc',
 };
@@ -1048,7 +1176,11 @@ const filterBarStyle: React.CSSProperties = {
 const filterActionsStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
+  justifyContent: 'flex-start',
   gap: 8,
+  gridColumn: '1 / -1',
+  justifySelf: 'start',
+  whiteSpace: 'nowrap',
 };
 
 const pilotDisclaimerStyle: React.CSSProperties = {
@@ -1085,7 +1217,8 @@ const checkboxRowStyle: React.CSSProperties = {
 
 function primaryButtonStyle(disabled: boolean): React.CSSProperties {
   return {
-    padding: '10px 16px',
+    height: 42,
+    padding: '0 16px',
     borderRadius: 10,
     border: 'none',
     background: disabled ? '#9ca3af' : '#10b981',
@@ -1098,6 +1231,17 @@ function primaryButtonStyle(disabled: boolean): React.CSSProperties {
 const cancelButtonStyle: React.CSSProperties = {
   marginLeft: 10,
   padding: '10px 16px',
+  borderRadius: 10,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#334155',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const filterClearButtonStyle: React.CSSProperties = {
+  height: 42,
+  padding: '0 14px',
   borderRadius: 10,
   border: '1px solid #cbd5e1',
   background: '#fff',
@@ -1139,47 +1283,97 @@ const tableHeaderStyle: React.CSSProperties = {
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
-  padding: 12,
+  padding: '10px 12px',
   borderBottom: '1px solid #ddd',
   color: '#475569',
   fontSize: 13,
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: 12,
+  padding: '9px 12px',
   borderBottom: '1px solid #eee',
-  verticalAlign: 'top',
+  verticalAlign: 'middle',
 };
 
-function editButtonStyle(disabled: boolean): React.CSSProperties {
+const factorValueCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  color: '#065f46',
+  fontSize: 19,
+  fontWeight: 800,
+  letterSpacing: 0,
+};
+
+const actionsCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  position: 'relative',
+  width: 128,
+};
+
+const overflowMenuWrapperStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+};
+
+const overflowButtonStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#0f172a',
+  fontSize: 20,
+  lineHeight: 1,
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const overflowMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 0,
+  top: 38,
+  zIndex: 30,
+  minWidth: 130,
+  padding: 6,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  boxShadow: '0 12px 32px rgba(15, 23, 42, 0.16)',
+};
+
+const lockedMenuLabelStyle: React.CSSProperties = {
+  padding: '7px 9px',
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+function menuItemButtonStyle(disabled: boolean): React.CSSProperties {
   return {
-    marginRight: 8,
-    padding: '7px 10px',
-    borderRadius: 8,
-    border: disabled ? '1px solid #e5e7eb' : '1px solid #bfdbfe',
-    background: disabled ? '#f3f4f6' : '#eff6ff',
-    color: disabled ? '#9ca3af' : '#1d4ed8',
+    display: 'block',
+    width: '100%',
+    padding: '8px 9px',
+    borderRadius: 6,
+    border: 'none',
+    background: 'transparent',
+    color: disabled ? '#9ca3af' : '#0f172a',
+    textAlign: 'left',
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }
 
-function deleteButtonStyle(disabled: boolean): React.CSSProperties {
+function menuItemDangerStyle(disabled: boolean): React.CSSProperties {
   return {
-    padding: '7px 10px',
-    borderRadius: 8,
-    border: '1px solid #fecaca',
-    background: disabled ? '#f3f4f6' : '#fff',
+    ...menuItemButtonStyle(disabled),
     color: disabled ? '#9ca3af' : '#dc2626',
-    fontWeight: 700,
-    cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }
 
 const detailsButtonStyle: React.CSSProperties = {
-  marginRight: 8,
-  marginBottom: 6,
-  padding: '7px 10px',
+  padding: '8px 11px',
   borderRadius: 8,
   border: '1px solid #cbd5e1',
   background: '#fff',
@@ -1323,6 +1517,24 @@ const printStyles = `
       background: #e2e8f0 !important;
       color: #0f172a !important;
       font-weight: 800 !important;
+    }
+  }
+`;
+
+const responsiveStyles = `
+  @media (max-width: 1120px) {
+    .conversion-factor-filters {
+      grid-template-columns: repeat(3, minmax(150px, 1fr)) !important;
+    }
+  }
+
+  @media (max-width: 680px) {
+    .conversion-factor-filters {
+      grid-template-columns: 1fr !important;
+    }
+
+    .conversion-factor-filter-actions {
+      flex-wrap: wrap !important;
     }
   }
 `;

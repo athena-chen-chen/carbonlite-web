@@ -49,11 +49,12 @@ describe('ConversionFactorsPage traceability', () => {
 
   it('provides MVP traceability defaults for system factors without confirmed sources', () => {
     expect(getFactorTraceability(baseFactor)).toMatchObject({
-      sourceAuthority: 'MVP Default',
+      sourceAuthority: 'CarbonLite system defaults',
       sourceDocument: 'Pilot default factor library',
       methodology:
         'Used for pilot workflow validation; replace with verified ECCC/Alberta factors before production reporting',
       verified: false,
+      notes: 'Demo factor. Verify before client or regulatory reporting.',
     });
   });
 
@@ -109,18 +110,181 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('MVP Default')).toBeInTheDocument();
+    expect(await screen.findByText('CarbonLite system defaults')).toBeInTheDocument();
     expect(screen.getByText('Environment and Climate Change Canada')).toBeInTheDocument();
-    expect(screen.getByText('Verified', { selector: 'span' })).toBeInTheDocument();
-    expect(screen.getByText('Unverified')).toBeInTheDocument();
-    expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Details' })[1]);
 
+    expect(screen.getAllByText('Verified').length).toBeGreaterThan(0);
+    expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
     expect(screen.getByText('Canada National Inventory Report')).toBeInTheDocument();
     expect(screen.getByText('ISO-aligned methodology review.')).toBeInTheDocument();
     expect(screen.getByText('Reviewed by consultant.')).toBeInTheDocument();
+    expect(screen.getByText(/Created:/)).toBeInTheDocument();
+    expect(screen.getByText(/Updated:/)).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('shows factor value in the table and keeps full governance details in the modal', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        {
+          ...baseFactor,
+          jurisdiction: 'Alberta, Canada',
+          sourceAuthority: 'CarbonLite system defaults',
+          sourceYear: 2025,
+          sourceUrl: 'https://example.com/factor-source',
+          notes: 'Review before reporting.',
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('columnheader', { name: 'Factor Value' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Result Unit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Jurisdiction' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Verified' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('factor-value-factor-1')).toHaveTextContent('2.68');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Details' }));
+
+    expect(screen.getByText('kgCO2e')).toBeInTheDocument();
+    expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
+    expect(screen.getByText('2025')).toBeInTheDocument();
+    expect(screen.getByText('https://example.com/factor-source')).toBeInTheDocument();
+    expect(screen.getByText('Review before reporting.')).toBeInTheDocument();
+  });
+
+  it('uses an overflow menu for edit and delete actions', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [baseFactor],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Diesel default');
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText('More actions for Diesel default'));
+
+    expect(screen.getByText('Locked')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeDisabled();
+  });
+
+  it('sorts conversion factors by factor value', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        baseFactor,
+        {
+          ...baseFactor,
+          id: 'factor-2',
+          name: 'Electricity default',
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          factorValue: 0.53,
+        },
+        {
+          ...baseFactor,
+          id: 'factor-3',
+          name: 'Natural gas default',
+          activityType: 'NATURAL_GAS',
+          unit: 'm3',
+          factorValue: 1.89,
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 3,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Diesel default');
+    await userEvent.selectOptions(screen.getByLabelText('Sort by Factor Value'), 'asc');
+
+    expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
+      '0.53',
+      '1.89',
+      '2.68',
+    ]);
+  });
+
+  it('filters conversion factors by factor value range', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        baseFactor,
+        {
+          ...baseFactor,
+          id: 'factor-2',
+          name: 'Electricity default',
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          factorValue: 0.53,
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 2,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Diesel default')).toBeInTheDocument();
+    expect(screen.getByText('Electricity default')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Min Factor Value'), '2');
+
+    expect(screen.getByText('Diesel default')).toBeInTheDocument();
+    expect(screen.queryByText('Electricity default')).not.toBeInTheDocument();
+  });
+
+  it('defaults custom factors to unverified when the create form opens', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Custom Factor' }));
+
+    expect(screen.getByLabelText('Verified source and methodology')).not.toBeChecked();
   });
 
   it('sends activity type, jurisdiction, and year filters to the backend', async () => {

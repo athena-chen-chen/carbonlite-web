@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -58,6 +58,7 @@ const SCOPE_MAP: Record<string, 'Scope 1' | 'Scope 2' | 'Scope 3'> = {
 
 export default function ReportingPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const routeState = location.state as {
     reportScope?: string;
     selectedRecordIds?: string[];
@@ -309,6 +310,8 @@ const scopeRows = useMemo(() => {
 }, [activities]);
 
 function handleDownloadCSV() {
+  if (countSummary.processedRecords <= 0) return;
+
     const rows = [
       ['Scope', 'Activity Type', 'Quantity', 'Unit', 'Source'],
       ...scopeRows.map((r) => [
@@ -393,6 +396,8 @@ const scopeNarrative = useMemo(() => {
 }, [scopeSummary]);
 
 function handleDownloadPDF() {
+  if (countSummary.processedRecords <= 0) return;
+
   const doc = new jsPDF();
   const today = new Date().toISOString().slice(0, 10);
   const totalsByMetric = buildMetricsSummaryTableRows({
@@ -468,11 +473,12 @@ function handleDownloadPDF() {
     doc.addPage();
     nextY = 18;
   }
-  drawPdfSectionTitle(doc, 'Totals by Metric', nextY);
+  drawPdfSectionTitle(doc, 'Calculation Summary', nextY);
   autoTable(doc, {
     startY: nextY + 6,
-    head: [['Metric Type', 'Unit', 'Total']],
+    head: [['Category', 'Metric Type', 'Unit', 'Total']],
     body: totalsByMetric.map((item) => [
+      item.category === 'calculated' ? 'Calculated Result' : 'Input Data',
       item.metricType,
       item.unit,
       item.totalValue,
@@ -506,16 +512,16 @@ function handleDownloadPDF() {
     startY: nextY + 16,
     head: [[
       'Activity Type',
-      'Jurisdiction',
-      'Input Unit',
       'Factor Value',
+      'Input Unit',
       'Result Unit',
+      'Jurisdiction',
       'Source Authority',
-      'Source Document',
-      'Source URL',
       'Source Year',
       'Verified',
       'System / Custom',
+      'Source Document',
+      'Source URL',
     ]],
     body: factorTraceabilityRows.length
       ? factorTraceabilityRows
@@ -729,6 +735,20 @@ const reportPeriod =
     ? 'Selected documents'
     : 'Selected records';
 const sourceEvidenceRows = buildSourceEvidenceRows(activities);
+const reportRecordCount = countSummary.processedRecords;
+const hasLoadedSummary = Boolean(summary);
+const hasImportedActivityData = countSummary.totalRecordsFound > 0;
+const hasValidReport = reportRecordCount > 0;
+const hasNoDataInSystem = hasLoadedSummary && !loading && !hasImportedActivityData;
+const hasNoRecordsForSelectedPeriod =
+  hasLoadedSummary &&
+  !loading &&
+  hasImportedActivityData &&
+  activities.length === 0;
+const exportDisabled = reportRecordCount === 0;
+const exportDisabledTitle = exportDisabled
+  ? 'Generate a report before exporting.'
+  : undefined;
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
@@ -801,7 +821,7 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
       key={year}
       type="button"
       onClick={() => handleFullYear(year)}
-      style={secondaryButtonStyle}
+      style={secondaryButtonStyle(reportScope !== 'dateRange' || loading)}
       disabled={reportScope !== 'dateRange' || loading}
     >
       {year} Full Year
@@ -823,28 +843,57 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
         </div>
       ) : null}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-        <button onClick={loadReportData} disabled={loading} style={secondaryButtonStyle}>
-          {loading ? 'Refreshing...' : 'Refresh'}
+        <button
+          onClick={loadReportData}
+          disabled={loading || hasNoDataInSystem}
+          style={secondaryButtonStyle(loading || hasNoDataInSystem)}
+          title={hasNoDataInSystem ? 'Upload and import activity data before generating a report.' : undefined}
+        >
+          {loading ? 'Generating...' : 'Generate Report'}
         </button>
 
         <button
           onClick={handleDownloadCSV}
-          disabled={!activities.length}
-          style={secondaryButtonStyle}
+          disabled={exportDisabled}
+          title={exportDisabledTitle}
+          style={secondaryButtonStyle(exportDisabled)}
         >
           Download CSV
         </button>
 
         <button
           onClick={handleDownloadPDF}
-          disabled={!activities.length}
-          style={primaryButtonStyle}
+          disabled={exportDisabled}
+          title={exportDisabledTitle}
+          style={primaryButtonStyle(exportDisabled)}
         >
           Download PDF
         </button>
       </div>
 
       {error ? <div style={errorStyle}>{error}</div> : null}
+
+      {hasNoDataInSystem ? (
+        <div style={reportEmptyStateStyle}>
+          <h2 style={{ margin: 0, fontSize: 22 }}>No reporting data found.</h2>
+          <p style={{ margin: '10px 0 18px', color: '#475569', lineHeight: 1.6 }}>
+            Upload and import activity data to generate your first emissions report.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/upload')}
+            style={primaryButtonStyle(false)}
+          >
+            Go to Upload
+          </button>
+        </div>
+      ) : null}
+
+      {hasNoRecordsForSelectedPeriod ? (
+        <div style={dateRangeEmptyStateStyle}>
+          No records found for the selected period.
+        </div>
+      ) : null}
 
       {loading ? (
         <>
@@ -862,7 +911,7 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
             isLoading={!summary}
           />
         </>
-      ) : (
+      ) : hasValidReport ? (
         <>
           <MetricsSummarySection
             usageTotals={usageTotals}
@@ -941,7 +990,7 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
   </div>
 </Section>
         </>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1021,25 +1070,29 @@ const emptyStyle: React.CSSProperties = {
   color: '#666',
 };
 
-const primaryButtonStyle: React.CSSProperties = {
-  padding: '10px 16px',
-  borderRadius: 10,
-  border: 'none',
-  background: '#10b981',
-  color: '#fff',
-  fontWeight: 700,
-  cursor: 'pointer',
-};
+function primaryButtonStyle(disabled = false): React.CSSProperties {
+  return {
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: 'none',
+    background: disabled ? '#cbd5e1' : '#10b981',
+    color: disabled ? '#64748b' : '#fff',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
-const secondaryButtonStyle: React.CSSProperties = {
-  padding: '10px 16px',
-  borderRadius: 10,
-  border: '1px solid #d1d5db',
-  background: '#fff',
-  color: '#111',
-  fontWeight: 700,
-  cursor: 'pointer',
-};
+function secondaryButtonStyle(disabled = false): React.CSSProperties {
+  return {
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: '1px solid #d1d5db',
+    background: disabled ? '#f1f5f9' : '#fff',
+    color: disabled ? '#94a3b8' : '#111',
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
 const errorStyle: React.CSSProperties = {
   marginBottom: 16,
@@ -1125,4 +1178,23 @@ const emptyScopeNoticeStyle: React.CSSProperties = {
   background: '#fffbeb',
   color: '#92400e',
   fontWeight: 700,
+};
+
+const reportEmptyStateStyle: React.CSSProperties = {
+  padding: 28,
+  borderRadius: 16,
+  border: '1px solid #dbeafe',
+  background: '#eff6ff',
+  color: '#0f172a',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+};
+
+const dateRangeEmptyStateStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #fde68a',
+  background: '#fffbeb',
+  color: '#92400e',
+  fontWeight: 800,
 };

@@ -250,7 +250,7 @@ function handleDownloadCSV() {
     ['Section', 'Metric Type', 'Facility', 'Unit', 'Total Value'],
 
     ...totalsByMetric.map((item: any) => [
-      'Totals by Metric',
+      'Calculation Summary',
       item.metricType,
       '',
       item.unit,
@@ -302,8 +302,9 @@ function handleDownloadPDF() {
 
   autoTable(doc, {
     startY: 45,
-    head: [['Metric Type', 'Unit', 'Total Value']],
+    head: [['Category', 'Metric Type', 'Unit', 'Total Value']],
     body: totalsByMetric.map((item: any) => [
+      item.category === 'calculated' ? 'Calculated Result' : 'Input Data',
       item.metricType,
       item.unit,
       item.totalValue,
