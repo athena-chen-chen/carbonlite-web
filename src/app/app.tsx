@@ -74,6 +74,17 @@ export default function App() {
         />
 
         <Route
+          path="/activity-records"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <ActivityDataPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/conversion-factors"
           element={
             <ProtectedRoute>

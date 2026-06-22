@@ -3,10 +3,13 @@ import {
   formatFuelUsageBreakdown,
   formatActivityUsageValue,
   formatActivityTypeLabel,
+  formatInvalidActivityRecordNote,
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 import type { CalculationAuditDetail } from '../services/metrics';
 import { buildCalculatedFromLine } from '../utils/calculationTraceability';
+import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
+import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 export type MetricsCountSummary = {
   totalRecordsFound: number;
@@ -31,8 +34,8 @@ export type MetricsSummaryTableRow = {
 
 export type MissingFactorItem = {
   activityDataId?: string;
-  activityType: string;
-  unit: string;
+  activityType?: string | null;
+  unit?: string | null;
   availableUnitsForActivityType?: string[];
 };
 
@@ -41,6 +44,12 @@ export type MissingFactorGroup = {
   unit: string;
   count: number;
   availableUnitsForActivityType: string[];
+  activityDataIds: string[];
+};
+
+type CalculationIssueGroup = MissingFactorGroup & {
+  issueType: 'missingData' | 'missingFactor' | 'informational';
+  missingField?: 'activityType' | 'unit';
 };
 
 export function groupMissingFactors(
@@ -50,19 +59,28 @@ export function groupMissingFactors(
 
   missingFactors.forEach((item) => {
     const activityType = String(item.activityType || 'UNKNOWN').toUpperCase();
-    const unit = String(item.unit || '-');
-    const key = `${activityType}:${unit.toLowerCase()}`;
+    const normalizedUnit = normalizeUnitForDisplay(item.unit);
+    const unit = normalizedUnit.value;
+    const key = `${normalizedUnit.status}:${activityType}:${unit.toLowerCase()}`;
     const existing = groups.get(key) ?? {
       activityType,
       unit,
       count: 0,
       availableUnitsForActivityType: [],
+      activityDataIds: [],
     };
 
     existing.count += 1;
+    if (item.activityDataId && !existing.activityDataIds.includes(item.activityDataId)) {
+      existing.activityDataIds.push(item.activityDataId);
+    }
     item.availableUnitsForActivityType?.forEach((unit) => {
-      if (!existing.availableUnitsForActivityType.includes(unit)) {
-        existing.availableUnitsForActivityType.push(unit);
+      const normalizedAvailableUnit = normalizeUnitForDisplay(unit);
+      const nextUnit =
+        normalizedAvailableUnit.status === 'valid' ? normalizedAvailableUnit.value : unit;
+
+      if (!existing.availableUnitsForActivityType.includes(nextUnit)) {
+        existing.availableUnitsForActivityType.push(nextUnit);
       }
     });
     groups.set(key, existing);
@@ -95,7 +113,7 @@ export function buildMetricsSummaryTableRows(input: {
     rows.push({
       metricType: `Fuel Usage — ${formatActivityTypeLabel(item.activityType)}`,
       unit: item.unit,
-      totalValue: String(item.total),
+      totalValue: formatDisplayNumber(item.total),
       category: 'input',
       activityType: item.activityType,
     });
@@ -105,7 +123,7 @@ export function buildMetricsSummaryTableRows(input: {
     rows.push({
       metricType: 'Electricity',
       unit: usageTotals.electricityUnitLabel,
-      totalValue: String(usageTotals.electricity),
+      totalValue: formatDisplayNumber(usageTotals.electricity),
       category: 'input',
       activityType: 'ELECTRICITY',
     });
@@ -114,7 +132,7 @@ export function buildMetricsSummaryTableRows(input: {
   rows.push({
     metricType: 'Carbon Emissions',
     unit: 'kgCO2e',
-    totalValue: String(totalEstimatedEmissionsKgCO2e),
+    totalValue: formatEmissionsValue(totalEstimatedEmissionsKgCO2e),
     category: 'calculated',
   });
 
@@ -151,8 +169,22 @@ export function MetricsSummarySection({
   const firstCalculatedDetail = calculationDetails.find(
     (detail) => detail.status === 'CALCULATED',
   );
-  const calculatedFromLine = buildCalculatedFromLine(firstCalculatedDetail);
-  const missingFactorGroups = groupMissingFactors(missingFactors);
+  const calculatedDetailsCount = calculationDetails.filter(
+    (detail) => detail.status === 'CALCULATED',
+  ).length;
+  const calculatedFromLine =
+    calculatedDetailsCount > 1
+      ? `Calculated from ${calculatedDetailsCount} activity records`
+      : buildCalculatedFromLine(firstCalculatedDetail);
+  const co2TraceText =
+    calculatedDetailsCount > 1
+      ? calculatedFromLine
+      : calculatedFromLine
+      ? `Calculated from: ${calculatedFromLine}`
+      : undefined;
+  const calculationIssueGroups = groupMissingFactors(missingFactors).map(
+    classifyCalculationIssue,
+  );
   const skippedReasons = countSummary.skippedReasons ?? {
     missingFactor: countSummary.missingFactorRecords,
     outsideDateRange: 0,
@@ -176,12 +208,23 @@ export function MetricsSummarySection({
     });
   }
 
+  function handleFixRecord(group: MissingFactorGroup) {
+    const recordId = group.activityDataIds[0];
+
+    navigate(recordId ? `/activity-records?recordId=${encodeURIComponent(recordId)}` : '/activity-records');
+  }
+
   return (
     <>
       <div style={gridStyle}>
         <MetricCard
           title="Fuel Usage"
-          value={formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown)}
+          value={
+            appendReviewNote(
+              formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown),
+              usageTotals.invalidFuelRecordCount,
+            )
+          }
           icon="⛽"
           color="#f59e0b"
           loading={isLoading}
@@ -189,9 +232,12 @@ export function MetricsSummarySection({
 
         <MetricCard
           title="Electricity"
-          value={formatActivityUsageValue(
-            usageTotals.electricity,
-            usageTotals.electricityUnitLabel,
+          value={appendReviewNote(
+            formatActivityUsageValue(
+              usageTotals.electricity,
+              usageTotals.electricityUnitLabel,
+            ),
+            usageTotals.invalidElectricityRecordCount,
           )}
           icon="⚡"
           color="#3b82f6"
@@ -200,12 +246,18 @@ export function MetricsSummarySection({
 
         <MetricCard
           title="CO₂ Emissions"
-          value={`${totalEstimatedEmissionsKgCO2e} kg CO2e`}
+          value={`${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kg CO2e`}
           icon="🌱"
           color="#10b981"
           highlight
           loading={isLoading}
-          traceText={calculatedFromLine ? `Calculated from: ${calculatedFromLine}` : undefined}
+          traceText={co2TraceText}
+          traceActionLabel={calculatedDetailsCount > 1 ? 'View calculation details' : undefined}
+          onTraceAction={() => {
+            document
+              .getElementById('metrics-calculation-details')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
         />
 
         <MetricCard
@@ -253,24 +305,29 @@ export function MetricsSummarySection({
         )}
       </div>
 
-      {missingFactorGroups.length > 0 ? (
+      {calculationIssueGroups.length > 0 ? (
         <div style={warningStyle}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
-            Some records were skipped because no matching conversion factor was found.
+            Calculation Issues
           </div>
           <div style={{ marginBottom: 10 }}>
-            Add a factor to include them in emissions calculations.
+            Review the items below to see whether the record needs more data, a conversion factor, or no emissions factor is required.
           </div>
           <div style={missingFactorListStyle}>
-            {missingFactorGroups.map((group) => (
+            {calculationIssueGroups.map((group) => (
               <div key={`${group.activityType}-${group.unit}`} style={missingFactorRowStyle}>
                 <div style={missingFactorTextStyle}>
-                  <div>
-                    <strong>{group.activityType} / {group.unit}</strong>
-                    {' — '}
-                    {group.count} {group.count === 1 ? 'record' : 'records'}
+                  <div style={issueHeaderStyle}>
+                    <IssueBadge type={group.issueType} />
+                    <strong>{getCalculationIssueTitle(group)}</strong>
+                    <span>
+                      {group.count} {group.count === 1 ? 'record' : 'records'}
+                    </span>
                   </div>
-                  {group.availableUnitsForActivityType.length > 0 ? (
+                  <div style={missingFactorHintStyle}>
+                    {getCalculationIssueDescription(group)}
+                  </div>
+                  {group.issueType === 'missingFactor' && group.availableUnitsForActivityType.length > 0 ? (
                     <div style={missingFactorHintStyle}>
                       A factor exists for {group.activityType} / {group.availableUnitsForActivityType.join(', ')}.
                       You may create a custom factor for {group.activityType} / {group.unit} or convert {group.unit} to {group.availableUnitsForActivityType[0]} before import.
@@ -280,13 +337,23 @@ export function MetricsSummarySection({
                     </div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleCreateFactor(group)}
-                  style={createFactorButtonStyle}
-                >
-                  Create Factor
-                </button>
+                {group.issueType === 'missingFactor' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleCreateFactor(group)}
+                    style={createFactorButtonStyle}
+                  >
+                    Create Factor
+                  </button>
+                ) : group.issueType === 'missingData' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleFixRecord(group)}
+                    style={editRecordButtonStyle}
+                  >
+                    Fix Record
+                  </button>
+                ) : null}
               </div>
             ))}
           </div>
@@ -387,7 +454,7 @@ export function MetricsSummarySection({
       </div>
 
       {calculationDetails.length > 0 ? (
-        <details style={sourceDetailsStyle}>
+        <details id="metrics-calculation-details" style={sourceDetailsStyle}>
           <summary style={sourceDetailsSummaryStyle}>Source references used in summary</summary>
           <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 12 }}>
             <thead>
@@ -403,7 +470,7 @@ export function MetricsSummarySection({
               {calculationDetails.map((detail) => (
                 <tr key={detail.activityDataId}>
                   <td style={tdStyle}>{detail.activityType}</td>
-                  <td style={tdStyle}>{detail.activityQuantity} {detail.activityUnit}</td>
+                  <td style={tdStyle}>{formatDisplayNumber(detail.activityQuantity)} {detail.activityUnit}</td>
                   <td style={tdStyle}>
                     {detail.sourceFileName || (detail.sourceType === 'MANUAL' ? 'Manual entry' : 'Source not specified')}
                   </td>
@@ -417,6 +484,55 @@ export function MetricsSummarySection({
       ) : null}
     </>
   );
+}
+
+function sanitizeIssueValue(value: unknown, fallback = 'Unknown') {
+  const normalized = String(value ?? '').trim();
+
+  if (!normalized || ['null', 'undefined', 'nan'].includes(normalized.toLowerCase())) {
+    return fallback;
+  }
+
+  return normalized;
+}
+
+function appendReviewNote(value: string, invalidCount = 0) {
+  const note = formatInvalidActivityRecordNote(invalidCount);
+
+  return note ? `${value}\n${note}` : value;
+}
+
+function isMissingIssueValue(value: unknown) {
+  return sanitizeIssueValue(value, '') === '';
+}
+
+function isTrackedNonEmissionMetric(activityType: string) {
+  return ['WATER', 'WASTE', 'WASTE_VOLUME'].includes(activityType.toUpperCase());
+}
+
+function classifyCalculationIssue(group: MissingFactorGroup): CalculationIssueGroup {
+  if (isMissingIssueValue(group.activityType) || group.activityType === 'UNKNOWN') {
+    return { ...group, issueType: 'missingData', missingField: 'activityType' };
+  }
+
+  if (
+    isMissingIssueValue(group.unit) ||
+    group.unit === '-' ||
+    group.unit === 'Missing unit' ||
+    normalizeUnitForDisplay(group.unit).status === 'missing'
+  ) {
+    return { ...group, issueType: 'missingData', missingField: 'unit' };
+  }
+
+  if (group.unit === 'Invalid unit' || normalizeUnitForDisplay(group.unit).status === 'invalid') {
+    return { ...group, issueType: 'missingData', missingField: 'unit' };
+  }
+
+  if (isTrackedNonEmissionMetric(group.activityType)) {
+    return { ...group, issueType: 'informational' };
+  }
+
+  return { ...group, issueType: 'missingFactor' };
 }
 
 function formatCalculationSourceReference(detail: CalculationAuditDetail) {
@@ -448,11 +564,63 @@ function buildSkippedReasonRows(
   skippedReasons: NonNullable<MetricsCountSummary['skippedReasons']>,
 ) {
   return [
-    { label: 'Missing conversion factors', count: skippedReasons.missingFactor },
+    { label: 'Calculation issues', count: skippedReasons.missingFactor },
     { label: 'Outside selected date range', count: skippedReasons.outsideDateRange },
     { label: 'Outside selected report scope', count: skippedReasons.outsideScope },
     { label: 'Invalid data', count: skippedReasons.invalidData },
   ].filter((reason) => reason.count > 0);
+}
+
+function getCalculationIssueTitle(group: CalculationIssueGroup) {
+  if (group.issueType === 'missingData') {
+    if (group.missingField === 'activityType') return 'Activity type required.';
+
+    return group.unit === 'Invalid unit' || normalizeUnitForDisplay(group.unit).status === 'invalid'
+      ? `${formatActivityTypeLabel(group.activityType)} — invalid unit`
+      : `${formatActivityTypeLabel(group.activityType)} — missing unit`;
+  }
+
+  if (group.issueType === 'informational') {
+    return `${formatActivityTypeLabel(group.activityType)} / ${group.unit} — tracked only`;
+  }
+
+  return `No factor found for: ${group.activityType} / ${group.unit}`;
+}
+
+function getCalculationIssueDescription(group: CalculationIssueGroup) {
+  if (group.issueType === 'missingData') {
+    if (group.missingField === 'activityType') {
+      return 'Add an activity type before calculations can be performed.';
+    }
+
+    return group.unit === 'Invalid unit' || normalizeUnitForDisplay(group.unit).status === 'invalid'
+      ? 'Invalid unit detected. Please review this record.'
+      : 'Missing unit. Please review this record.';
+  }
+
+  if (group.issueType === 'informational') {
+    return 'Tracked metric only. No emission factor required.';
+  }
+
+  return 'Create a conversion factor to include these records in emissions calculations.';
+}
+
+function IssueBadge({ type }: { type: CalculationIssueGroup['issueType'] }) {
+  const label =
+    type === 'missingData'
+      ? 'Missing Data'
+      : type === 'missingFactor'
+      ? 'Missing Factor'
+      : 'Informational';
+
+  const style =
+    type === 'missingData'
+      ? missingDataBadgeStyle
+      : type === 'missingFactor'
+      ? missingFactorBadgeStyle
+      : informationalBadgeStyle;
+
+  return <span style={style}>{label}</span>;
 }
 
 function getUnitMismatchDensityHint(group: MissingFactorGroup) {
@@ -481,6 +649,8 @@ function MetricCard({
   highlight,
   loading,
   traceText,
+  traceActionLabel,
+  onTraceAction,
 }: {
   title: string;
   value: React.ReactNode;
@@ -489,6 +659,8 @@ function MetricCard({
   highlight?: boolean;
   loading?: boolean;
   traceText?: string;
+  traceActionLabel?: string;
+  onTraceAction?: () => void;
 }) {
   return (
     <div style={{
@@ -518,7 +690,14 @@ function MetricCard({
         )}
       </div>
       {!loading && traceText ? (
-        <div style={traceTextStyle}>{traceText}</div>
+        <div style={traceTextStyle}>
+          <div>{traceText}</div>
+          {traceActionLabel ? (
+            <button type="button" onClick={onTraceAction} style={traceActionButtonStyle}>
+              {traceActionLabel}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -561,6 +740,16 @@ const traceTextStyle: React.CSSProperties = {
   color: '#166534',
   fontSize: 12,
   lineHeight: 1.45,
+};
+
+const traceActionButtonStyle: React.CSSProperties = {
+  marginTop: 8,
+  padding: 0,
+  border: 'none',
+  background: 'transparent',
+  color: '#047857',
+  fontWeight: 800,
+  cursor: 'pointer',
 };
 
 const sourceDetailsStyle: React.CSSProperties = {
@@ -657,6 +846,13 @@ const missingFactorTextStyle: React.CSSProperties = {
   flex: '1 1 280px',
 };
 
+const issueHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
 const missingFactorHintStyle: React.CSSProperties = {
   color: '#7c2d12',
   fontSize: 13,
@@ -672,6 +868,44 @@ const createFactorButtonStyle: React.CSSProperties = {
   color: '#047857',
   fontWeight: 800,
   cursor: 'pointer',
+};
+
+const editRecordButtonStyle: React.CSSProperties = {
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1px solid #f59e0b',
+  background: '#fffbeb',
+  color: '#92400e',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const issueBadgeBaseStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  borderRadius: 999,
+  padding: '3px 8px',
+  fontSize: 12,
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
+};
+
+const missingDataBadgeStyle: React.CSSProperties = {
+  ...issueBadgeBaseStyle,
+  color: '#92400e',
+  background: '#fef3c7',
+};
+
+const missingFactorBadgeStyle: React.CSSProperties = {
+  ...issueBadgeBaseStyle,
+  color: '#b91c1c',
+  background: '#fee2e2',
+};
+
+const informationalBadgeStyle: React.CSSProperties = {
+  ...issueBadgeBaseStyle,
+  color: '#0369a1',
+  background: '#e0f2fe',
 };
 
 const tableCardStyle: React.CSSProperties = {

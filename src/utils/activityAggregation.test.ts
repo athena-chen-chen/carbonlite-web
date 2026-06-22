@@ -19,8 +19,8 @@ describe('activity usage aggregation', () => {
 
     expect(totals.fuel).toBe(440);
     expect(totals.fuelUsageBreakdown).toEqual([
-      { activityType: 'DIESEL', total: 120, unit: 'L' },
-      { activityType: 'GASOLINE', total: 20, unit: 'L' },
+      { activityType: 'DIESEL', total: 120, unit: 'liters' },
+      { activityType: 'GASOLINE', total: 20, unit: 'liters' },
       { activityType: 'NATURAL_GAS', total: 300, unit: 'm3' },
     ]);
     expect(totals.electricity).toBe(450);
@@ -32,7 +32,7 @@ describe('activity usage aggregation', () => {
 
     expect(metricsSummaryTotals).toEqual(reportsTotals);
     expect(formatFuelUsageBreakdown(metricsSummaryTotals.fuelUsageBreakdown)).toBe(
-      '120 L Diesel\n20 L Gasoline\n300 m3 Natural Gas',
+      'Diesel: 120 liters\nGasoline: 20 liters\nNatural Gas: 300 m3',
     );
     expect(
       formatActivityUsageValue(
@@ -44,13 +44,13 @@ describe('activity usage aggregation', () => {
 
   it('normalizes activity type casing before matching', () => {
     const totals = aggregateActivityUsage([
-      { activityType: 'diesel', quantity: 10 },
-      { activityType: ' electricity ', quantity: 15 },
+      { activityType: 'diesel', quantity: 10, unit: 'L' },
+      { activityType: ' electricity ', quantity: 15, unit: 'KWH' },
     ]);
 
     expect(totals.fuel).toBe(10);
     expect(totals.fuelUsageBreakdown).toEqual([
-      { activityType: 'DIESEL', total: 10, unit: '-' },
+      { activityType: 'DIESEL', total: 10, unit: 'liters' },
     ]);
     expect(totals.electricity).toBe(15);
   });
@@ -62,8 +62,21 @@ describe('activity usage aggregation', () => {
     ]);
 
     expect(formatFuelUsageBreakdown(totals.fuelUsageBreakdown)).toBe(
-      '1710 L Diesel\n400 m3 Natural Gas',
+      'Diesel: 1,710 liters\nNatural Gas: 400 m3',
     );
     expect(formatFuelUsageBreakdown(totals.fuelUsageBreakdown)).not.toContain('L / m3');
+  });
+
+  it('excludes invalid numeric units from fuel totals and reports records needing review', () => {
+    const totals = aggregateActivityUsage([
+      { activityType: 'DIESEL', quantity: 105.3, unit: '20' },
+      { activityType: 'DIESEL', quantity: 760, unit: 'LTR' },
+      { activityType: 'NATURAL_GAS', quantity: 18900, unit: null },
+    ]);
+
+    expect(formatFuelUsageBreakdown(totals.fuelUsageBreakdown)).toBe(
+      'Diesel: 760 liters',
+    );
+    expect(totals.invalidFuelRecordCount).toBe(2);
   });
 });

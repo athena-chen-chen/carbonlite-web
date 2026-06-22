@@ -1,11 +1,11 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getOrganizationName, getUserDisplayName } from '../services/auth';
 
 const navItems = [
   { to: '/', label: 'Home' },
   { to: '/upload', label: 'Upload' },
-  { to: '/data-records', label: 'Data Records' },
+  { to: '/data-records', label: 'Data Records', activePaths: ['/activity-records'] },
   { to: '/conversion-factors', label: 'Conversion Factors' },
   { to: '/metrics-summary', label: 'Metrics Summary' },
   { to: '/reports', label: 'Reports' },
@@ -89,6 +89,7 @@ function getLinkStyle(isActive: boolean): React.CSSProperties {
 export function AppNav() {
   const { isAuthenticated, isAdmin, logout, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const workspaceName = getOrganizationName(user);
   const userLabel = getUserDisplayName(user);
 
@@ -113,7 +114,15 @@ export function AppNav() {
               <NavLink
                 key={item.to}
                 to={item.to}
-                style={({ isActive }) => getLinkStyle(isActive)}
+                style={({ isActive }) =>
+                  getLinkStyle(
+                    isActive ||
+                      Boolean(
+                        'activePaths' in item &&
+                          item.activePaths.includes(location.pathname),
+                      ),
+                  )
+                }
               >
                 {item.label}
               </NavLink>

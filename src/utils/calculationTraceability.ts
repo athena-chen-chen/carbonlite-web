@@ -1,16 +1,9 @@
 import type { CalculationAuditDetail } from '../services/metrics';
 import { formatActivityTypeLabel } from './activityAggregation';
+import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
 
 function formatNumber(value?: string | number | null) {
-  const numericValue = Number(value);
-
-  if (!Number.isFinite(numericValue)) {
-    return value === null || value === undefined || value === '' ? '-' : String(value);
-  }
-
-  return numericValue.toLocaleString(undefined, {
-    maximumFractionDigits: 6,
-  });
+  return formatDisplayNumber(value);
 }
 
 export function buildCalculatedFormula(detail: CalculationAuditDetail) {
@@ -24,7 +17,7 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
     return 'No factor available for this activity.';
   }
 
-  return `${formatNumber(detail.activityQuantity)} × ${formatNumber(detail.factorValue)} = ${formatNumber(detail.calculatedEmissionsKgCO2e)} kgCO2e`;
+  return `${formatNumber(detail.activityQuantity)} × ${formatNumber(detail.factorValue)} = ${formatEmissionsValue(detail.calculatedEmissionsKgCO2e)} kgCO2e`;
 }
 
 export function buildFormulaInputs(detail: CalculationAuditDetail) {

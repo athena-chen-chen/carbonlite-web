@@ -1,3 +1,5 @@
+import { normalizeUnitKey } from './unitNormalization';
+
 export type MatchableConversionFactor = {
   id: string;
   organizationId?: string | null;
@@ -98,34 +100,5 @@ export function normalizeActivityType(value?: string | null) {
 }
 
 export function normalizeUnit(value?: string | null) {
-  const unit = String(value ?? '').trim().toLowerCase();
-  const compact = unit.replace(/[\s._-]+/g, '');
-
-  const aliases: Record<string, string> = {
-    l: 'l',
-    liter: 'l',
-    liters: 'l',
-    litre: 'l',
-    litres: 'l',
-    kwh: 'kwh',
-    kwhr: 'kwh',
-    kilowatthour: 'kwh',
-    kilowatthours: 'kwh',
-    m3: 'm3',
-    'm³': 'm3',
-    cubicmeter: 'm3',
-    cubicmeters: 'm3',
-    cubicmetre: 'm3',
-    cubicmetres: 'm3',
-    kg: 'kg',
-    kilogram: 'kg',
-    kilograms: 'kg',
-    km: 'km',
-    kilometer: 'km',
-    kilometers: 'km',
-    kilometre: 'km',
-    kilometres: 'km',
-  };
-
-  return aliases[compact] ?? compact;
+  return normalizeUnitKey(value);
 }

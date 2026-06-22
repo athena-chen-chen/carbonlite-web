@@ -52,6 +52,34 @@ describe('import row validation', () => {
     ]);
   });
 
+  it('treats literal null unit values as missing before import', () => {
+    expect(
+      getImportValidationIssues([
+        buildImportRow({ unit: { value: 'null', confidence: 'low' } }),
+      ]),
+    ).toEqual([
+      {
+        rowIndex: 0,
+        field: 'unit',
+        message: 'Unit is required.',
+      },
+    ]);
+  });
+
+  it('treats numeric OCR unit values as invalid before import', () => {
+    expect(
+      getImportValidationIssues([
+        buildImportRow({ unit: { value: '20', confidence: 'low' } }),
+      ]),
+    ).toEqual([
+      {
+        rowIndex: 0,
+        field: 'unit',
+        message: 'Invalid unit detected. Please review this record.',
+      },
+    ]);
+  });
+
   it('requires quantity before import', () => {
     expect(
       getImportValidationIssues([
@@ -89,7 +117,21 @@ describe('import row validation', () => {
       {
         rowIndex: 1,
         field: 'recordDate',
-        message: 'Date is required.',
+        message: 'Record date is required.',
+      },
+    ]);
+  });
+
+  it('requires record date before import', () => {
+    expect(
+      getImportValidationIssues([
+        buildImportRow({ recordDate: { value: null, confidence: 'low' } }),
+      ]),
+    ).toEqual([
+      {
+        rowIndex: 0,
+        field: 'recordDate',
+        message: 'Record date is required.',
       },
     ]);
   });

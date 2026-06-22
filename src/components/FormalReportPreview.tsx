@@ -13,6 +13,7 @@ import {
   formatTraceabilitySource,
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
+import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 
 export { formatFuelUsageBreakdown };
 
@@ -87,7 +88,7 @@ export function buildReportExecutiveSummary({
       : 0;
 
   return {
-    estimatedEmissions: `${totalEstimatedEmissionsKgCO2e} kgCO2e`,
+    estimatedEmissions: `${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e`,
     recordsIncluded: countSummary.processedRecords,
     recordsSkipped: countSummary.skippedRecords,
     primaryActivityTypes: primaryActivityTypes.length
@@ -103,7 +104,7 @@ export function buildConversionFactorTraceabilityRows(
 ) {
   return conversionFactorsUsed.map((factor) => [
     factor.activityType || 'Not specified',
-    factor.factorValue,
+    formatDisplayNumber(factor.factorValue),
     factor.inputUnit || 'Not specified',
     factor.resultUnit || 'kgCO2e',
     factor.jurisdiction || 'Not specified',
@@ -154,7 +155,7 @@ export function buildSourceEvidenceRows(
       quantity:
         activity.quantity === null || activity.quantity === undefined
           ? '-'
-          : String(activity.quantity),
+          : formatDisplayNumber(activity.quantity),
       unit: activity.unit || '-',
       sourceFile:
         activity.sourceFileName?.trim() ||
@@ -316,9 +317,9 @@ export function FormalReportPreview({
           emptyMessage="No activity records with matching conversion factors."
           rows={matchedActivityEmissions.map((item) => [
             item.activityType,
-            item.quantity,
+            formatDisplayNumber(item.quantity),
             item.unit,
-            `${item.estimatedEmissionsKgCO2e} kgCO2e`,
+            `${formatEmissionsValue(item.estimatedEmissionsKgCO2e)} kgCO2e`,
             item.sourceReference || '-',
           ])}
         />
@@ -368,7 +369,7 @@ export function FormalReportPreview({
               emptyMessage="No calculation details available."
               rows={calculationDetails.map((item) => [
                 item.activityType,
-                `${item.activityQuantity} ${item.activityUnit}`,
+                `${formatDisplayNumber(item.activityQuantity)} ${item.activityUnit}`,
                 formatTraceableFactor(item),
                 formatTraceabilitySource(item),
                 item.sourceYear ?? item.reportingYear,

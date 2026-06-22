@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   createActivityData,
   getAllActivityData,
@@ -12,18 +12,21 @@ import{ExcelInputTable} from '../components/ExcelInputTable';
 import {
   activityTypes,
 } from '../constants/activityTypes';
+import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 const PAGE_SIZE = 15;
 
 type ActivityDataItem = {
   id: string;
-  activityType: string;
-  recordDate: string;
-  quantity: string | number;
-  unit: string;
+  activityType?: string | null;
+  recordDate?: string | null;
+  quantity?: string | number | null;
+  unit?: string | null;
+  documentId?: string | null;
+  sourceDocumentId?: string | null;
+  sourceFileName?: string | null;
   sourceType: string;
   sourceReference?: string | null;
-  sourceFileName?: string | null;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
   notes?: string | null;
@@ -31,8 +34,10 @@ type ActivityDataItem = {
 
 export function ActivityDataPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<ActivityDataItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -45,6 +50,25 @@ const [reloadKey, setReloadKey] = useState(0);
 const [currentPage, setCurrentPage] = useState(1);
 const [bulkDeleting, setBulkDeleting] = useState(false);
 const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+const [tableHasOverflow, setTableHasOverflow] = useState(false);
+const tableScrollRef = useRef<HTMLDivElement | null>(null);
+const documentFilterId = searchParams.get('documentId');
+const recordFilterId = searchParams.get('recordId');
+const sourceDocumentNameFromState =
+  (location.state as { sourceDocumentName?: string } | null)?.sourceDocumentName;
+const filteredItems = recordFilterId
+  ? items.filter((item) => item.id === recordFilterId)
+  : documentFilterId
+  ? items.filter((item) => {
+      const recordDocumentId = item.sourceDocumentId ?? item.documentId;
+      return recordDocumentId === documentFilterId;
+    })
+  : items;
+const documentFilterName =
+  sourceDocumentNameFromState ??
+  filteredItems.find((item) => item.sourceFileName)?.sourceFileName ??
+  documentFilterId;
+const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
     setLoading(true);
@@ -105,8 +129,8 @@ const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
     loadItems();
   }, []);
 
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const paginatedItems = items.slice(
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const paginatedItems = filteredItems.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
@@ -114,6 +138,56 @@ const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedIds([]);
+  }, [documentFilterId, recordFilterId]);
+
+  useEffect(() => {
+    const container = tableScrollRef.current;
+    if (!container) return;
+
+    function updateOverflowState() {
+      setTableHasOverflow(container.scrollWidth > container.clientWidth + 1);
+    }
+
+    updateOverflowState();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const resizeObserver = new ResizeObserver(updateOverflowState);
+      resizeObserver.observe(container);
+      return () => resizeObserver.disconnect();
+    }
+
+    window.addEventListener('resize', updateOverflowState);
+    return () => window.removeEventListener('resize', updateOverflowState);
+  }, [filteredItems.length, currentPage, editingId]);
+
+  useEffect(() => {
+    if (!recordFilterId || filteredItems.length === 0) return;
+
+    const scrollTimer = window.setTimeout(() => {
+      const row = document.querySelector(`[data-testid="activity-row-${recordFilterId}"]`);
+      if (row && 'scrollIntoView' in row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      setHighlightedRecordId(recordFilterId);
+    }, 100);
+
+    const highlightTimer = window.setTimeout(() => {
+      setHighlightedRecordId((current) => (current === recordFilterId ? null : current));
+    }, 4200);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(highlightTimer);
+    };
+  }, [recordFilterId, filteredItems.length]);
+
+function clearActivityRecordFilters() {
+  setSearchParams({});
+}
 
 function toggleSelect(id: string, checked: boolean) {
   setSelectedIds((prev) =>
@@ -155,6 +229,38 @@ function handleViewCalculation(rowId: string) {
   });
 }
 
+function isMissingRecordValue(value: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || normalized === 'null' || normalized === 'undefined';
+}
+
+function isActivityRecordIncomplete(row: ActivityDataItem) {
+  const quantity = Number(row.quantity);
+
+  return (
+    isMissingRecordValue(row.activityType) ||
+    isMissingRecordValue(row.recordDate) ||
+    isMissingRecordValue(row.unit) ||
+    normalizeUnitForDisplay(row.unit).status !== 'valid' ||
+    isMissingRecordValue(row.quantity) ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0
+  );
+}
+
+function formatRequiredRecordValue(value: unknown) {
+  return isMissingRecordValue(value) ? '⚠ Missing' : String(value);
+}
+
+function formatRecordUnit(value: unknown) {
+  const normalized = normalizeUnitForDisplay(value as string | number | null);
+
+  if (normalized.status === 'missing') return 'Missing unit';
+  if (normalized.status === 'invalid') return 'Invalid unit';
+
+  return normalized.value;
+}
+
 function formatActivitySourceType(sourceType?: string | null) {
   switch (sourceType) {
     case 'DOCUMENT_AI':
@@ -175,9 +281,9 @@ function formatActivitySourceReference(row: ActivityDataItem) {
     row.sourceReference,
     row.sourcePage ? `Page ${row.sourcePage}` : '',
     row.sourceRow ? `Line item ${row.sourceRow}` : '',
-  ].filter(Boolean);
+  ].filter((part) => !isMissingRecordValue(part));
 
-  return parts.length ? parts.join(' · ') : 'Source not specified';
+  return parts.length ? parts.join(' · ') : 'Source unavailable';
 }
   async function handleBulkDelete() {
   if (!selectedIds.length) return;
@@ -262,16 +368,20 @@ async function saveEdit() {
 function validateEditRow(row: any) {
   const errors: Record<string, string> = {};
 
-  if (!row.activityType) errors.activityType = 'Required';
-  if (!row.recordDate) errors.recordDate = 'Required';
+  if (isMissingRecordValue(row.activityType)) errors.activityType = 'Required';
+  if (isMissingRecordValue(row.recordDate)) errors.recordDate = 'Required';
 
-  if (!row.quantity) {
+  if (isMissingRecordValue(row.quantity)) {
     errors.quantity = 'Required';
   } else if (Number(row.quantity) <= 0) {
     errors.quantity = 'Must be greater than 0';
   }
 
-  if (!row.unit) errors.unit = 'Required';
+  if (isMissingRecordValue(row.unit)) {
+    errors.unit = 'Required';
+  } else if (normalizeUnitForDisplay(row.unit).status === 'invalid') {
+    errors.unit = 'Invalid unit';
+  }
 
   return errors;
 }
@@ -353,8 +463,14 @@ function getEditInputStyle(field: string): React.CSSProperties {
   };
 }
 function renderNormalRow(row){
+  const isIncomplete = isActivityRecordIncomplete(row);
+
   return (
-    <tr key={row.id}>
+    <tr
+      key={row.id}
+      data-testid={`activity-row-${row.id}`}
+      style={highlightedRecordId === row.id ? highlightedRecordRowStyle : undefined}
+    >
       <td style={tdStyle}>
   <input
     type="checkbox"
@@ -362,16 +478,39 @@ function renderNormalRow(row){
     onChange={(e) => toggleSelect(row.id, e.target.checked)}
   />
 </td>
-      <td style={tdStyle}>{row.recordDate?.slice(0, 10)}</td>
-      <td style={tdStyle}>{row.activityType}</td>
-      <td style={tdStyle}>{row.quantity}</td>
-      <td style={tdStyle}>{row.unit}</td>
+      <td style={tdStyle}>
+        <span
+          style={recordStatusBadgeStyle(isIncomplete)}
+          title={
+            isIncomplete
+              ? 'This record requires additional information before calculations can be performed.'
+              : 'This record is complete.'
+          }
+        >
+          {isIncomplete ? 'Incomplete' : 'Complete'}
+        </span>
+      </td>
+      <td style={dateCellStyle}>{formatRequiredRecordValue(row.recordDate?.slice(0, 10))}</td>
+      <td style={tdStyle}>{formatRequiredRecordValue(row.activityType)}</td>
+      <td style={tdStyle}>{formatRequiredRecordValue(row.quantity)}</td>
+      <td style={unitCellStyle}>{formatRecordUnit(row.unit)}</td>
       <td style={tdStyle}>{formatActivitySourceType(row.sourceType)}</td>
-      <td style={sourceReferenceCellStyle}>{formatActivitySourceReference(row)}</td>
+      <td style={sourceReferenceCellStyle} title={formatActivitySourceReference(row)}>
+        {formatActivitySourceReference(row)}
+      </td>
       <td style={actionsCellStyle}>
         <div style={rowActionStyle}>
-          <button onClick={() => handleViewCalculation(row.id)} style={secondaryActionBtn}>
-            View Calculation
+          <button
+            onClick={() => handleViewCalculation(row.id)}
+            disabled={isIncomplete}
+            title={
+              isIncomplete
+                ? 'This record requires additional information before calculations can be performed.'
+                : undefined
+            }
+            style={secondaryActionBtnStyle(isIncomplete)}
+          >
+            View
           </button>
           <div style={overflowMenuWrapperStyle}>
             <button
@@ -585,7 +724,7 @@ const errorTextStyle: React.CSSProperties = {
 )}
       {/* ⭐ Table */}
       <div style={tableCard}>
-       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+       <div style={tableHeaderRowStyle}>
   <h2 style={{ margin: 0 }}>Activity Records</h2>
 
   <div style={tableToolbarStyle}>
@@ -613,18 +752,48 @@ const errorTextStyle: React.CSSProperties = {
   </div>
 </div>
 
+        {recordFilterId || documentFilterId ? (
+          <div style={documentFilterBannerStyle}>
+            <div>
+              <div style={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
+                {recordFilterId ? 'Showing 1 record requiring attention.' : 'Showing records from:'}
+              </div>
+              {!recordFilterId ? (
+                <div style={{ marginTop: 3, color: '#0f172a', fontWeight: 700 }}>
+                  {documentFilterName}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={clearActivityRecordFilters}
+              style={clearFilterButtonStyle}
+            >
+              Clear Filter
+            </button>
+          </div>
+        ) : null}
+
         {loading ? (
           <p>Loading...</p>
-        ) : items.length === 0 ? (
+        ) : filteredItems.length === 0 ? (
           <div style={emptyStateStyle}>
-            No activity records yet. Import extracted rows from Upload or load sample data to review an example workflow.
+            {recordFilterId
+              ? 'The requested record could not be found.'
+              : documentFilterId
+              ? 'No records have been imported from this document.'
+              : 'No activity records yet. Import extracted rows from Upload or load sample data to review an example workflow.'}
           </div>
         ) : (
           <>
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
+            {tableHasOverflow ? (
+              <div style={scrollHintStyle}>More columns →</div>
+            ) : null}
+            <div ref={tableScrollRef} style={tableScrollContainerStyle}>
+            <table style={activityRecordsTableStyle}>
               <thead>
                 <tr>
-                  <th style={thStyle}>
+                  <th style={checkboxThStyle}>
                     <input
                       type="checkbox"
                       checked={
@@ -634,13 +803,14 @@ const errorTextStyle: React.CSSProperties = {
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                     />
                   </th>
-                  <th style={thStyle}>Date</th>
-                  <th style={thStyle}>Type</th>
-                  <th style={thStyle}>Quantity</th>
-                  <th style={thStyle}>Unit</th>
-                  <th style={thStyle}>Source</th>
-                  <th style={thStyle}>Source Reference</th>
-                  <th style={thStyle}></th>
+                  <th style={statusThStyle}>Status</th>
+                  <th style={dateThStyle}>Date</th>
+                  <th style={typeThStyle}>Type</th>
+                  <th style={quantityThStyle}>Quantity</th>
+                  <th style={unitThStyle}>Unit</th>
+                  <th style={sourceThStyle}>Source</th>
+                  <th style={sourceReferenceThStyle}>Source Reference</th>
+                  <th style={actionsThStyle}></th>
                 </tr>
               </thead>
               <tbody>
@@ -649,11 +819,13 @@ const errorTextStyle: React.CSSProperties = {
                 ))}
               </tbody>
             </table>
+            {tableHasOverflow ? <div aria-hidden="true" style={tableFadeStyle} /> : null}
+            </div>
 
             <div style={paginationStyle}>
               <span>
                 Showing {(currentPage - 1) * PAGE_SIZE + 1}-
-                {Math.min(currentPage * PAGE_SIZE, items.length)} of {items.length}
+                {Math.min(currentPage * PAGE_SIZE, filteredItems.length)} of {filteredItems.length}
               </span>
               <div style={paginationActionsStyle}>
                 <button
@@ -710,6 +882,15 @@ const tableCard = {
   background: '#fff',
 };
 
+const tableHeaderRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 16,
+  flexWrap: 'wrap',
+  marginBottom: 4,
+};
+
 const quickEntryIntroStyle: React.CSSProperties = {
   marginBottom: 12,
   padding: '16px 18px',
@@ -721,7 +902,7 @@ const quickEntryIntroStyle: React.CSSProperties = {
 
 const rowActionStyle = {
   display: 'flex',
-  gap: 6,
+  gap: 8,
   alignItems: 'center',
   flexWrap: 'nowrap' as const,
   whiteSpace: 'nowrap' as const,
@@ -740,6 +921,66 @@ const tableToolbarStyle: React.CSSProperties = {
   gap: 10,
   alignItems: 'center',
   flexWrap: 'wrap',
+  justifyContent: 'flex-end',
+  marginLeft: 'auto',
+};
+
+const tableScrollContainerStyle: React.CSSProperties = {
+  marginTop: 16,
+  overflowX: 'auto',
+  width: '100%',
+  borderRadius: 10,
+  position: 'relative',
+};
+
+const activityRecordsTableStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 1040,
+  borderCollapse: 'collapse',
+  tableLayout: 'fixed',
+};
+
+const scrollHintStyle: React.CSSProperties = {
+  marginTop: 12,
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 800,
+  textAlign: 'right',
+};
+
+const tableFadeStyle: React.CSSProperties = {
+  position: 'sticky',
+  right: 0,
+  bottom: 0,
+  float: 'right',
+  width: 28,
+  height: 0,
+  pointerEvents: 'none',
+  boxShadow: '-18px 0 22px rgba(255, 255, 255, 0.95)',
+};
+
+const documentFilterBannerStyle: React.CSSProperties = {
+  marginTop: 14,
+  marginBottom: 2,
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid #bbf7d0',
+  background: '#f0fdf4',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+
+const clearFilterButtonStyle: React.CSSProperties = {
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1px solid #86efac',
+  background: '#fff',
+  color: '#047857',
+  fontWeight: 700,
+  cursor: 'pointer',
 };
 
 const primaryActionBtn = {
@@ -762,6 +1003,15 @@ const secondaryActionBtn = {
   fontWeight: 600,
   cursor: 'pointer',
 };
+
+function secondaryActionBtnStyle(disabled = false): React.CSSProperties {
+  return {
+    ...secondaryActionBtn,
+    background: disabled ? '#f8fafc' : '#fff',
+    color: disabled ? '#94a3b8' : '#111827',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
 const dangerActionBtn = {
   padding: '8px 14px',
@@ -806,7 +1056,7 @@ function generateReportButtonStyle(selectedCount: number): React.CSSProperties {
 
 const thStyle = {
   textAlign: 'left' as const,
-  padding: '9px 12px',
+  padding: '8px 10px',
   background: '#f8fafc',
   color: '#475569',
   fontSize: 12,
@@ -814,28 +1064,112 @@ const thStyle = {
   borderBottom: '1px solid #e5e7eb',
 };
 
+const checkboxThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 44,
+};
+
+const statusThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 116,
+};
+
+const dateThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 112,
+};
+
+const typeThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 150,
+};
+
+const quantityThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 96,
+};
+
+const unitThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 120,
+};
+
+const sourceThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 120,
+};
+
+const sourceReferenceThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 280,
+};
+
+const actionsThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 118,
+  position: 'sticky',
+  right: 0,
+  zIndex: 3,
+  background: '#f8fafc',
+  boxShadow: '-8px 0 12px rgba(248, 250, 252, 0.9)',
+};
+
 const tdStyle = {
-  padding: '8px 12px',
+  padding: '7px 10px',
   borderBottom: '1px solid #f1f5f9',
   verticalAlign: 'middle' as const,
   fontSize: 13,
   lineHeight: 1.25,
 };
 
+const dateCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  whiteSpace: 'nowrap',
+};
+
+const unitCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  whiteSpace: 'nowrap',
+};
+
 const sourceReferenceCellStyle: React.CSSProperties = {
   ...tdStyle,
-  minWidth: 220,
-  maxWidth: 320,
+  maxWidth: 260,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
   color: '#475569',
 };
 
+const highlightedRecordRowStyle: React.CSSProperties = {
+  background: '#ecfdf5',
+  boxShadow: 'inset 4px 0 0 #10b981',
+  transition: 'background 0.2s ease, box-shadow 0.2s ease',
+};
+
+function recordStatusBadgeStyle(incomplete: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    borderRadius: 999,
+    padding: '3px 8px',
+    fontSize: 12,
+    fontWeight: 700,
+    color: incomplete ? '#b45309' : '#047857',
+    background: incomplete ? '#fef3c7' : '#d1fae5',
+    whiteSpace: 'nowrap',
+  };
+}
+
 const actionsCellStyle: React.CSSProperties = {
   ...tdStyle,
-  width: 180,
-  position: 'relative',
+  width: 112,
+  position: 'sticky',
+  right: 0,
+  zIndex: 2,
+  background: '#fff',
+  whiteSpace: 'nowrap',
+  boxShadow: '-8px 0 12px rgba(255, 255, 255, 0.92)',
 };
 
 const overflowMenuWrapperStyle: React.CSSProperties = {

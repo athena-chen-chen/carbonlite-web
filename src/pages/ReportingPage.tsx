@@ -34,6 +34,7 @@ import {
   formatTraceabilitySource,
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
+import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 
 type ActivityItem = {
   id: string;
@@ -323,7 +324,7 @@ function handleDownloadCSV() {
       ...scopeRows.map((r) => [
         r.scope,
         r.activityType,
-        r.quantity,
+        formatDisplayNumber(r.quantity),
         r.unit,
         r.source,
       ]),
@@ -499,9 +500,9 @@ function handleDownloadPDF() {
     body: matchedActivityEmissions.length
       ? matchedActivityEmissions.map((item) => [
           item.activityType,
-          item.quantity,
+          formatDisplayNumber(item.quantity),
           item.unit,
-          `${item.estimatedEmissionsKgCO2e} kgCO2e`,
+          `${formatEmissionsValue(item.estimatedEmissionsKgCO2e)} kgCO2e`,
           item.sourceReference ?? '',
         ])
       : [['No activity records with matching conversion factors.', '', '', '', '']],
@@ -559,7 +560,7 @@ function handleDownloadPDF() {
     body: calculationDetails.length
       ? calculationDetails.map((item) => [
           item.activityType,
-          `${item.activityQuantity} ${item.activityUnit}`,
+          `${formatDisplayNumber(item.activityQuantity)} ${item.activityUnit}`,
           formatTraceableFactor(item),
           formatTraceabilitySource(item),
           item.sourceYear ?? item.reportingYear,
@@ -972,7 +973,7 @@ const exportDisabledTitle = exportDisabled
                     <tr key={item.id}>
                       <td style={tdStyle}>{item.recordDate?.slice(0, 10)}</td>
                       <td style={tdStyle}>{item.activityType}</td>
-                      <td style={tdStyle}>{item.quantity}</td>
+                      <td style={tdStyle}>{formatDisplayNumber(item.quantity)}</td>
                       <td style={tdStyle}>{item.unit}</td>
                       <td style={tdStyle}>{formatSourceType(item.sourceType)}</td>
                       <td style={tdStyle}>{item.sourceReference ?? '-'}</td>
@@ -993,9 +994,9 @@ const exportDisabledTitle = exportDisabled
           </Section>
           <Section title="Emissions by Scope">
   <div style={{ display: 'flex', gap: 16 }}>
-    <Card title="Scope 1" value={scopeSummary['Scope 1']} icon="🏭" />
-    <Card title="Scope 2" value={scopeSummary['Scope 2']} icon="⚡" />
-    <Card title="Scope 3" value={scopeSummary['Scope 3']} icon="🌍" />
+    <Card title="Scope 1" value={formatDisplayNumber(scopeSummary['Scope 1'])} icon="🏭" />
+    <Card title="Scope 2" value={formatDisplayNumber(scopeSummary['Scope 2'])} icon="⚡" />
+    <Card title="Scope 3" value={formatDisplayNumber(scopeSummary['Scope 3'])} icon="🌍" />
   </div>
 </Section>
         </>

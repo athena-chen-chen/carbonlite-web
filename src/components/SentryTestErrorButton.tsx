@@ -4,7 +4,10 @@ import type { CSSProperties } from 'react';
 export function SentryTestErrorButton() {
   const [shouldCrash, setShouldCrash] = useState(false);
 
-  if (!import.meta.env.DEV) return null;
+  if (!import.meta.env.DEV || import.meta.env.VITE_SHOW_TEST_CONTROLS !== 'true') {
+    return null;
+  }
+
   if (shouldCrash) {
     throw new Error('CarbonLite frontend Sentry test error');
   }

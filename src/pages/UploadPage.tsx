@@ -27,6 +27,7 @@ import {
   sampleDocuments,
   sampleParsedActivities,
 } from '../demo/demoData';
+import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 
 type DocumentItem = {
@@ -107,13 +108,18 @@ export function getDocumentDownloadUrl(documentId: string) {
   return buildApiUrl(`/documents/${documentId}/download`);
 }
 
+function isMissingImportValue(value: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || normalized === 'null' || normalized === 'undefined';
+}
+
 export function getImportValidationIssues(rows: EditableParsedActivity[]) {
   const issues: ImportValidationIssue[] = [];
 
   rows.forEach((row, index) => {
     if (!row.selected) return;
 
-    if (!String(row.activityType.value ?? '').trim()) {
+    if (isMissingImportValue(row.activityType.value)) {
       issues.push({
         rowIndex: index,
         field: 'activityType',
@@ -124,7 +130,7 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
     if (
       row.quantity.value === null ||
       row.quantity.value === undefined ||
-      !String(row.quantity.value).trim()
+      isMissingImportValue(row.quantity.value)
     ) {
       issues.push({
         rowIndex: index,
@@ -149,19 +155,27 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
       }
     }
 
-    if (!String(row.unit.value ?? '').trim()) {
+    const normalizedUnit = normalizeUnitForDisplay(row.unit.value);
+
+    if (normalizedUnit.status === 'missing') {
       issues.push({
         rowIndex: index,
         field: 'unit',
         message: 'Unit is required.',
       });
+    } else if (normalizedUnit.status === 'invalid') {
+      issues.push({
+        rowIndex: index,
+        field: 'unit',
+        message: 'Invalid unit detected. Please review this record.',
+      });
     }
 
-    if (!String(row.recordDate.value ?? '').trim()) {
+    if (isMissingImportValue(row.recordDate.value)) {
       issues.push({
         rowIndex: index,
         field: 'recordDate',
-        message: 'Date is required.',
+        message: 'Record date is required.',
       });
     }
   });
@@ -510,17 +524,20 @@ export function UploadPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const validationSummaryRef = useRef<HTMLDivElement | null>(null);
   const uploadDragDepthRef = useRef(0);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
   const hasMissingFiles = documents.some((doc) => isMissingFileStatus(doc.status));
   const importValidationIssues = getImportValidationIssues(parsedActivities);
   const selectedParsedActivitiesCount = parsedActivities.filter((item) => item.selected).length;
   const hasImportValidationErrors = importValidationIssues.length > 0;
-  const canConfirmImport =
+  const canAttemptConfirmImport =
     confirmingId === null &&
     !generatingMetrics &&
     parsedActivities.length > 0 &&
-    selectedParsedActivitiesCount > 0 &&
+    selectedParsedActivitiesCount > 0;
+  const canConfirmImport =
+    canAttemptConfirmImport &&
     !hasImportValidationErrors;
   async function loadDocuments() {
     setLoading(true);
@@ -543,6 +560,18 @@ export function UploadPage() {
   useEffect(() => {
     loadDocuments();
   }, []);
+
+  useEffect(() => {
+    if (!successMessage?.startsWith('Document deleted.')) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSuccessMessage((current) =>
+        current?.startsWith('Document deleted.') ? null : current,
+      );
+    }, 5000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [successMessage]);
 
   useEffect(() => {
     if ((location.state as { loadSampleWorkspace?: boolean } | null)?.loadSampleWorkspace) {
@@ -970,9 +999,10 @@ ${sampleRows.join('\n')}`,
         handleConfirmImport(doc.id);
         return;
       case 'viewRecords':
-        navigate('/data-records', {
+        navigate(`/activity-records?documentId=${encodeURIComponent(doc.id)}`, {
           state: {
             sourceDocumentId: doc.id,
+            sourceDocumentName: doc.fileName,
           },
         });
         return;
@@ -1356,8 +1386,9 @@ ${sampleRows.join('\n')}`,
     }
 
     if (validationIssues.length > 0) {
-      setError('Please fix validation errors before importing.');
+      setError(null);
       setSuccessMessage(null);
+      scrollToImportValidation(validationIssues[0]);
       return;
     }
 
@@ -1505,7 +1536,27 @@ ${sampleRows.join('\n')}`,
   }
 
   function getRowStatusLabel(rowIndex: number) {
-    return getRowValidationIssues(rowIndex).length > 0 ? 'Validation Error' : 'Ready';
+    return getRowValidationIssues(rowIndex).length > 0 ? 'Needs Review' : 'Ready';
+  }
+
+  function scrollToImportValidation(firstIssue?: ImportValidationIssue) {
+    window.requestAnimationFrame(() => {
+      validationSummaryRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+
+      if (!firstIssue) return;
+
+      const selector = `[data-validation-field="${firstIssue.field}"][data-validation-row="${firstIssue.rowIndex}"]`;
+      const field = document.querySelector<HTMLElement>(selector);
+      field?.focus();
+    });
+  }
+
+  function getRecordDateSuggestion(row: EditableParsedActivity) {
+    const sourceDocument = documents.find((doc) => doc.id === row.documentId);
+    return sourceDocument?.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10);
   }
 
   function getConfidenceStyle(confidence: string): React.CSSProperties {
@@ -1576,11 +1627,11 @@ function updateParsedActivityField(
           previewDocumentIds[0] ??
             previewDocumentId ??
           '',
-        dateEstimated: false,
+        dateEstimated: true,
         activityType: { value: defaultActivityType, confidence: 'medium' },
         recordDate: {
-          value: new Date().toISOString().slice(0, 10),
-          confidence: 'medium',
+          value: '',
+          confidence: 'low',
         },
         quantity: { value: 0, confidence: 'low' },
         unit: { value: 'liters', confidence: 'medium' },
@@ -1945,34 +1996,36 @@ function updateParsedActivityField(
           </>
         )}
       </div>
-      <br/>
- {documents.length > 3 && (
-  <button
-    type="button"
-    onClick={() => setShowAllDocuments((v) => !v)}
-    style={secondaryButtonStyle}
-  >
-    {showAllDocuments ? 'Show Less' : `View All Documents (${documents.length})`}
-  </button>
-)}
 
-{successMessage ? (
-  <div style={successStyle}>
-    {successMessage}
+      {documents.length > 3 ? (
+        <div style={documentToggleRowStyle}>
+          <button
+            type="button"
+            onClick={() => setShowAllDocuments((v) => !v)}
+            style={secondaryButtonStyle}
+          >
+            {showAllDocuments ? 'Show Less' : `View All Documents (${documents.length})`}
+          </button>
+        </div>
+      ) : null}
 
-    {showPostImportLinks ? (
-    <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
-      <button type="button" onClick={() => navigate('/metrics-summary')}>
-        View Metrics
-      </button>
+      {successMessage ? (
+        <div style={successStyle}>
+          {successMessage}
 
-      <button type="button" onClick={() => navigate('/reports')}>
-        View Reports
-      </button>
-    </div>
-    ) : null}
-  </div>
-) : null}
+          {showPostImportLinks ? (
+            <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
+              <button type="button" onClick={() => navigate('/metrics-summary')}>
+                View Metrics
+              </button>
+
+              <button type="button" onClick={() => navigate('/reports')}>
+                View Reports
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {previewDocumentId ? (
         <div style={{ ...sectionCardStyle, marginTop: 24 }}>
           <div style={previewHeaderStyle}>
@@ -2007,7 +2060,8 @@ function updateParsedActivityField(
               <button
                 type="button"
                 onClick={() => handleConfirmImport()}
-                disabled={!canConfirmImport}
+                disabled={!canAttemptConfirmImport}
+                aria-disabled={!canConfirmImport}
                 title={
                   hasImportValidationErrors
                     ? 'Please fix validation errors before importing.'
@@ -2031,8 +2085,8 @@ function updateParsedActivityField(
           ) : (
             <>
             {hasImportValidationErrors ? (
-              <div style={validationSummaryStyle} role="alert">
-                <strong>Please correct the following:</strong>
+              <div ref={validationSummaryRef} style={validationSummaryStyle} role="alert">
+                <strong>⚠ Please correct the following issues:</strong>
                 <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
                   {importValidationIssues.map((issue) => (
                     <li key={`${issue.rowIndex}-${issue.field}`}>
@@ -2085,6 +2139,8 @@ function updateParsedActivityField(
 
                     <td style={activityTypeTdStyle}>
                       <select
+                        data-validation-field="activityType"
+                        data-validation-row={index}
                         value={item.activityType.value ?? ''}
                         onChange={(e) =>
                           updateParsedActivityField(index, 'activityType', e.target.value)
@@ -2108,6 +2164,8 @@ function updateParsedActivityField(
 
                     <td style={tdStyle}>
                       <input
+                        data-validation-field="recordDate"
+                        data-validation-row={index}
                         type="text"
                         value={item.recordDate.value ?? ''}
                         placeholder={item.dateEstimated ? 'Missing date' : 'YYYY-MM-DD'}
@@ -2125,6 +2183,24 @@ function updateParsedActivityField(
                       {recordDateError ? (
                         <div style={fieldErrorStyle}>{recordDateError}</div>
                       ) : null}
+                      {recordDateError ? (
+                        <div style={dateSuggestionStyle}>
+                          Suggested: {getRecordDateSuggestion(item)}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateParsedActivityField(
+                                index,
+                                'recordDate',
+                                getRecordDateSuggestion(item),
+                              )
+                            }
+                            style={useSuggestionButtonStyle}
+                          >
+                            Use Suggestion
+                          </button>
+                        </div>
+                      ) : null}
                       {item.dateEstimated ? (
                         <div style={dateWarningStyle}>
                           {item.recordDate.value
@@ -2136,6 +2212,8 @@ function updateParsedActivityField(
 
                     <td style={tdStyle}>
                       <input
+                        data-validation-field="quantity"
+                        data-validation-row={index}
                         type="number"
                         min="0"
                         value={item.quantity.value ?? ''}
@@ -2157,6 +2235,8 @@ function updateParsedActivityField(
 
                     <td style={tdStyle}>
                       <input
+                        data-validation-field="unit"
+                        data-validation-row={index}
                         type="text"
                         value={item.unit.value ?? ''}
                         onChange={(e) =>
@@ -2441,10 +2521,17 @@ const nativeFileInputStyle: React.CSSProperties = {
   maxWidth: 360,
 };
 
+const documentToggleRowStyle: React.CSSProperties = {
+  margin: '14px 0 16px',
+  display: 'flex',
+  alignItems: 'center',
+};
+
 const successStyle: React.CSSProperties = {
   position: 'sticky',
   top: 88,
   zIndex: 5,
+  marginTop: 12,
   marginBottom: 16,
   padding: 14,
   borderRadius: 10,
@@ -2574,8 +2661,29 @@ const validationSummaryStyle: React.CSSProperties = {
   fontSize: 14,
 };
 
+const dateSuggestionStyle: React.CSSProperties = {
+  marginTop: 6,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  color: '#475569',
+  fontSize: 12,
+};
+
+const useSuggestionButtonStyle: React.CSSProperties = {
+  padding: '3px 7px',
+  borderRadius: 6,
+  border: '1px solid #86efac',
+  background: '#f0fdf4',
+  color: '#047857',
+  fontSize: 12,
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
 function rowStatusBadgeStyle(status: string): React.CSSProperties {
-  const isError = status === 'Validation Error';
+  const isError = status === 'Needs Review';
 
   return {
     display: 'inline-flex',

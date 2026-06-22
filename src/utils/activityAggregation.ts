@@ -1,3 +1,6 @@
+import { formatDisplayNumber } from './numberFormatting';
+import { normalizeUnitForDisplay } from './unitNormalization';
+
 export type ActivityUsageRecord = {
   activityType?: string | null;
   quantity?: string | number | null;
@@ -16,6 +19,8 @@ export type ActivityUsageTotals = {
   fuelUnitLabel: string;
   electricityUnitLabel: string;
   fuelUsageBreakdown: FuelUsageBreakdownItem[];
+  invalidFuelRecordCount?: number;
+  invalidElectricityRecordCount?: number;
 };
 
 const FUEL_ACTIVITY_TYPES = new Set([
@@ -35,10 +40,6 @@ function toQuantity(value?: string | number | null) {
   return Number.isFinite(quantity) ? quantity : 0;
 }
 
-function normalizeUnit(unit?: string | null) {
-  return String(unit ?? '').trim() || '-';
-}
-
 export function formatActivityTypeLabel(activityType: string) {
   return activityType
     .toLowerCase()
@@ -54,9 +55,16 @@ export function aggregateActivityUsage(
     (totals, record) => {
       const activityType = normalizeActivityType(record.activityType);
       const quantity = toQuantity(record.quantity);
-      const unit = normalizeUnit(record.unit);
+      const normalizedUnit = normalizeUnitForDisplay(record.unit);
+      const hasValidUnit = normalizedUnit.status === 'valid';
 
       if (FUEL_ACTIVITY_TYPES.has(activityType)) {
+        if (!hasValidUnit) {
+          totals.invalidFuelRecordCount += 1;
+          return totals;
+        }
+
+        const unit = normalizedUnit.value;
         totals.fuel += quantity;
         const existing = totals.fuelUsageBreakdown.find(
           (item) => item.activityType === activityType && item.unit === unit,
@@ -74,6 +82,11 @@ export function aggregateActivityUsage(
       }
 
       if (activityType === 'ELECTRICITY') {
+        if (!hasValidUnit) {
+          totals.invalidElectricityRecordCount += 1;
+          return totals;
+        }
+
         totals.electricity += quantity;
       }
 
@@ -85,6 +98,8 @@ export function aggregateActivityUsage(
       fuelUnitLabel: 'Grouped by type and unit',
       electricityUnitLabel: 'kWh',
       fuelUsageBreakdown: [],
+      invalidFuelRecordCount: 0,
+      invalidElectricityRecordCount: 0,
     },
   );
 
@@ -96,7 +111,7 @@ export function aggregateActivityUsage(
 }
 
 export function formatActivityUsageValue(total: number, unitLabel: string) {
-  return `${total} ${unitLabel}`;
+  return `${formatDisplayNumber(total)} ${unitLabel}`;
 }
 
 export function formatFuelUsageBreakdown(
@@ -104,10 +119,18 @@ export function formatFuelUsageBreakdown(
 ) {
   if (!breakdown.length) return '0';
 
-  return breakdown
+  const lines = breakdown
     .map(
       (item) =>
-        `${item.total} ${item.unit} ${formatActivityTypeLabel(item.activityType)}`,
+        `${formatActivityTypeLabel(item.activityType)}: ${formatDisplayNumber(item.total)} ${item.unit}`,
     )
     .join('\n');
+
+  return lines;
+}
+
+export function formatInvalidActivityRecordNote(count = 0) {
+  if (count <= 0) return '';
+
+  return `${count} ${count === 1 ? 'record needs' : 'records need'} review`;
 }

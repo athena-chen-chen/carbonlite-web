@@ -126,7 +126,7 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('G. Calculation Methodology')).toBeInTheDocument();
     expect(screen.getByText('H. Source Evidence')).toBeInTheDocument();
     expect(screen.getByText('I. Methodology and Disclaimer')).toBeInTheDocument();
-    expect(screen.getAllByText('321.6 kgCO2e').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('321.60 kgCO2e').length).toBeGreaterThan(0);
     expect(screen.getAllByText('CarbonLite system defaults').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
     expect(screen.getByText('Pilot default factor library')).toBeInTheDocument();
@@ -246,7 +246,7 @@ describe('Version 1 report presentation data', () => {
     ).toEqual([
       [
         'DIESEL',
-        2.68,
+        '2.68',
         'L',
         'kgCO2e',
         'Not specified',

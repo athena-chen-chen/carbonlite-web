@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -31,6 +31,7 @@ describe('ActivityDataPage delete flows', () => {
       quantity: 100,
       unit: 'L',
       sourceType: 'MANUAL',
+      sourceDocumentId: 'doc-manual',
     },
     {
       id: 'activity-2',
@@ -43,16 +44,45 @@ describe('ActivityDataPage delete flows', () => {
       sourceReference: 'Utility bill usage',
       sourcePage: 1,
       sourceRow: 3,
+      sourceDocumentId: 'doc-utility',
     },
   ];
 
   beforeEach(() => {
     vi.clearAllMocks();
+    class ResizeObserverMock {
+      callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+
+      observe(target: Element) {
+        Object.defineProperty(target, 'scrollWidth', {
+          configurable: true,
+          value: 1200,
+        });
+        Object.defineProperty(target, 'clientWidth', {
+          configurable: true,
+          value: 900,
+        });
+        this.callback([], this as unknown as ResizeObserver);
+      }
+
+      disconnect() {}
+      unobserve() {}
+    }
+
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock);
     mockActivityRecords(records);
     vi.mocked(getAllActivityData).mockResolvedValue(records);
     vi.mocked(bulkDeleteActivityData).mockResolvedValue({ deletedCount: 1 });
     vi.mocked(deleteActivityData).mockResolvedValue({ deletedCount: 1 });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   function mockActivityRecords(items: typeof records) {
@@ -75,9 +105,9 @@ describe('ActivityDataPage delete flows', () => {
     mockActivityRecordsOnce(refreshedItems);
   }
 
-  function renderPage() {
+  function renderPage(initialEntry: any = '/data-records') {
     return render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <ActivityDataPage />
       </MemoryRouter>,
     );
@@ -220,5 +250,128 @@ describe('ActivityDataPage delete flows', () => {
     expect(
       screen.getByText('utility.pdf · Utility bill usage · Page 1 · Line item 3'),
     ).toBeInTheDocument();
+  });
+
+  it('shows horizontal scroll hint only when the records table overflows', async () => {
+    renderPage();
+
+    expect(await screen.findByText('More columns →')).toBeInTheDocument();
+  });
+
+  it('filters records by document id from the URL and clears the filter', async () => {
+    renderPage({
+      pathname: '/activity-records',
+      search: '?documentId=doc-utility',
+      state: { sourceDocumentName: '37_mixed_utility_report_missing_units.pdf' },
+    });
+
+    expect(await screen.findByText('Showing records from:')).toBeInTheDocument();
+    expect(
+      screen.getByText('37_mixed_utility_report_missing_units.pdf'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+    expect(screen.queryByText('DIESEL')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
+
+    expect(screen.getByText('DIESEL')).toBeInTheDocument();
+    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+  });
+
+  it('shows a document-specific empty state when no imported records match', async () => {
+    renderPage({
+      pathname: '/activity-records',
+      search: '?documentId=doc-empty',
+      state: { sourceDocumentName: 'empty-upload.pdf' },
+    });
+
+    expect(await screen.findByText('empty-upload.pdf')).toBeInTheDocument();
+    expect(
+      screen.getByText('No records have been imported from this document.'),
+    ).toBeInTheDocument();
+  });
+
+  it('filters to the requested record id and clears the filter', async () => {
+    renderPage({
+      pathname: '/activity-records',
+      search: '?recordId=activity-2',
+    });
+
+    expect(
+      await screen.findByText('Showing 1 record requiring attention.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+    expect(screen.queryByText('DIESEL')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
+
+    expect(screen.getByText('DIESEL')).toBeInTheDocument();
+    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+  });
+
+  it('shows a friendly empty state when requested record is missing', async () => {
+    renderPage({
+      pathname: '/activity-records',
+      search: '?recordId=missing-record',
+    });
+
+    expect(
+      await screen.findByText('The requested record could not be found.'),
+    ).toBeInTheDocument();
+  });
+
+  it('marks existing records with missing required fields as incomplete and disables calculation', async () => {
+    mockActivityRecords([
+      {
+        id: 'activity-incomplete',
+        activityType: 'NATURAL_GAS',
+        recordDate: null,
+        quantity: 950,
+        unit: null,
+        sourceType: 'AI_EXTRACTION',
+        sourceFileName: '37_mixed_utility_report_missing_units.pdf',
+        sourceReference: null,
+        sourceDocumentId: 'doc-missing-unit',
+      } as any,
+    ]);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-incomplete');
+
+    expect(within(row).getByText('Incomplete')).toBeInTheDocument();
+    expect(within(row).getByText('⚠ Missing')).toBeInTheDocument();
+    expect(within(row).getByText('Missing unit')).toBeInTheDocument();
+    expect(within(row).getByText('Incomplete')).toHaveAttribute(
+      'title',
+      'This record requires additional information before calculations can be performed.',
+    );
+    expect(within(row).getByRole('button', { name: 'View' })).toBeDisabled();
+    expect(
+      within(row).getByText('37_mixed_utility_report_missing_units.pdf'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows source unavailable when imported source metadata is missing', async () => {
+    mockActivityRecords([
+      {
+        id: 'activity-missing-source',
+        activityType: 'DIESEL',
+        recordDate: '2026-06-01',
+        quantity: 100,
+        unit: 'L',
+        sourceType: 'AI_EXTRACTION',
+        sourceFileName: null,
+        sourceReference: null,
+      } as any,
+    ]);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-missing-source');
+
+    expect(within(row).getByText('Complete')).toBeInTheDocument();
+    expect(within(row).getByText('Source unavailable')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
   });
 });

@@ -35,7 +35,7 @@ describe('buildMetricsSummaryTableRows', () => {
     fuelUnitLabel: 'Grouped by type and unit',
     electricityUnitLabel: 'kWh',
     fuelUsageBreakdown: [
-      { activityType: 'DIESEL', total: 1710, unit: 'L' },
+      { activityType: 'DIESEL', total: 1710, unit: 'liters' },
       { activityType: 'NATURAL_GAS', total: 400, unit: 'm3' },
     ],
   };
@@ -50,8 +50,8 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(rows).toEqual([
       {
         metricType: 'Fuel Usage — Diesel',
-        unit: 'L',
-        totalValue: '1710',
+        unit: 'liters',
+        totalValue: '1,710',
         category: 'input',
         activityType: 'DIESEL',
       },
@@ -65,14 +65,14 @@ describe('buildMetricsSummaryTableRows', () => {
       {
         metricType: 'Electricity',
         unit: 'kWh',
-        totalValue: '1800',
+        totalValue: '1,800',
         category: 'input',
         activityType: 'ELECTRICITY',
       },
       {
         metricType: 'Carbon Emissions',
         unit: 'kgCO2e',
-        totalValue: '1234.5',
+        totalValue: '1,234.50',
         category: 'calculated',
       },
     ]);
@@ -131,8 +131,20 @@ describe('buildMetricsSummaryTableRows', () => {
     ]);
 
     expect(groups).toEqual([
-      { activityType: 'WASTE', unit: 'kg', count: 1, availableUnitsForActivityType: [] },
-      { activityType: 'WATER', unit: 'm3', count: 2, availableUnitsForActivityType: [] },
+      {
+        activityType: 'WASTE',
+        unit: 'kg',
+        count: 1,
+        availableUnitsForActivityType: [],
+        activityDataIds: ['activity-3'],
+      },
+      {
+        activityType: 'WATER',
+        unit: 'm3',
+        count: 2,
+        availableUnitsForActivityType: [],
+        activityDataIds: ['activity-1', 'activity-2'],
+      },
     ]);
   });
 
@@ -166,7 +178,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('DIESEL / tons')).toBeInTheDocument();
+    expect(screen.getByText('No factor found for: DIESEL / tons')).toBeInTheDocument();
     expect(screen.getByText(/A factor exists for DIESEL \/ liters/i)).toBeInTheDocument();
     expect(
       screen.getByText(/create a custom factor for DIESEL \/ tons or convert tons to liters before import/i),
@@ -272,24 +284,24 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getByText('Fuel Usage')).toBeInTheDocument();
-    expect(screen.getByText(/1710 L Diesel/)).toBeInTheDocument();
-    expect(screen.getByText(/400 m3 Natural Gas/)).toBeInTheDocument();
+    expect(screen.getByText(/Diesel: 1,710 liters/)).toBeInTheDocument();
+    expect(screen.getByText(/Natural Gas: 400 m3/)).toBeInTheDocument();
     expect(screen.queryByText(/L \/ m3/)).not.toBeInTheDocument();
     expect(screen.getByText('CO₂ Emissions')).toBeInTheDocument();
-    expect(screen.getAllByText('1234.5 kg CO2e').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1,234.50 kg CO2e').length).toBeGreaterThan(0);
 
     const table = screen.getByRole('table');
     expect(within(table).queryByText('Count')).not.toBeInTheDocument();
     expect(within(table).getByText('Input Data')).toBeInTheDocument();
     expect(within(table).getByText('Calculated Result')).toBeInTheDocument();
     expect(within(table).getByText('Carbon Emissions')).toBeInTheDocument();
-    expect(within(table).getByText('1710 L')).toBeInTheDocument();
+    expect(within(table).getByText('1,710 liters')).toBeInTheDocument();
     expect(within(table).getByText('Diesel')).toBeInTheDocument();
     expect(within(table).getByText('400 m3')).toBeInTheDocument();
     expect(within(table).getByText('Natural Gas')).toBeInTheDocument();
-    expect(within(table).getByText('1800 kWh')).toBeInTheDocument();
+    expect(within(table).getByText('1,800 kWh')).toBeInTheDocument();
     expect(within(table).getByText('Electricity')).toBeInTheDocument();
-    expect(within(table).getByRole('cell', { name: '1710' })).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: '1,710' })).toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: '400' })).toBeInTheDocument();
   });
 
@@ -312,19 +324,148 @@ describe('buildMetricsSummaryTableRows', () => {
             },
           }}
           missingFactors={[
+            { activityDataId: 'activity-1', activityType: 'DIESEL', unit: 'tonnes' },
+            { activityDataId: 'activity-2', activityType: 'DIESEL', unit: 'tonnes' },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Calculation Issues')).toBeInTheDocument();
+    expect(screen.getByText('Missing Factor')).toBeInTheDocument();
+    expect(screen.getByText('No factor found for: DIESEL / tonnes')).toBeInTheDocument();
+    expect(screen.getByText(/2 records/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
+  });
+
+  it('shows missing unit as missing data without create factor action', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 1,
+            processedRecords: 0,
+            skippedRecords: 1,
+            missingFactorRecords: 1,
+            skippedReasons: {
+              missingFactor: 1,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          missingFactors={[
+            { activityDataId: 'activity-1', activityType: 'ELECTRICITY', unit: null },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Missing Data')).toBeInTheDocument();
+    expect(screen.getByText('Electricity — missing unit')).toBeInTheDocument();
+    expect(screen.getByText('Missing unit. Please review this record.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fix Record/i })).toBeInTheDocument();
+    expect(screen.queryByText(/ELECTRICITY \/ null/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Create Factor/i })).not.toBeInTheDocument();
+  });
+
+  it('shows invalid numeric units as missing data without create factor action', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 1,
+            processedRecords: 0,
+            skippedRecords: 1,
+            missingFactorRecords: 1,
+            skippedReasons: {
+              missingFactor: 1,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          missingFactors={[
+            { activityDataId: 'activity-1', activityType: 'ELECTRICITY', unit: '50' },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Missing Data')).toBeInTheDocument();
+    expect(screen.getByText('Electricity — invalid unit')).toBeInTheDocument();
+    expect(
+      screen.getByText('Invalid unit detected. Please review this record.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fix Record/i })).toBeInTheDocument();
+    expect(screen.queryByText(/ELECTRICITY \/ 50/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Create Factor/i })).not.toBeInTheDocument();
+  });
+
+  it('shows water as tracked metric only without create factor action', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 1,
+            processedRecords: 0,
+            skippedRecords: 1,
+            missingFactorRecords: 1,
+            skippedReasons: {
+              missingFactor: 1,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          missingFactors={[
             { activityDataId: 'activity-1', activityType: 'WATER', unit: 'm3' },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Informational')).toBeInTheDocument();
+    expect(screen.getByText('Water / m3 — tracked only')).toBeInTheDocument();
+    expect(screen.getByText('Tracked metric only. No emission factor required.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Create Factor/i })).not.toBeInTheDocument();
+  });
+
+  it('groups water m3 variants into one tracked-only issue group', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 2,
+            processedRecords: 0,
+            skippedRecords: 2,
+            missingFactorRecords: 2,
+            skippedReasons: {
+              missingFactor: 2,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          missingFactors={[
+            { activityDataId: 'activity-1', activityType: 'WATER', unit: 'm³' },
             { activityDataId: 'activity-2', activityType: 'WATER', unit: 'm3' },
           ]}
         />
       </MemoryRouter>,
     );
 
-    expect(
-      screen.getByText(/Some records were skipped because no matching conversion factor was found/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText('WATER / m3')).toBeInTheDocument();
+    expect(screen.getByText('Water / m3 — tracked only')).toBeInTheDocument();
     expect(screen.getByText(/2 records/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
+    expect(screen.getAllByText('Informational')).toHaveLength(1);
   });
 
   it('shows record reconciliation and skipped reasons', () => {
@@ -356,7 +497,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getAllByText(/records included in summary/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('6').length).toBeGreaterThan(0);
     expect(screen.getByText(/records skipped/i)).toBeInTheDocument();
-    expect(screen.getByText('Missing conversion factors')).toBeInTheDocument();
+    expect(screen.getByText('Calculation issues')).toBeInTheDocument();
     expect(screen.getByText('Outside selected date range')).toBeInTheDocument();
     expect(screen.getByText('Outside selected report scope')).toBeInTheDocument();
   });
@@ -514,7 +655,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     );
 
     expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
-    expect(screen.getByText(/240 L Diesel/)).toBeInTheDocument();
+    expect(screen.getByText(/Diesel: 240 L/)).toBeInTheDocument();
 
     let resolveRefresh!: (value: any) => void;
     vi.mocked(loadMetricsOverview).mockReturnValueOnce(
@@ -529,7 +670,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     await waitForDateDebounce();
 
     expect(await screen.findByText('Refreshing metrics...')).toBeInTheDocument();
-    expect(screen.getByText(/240 L Diesel/)).toBeInTheDocument();
+    expect(screen.getByText(/Diesel: 240 L/)).toBeInTheDocument();
 
     resolveRefresh(overview);
 

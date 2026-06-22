@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listEmissions, type Emission, type Paged as PagedEmissions } from '../services/emissions';
 import { listFactors, type Factor, type Paged as PagedFactors } from '../services/factors';
+import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 
 // Normalize API result (array or { items,total,page,pageSize }) → always array + meta
 function normalize<T>(data: PagedEmissions<T> | PagedFactors<T> | T[] | undefined) {
@@ -133,9 +134,9 @@ export default function Index() {
                     </td>
                     <td className="td">{r.category}</td>
                     <td className="td">{r.activity}</td>
-                    <td className="td">{r.amount}</td>
+                    <td className="td">{formatDisplayNumber(r.amount)}</td>
                     <td className="td">{r.unit}</td>
-                    <td className="td">{r.co2e}</td>
+                    <td className="td">{formatEmissionsValue(r.co2e)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -18,6 +18,8 @@ export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
   fuelUnitLabel: 'Grouped by type and unit',
   electricityUnitLabel: 'kWh',
   fuelUsageBreakdown: [],
+  invalidFuelRecordCount: 0,
+  invalidElectricityRecordCount: 0,
 };
 
 export type MetricsDateRange = {
@@ -124,7 +126,7 @@ export async function loadMetricsOverview(options?: {
   return {
     activities,
     summary,
-    usageTotals: summary.usageTotals ?? aggregateActivityUsage(activities),
+    usageTotals: aggregateActivityUsage(activities),
     carbonMetric,
     totalEstimatedEmissionsKgCO2e:
       summary.totalEstimatedEmissionsKgCO2e ?? 0,
