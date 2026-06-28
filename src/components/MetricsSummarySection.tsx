@@ -185,6 +185,9 @@ export function MetricsSummarySection({
   const calculationIssueGroups = groupMissingFactors(missingFactors).map(
     classifyCalculationIssue,
   );
+  const informationalIssueGroups = calculationIssueGroups.filter(
+    (group) => group.issueType === 'informational',
+  );
   const skippedReasons = countSummary.skippedReasons ?? {
     missingFactor: countSummary.missingFactorRecords,
     outsideDateRange: 0,
@@ -394,7 +397,11 @@ export function MetricsSummarySection({
             ) : totalsByMetric.length === 0 ? (
               <tr>
                 <td colSpan={3} style={tdStyle}>
-                  {emptyMessage}
+                  <CalculationSummaryEmptyState
+                    countSummary={countSummary}
+                    emptyMessage={emptyMessage}
+                    informationalIssueGroups={informationalIssueGroups}
+                  />
                 </td>
               </tr>
             ) : null}
@@ -500,6 +507,52 @@ function appendReviewNote(value: string, invalidCount = 0) {
   const note = formatInvalidActivityRecordNote(invalidCount);
 
   return note ? `${value}\n${note}` : value;
+}
+
+function CalculationSummaryEmptyState({
+  countSummary,
+  emptyMessage,
+  informationalIssueGroups,
+}: {
+  countSummary: MetricsCountSummary;
+  emptyMessage?: string;
+  informationalIssueGroups: CalculationIssueGroup[];
+}) {
+  if (
+    emptyMessage &&
+    emptyMessage !==
+      'No metrics yet. Import activity records or load sample data to preview a report-ready summary.'
+  ) {
+    return <span>{emptyMessage}</span>;
+  }
+
+  if (countSummary.totalRecordsFound <= 0) {
+    return <span>No activity records yet. Import activity data to generate metrics.</span>;
+  }
+
+  return (
+    <div style={calculationEmptyStateStyle}>
+      <div style={calculationEmptyTitleStyle}>No calculated emissions yet.</div>
+      <div>
+        Records exist, but emissions could not be calculated because some records
+        require missing factors or data review.
+      </div>
+      {informationalIssueGroups.length > 0 ? (
+        <div style={trackedMetricListStyle}>
+          <div style={{ fontWeight: 800 }}>Tracked Metrics</div>
+          {informationalIssueGroups.map((group) => (
+            <div key={`${group.activityType}-${group.unit}`}>
+              {formatActivityTypeLabel(group.activityType)} / {group.unit} — {group.count}{' '}
+              {group.count === 1 ? 'record' : 'records'}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {countSummary.skippedRecords > 0 ? (
+        <div>Review Calculation Issues above.</div>
+      ) : null}
+    </div>
+  );
 }
 
 function isMissingIssueValue(value: unknown) {
@@ -921,6 +974,28 @@ const summaryHelperTextStyle: React.CSSProperties = {
   color: '#64748b',
   lineHeight: 1.5,
   fontSize: 14,
+};
+
+const calculationEmptyStateStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  color: '#475569',
+  lineHeight: 1.5,
+};
+
+const calculationEmptyTitleStyle: React.CSSProperties = {
+  color: '#0f172a',
+  fontWeight: 900,
+};
+
+const trackedMetricListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  padding: 10,
+  borderRadius: 10,
+  border: '1px solid #dbeafe',
+  background: '#eff6ff',
+  color: '#1e3a8a',
 };
 
 const metricGroupHeaderStyle: React.CSSProperties = {

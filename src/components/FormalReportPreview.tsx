@@ -9,7 +9,9 @@ import {
 import type { CalculationAuditDetail } from '../services/metrics';
 import {
   buildCalculatedFormula,
-  buildFormulaInputs,
+  formatCalculationStatus,
+  formatMatchingMethod,
+  formatRecordSource,
   formatTraceabilitySource,
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
@@ -41,20 +43,29 @@ export type FormalActivityEmission = {
 };
 
 export type FormalConversionFactorUsed = {
-  factorId: string;
+  factorId?: string | null;
+  factorVersionId?: string | null;
   activityType?: string | null;
   factorName: string;
   factorValue: string | number;
   inputUnit: string;
   resultUnit: string;
   jurisdiction?: string | null;
+  factorYear?: number | null;
+  factorStatus?: string | null;
+  confidenceLevel?: string | null;
   sourceAuthority: string;
   sourceDocument?: string | null;
   sourceUrl?: string | null;
+  sourcePage?: string | number | null;
+  sourceTable?: string | null;
   sourceYear?: number | null;
   reportingYear?: number | null;
   factorType: 'System' | 'Custom';
   verified: boolean;
+  usedRecordsCount?: number;
+  matchingMethod?: string | null;
+  matchingMessage?: string | null;
 };
 
 export type ReportExecutiveSummary = {
@@ -110,10 +121,15 @@ export function buildConversionFactorTraceabilityRows(
     factor.jurisdiction || 'Not specified',
     factor.sourceAuthority || 'Source not specified',
     factor.sourceYear || 'Source not specified',
-    factor.verified ? 'Verified' : 'Unverified / user review required',
+    factor.verified
+      ? 'Verified'
+      : factor.factorStatus
+      ? formatCalculationStatus(factor.factorStatus)
+      : 'Unverified / user review required',
     factor.factorType,
     factor.sourceDocument || 'Source not specified',
     factor.sourceUrl || 'Source not specified',
+    factor.usedRecordsCount ?? 1,
   ]);
 }
 
@@ -221,9 +237,6 @@ export function FormalReportPreview({
     countSummary,
     matchedActivityEmissions,
   });
-  const factorTraceabilityRows =
-    buildConversionFactorTraceabilityRows(conversionFactorsUsed);
-
   return (
     <section style={reportShellStyle}>
       <div style={coverPageStyle}>
@@ -325,27 +338,41 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="F. Conversion Factors Used">
+      <ReportSection title="F. Emission Factors Used">
         <SimpleTable
           headers={[
-            'Activity Type',
-            'Factor Value',
-            'Input Unit',
-            'Result Unit',
+            'Factor',
+            'Version',
+            'Value',
+            'Unit',
             'Jurisdiction',
+            'Year',
             'Source Authority',
-            'Source Year',
-            'Verified',
-            'System / Custom',
             'Source Document',
-            'Source URL',
+            'Verified / Status',
+            'Used Records',
           ]}
           emptyMessage="No conversion factors found for this report scope."
-          rows={factorTraceabilityRows}
+          rows={conversionFactorsUsed.map((factor) => [
+            factor.factorName || factor.activityType || 'Factor not specified',
+            factor.factorVersionId || 'Legacy factor',
+            formatDisplayNumber(factor.factorValue),
+            `${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
+            factor.jurisdiction || 'Not specified',
+            factor.factorYear || factor.sourceYear || 'Not specified',
+            factor.sourceAuthority || 'Source not specified',
+            factor.sourceDocument || 'Source not specified',
+            factor.verified
+              ? 'Verified'
+              : factor.factorStatus
+              ? formatCalculationStatus(factor.factorStatus)
+              : 'Unverified / user review required',
+            factor.usedRecordsCount ?? 1,
+          ])}
         />
       </ReportSection>
 
-      <ReportSection title="G. Calculation Methodology">
+      <ReportSection title="G. Calculation Traceability">
         <p style={sectionHelperStyle}>
           Each calculated row shows the activity quantity, matched conversion factor, source, formula, and emissions result.
         </p>
@@ -356,14 +383,12 @@ export function FormalReportPreview({
           <div style={{ marginTop: 14 }}>
             <SimpleTable
               headers={[
-                'Activity Type',
+                'Activity',
                 'Quantity',
-                'Factor',
+                'Factor Used',
                 'Source',
-                'Year',
-                'Jurisdiction',
-                'Formula',
-                'Result',
+                'Match',
+                'Calculation',
                 'Status',
               ]}
               emptyMessage="No calculation details available."
@@ -372,11 +397,9 @@ export function FormalReportPreview({
                 `${formatDisplayNumber(item.activityQuantity)} ${item.activityUnit}`,
                 formatTraceableFactor(item),
                 formatTraceabilitySource(item),
-                item.sourceYear ?? item.reportingYear,
-                item.jurisdiction || '-',
-                buildFormulaInputs(item),
+                formatMatchingMethod(item),
                 buildCalculatedFormula(item),
-                item.status,
+                formatCalculationStatus(item.status),
               ])}
             />
           </div>
@@ -399,7 +422,25 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="I. Methodology and Disclaimer">
+      <ReportSection title="I. Records Requiring Review">
+        <SimpleTable
+          headers={['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']}
+          emptyMessage="No records require review for this report scope."
+          rows={calculationDetails
+            .filter((item) => item.status !== 'CALCULATED' && item.status !== 'OUTSIDE_SCOPE')
+            .map((item) => [
+              item.activityType,
+              formatDisplayNumber(item.activityQuantity),
+              item.activityUnit || 'Missing unit',
+              formatCalculationStatus(item.status),
+              item.matchingMessage || item.reason || 'Review this record before calculation.',
+              formatRecordSource(item),
+              item.status === 'MISSING_FACTOR' ? 'Create factor' : 'Fix record',
+            ])}
+        />
+      </ReportSection>
+
+      <ReportSection title="J. Methodology and Disclaimer">
         <div style={{ display: 'grid', gap: 10 }}>
           {FORMAL_REPORT_METHODOLOGY.map((paragraph) => (
             <p key={paragraph} style={{ margin: 0, lineHeight: 1.7, color: '#475569' }}>

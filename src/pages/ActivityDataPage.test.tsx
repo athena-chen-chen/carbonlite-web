@@ -255,7 +255,71 @@ describe('ActivityDataPage delete flows', () => {
   it('shows horizontal scroll hint only when the records table overflows', async () => {
     renderPage();
 
-    expect(await screen.findByText('More columns →')).toBeInTheDocument();
+    expect(await screen.findByText('Scroll horizontally →')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Scroll horizontally/i })).not.toBeInTheDocument();
+  });
+
+  it('opens the Columns menu, toggles columns, and closes on outside click or Escape', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('DIESEL');
+    const moreColumnsButton = screen.getByRole('button', { name: /^Columns$/i });
+
+    expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(moreColumnsButton);
+
+    expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menu', { name: /Activity table columns/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: /Source Reference/i }));
+
+    expect(screen.queryByRole('columnheader', { name: 'Source Reference' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menu', { name: /Activity table columns/i })).toBeInTheDocument();
+
+    await user.click(document.body);
+
+    expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menu', { name: /Activity table columns/i })).not.toBeInTheDocument();
+
+    await user.click(moreColumnsButton);
+    expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'true');
+
+    await user.keyboard('{Escape}');
+
+    expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('renders row action menu in a portal and closes on outside click or Escape', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('DIESEL');
+    const actionButton = screen.getAllByLabelText(/More actions for/i)[0];
+
+    expect(actionButton).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(actionButton);
+
+    const menu = screen.getByRole('menu');
+    expect(actionButton).toHaveAttribute('aria-expanded', 'true');
+    expect(menu.parentElement).toBe(document.body);
+    expect(screen.getByRole('menuitem', { name: /^Edit$/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /^Delete$/i })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(actionButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menuitem', { name: /^Edit$/i })).not.toBeInTheDocument();
+
+    await user.click(actionButton);
+    expect(screen.getByRole('menuitem', { name: /^Edit$/i })).toBeInTheDocument();
+
+    await user.click(document.body);
+
+    expect(actionButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menuitem', { name: /^Edit$/i })).not.toBeInTheDocument();
   });
 
   it('filters records by document id from the URL and clears the filter', async () => {

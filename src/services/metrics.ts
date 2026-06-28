@@ -143,28 +143,50 @@ export type CalculationAuditDetail = {
   recordDate: string;
   dateEstimated: boolean;
   reportingYear: number;
+  recordYear?: number | null;
   jurisdiction: string;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
   activityQuantity: number;
   activityUnit: string;
+  quantityUnit?: string | null;
+  normalizedUnit?: string | null;
   factorId?: string | null;
+  factorVersionId?: string | null;
   factorName?: string | null;
+  factorDisplayName?: string | null;
   factorValue?: number | null;
   factorInputUnit?: string | null;
   factorResultUnit?: string | null;
+  factorYear?: number | null;
+  factorJurisdictionCountry?: string | null;
+  factorJurisdictionRegion?: string | null;
+  factorStatus?: string | null;
   factorPriority?: string | null;
   factorSource: string;
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
   sourceUrl?: string | null;
+  factorSourcePage?: string | number | null;
+  factorSourceTable?: string | null;
   sourceYear?: number | null;
   factorVerified: boolean;
+  factorConfidenceLevel?: string | null;
   factorType?: 'System' | 'Custom' | null;
+  calculatedEmission?: number | null;
   calculatedEmissionsKgCO2e?: number | null;
+  calculationFormula?: string | null;
+  calculationStatus?: string | null;
+  matchingStatus?: string | null;
+  matchedBy?: string | null;
+  matchingMethod?: string | null;
+  matchingMessage?: string | null;
   status:
     | 'CALCULATED'
     | 'MISSING_FACTOR'
     | 'INVALID_QUANTITY'
     | 'INVALID_UNIT'
+    | 'MISSING_DATA'
     | 'OUTSIDE_SCOPE';
   reason?: string | null;
   availableUnitsForActivityType?: string[];

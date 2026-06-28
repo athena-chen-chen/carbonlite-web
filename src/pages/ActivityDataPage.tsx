@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   createActivityData,
@@ -15,6 +16,18 @@ import {
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 const PAGE_SIZE = 15;
+
+const ACTIVITY_TABLE_COLUMNS = [
+  { key: 'status', label: 'Status' },
+  { key: 'date', label: 'Date' },
+  { key: 'type', label: 'Type' },
+  { key: 'quantity', label: 'Quantity' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'source', label: 'Source' },
+  { key: 'sourceReference', label: 'Source Reference' },
+] as const;
+
+type ActivityTableColumnKey = (typeof ACTIVITY_TABLE_COLUMNS)[number]['key'];
 
 type ActivityDataItem = {
   id: string;
@@ -50,8 +63,21 @@ const [reloadKey, setReloadKey] = useState(0);
 const [currentPage, setCurrentPage] = useState(1);
 const [bulkDeleting, setBulkDeleting] = useState(false);
 const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
+const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
+const [visibleColumns, setVisibleColumns] = useState<Record<ActivityTableColumnKey, boolean>>({
+  status: true,
+  date: true,
+  type: true,
+  quantity: true,
+  unit: true,
+  source: true,
+  sourceReference: true,
+});
 const [tableHasOverflow, setTableHasOverflow] = useState(false);
 const tableScrollRef = useRef<HTMLDivElement | null>(null);
+const columnMenuRef = useRef<HTMLDivElement | null>(null);
+const actionMenuRef = useRef<HTMLDivElement | null>(null);
 const documentFilterId = searchParams.get('documentId');
 const recordFilterId = searchParams.get('recordId');
 const sourceDocumentNameFromState =
@@ -185,6 +211,60 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
     };
   }, [recordFilterId, filteredItems.length]);
 
+  useEffect(() => {
+    if (!isColumnMenuOpen) return;
+
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (target && columnMenuRef.current?.contains(target)) return;
+      setIsColumnMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsColumnMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isColumnMenuOpen]);
+
+  useEffect(() => {
+    if (!openActionMenuId) return;
+
+    function closeActionMenu() {
+      setOpenActionMenuId(null);
+      setActionMenuPosition(null);
+    }
+
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && actionMenuRef.current?.contains(target)) return;
+      if (target?.closest('[data-activity-action-menu-button="true"]')) return;
+      closeActionMenu();
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeActionMenu();
+      }
+    }
+
+    document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('scroll', closeActionMenu, true);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', closeActionMenu, true);
+    };
+  }, [openActionMenuId]);
+
 function clearActivityRecordFilters() {
   setSearchParams({});
 }
@@ -217,6 +297,93 @@ function handleGenerateReportFromSelection() {
       selectedRecordIds: selectedIds,
     },
   });
+}
+
+function toggleColumn(columnKey: ActivityTableColumnKey) {
+  setVisibleColumns((current) => ({
+    ...current,
+    [columnKey]: !current[columnKey],
+  }));
+}
+
+function getActionMenuPosition(button: HTMLButtonElement) {
+  const rect = button.getBoundingClientRect();
+  const menuWidth = 112;
+  const menuHeight = 92;
+  const margin = 8;
+  const top =
+    rect.bottom + menuHeight + margin > window.innerHeight
+      ? Math.max(margin, rect.top - menuHeight - 6)
+      : rect.bottom + 6;
+  const left = Math.min(
+    Math.max(margin, rect.right - menuWidth),
+    Math.max(margin, window.innerWidth - menuWidth - margin),
+  );
+
+  return { top, left };
+}
+
+function toggleActionMenu(rowId: string, button: HTMLButtonElement) {
+  setOpenActionMenuId((current) => {
+    if (current === rowId) {
+      setActionMenuPosition(null);
+      return null;
+    }
+
+    setActionMenuPosition(getActionMenuPosition(button));
+    return rowId;
+  });
+}
+
+function closeActionMenu() {
+  setOpenActionMenuId(null);
+  setActionMenuPosition(null);
+}
+
+function renderActionMenuPortal() {
+  if (!openActionMenuId || !actionMenuPosition) return null;
+
+  const row = items.find((item) => item.id === openActionMenuId);
+  if (!row) return null;
+
+  return createPortal(
+    <div
+      ref={actionMenuRef}
+      role="menu"
+      style={{
+        ...overflowMenuStyle,
+        position: 'fixed',
+        top: actionMenuPosition.top,
+        left: actionMenuPosition.left,
+        right: 'auto',
+        zIndex: 9999,
+      }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          closeActionMenu();
+          startEdit(row);
+        }}
+        style={menuItemStyle}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          closeActionMenu();
+          void handleDelete(row);
+        }}
+        style={menuItemDangerStyle}
+      >
+        Delete
+      </button>
+    </div>,
+    document.body,
+  );
 }
 
 function handleViewCalculation(rowId: string) {
@@ -478,6 +645,7 @@ function renderNormalRow(row){
     onChange={(e) => toggleSelect(row.id, e.target.checked)}
   />
 </td>
+      {visibleColumns.status ? (
       <td style={tdStyle}>
         <span
           style={recordStatusBadgeStyle(isIncomplete)}
@@ -490,14 +658,17 @@ function renderNormalRow(row){
           {isIncomplete ? 'Incomplete' : 'Complete'}
         </span>
       </td>
-      <td style={dateCellStyle}>{formatRequiredRecordValue(row.recordDate?.slice(0, 10))}</td>
-      <td style={tdStyle}>{formatRequiredRecordValue(row.activityType)}</td>
-      <td style={tdStyle}>{formatRequiredRecordValue(row.quantity)}</td>
-      <td style={unitCellStyle}>{formatRecordUnit(row.unit)}</td>
-      <td style={tdStyle}>{formatActivitySourceType(row.sourceType)}</td>
+      ) : null}
+      {visibleColumns.date ? <td style={dateCellStyle}>{formatRequiredRecordValue(row.recordDate?.slice(0, 10))}</td> : null}
+      {visibleColumns.type ? <td style={tdStyle}>{formatRequiredRecordValue(row.activityType)}</td> : null}
+      {visibleColumns.quantity ? <td style={tdStyle}>{formatRequiredRecordValue(row.quantity)}</td> : null}
+      {visibleColumns.unit ? <td style={unitCellStyle}>{formatRecordUnit(row.unit)}</td> : null}
+      {visibleColumns.source ? <td style={tdStyle}>{formatActivitySourceType(row.sourceType)}</td> : null}
+      {visibleColumns.sourceReference ? (
       <td style={sourceReferenceCellStyle} title={formatActivitySourceReference(row)}>
         {formatActivitySourceReference(row)}
       </td>
+      ) : null}
       <td style={actionsCellStyle}>
         <div style={rowActionStyle}>
           <button
@@ -515,36 +686,15 @@ function renderNormalRow(row){
           <div style={overflowMenuWrapperStyle}>
             <button
               type="button"
+              data-activity-action-menu-button="true"
               aria-label={`More actions for ${row.activityType} ${row.recordDate?.slice(0, 10) ?? ''}`}
               aria-haspopup="menu"
               aria-expanded={openActionMenuId === row.id}
-              onClick={() =>
-                setOpenActionMenuId((current) => (current === row.id ? null : row.id))
-              }
+              onClick={(event) => toggleActionMenu(row.id, event.currentTarget)}
               style={overflowButtonStyle}
             >
               ⋮
             </button>
-            {openActionMenuId === row.id ? (
-              <div role="menu" style={overflowMenuStyle}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => startEdit(row)}
-                  style={menuItemStyle}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => handleDelete(row)}
-                  style={menuItemDangerStyle}
-                >
-                  Delete
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
       </td>
@@ -562,6 +712,13 @@ function renderEditRow(row){
         />
       </td>
 
+      {visibleColumns.status ? (
+      <td style={tdStyle}>
+        <span style={recordStatusBadgeStyle(false)}>Editing</span>
+      </td>
+      ) : null}
+
+      {visibleColumns.date ? (
       <td style={tdStyle}>
         <input
           type="date"
@@ -573,7 +730,9 @@ function renderEditRow(row){
           <div style={errorTextStyle}>{editErrors.recordDate}</div>
         )}
       </td>
+      ) : null}
 
+      {visibleColumns.type ? (
       <td style={tdStyle}>
         <select
           value={editRow.activityType ?? ''}
@@ -590,7 +749,9 @@ function renderEditRow(row){
           <div style={errorTextStyle}>{editErrors.activityType}</div>
         )}
       </td>
+      ) : null}
 
+      {visibleColumns.quantity ? (
       <td style={tdStyle}>
         <input
           type="number"
@@ -602,7 +763,9 @@ function renderEditRow(row){
           <div style={errorTextStyle}>{editErrors.quantity}</div>
         )}
       </td>
+      ) : null}
 
+      {visibleColumns.unit ? (
       <td style={tdStyle}>
         <input
           value={editRow.unit ?? ''}
@@ -613,7 +776,9 @@ function renderEditRow(row){
           <div style={errorTextStyle}>{editErrors.unit}</div>
         )}
       </td>
+      ) : null}
 
+      {visibleColumns.source ? (
       <td style={tdStyle}>
         <select
           value={editRow.sourceType ?? 'MANUAL'}
@@ -626,7 +791,9 @@ function renderEditRow(row){
           <option value="AI_EXTRACTION">AI Extraction</option>
         </select>
       </td>
+      ) : null}
 
+      {visibleColumns.sourceReference ? (
       <td style={tdStyle}>
         <input
           value={editRow.sourceReference ?? ''}
@@ -635,6 +802,7 @@ function renderEditRow(row){
           placeholder="Source reference"
         />
       </td>
+      ) : null}
 
       <td style={tdStyle}>
         <div style={editRowActionStyle}>
@@ -728,6 +896,45 @@ const errorTextStyle: React.CSSProperties = {
   <h2 style={{ margin: 0 }}>Activity Records</h2>
 
   <div style={tableToolbarStyle}>
+    <div ref={columnMenuRef} style={columnMenuWrapperStyle}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={isColumnMenuOpen}
+        aria-controls="activity-column-menu"
+        onClick={() => {
+          setIsColumnMenuOpen((current) => !current);
+        }}
+        style={secondaryActionBtn}
+      >
+        Columns
+      </button>
+      {isColumnMenuOpen ? (
+        <div
+          id="activity-column-menu"
+          role="menu"
+          aria-label="Activity table columns"
+          style={columnMenuStyle}
+        >
+          {ACTIVITY_TABLE_COLUMNS.map((column) => (
+            <label
+              key={column.key}
+              role="menuitemcheckbox"
+              aria-checked={visibleColumns[column.key]}
+              style={columnMenuItemStyle}
+            >
+              <input
+                type="checkbox"
+                checked={visibleColumns[column.key]}
+                onChange={() => toggleColumn(column.key)}
+              />
+              <span>{column.label}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </div>
+
     <button
       type="button"
       onClick={handleGenerateReportFromSelection}
@@ -787,7 +994,7 @@ const errorTextStyle: React.CSSProperties = {
         ) : (
           <>
             {tableHasOverflow ? (
-              <div style={scrollHintStyle}>More columns →</div>
+              <div style={scrollHintStyle}>Scroll horizontally →</div>
             ) : null}
             <div ref={tableScrollRef} style={tableScrollContainerStyle}>
             <table style={activityRecordsTableStyle}>
@@ -803,13 +1010,13 @@ const errorTextStyle: React.CSSProperties = {
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                     />
                   </th>
-                  <th style={statusThStyle}>Status</th>
-                  <th style={dateThStyle}>Date</th>
-                  <th style={typeThStyle}>Type</th>
-                  <th style={quantityThStyle}>Quantity</th>
-                  <th style={unitThStyle}>Unit</th>
-                  <th style={sourceThStyle}>Source</th>
-                  <th style={sourceReferenceThStyle}>Source Reference</th>
+                  {visibleColumns.status ? <th style={statusThStyle}>Status</th> : null}
+                  {visibleColumns.date ? <th style={dateThStyle}>Date</th> : null}
+                  {visibleColumns.type ? <th style={typeThStyle}>Type</th> : null}
+                  {visibleColumns.quantity ? <th style={quantityThStyle}>Quantity</th> : null}
+                  {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
+                  {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
+                  {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
                   <th style={actionsThStyle}></th>
                 </tr>
               </thead>
@@ -819,7 +1026,7 @@ const errorTextStyle: React.CSSProperties = {
                 ))}
               </tbody>
             </table>
-            {tableHasOverflow ? <div aria-hidden="true" style={tableFadeStyle} /> : null}
+            {/* {tableHasOverflow ? <div aria-hidden="true" style={tableFadeStyle} /> : null} */}
             </div>
 
             <div style={paginationStyle}>
@@ -852,6 +1059,7 @@ const errorTextStyle: React.CSSProperties = {
           </>
         )}
       </div>
+      {renderActionMenuPortal()}
     </div>
   );
 }
@@ -880,9 +1088,12 @@ const tableCard = {
   borderRadius: 12,
   border: '1px solid #ddd',
   background: '#fff',
+  overflow: 'visible',
 };
 
 const tableHeaderRowStyle: React.CSSProperties = {
+  position: 'relative',
+  zIndex: 20,
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
@@ -917,6 +1128,8 @@ const editRowActionStyle = {
 };
 
 const tableToolbarStyle: React.CSSProperties = {
+  position: 'relative',
+  zIndex: 20,
   display: 'flex',
   gap: 10,
   alignItems: 'center',
@@ -925,12 +1138,45 @@ const tableToolbarStyle: React.CSSProperties = {
   marginLeft: 'auto',
 };
 
+const columnMenuWrapperStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+  zIndex: 40,
+};
+
+const columnMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 8px)',
+  right: 0,
+  zIndex: 1000,
+  minWidth: 210,
+  padding: 8,
+  borderRadius: 12,
+  border: '1px solid #e2e8f0',
+  background: '#fff',
+  boxShadow: '0 20px 42px rgba(15, 23, 42, 0.18)',
+};
+
+const columnMenuItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 10px',
+  borderRadius: 8,
+  color: '#0f172a',
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
 const tableScrollContainerStyle: React.CSSProperties = {
   marginTop: 16,
   overflowX: 'auto',
   width: '100%',
   borderRadius: 10,
   position: 'relative',
+  zIndex: 1,
 };
 
 const activityRecordsTableStyle: React.CSSProperties = {
@@ -942,21 +1188,23 @@ const activityRecordsTableStyle: React.CSSProperties = {
 
 const scrollHintStyle: React.CSSProperties = {
   marginTop: 12,
-  color: '#64748b',
+  color: '#94a3b8',
   fontSize: 12,
-  fontWeight: 800,
+  fontWeight: 600,
   textAlign: 'right',
+  cursor: 'default',
+  userSelect: 'none',
 };
 
 const tableFadeStyle: React.CSSProperties = {
-  position: 'sticky',
+  position: 'absolute',
+  top: 0,
   right: 0,
-  bottom: 0,
-  float: 'right',
   width: 28,
-  height: 0,
+  height: '100%',
   pointerEvents: 'none',
-  boxShadow: '-18px 0 22px rgba(255, 255, 255, 0.95)',
+  zIndex: 1,
+  background: 'linear-gradient(90deg, rgba(255,255,255,0), #fff)',
 };
 
 const documentFilterBannerStyle: React.CSSProperties = {

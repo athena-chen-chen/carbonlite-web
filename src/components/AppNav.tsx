@@ -14,6 +14,7 @@ const navItems = [
 const adminNavItems = [
   { to: '/feedback', label: 'Feedback' },
   { to: '/activity', label: 'Activity' },
+  { to: '/factor-sources', label: 'Factor Sources' },
   { to: '/audit-log', label: 'Audit Log' },
 ] as const;
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAllActivityData } from './activityData';
+import { getAllConversionFactors } from './conversionFactors';
 import { getCalculationSummary } from './metrics';
 import {
   deriveMetricsDateRange,
@@ -13,6 +14,10 @@ vi.mock('./activityData', () => ({
 
 vi.mock('./metrics', () => ({
   getCalculationSummary: vi.fn(),
+}));
+
+vi.mock('./conversionFactors', () => ({
+  getAllConversionFactors: vi.fn(),
 }));
 
 function backendSummary() {
@@ -140,6 +145,7 @@ describe('loadMetricsOverview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getCalculationSummary).mockResolvedValue(backendSummary());
+    vi.mocked(getAllConversionFactors).mockResolvedValue([]);
   });
 
   it('uses the backend calculation summary as the single source of truth', async () => {
@@ -191,6 +197,215 @@ describe('loadMetricsOverview', () => {
     );
     expect(reportsPage.processedRecords).toBe(metricsPage.processedRecords);
     expect(reportsPage.usageTotals).toEqual(metricsPage.usageTotals);
+  });
+
+  it('accepts refactored summary count fields when recordsCalculated is absent', async () => {
+    const summary = backendSummary();
+    delete (summary as any).recordsCalculated;
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      processedRecords: 1,
+      recordsIncluded: 1,
+    });
+
+    const overview = await loadMetricsOverview({
+      dateFrom: '2025-01-01',
+      dateTo: '2025-12-31',
+    });
+
+    expect(overview.processedRecords).toBe(1);
+    expect(overview.recordsIncluded).toBe(1);
+    expect(overview.recordsInScope).toBe(2);
+    expect(overview.totalRecordsFound).toBe(2);
+  });
+
+  it('keeps in-scope review records even when no emissions were calculated', async () => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      totalsByMetric: [],
+      totalEstimatedEmissionsKgCO2e: 0,
+      recordsCalculated: undefined,
+      processedRecords: 0,
+      recordsIncluded: 0,
+      recordsInScope: 1,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 1,
+        invalidQuantity: 0,
+        invalidUnit: 0,
+        outsideScope: 0,
+        outsideDateRange: 0,
+        invalidData: 0,
+      },
+      calculationDetails: [
+        {
+          ...summary.calculationDetails[0],
+          status: 'MISSING_FACTOR',
+          calculatedEmissionsKgCO2e: null,
+        },
+      ],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+    } as any);
+
+    const overview = await loadMetricsOverview({
+      dateFrom: '2025-01-01',
+      dateTo: '2025-12-31',
+    });
+
+    expect(overview.processedRecords).toBe(0);
+    expect(overview.recordsInScope).toBe(1);
+    expect(overview.skippedRecords).toBe(1);
+    expect(overview.calculationDetails).toHaveLength(1);
+  });
+
+  it.each([
+    ['DIESEL', 'liters', 'Diesel', 'liters', 2.68, 268],
+    ['GASOLINE', 'L', 'Gasoline', 'liters', 2.31, 231],
+    ['NATURAL_GAS', 'm³', 'Natural Gas', 'm3', 1.89, 189],
+    ['ELECTRICITY', 'KWH', 'Electricity - Alberta - 2025', 'kWh', 0.5, 50],
+  ])(
+    'uses visible factor library fallback for %s / %s',
+    async (activityType, unit, factorName, factorUnit, factorValue, expectedEmissions) => {
+      vi.mocked(getCalculationSummary).mockResolvedValue({
+        ...backendSummary(),
+        totalsByMetric: [],
+        totalEstimatedEmissionsKgCO2e: 0,
+        totalRecordsFound: 1,
+        recordsInScope: 1,
+        recordsCalculated: 0,
+        recordsIncluded: 0,
+        processedRecords: 0,
+        skippedRecords: 1,
+        missingFactorCount: 1,
+        missingFactorRecords: 1,
+        missingFactors: [
+          {
+            activityDataId: 'activity-1',
+            activityType,
+            unit,
+            availableUnitsForActivityType: [],
+          },
+        ],
+        calculationDetails: [
+          {
+            ...backendSummary().calculationDetails[0],
+            activityType,
+            activityUnit: unit,
+            status: 'MISSING_FACTOR',
+            calculatedEmissionsKgCO2e: null,
+          },
+        ],
+        matchedActivityEmissions: [],
+        conversionFactorsUsed: [],
+        activities: [
+          {
+            id: 'activity-1',
+            activityType,
+            recordDate: '2025-06-30T00:00:00.000Z',
+            quantity: 100,
+            unit,
+            sourceType: 'MANUAL',
+            sourceReference: 'test',
+          },
+        ],
+      } as any);
+      vi.mocked(getAllConversionFactors).mockResolvedValue([
+        {
+          id: 'factor-visible',
+          organizationId: null,
+          name: factorName,
+          type: 'EMISSION',
+          activityType: null,
+          inputUnit: factorUnit,
+          unit: factorUnit,
+          factorValue,
+          resultUnit: 'kgCO2e',
+          sourceAuthority: 'CarbonLite system defaults',
+          sourceYear: 2025,
+          verified: false,
+          isDefault: true,
+          isSystemDefault: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ] as any);
+
+      const overview = await loadMetricsOverview({
+        dateFrom: '2025-01-01',
+        dateTo: '2025-12-31',
+      });
+
+      expect(overview.processedRecords).toBe(1);
+      expect(overview.skippedRecords).toBe(0);
+      expect(overview.missingFactorRecords).toBe(0);
+      expect(overview.totalEstimatedEmissionsKgCO2e).toBe(expectedEmissions);
+      expect(overview.calculationDetails[0]).toMatchObject({
+        status: 'CALCULATED',
+        factorId: 'factor-visible',
+        calculatedEmissionsKgCO2e: expectedEmissions,
+      });
+    },
+  );
+
+  it('does not calculate GJ or tonnes records unless a matching factor exists', async () => {
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...backendSummary(),
+      totalRecordsFound: 2,
+      recordsInScope: 2,
+      recordsCalculated: 0,
+      processedRecords: 0,
+      skippedRecords: 2,
+      missingFactorCount: 2,
+      missingFactorRecords: 2,
+      missingFactors: [
+        { activityDataId: 'activity-1', activityType: 'DIESEL', unit: 'GJ' },
+        { activityDataId: 'activity-2', activityType: 'DIESEL', unit: 'tons' },
+      ],
+      calculationDetails: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      activities: [
+        {
+          id: 'activity-1',
+          activityType: 'DIESEL',
+          recordDate: '2025-06-30T00:00:00.000Z',
+          quantity: 100,
+          unit: 'GJ',
+          sourceType: 'MANUAL',
+        },
+        {
+          id: 'activity-2',
+          activityType: 'DIESEL',
+          recordDate: '2025-06-30T00:00:00.000Z',
+          quantity: 100,
+          unit: 'tons',
+          sourceType: 'MANUAL',
+        },
+      ],
+    } as any);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      {
+        id: 'factor-diesel-liters',
+        name: 'Diesel',
+        type: 'EMISSION',
+        unit: 'liters',
+        factorValue: 2.68,
+        resultUnit: 'kgCO2e',
+        isSystemDefault: true,
+        isDefault: true,
+      },
+    ] as any);
+
+    const overview = await loadMetricsOverview({
+      dateFrom: '2025-01-01',
+      dateTo: '2025-12-31',
+    });
+
+    expect(overview.processedRecords).toBe(0);
+    expect(overview.skippedRecords).toBe(2);
+    expect(overview.missingFactorRecords).toBe(2);
   });
 });
 

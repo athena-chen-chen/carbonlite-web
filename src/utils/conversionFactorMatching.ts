@@ -6,17 +6,33 @@ export type MatchableConversionFactor = {
   name: string;
   type?: string | null;
   activityType?: string | null;
+  displayName?: string | null;
   inputUnit?: string | null;
   unit?: string | null;
   factorValue: string | number;
   resultUnit?: string | null;
+  jurisdiction?: string | null;
+  status?: string | null;
+  isActive?: boolean | null;
   isSystemDefault?: boolean | null;
+  isSystem?: boolean | null;
   isDefault?: boolean | null;
   sourceAuthority?: string | null;
   sourceName?: string | null;
+  sourceReference?: string | null;
+  sourceUrl?: string | null;
   sourceYear?: number | null;
+  confidenceLevel?: string | null;
   verified?: boolean | null;
   updatedAt?: string | null;
+  currentActiveVersion?: Partial<MatchableConversionFactor> | null;
+  version?: Partial<MatchableConversionFactor> | null;
+  factor?: {
+    activityType?: string | null;
+    displayName?: string | null;
+    name?: string | null;
+    isSystem?: boolean | null;
+  } | null;
 };
 
 export type ConversionFactorMatch = {
@@ -41,9 +57,10 @@ export function findBestConversionFactorMatch(input: {
 
     return (
       factorKind === 'EMISSION' &&
-      normalizeActivityType(factor.activityType) === activityType &&
+      isUsableFactor(factor) &&
+      normalizeFactorActivityType(factor) === activityType &&
       normalizeUnit(getFactorInputUnit(factor)) === inputUnit &&
-      Number.isFinite(Number(factor.factorValue))
+      Number.isFinite(Number(getFactorValue(factor)))
     );
   });
 
@@ -51,7 +68,7 @@ export function findBestConversionFactorMatch(input: {
     .filter((factor) =>
       organizationId
         ? String(factor.organizationId ?? '') === organizationId
-        : Boolean(factor.organizationId) && !factor.isSystemDefault,
+        : Boolean(factor.organizationId) && !isSystemFactor(factor),
     )
     .sort(compareNewestDefaultFirst)[0];
 
@@ -63,7 +80,7 @@ export function findBestConversionFactorMatch(input: {
   }
 
   const systemFactor = matchingFactors
-    .filter((factor) => Boolean(factor.isSystemDefault))
+    .filter((factor) => isSystemFactor(factor))
     .sort(compareNewestDefaultFirst)[0];
 
   if (systemFactor) {
@@ -80,8 +97,49 @@ export function getFactorSourceAuthority(factor: MatchableConversionFactor) {
   return factor.sourceAuthority || factor.sourceName || '';
 }
 
-function getFactorInputUnit(factor: MatchableConversionFactor) {
-  return factor.inputUnit || factor.unit || '';
+export function getFactorInputUnit(factor: MatchableConversionFactor) {
+  const currentVersion = factor.currentActiveVersion ?? factor.version;
+
+  return currentVersion?.inputUnit || currentVersion?.unit || factor.inputUnit || factor.unit || '';
+}
+
+export function getFactorValue(factor: MatchableConversionFactor) {
+  const currentVersion = factor.currentActiveVersion ?? factor.version;
+
+  return currentVersion?.factorValue ?? factor.factorValue;
+}
+
+export function getFactorResultUnit(factor: MatchableConversionFactor) {
+  const currentVersion = factor.currentActiveVersion ?? factor.version;
+
+  return currentVersion?.resultUnit || factor.resultUnit || 'kgCO2e';
+}
+
+export function normalizeFactorActivityType(factor: MatchableConversionFactor) {
+  const candidate =
+    factor.activityType ||
+    factor.factor?.activityType ||
+    factor.displayName ||
+    factor.factor?.displayName ||
+    factor.name ||
+    factor.factor?.name ||
+    '';
+
+  return normalizeActivityType(candidate);
+}
+
+function isSystemFactor(factor: MatchableConversionFactor) {
+  return Boolean(factor.isSystemDefault ?? factor.isSystem ?? factor.factor?.isSystem);
+}
+
+function isUsableFactor(factor: MatchableConversionFactor) {
+  const currentVersion = factor.currentActiveVersion ?? factor.version;
+  const status = String(currentVersion?.status ?? factor.status ?? '').trim().toUpperCase();
+
+  if (factor.isActive === false || currentVersion?.isActive === false) return false;
+  if (['ARCHIVED', 'DEPRECATED'].includes(status)) return false;
+
+  return true;
 }
 
 function compareNewestDefaultFirst(
@@ -96,7 +154,25 @@ function compareNewestDefaultFirst(
 }
 
 export function normalizeActivityType(value?: string | null) {
-  return String(value ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+  const normalized = String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/&/g, ' AND ')
+    .replace(/[-/]+/g, ' ')
+    .replace(/\s+/g, '_');
+
+  if (!normalized) return '';
+  if (normalized.includes('NATURAL_GAS')) return 'NATURAL_GAS';
+  if (normalized.includes('DIESEL')) return 'DIESEL';
+  if (normalized.includes('GASOLINE')) return 'GASOLINE';
+  if (normalized.includes('ELECTRICITY')) return 'ELECTRICITY';
+  if (normalized.includes('WATER')) return 'WATER';
+  if (normalized.includes('WASTE')) return 'WASTE';
+
+  return normalized
+    .replace(/_EMISSION_FACTOR$/, '')
+    .replace(/_COMBUSTION$/, '')
+    .replace(/_USAGE$/, '');
 }
 
 export function normalizeUnit(value?: string | null) {

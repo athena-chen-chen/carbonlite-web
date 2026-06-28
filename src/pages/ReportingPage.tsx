@@ -15,7 +15,6 @@ import {
 import {
   FORMAL_REPORT_METHODOLOGY,
   FormalReportPreview,
-  buildConversionFactorTraceabilityRows,
   buildReportExecutiveSummary,
   buildSourceEvidenceRows,
   formatSourceType,
@@ -30,7 +29,9 @@ import { trackEvent } from '../services/ga4.service';
 import type { CalculationAuditDetail } from '../services/metrics';
 import {
   buildCalculatedFormula,
-  buildFormulaInputs,
+  formatCalculationStatus,
+  formatMatchingMethod,
+  formatRecordSource,
   formatTraceabilitySource,
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
@@ -44,6 +45,11 @@ type ActivityItem = {
   unit: string;
   sourceType: string;
   sourceReference?: string | null;
+  sourceDocumentId?: string | null;
+  sourceFileName?: string | null;
+  sourcePage?: string | number | null;
+  sourceRow?: string | number | null;
+  sourceTextSnippet?: string | null;
   notes?: string | null;
 };
 const SCOPE_MAP: Record<string, 'Scope 1' | 'Scope 2' | 'Scope 3'> = {
@@ -87,6 +93,7 @@ export default function ReportingPage() {
   const [totalEstimatedEmissionsKgCO2e, setTotalEstimatedEmissionsKgCO2e] = useState(0);
   const [countSummary, setCountSummary] = useState({
     totalRecordsFound: 0,
+    recordsInScope: 0,
     processedRecords: 0,
     skippedRecords: 0,
     missingFactorRecords: 0,
@@ -150,6 +157,7 @@ const trackedReportViewRef = useRef(false);
       setTotalEstimatedEmissionsKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
       setCountSummary({
         totalRecordsFound: overview.totalRecordsFound,
+        recordsInScope: overview.recordsInScope,
         processedRecords: overview.processedRecords,
         skippedRecords: overview.skippedRecords,
         missingFactorRecords: overview.missingFactorRecords,
@@ -288,8 +296,6 @@ function classifyScope(activityType?: string) {
   return 'Scope 3';
 }
 
-  const totalsByFacility = summary?.totalsByFacility ?? [];
-
 const scopeRows = useMemo(() => {
   return activities.map((item) => ({
     scope: classifyScope(item.activityType),
@@ -317,20 +323,50 @@ const scopeRows = useMemo(() => {
 }, [activities]);
 
 function handleDownloadCSV() {
-  if (countSummary.processedRecords <= 0) return;
+  if (!hasReportOutput) return;
 
     const rows = [
-      ['Scope', 'Activity Type', 'Quantity', 'Unit', 'Source'],
-      ...scopeRows.map((r) => [
-        r.scope,
-        r.activityType,
-        formatDisplayNumber(r.quantity),
-        r.unit,
-        r.source,
+      [
+        'activityRecordId',
+        'activityType',
+        'quantity',
+        'unit',
+        'recordDate',
+        'sourceFileName',
+        'sourceReference',
+        'factorVersionId',
+        'factorValue',
+        'factorYear',
+        'factorJurisdiction',
+        'sourceAuthority',
+        'sourceDocument',
+        'matchingMethod',
+        'calculationFormula',
+        'calculatedEmission',
+        'calculationStatus',
+      ],
+      ...calculationDetails.map((item) => [
+        item.activityDataId,
+        item.activityType,
+        formatDisplayNumber(item.activityQuantity),
+        item.activityUnit || 'Missing unit',
+        item.recordDate?.slice(0, 10) ?? '',
+        item.sourceFileName || (String(item.sourceType).toUpperCase() === 'MANUAL' ? 'Manual entry' : ''),
+        formatRecordSource(item),
+        item.factorVersionId || '',
+        item.factorValue ?? '',
+        item.factorYear ?? '',
+        [item.factorJurisdictionRegion, item.factorJurisdictionCountry].filter(Boolean).join(', '),
+        item.sourceAuthority || '',
+        item.sourceDocument || '',
+        formatMatchingMethod(item),
+        buildCalculatedFormula(item),
+        item.calculatedEmissionsKgCO2e ?? '',
+        formatCalculationStatus(item.status),
       ]),
     ];
 
-    const csv = rows.map((row) => row.join(',')).join('\n');
+    const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
 
     const url = URL.createObjectURL(blob);
@@ -403,7 +439,7 @@ const scopeNarrative = useMemo(() => {
 }, [scopeSummary]);
 
 function handleDownloadPDF() {
-  if (countSummary.processedRecords <= 0) return;
+  if (!hasReportOutput) return;
 
   const doc = new jsPDF();
   const today = new Date().toISOString().slice(0, 10);
@@ -417,9 +453,6 @@ function handleDownloadPDF() {
     countSummary,
     matchedActivityEmissions,
   });
-  const factorTraceabilityRows =
-    buildConversionFactorTraceabilityRows(conversionFactorsUsed);
-
   drawReportPdfCover(doc, {
     organizationName,
     reportPeriod,
@@ -514,25 +547,39 @@ function handleDownloadPDF() {
     nextY = 18;
   }
 
-  drawPdfSectionTitle(doc, 'Conversion Factors Used', nextY + 10);
+  drawPdfSectionTitle(doc, 'Emission Factors Used', nextY + 10);
   autoTable(doc, {
     startY: nextY + 16,
     head: [[
-      'Activity Type',
-      'Factor Value',
-      'Input Unit',
-      'Result Unit',
+      'Factor',
+      'Version',
+      'Value',
+      'Unit',
       'Jurisdiction',
+      'Year',
       'Source Authority',
-      'Source Year',
-      'Verified',
-      'System / Custom',
       'Source Document',
-      'Source URL',
+      'Status',
+      'Used Records',
     ]],
-    body: factorTraceabilityRows.length
-      ? factorTraceabilityRows
-      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '', '', '']],
+    body: conversionFactorsUsed.length
+      ? conversionFactorsUsed.map((factor) => [
+          factor.factorName || factor.activityType || 'Factor not specified',
+          factor.factorVersionId || 'Legacy factor',
+          formatDisplayNumber(factor.factorValue),
+          `${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
+          factor.jurisdiction || 'Not specified',
+          factor.factorYear || factor.sourceYear || 'Not specified',
+          factor.sourceAuthority || 'Source not specified',
+          factor.sourceDocument || 'Source not specified',
+          factor.verified
+            ? 'Verified'
+            : factor.factorStatus
+            ? formatCalculationStatus(factor.factorStatus)
+            : 'Unverified / user review required',
+          factor.usedRecordsCount ?? 1,
+        ])
+      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '', '']],
     styles: { fontSize: 6.5, cellPadding: 1.5 },
     headStyles: { fillColor: [15, 23, 42] },
   });
@@ -543,18 +590,16 @@ function handleDownloadPDF() {
     nextY = 20;
   }
 
-  drawPdfSectionTitle(doc, 'Calculation Methodology', nextY + 10);
+  drawPdfSectionTitle(doc, 'Calculation Traceability', nextY + 10);
   autoTable(doc, {
     startY: nextY + 16,
     head: [[
-      'Activity Type',
+      'Activity',
       'Quantity',
-      'Factor',
+      'Factor Used',
       'Source',
-      'Year',
-      'Jurisdiction',
-      'Formula',
-      'Result',
+      'Match',
+      'Calculation',
       'Status',
     ]],
     body: calculationDetails.length
@@ -563,13 +608,11 @@ function handleDownloadPDF() {
           `${formatDisplayNumber(item.activityQuantity)} ${item.activityUnit}`,
           formatTraceableFactor(item),
           formatTraceabilitySource(item),
-          item.sourceYear ?? item.reportingYear,
-          item.jurisdiction,
-          buildFormulaInputs(item),
+          formatMatchingMethod(item),
           buildCalculatedFormula(item),
-          item.status,
+          formatCalculationStatus(item.status),
         ])
-      : [['No calculation details available.', '', '', '', '', '', '', '', '']],
+      : [['No calculation details available.', '', '', '', '', '', '']],
     styles: { fontSize: 6.5, cellPadding: 1.5 },
     headStyles: { fillColor: [15, 23, 42] },
   });
@@ -597,6 +640,35 @@ function handleDownloadPDF() {
           item.notes,
         ])
       : [['No source evidence available.', '', '', '', '', '', '']],
+  });
+
+  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (nextY > 230) {
+    doc.addPage();
+    nextY = 20;
+  }
+
+  doc.setFontSize(14);
+  doc.text('Records Requiring Review', 14, nextY + 10);
+  const reviewRows = calculationDetails.filter(
+    (item) => item.status !== 'CALCULATED' && item.status !== 'OUTSIDE_SCOPE',
+  );
+  autoTable(doc, {
+    startY: nextY + 18,
+    head: [['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']],
+    body: reviewRows.length
+      ? reviewRows.map((item) => [
+          item.activityType,
+          formatDisplayNumber(item.activityQuantity),
+          item.activityUnit || 'Missing unit',
+          formatCalculationStatus(item.status),
+          item.matchingMessage || item.reason || 'Review this record before calculation.',
+          formatRecordSource(item),
+          item.status === 'MISSING_FACTOR' ? 'Create factor' : 'Fix record',
+        ])
+      : [['No records require review for this report scope.', '', '', '', '', '', '']],
+    styles: { fontSize: 6.5, cellPadding: 1.5 },
+    headStyles: { fillColor: [15, 23, 42] },
   });
 
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
@@ -685,6 +757,14 @@ function drawReportPdfCover(
   doc.setFont('helvetica', 'normal');
 }
 
+function escapeCsvValue(value: unknown) {
+  const text = value === null || value === undefined ? '' : String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
 function drawPdfSectionTitle(doc: jsPDF, title: string, y: number) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
@@ -746,14 +826,25 @@ const sourceEvidenceRows = buildSourceEvidenceRows(activities);
 const reportRecordCount = countSummary.processedRecords;
 const hasLoadedSummary = Boolean(summary);
 const hasImportedActivityData = countSummary.totalRecordsFound > 0;
-const hasValidReport = reportRecordCount > 0;
+const hasReportOutput =
+  countSummary.recordsInScope > 0 ||
+  activities.length > 0 ||
+  calculationDetails.length > 0 ||
+  matchedActivityEmissions.length > 0 ||
+  conversionFactorsUsed.length > 0;
+const hasCalculableRecords = reportRecordCount > 0;
 const hasNoDataInSystem = hasLoadedSummary && !loading && !hasImportedActivityData;
 const hasNoRecordsForSelectedPeriod =
   hasLoadedSummary &&
   !loading &&
   hasImportedActivityData &&
-  activities.length === 0;
-const exportDisabled = reportRecordCount === 0;
+  !hasReportOutput;
+const hasRecordsRequiringReviewOnly =
+  hasLoadedSummary &&
+  !loading &&
+  hasReportOutput &&
+  !hasCalculableRecords;
+const exportDisabled = !hasReportOutput;
 const exportDisabledTitle = exportDisabled
   ? 'Generate a report before exporting.'
   : undefined;
@@ -920,8 +1011,15 @@ const exportDisabledTitle = exportDisabled
             isLoading={!summary}
           />
         </>
-      ) : hasValidReport ? (
+      ) : hasReportOutput ? (
         <>
+          {hasRecordsRequiringReviewOnly ? (
+            <div style={reviewOnlyNoticeStyle}>
+              No emissions calculated because records require review. Review the
+              calculation issues and skipped records below.
+            </div>
+          ) : null}
+
           <MetricsSummarySection
             usageTotals={usageTotals}
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
@@ -1188,6 +1286,17 @@ const emptyScopeNoticeStyle: React.CSSProperties = {
   background: '#fffbeb',
   color: '#92400e',
   fontWeight: 700,
+};
+
+const reviewOnlyNoticeStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 14,
+  borderRadius: 12,
+  border: '1px solid #fde68a',
+  background: '#fffbeb',
+  color: '#92400e',
+  fontWeight: 800,
+  lineHeight: 1.5,
 };
 
 const reportEmptyStateStyle: React.CSSProperties = {

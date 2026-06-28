@@ -18,6 +18,8 @@ import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { FeedbackManagementPage } from '../pages/FeedbackManagementPage';
 import { AuditLogPage } from '../pages/AuditLogPage';
 import { UserActivityPage } from '../pages/UserActivityPage';
+import { FactorSourcesPage } from '../pages/FactorSourcesPage';
+import { FactorDetailsPage } from '../pages/FactorDetailsPage';
 import { AdminRoute } from '../auth/AdminRoute';
 import { AnalyticsRouteTracker } from '../components/AnalyticsRouteTracker';
 import { GA4RouteTracker } from '../components/GA4RouteTracker';
@@ -161,6 +163,45 @@ export default function App() {
               <AdminRoute>
                 <AppShell>
                   <UserActivityPage />
+                </AppShell>
+              </AdminRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/factor-sources"
+          element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <AppShell>
+                  <FactorSourcesPage />
+                </AppShell>
+              </AdminRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/factor-details/:factorVersionId"
+          element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <AppShell>
+                  <FactorDetailsPage />
+                </AppShell>
+              </AdminRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/factors/:factorVersionId"
+          element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <AppShell>
+                  <FactorDetailsPage />
                 </AppShell>
               </AdminRoute>
             </ProtectedRoute>

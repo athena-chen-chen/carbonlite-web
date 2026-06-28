@@ -1,4 +1,7 @@
-import { findBestConversionFactorMatch } from './conversionFactorMatching';
+import {
+  findBestConversionFactorMatch,
+  normalizeActivityType,
+} from './conversionFactorMatching';
 
 const systemDiesel = {
   id: 'system-diesel',
@@ -81,5 +84,103 @@ describe('findBestConversionFactorMatch', () => {
 
     expect(match?.factor.id).toBe('system-diesel');
     expect(match?.sourceLabel).toBe('System Default Factor');
+  });
+
+  it('matches uppercase activity types to display-name factors after the official library refactor', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'm³',
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-natural-gas-version',
+          organizationId: null,
+          name: 'Natural Gas combustion',
+          type: 'EMISSION',
+          displayName: 'Natural Gas',
+          activityType: null,
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          status: 'DRAFT',
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('factor-natural-gas-version');
+  });
+
+  it.each([
+    ['DIESEL', 'liters', 'Diesel', 'liters'],
+    ['GASOLINE', 'L', 'Gasoline emission factor', 'liters'],
+    ['ELECTRICITY', 'KWH', 'Electricity - Alberta - 2025', 'kWh'],
+  ])('matches %s / %s to %s / %s', (activityType, inputUnit, factorName, factorUnit) => {
+    const match = findBestConversionFactorMatch({
+      activityType,
+      inputUnit,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: `factor-${activityType}`,
+          organizationId: null,
+          name: factorName,
+          type: 'EMISSION',
+          inputUnit: factorUnit,
+          factorValue: 1,
+          resultUnit: 'kgCO2e',
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe(`factor-${activityType}`);
+  });
+
+  it('does not match unsupported units without a factor', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'DIESEL',
+      inputUnit: 'GJ',
+      organizationId: 'org-1',
+      factors: [systemDiesel],
+    });
+
+    expect(match).toBeUndefined();
+  });
+
+  it('does not use archived or deprecated factor versions', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'DIESEL',
+      inputUnit: 'liters',
+      organizationId: 'org-1',
+      factors: [
+        {
+          ...systemDiesel,
+          id: 'archived-diesel',
+          status: 'ARCHIVED',
+        },
+        {
+          ...systemDiesel,
+          id: 'deprecated-diesel',
+          status: 'DEPRECATED',
+        },
+      ],
+    });
+
+    expect(match).toBeUndefined();
+  });
+});
+
+describe('normalizeActivityType', () => {
+  it('normalizes display names and enum values consistently', () => {
+    expect(normalizeActivityType('DIESEL')).toBe('DIESEL');
+    expect(normalizeActivityType('Diesel')).toBe('DIESEL');
+    expect(normalizeActivityType('Natural Gas')).toBe('NATURAL_GAS');
+    expect(normalizeActivityType('NATURAL_GAS')).toBe('NATURAL_GAS');
+    expect(normalizeActivityType('Gasoline emission factor')).toBe('GASOLINE');
+    expect(normalizeActivityType('Electricity - Alberta - 2025')).toBe('ELECTRICITY');
+    expect(normalizeActivityType('Water')).toBe('WATER');
   });
 });

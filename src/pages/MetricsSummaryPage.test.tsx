@@ -113,7 +113,7 @@ describe('buildMetricsSummaryTableRows', () => {
     );
   });
 
-  it('shows empty state data when no records are included', () => {
+  it('does not build calculation rows when no records are included', () => {
     const rows = buildMetricsSummaryTableRows({
       usageTotals,
       totalEstimatedEmissionsKgCO2e: 0,
@@ -121,6 +121,119 @@ describe('buildMetricsSummaryTableRows', () => {
     });
 
     expect(rows).toEqual([]);
+  });
+
+  it('shows no activity records state when there is no data', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 0,
+            electricity: 0,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [],
+          }}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 0,
+            processedRecords: 0,
+            skippedRecords: 0,
+            missingFactorRecords: 0,
+            skippedReasons: {
+              missingFactor: 0,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByText('No activity records yet. Import activity data to generate metrics.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
+  });
+
+  it('explains when records exist but no emissions can be calculated', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 0,
+            electricity: 0,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [],
+          }}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 2,
+            processedRecords: 0,
+            skippedRecords: 2,
+            missingFactorRecords: 2,
+            skippedReasons: {
+              missingFactor: 2,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          missingFactors={[
+            { activityDataId: 'activity-1', activityType: 'DIESEL', unit: 'tonnes' },
+            { activityDataId: 'activity-2', activityType: 'HOTEL', unit: 'nights' },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('No calculated emissions yet.')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Records exist, but emissions could not be calculated/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Review Calculation Issues above.')).toBeInTheDocument();
+    expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
+  });
+
+  it('shows tracked-only metrics separately when no emissions are calculated', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 0,
+            electricity: 0,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [],
+          }}
+          totalEstimatedEmissionsKgCO2e={0}
+          countSummary={{
+            totalRecordsFound: 2,
+            processedRecords: 0,
+            skippedRecords: 2,
+            missingFactorRecords: 2,
+            skippedReasons: {
+              missingFactor: 2,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          missingFactors={[
+            { activityDataId: 'activity-1', activityType: 'WATER', unit: 'm³' },
+            { activityDataId: 'activity-2', activityType: 'WASTE', unit: 'kg' },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('No calculated emissions yet.')).toBeInTheDocument();
+    expect(screen.getByText('Tracked Metrics')).toBeInTheDocument();
+    expect(screen.getByText('Water / m3 — 1 record')).toBeInTheDocument();
+    expect(screen.getByText('Waste / kg — 1 record')).toBeInTheDocument();
+    expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
   });
 
   it('groups missing conversion factors by activity type and unit', () => {
@@ -464,7 +577,7 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getByText('Water / m3 — tracked only')).toBeInTheDocument();
-    expect(screen.getByText(/2 records/)).toBeInTheDocument();
+    expect(screen.getAllByText(/2 records/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Informational')).toHaveLength(1);
   });
 

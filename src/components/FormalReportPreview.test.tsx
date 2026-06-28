@@ -122,10 +122,11 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('C. Calculation Quality Summary')).toBeInTheDocument();
     expect(screen.getByText('D. Calculation Summary')).toBeInTheDocument();
     expect(screen.getByText('E. Activity Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('F. Conversion Factors Used')).toBeInTheDocument();
-    expect(screen.getByText('G. Calculation Methodology')).toBeInTheDocument();
+    expect(screen.getByText('F. Emission Factors Used')).toBeInTheDocument();
+    expect(screen.getByText('G. Calculation Traceability')).toBeInTheDocument();
     expect(screen.getByText('H. Source Evidence')).toBeInTheDocument();
-    expect(screen.getByText('I. Methodology and Disclaimer')).toBeInTheDocument();
+    expect(screen.getByText('I. Records Requiring Review')).toBeInTheDocument();
+    expect(screen.getByText('J. Methodology and Disclaimer')).toBeInTheDocument();
     expect(screen.getAllByText('321.60 kgCO2e').length).toBeGreaterThan(0);
     expect(screen.getAllByText('CarbonLite system defaults').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
@@ -135,7 +136,6 @@ describe('FormalReportPreview', () => {
     expect(screen.getAllByText('DIESEL').length).toBeGreaterThan(0);
     expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
-    expect(screen.getByText('100 × 2.68')).toBeInTheDocument();
     expect(screen.getByText('100 × 2.68 = 268 kgCO2e')).toBeInTheDocument();
     expect(screen.getByText('2.68 kgCO2e/L')).toBeInTheDocument();
     expect(screen.getByText('Source File')).toBeInTheDocument();
@@ -256,6 +256,7 @@ describe('Version 1 report presentation data', () => {
         'Custom',
         'Source not specified',
         'Source not specified',
+        1,
       ],
     ]);
   });

@@ -170,6 +170,67 @@ test('@smoke reports show selected-period empty state separately from no data', 
   failures.assertClean(api.unexpectedRequests);
 });
 
+test('@smoke reports generate content and enable exports from activity records', async ({ page }) => {
+  const api = createCarbonLiteApiState();
+  seedImportedDocument(api);
+  const failures = monitorCriticalFailures(page);
+  await authenticateTestUser(page);
+  await installCarbonLiteApiMock(page, api);
+
+  await page.goto('/reports');
+  await page.getByRole('button', { name: 'Generate Report' }).click();
+
+  await expect(page.getByText('Emissions Summary Report')).toBeVisible();
+  await expect(page.getByText('Calculation Traceability')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
+  failures.assertClean(api.unexpectedRequests);
+});
+
+test('@smoke data records Columns menu opens and toggles columns', async ({ page }) => {
+  const api = createCarbonLiteApiState();
+  seedImportedDocument(api);
+  const failures = monitorCriticalFailures(page);
+  await authenticateTestUser(page);
+  await installCarbonLiteApiMock(page, api);
+
+  await page.goto('/activity-records');
+  await expect(page.getByRole('heading', { name: 'Activity Records' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Source Reference' })).toBeVisible();
+
+  await expect(page.getByText('Scroll horizontally →')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Scroll horizontally/i })).toHaveCount(0);
+
+  const moreColumnsButton = page.getByRole('button', { name: 'Columns' });
+  await expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'false');
+
+  await moreColumnsButton.click();
+
+  await expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'true');
+  const menu = page.getByRole('menu', { name: 'Activity table columns' });
+  await expect(menu).toBeVisible();
+
+  await menu.getByRole('checkbox', { name: 'Source Reference' }).uncheck();
+
+  await expect(page.getByRole('columnheader', { name: 'Source Reference' })).toHaveCount(0);
+  await expect(menu).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'false');
+
+  const recordRow = page.getByRole('row').filter({ hasText: 'ELECTRICITY' });
+  const rowActionButton = recordRow.getByRole('button', {
+    name: /More actions for/i,
+  });
+  await rowActionButton.click();
+  await expect(rowActionButton).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(rowActionButton).toHaveAttribute('aria-expanded', 'false');
+  failures.assertClean(api.unexpectedRequests);
+});
+
 test('@smoke conversion factors load, create, and delete', async ({ page }) => {
   const api = createCarbonLiteApiState();
   const failures = monitorCriticalFailures(page);
