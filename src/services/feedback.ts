@@ -2,7 +2,24 @@ import { apiFetch } from './api';
 import { track } from './analytics.service';
 
 export type FeedbackType = 'BUG' | 'SUGGESTION' | 'QUESTION' | 'OTHER';
-export type FeedbackStatus = 'NEW' | 'REVIEWED' | 'CLOSED';
+export type FeedbackStatus =
+  | 'NEW'
+  | 'REVIEWED'
+  | 'PLANNED'
+  | 'RESOLVED'
+  | 'DISMISSED'
+  | 'CLOSED';
+
+export type FeedbackSubmitter = {
+  id?: string | null;
+  email?: string | null;
+  name?: string | null;
+};
+
+export type FeedbackOrganization = {
+  id?: string | null;
+  name?: string | null;
+};
 
 export type FeedbackItem = {
   id: string;
@@ -12,7 +29,12 @@ export type FeedbackItem = {
   email?: string | null;
   page?: string | null;
   url?: string | null;
-  organizationId: string;
+  organizationId?: string | null;
+  userId?: string | null;
+  user?: FeedbackSubmitter | null;
+  submitter?: FeedbackSubmitter | null;
+  organization?: FeedbackOrganization | null;
+  appVersion?: string | null;
   userAgent?: string | null;
   status: FeedbackStatus;
   createdAt: string;
@@ -56,6 +78,18 @@ export function getFeedbackList(status?: FeedbackStatus) {
 
 export function updateFeedbackStatus(id: string, status: FeedbackStatus) {
   return apiFetch<FeedbackItem>(`/feedback/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function getAdminFeedbackList(status?: FeedbackStatus) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiFetch<FeedbackListResponse>(`/admin/feedback${query}`);
+}
+
+export function updateAdminFeedbackStatus(id: string, status: FeedbackStatus) {
+  return apiFetch<FeedbackItem>(`/admin/feedback/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });

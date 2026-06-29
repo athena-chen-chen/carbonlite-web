@@ -160,11 +160,9 @@ export default function App() {
           path="/activity"
           element={
             <ProtectedRoute>
-              <AdminRoute>
-                <AppShell>
-                  <UserActivityPage />
-                </AppShell>
-              </AdminRoute>
+              <AppShell>
+                <UserActivityPage />
+              </AppShell>
             </ProtectedRoute>
           }
         />

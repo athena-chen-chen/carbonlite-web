@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
-  getFeedbackList,
-  updateFeedbackStatus,
+  getAdminFeedbackList,
+  updateAdminFeedbackStatus,
   type FeedbackItem,
   type FeedbackStatus,
 } from '../services/feedback';
 
-const statuses: FeedbackStatus[] = ['NEW', 'REVIEWED', 'CLOSED'];
+const statuses: FeedbackStatus[] = [
+  'NEW',
+  'REVIEWED',
+  'PLANNED',
+  'RESOLVED',
+  'DISMISSED',
+  'CLOSED',
+];
 
 export function FeedbackManagementPage() {
   const [selectedStatus, setSelectedStatus] = useState<FeedbackStatus>('NEW');
@@ -25,7 +32,7 @@ export function FeedbackManagementPage() {
     setError(null);
 
     try {
-      const response = await getFeedbackList(status);
+      const response = await getAdminFeedbackList(status);
       setItems(response.items);
     } catch {
       setError('Unable to load feedback. Please try again.');
@@ -39,9 +46,13 @@ export function FeedbackManagementPage() {
     setSuccess(null);
 
     try {
-      await updateFeedbackStatus(id, status);
-      setSuccess('Feedback status updated.');
-      await loadFeedback(selectedStatus);
+      const updated = await updateAdminFeedbackStatus(id, status);
+      setItems((current) =>
+        status === selectedStatus
+          ? current.map((item) => (item.id === id ? { ...item, ...updated } : item))
+          : current.filter((item) => item.id !== id),
+      );
+      setSuccess(`Feedback marked as ${formatStatus(status)}.`);
     } catch {
       setError('Unable to update feedback status.');
     }
@@ -75,46 +86,60 @@ export function FeedbackManagementPage() {
         {isLoading ? (
           <div style={emptyStyle}>Loading feedback...</div>
         ) : items.length === 0 ? (
-          <div style={emptyStyle}>No {formatStatus(selectedStatus).toLowerCase()} feedback yet.</div>
+          <div style={emptyStyle}>No feedback in this status.</div>
         ) : (
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
               <thead>
                 <tr>
                   <th style={thStyle}>Date</th>
+                  <th style={thStyle}>Submitter</th>
+                  <th style={thStyle}>Organization</th>
                   <th style={thStyle}>Type</th>
                   <th style={thStyle}>Page</th>
                   <th style={thStyle}>Message</th>
                   <th style={thStyle}>Email</th>
+                  <th style={thStyle}>App Version</th>
                   <th style={thStyle}>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id}>
-                    <td style={tdStyle}>{formatDate(item.createdAt)}</td>
-                    <td style={tdStyle}>{formatType(item.type)}</td>
-                    <td style={tdStyle}>{item.page || '-'}</td>
+                    <td style={dateCellStyle}>{formatDate(item.createdAt)}</td>
+                    <td style={submitterCellStyle}>{formatSubmitter(item)}</td>
+                    <td style={orgCellStyle}>{formatOrganization(item)}</td>
+                    <td style={typeCellStyle}>{formatType(item.type)}</td>
+                    <td style={pageCellStyle}>
+                      <div>{item.page || '-'}</div>
+                      {item.url ? <div style={mutedSmallStyle}>{item.url}</div> : null}
+                    </td>
                     <td style={messageCellStyle}>
                       <div style={intentStyle}>{item.intent}</div>
                       <div style={messageStyle}>{item.message}</div>
                     </td>
-                    <td style={tdStyle}>{item.email || '-'}</td>
-                    <td style={tdStyle}>
-                      <select
-                        value={item.status}
-                        onChange={(event) =>
-                          handleStatusChange(item.id, event.target.value as FeedbackStatus)
-                        }
-                        style={statusSelectStyle}
-                        aria-label={`Status for feedback ${item.id}`}
-                      >
-                        {statuses.map((status) => (
-                          <option key={status} value={status}>
-                            {formatStatus(status)}
-                          </option>
-                        ))}
-                      </select>
+                    <td style={emailCellStyle}>{item.email || '-'}</td>
+                    <td style={versionCellStyle}>{item.appVersion || '-'}</td>
+                    <td style={statusCellStyle}>
+                      <span style={statusBadgeWrapStyle}>
+                        <select
+                          value={item.status}
+                          onChange={(event) =>
+                            handleStatusChange(item.id, event.target.value as FeedbackStatus)
+                          }
+                          style={statusSelectStyle}
+                          aria-label={`Status for feedback ${item.id}`}
+                        >
+                          {statuses.map((status) => (
+                            <option key={status} value={status}>
+                              {formatStatus(status)}
+                            </option>
+                          ))}
+                        </select>
+                        <span aria-hidden="true" style={statusArrowStyle}>
+                          ▼
+                        </span>
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -129,10 +154,9 @@ export function FeedbackManagementPage() {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
     month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
+    day: 'numeric',
+    hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value));
 }
@@ -142,7 +166,19 @@ function formatType(value: string) {
 }
 
 function formatStatus(value: string) {
-  return value.charAt(0) + value.slice(1).toLowerCase();
+  return value
+    .split('_')
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function formatSubmitter(item: FeedbackItem) {
+  const submitter = item.user ?? item.submitter;
+  return submitter?.email || submitter?.name || item.userId || 'Unknown user';
+}
+
+function formatOrganization(item: FeedbackItem) {
+  return item.organization?.name || item.organization?.id || item.organizationId || 'Unknown organization';
 }
 
 const pageStyle: CSSProperties = {
@@ -205,6 +241,7 @@ const tableWrapStyle: CSSProperties = {
 
 const tableStyle: CSSProperties = {
   width: '100%',
+  minWidth: 1120,
   borderCollapse: 'collapse',
 };
 
@@ -218,16 +255,76 @@ const thStyle: CSSProperties = {
 };
 
 const tdStyle: CSSProperties = {
-  padding: '14px',
+  padding: '11px 12px',
   borderBottom: '1px solid #e2e8f0',
   color: '#334155',
   verticalAlign: 'top',
   fontSize: 14,
 };
 
+const dateCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 112,
+  maxWidth: 112,
+  whiteSpace: 'nowrap',
+  fontSize: 13,
+};
+
+const submitterCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 150,
+  maxWidth: 150,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const orgCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 150,
+  maxWidth: 150,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const typeCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 96,
+  whiteSpace: 'nowrap',
+};
+
+const pageCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 130,
+  maxWidth: 130,
+};
+
 const messageCellStyle: CSSProperties = {
   ...tdStyle,
-  minWidth: 280,
+  minWidth: 340,
+};
+
+const emailCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 150,
+  maxWidth: 150,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const versionCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 92,
+  whiteSpace: 'nowrap',
+};
+
+const statusCellStyle: CSSProperties = {
+  ...tdStyle,
+  width: 108,
+  maxWidth: 108,
+  textAlign: 'center',
 };
 
 const intentStyle: CSSProperties = {
@@ -241,11 +338,56 @@ const messageStyle: CSSProperties = {
   lineHeight: 1.5,
 };
 
+const mutedSmallStyle: CSSProperties = {
+  marginTop: 4,
+  color: '#94a3b8',
+  fontSize: 12,
+  maxWidth: 220,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
 const statusSelectStyle: CSSProperties = {
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  padding: '8px 10px',
-  background: '#fff',
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+  border: 0,
+  borderRadius: 999,
+  padding: '4px 22px 4px 10px',
+  background: 'transparent',
+  color: '#065f46',
+  fontSize: 12,
+  fontWeight: 800,
+  maxWidth: 96,
+  width: 96,
+  whiteSpace: 'nowrap',
+  cursor: 'pointer',
+  lineHeight: 1.3,
+  outline: 'none',
+};
+
+const statusBadgeWrapStyle: CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  maxWidth: 100,
+  border: '1px solid #a7f3d0',
+  borderRadius: 999,
+  background: '#ecfdf5',
+  boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.7)',
+};
+
+const statusArrowStyle: CSSProperties = {
+  position: 'absolute',
+  right: 9,
+  top: '50%',
+  transform: 'translateY(-50%)',
+  color: '#047857',
+  fontSize: 9,
+  lineHeight: 1,
+  pointerEvents: 'none',
 };
 
 const emptyStyle: CSSProperties = {

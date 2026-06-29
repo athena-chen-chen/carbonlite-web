@@ -5,8 +5,13 @@ export type ActivityEventMetadata = Record<string, unknown>;
 export type ActivityEventItem = {
   id: string;
   organizationId?: string | null;
+  organizationName?: string | null;
   userId?: string | null;
+  userName?: string | null;
+  userEmail?: string | null;
   eventName: string;
+  activityType?: string | null;
+  description?: string | null;
   page?: string | null;
   url?: string | null;
   entityType?: string | null;
@@ -26,8 +31,10 @@ export type ActivityEventQuery = {
   dateFrom?: string;
   dateTo?: string;
   eventName?: string;
+  activityType?: string;
   pagePath?: string;
   user?: string;
+  organization?: string;
 };
 
 export type ActivityEventListResponse = {
@@ -39,6 +46,9 @@ export type ActivityEventListResponse = {
 };
 
 export type ActivityEventSummary = {
+  today?: number;
+  thisWeek?: number;
+  thisMonth?: number;
   activeUsers: number;
   documentsUploaded: number;
   extractionAttempts: number;
@@ -46,6 +56,21 @@ export type ActivityEventSummary = {
   reportsGenerated: number;
   pdfExports: number;
   feedbackSubmitted: number;
+};
+
+export type ActiveUserItem = {
+  userId: string;
+  name?: string | null;
+  email?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  activityCount: number;
+  lastActiveAt?: string | null;
+  mostRecentActivityType?: string | null;
+};
+
+export type ActiveUsersResponse = {
+  items: ActiveUserItem[];
 };
 
 export type TrackActivityEventInput = {
@@ -81,4 +106,16 @@ export function getActivityEvents(query: ActivityEventQuery = {}) {
 
 export function getActivityEventSummary(query: ActivityEventQuery = {}) {
   return apiFetch<ActivityEventSummary>(`/activity-events/summary${buildQuery(query)}`);
+}
+
+export function getAdminActivityEvents(query: ActivityEventQuery = {}) {
+  return apiFetch<ActivityEventListResponse>(`/admin/activity${buildQuery(query)}`);
+}
+
+export function getAdminActivityEventSummary(query: ActivityEventQuery = {}) {
+  return apiFetch<ActivityEventSummary>(`/admin/activity/summary${buildQuery(query)}`);
+}
+
+export function getAdminActiveUsers(query: ActivityEventQuery = {}) {
+  return apiFetch<ActiveUsersResponse>(`/admin/activity/active-users${buildQuery(query)}`);
 }

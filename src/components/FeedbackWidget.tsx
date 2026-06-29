@@ -8,14 +8,14 @@ import {
 } from '../services/feedback';
 
 const feedbackTypes: Array<{ value: FeedbackType; label: string }> = [
-  { value: 'BUG', label: 'Bug' },
-  { value: 'SUGGESTION', label: 'Suggestion' },
   { value: 'QUESTION', label: 'Question' },
+  { value: 'SUGGESTION', label: 'Suggestion' },
+  { value: 'BUG', label: 'Bug' },
   { value: 'OTHER', label: 'Other' },
 ];
 
 const initialForm = {
-  type: 'BUG' as FeedbackType,
+  type: 'QUESTION' as FeedbackType,
   intent: '',
   message: '',
   email: '',
@@ -129,24 +129,26 @@ export function FeedbackWidget() {
               </label>
 
               <label style={labelStyle}>
-                What were you trying to do?
+                What were you trying to do? (required)
                 <textarea
                   value={form.intent}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, intent: event.target.value }))
                   }
+                  required
                   rows={3}
                   style={textareaStyle}
                 />
               </label>
 
               <label style={labelStyle}>
-                What happened?
+                What happened? (required)
                 <textarea
                   value={form.message}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, message: event.target.value }))
                   }
+                  required
                   rows={4}
                   style={textareaStyle}
                 />
