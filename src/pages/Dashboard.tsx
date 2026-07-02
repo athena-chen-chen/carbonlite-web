@@ -26,6 +26,15 @@
 export default function DashboardPage() {
   return (
     <>
+      <section className="card mb-4">
+        <div className="card-body">
+          <div className="page-title">From messy records to traceable emissions insights</div>
+          <p className="text-sm text-[rgb(var(--muted))] leading-6 mt-2 max-w-3xl">
+            CarbonLite helps organize operational data, match records with appropriate conversion factors, and explain calculation results with source, jurisdiction, confidence level, and review status.
+          </p>
+        </div>
+      </section>
+
       {/* Top row: high-level KPIs */}
       <section className="grid gap-4 lg:gap-6 md:grid-cols-2 xl:grid-cols-3">
         {/* Total emissions card */}
@@ -60,26 +69,63 @@ export default function DashboardPage() {
         <div className="card">
           <div className="card-body">
             <div className="card-row">
-              <div className="page-title">Source Breakdown</div>
+              <div className="page-title">Emissions by Scope</div>
               <div className="page-hint">tCO₂e</div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <details className="rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--card))]/40 mb-4">
+              <summary
+                className="cursor-pointer px-3 py-2 text-xs font-semibold text-[rgb(var(--text))]
+                           flex items-center gap-2"
+                aria-label="What do emissions scopes mean?"
+              >
+                <span
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full
+                             bg-blue-100 text-blue-700 text-[11px] font-bold"
+                  aria-hidden="true"
+                >
+                  i
+                </span>
+                What do scopes mean?
+              </summary>
+              <div className="px-3 pb-3 grid gap-2 text-[11px] text-[rgb(var(--muted))] leading-snug">
+                <p>
+                  <strong className="text-[rgb(var(--text))]">Scope 1: Direct emissions.</strong>{' '}
+                  Fuel used by sources owned or controlled by the organization, such as diesel, gasoline, natural gas, or fleet fuel.
+                </p>
+                <p>
+                  <strong className="text-[rgb(var(--text))]">Scope 2: Purchased energy.</strong>{' '}
+                  Electricity, steam, heating, or cooling purchased for operations.
+                </p>
+                <p>
+                  <strong className="text-[rgb(var(--text))]">Scope 3: Other indirect emissions.</strong>{' '}
+                  Activities such as hotels, travel, shipping, waste, or supplier-related activity. Water is tracked as an operational metric unless a reviewed water emissions factor is enabled.
+                </p>
+              </div>
+            </details>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="flex flex-col">
                 <div className="text-xs text-[rgb(var(--muted))] uppercase tracking-wide">
                   Scope 1
+                </div>
+                <div className="text-[11px] font-semibold text-[rgb(var(--text))]">
+                  Direct emissions
                 </div>
                 <div className="text-xl font-semibold text-[rgb(var(--text))] leading-none">
                   31,880
                 </div>
                 <div className="text-[11px] text-[rgb(var(--muted))]">
-                  Fuel combustion, boilers, onsite heat
+                  Diesel, gasoline, natural gas, fleet fuel
                 </div>
               </div>
 
               <div className="flex flex-col">
                 <div className="text-xs text-[rgb(var(--muted))] uppercase tracking-wide">
                   Scope 2
+                </div>
+                <div className="text-[11px] font-semibold text-[rgb(var(--text))]">
+                  Purchased energy
                 </div>
                 <div className="text-xl font-semibold text-[rgb(var(--text))] leading-none">
                   10,430
@@ -88,10 +134,25 @@ export default function DashboardPage() {
                   Purchased electricity
                 </div>
               </div>
+
+              <div className="flex flex-col">
+                <div className="text-xs text-[rgb(var(--muted))] uppercase tracking-wide">
+                  Scope 3
+                </div>
+                <div className="text-[11px] font-semibold text-[rgb(var(--text))]">
+                  Other indirect emissions
+                </div>
+                <div className="text-xl font-semibold text-[rgb(var(--text))] leading-none">
+                  0
+                </div>
+                <div className="text-[11px] text-[rgb(var(--muted))]">
+                  Travel, shipping, waste, suppliers
+                </div>
+              </div>
             </div>
 
             <div className="text-[11px] text-[rgb(var(--muted))] pt-2">
-              Scope 3 tracking not enabled.
+              Scope 3 tracking can be enabled when those activity records are available.
               <button className="ml-1 text-emerald-600 hover:underline text-[11px]">
                 Enable →
               </button>

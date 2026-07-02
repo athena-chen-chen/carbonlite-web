@@ -9,14 +9,13 @@ const workflowSteps = [
   'Upload invoices, utility bills, spreadsheets, and operational documents.',
   'Extract structured activity data from source files.',
   'Review and validate records before they are imported.',
-  'Apply traceable system or organization conversion factors.',
-  'Generate emissions summaries and reporting outputs.',
+  'Apply jurisdiction-aware factor selection with source, year, confidence level, and verification status.',
+  'Generate traceable emissions summaries, data quality notes, and reporting outputs.',
 ];
 
 const audiences = [
-  'Environmental consultants',
   'Sustainability consultants',
-  'Small and medium-sized businesses',
+  'Canadian SMEs',
   'Operations teams',
   'Facilities and logistics teams',
   'Organizations preparing internal emissions summaries',
@@ -33,7 +32,7 @@ const approachItems = [
   },
   {
     title: 'Factor traceability',
-    text: 'Make conversion factor sources and organization-specific overrides visible.',
+    text: 'Make factor source, source year, jurisdiction, confidence level, and verification status visible.',
   },
   {
     title: 'Transparent methodology',
@@ -41,7 +40,7 @@ const approachItems = [
   },
   {
     title: 'SME-friendly design',
-    text: 'Keep the workflow approachable for teams without a dedicated carbon accounting platform.',
+    text: 'Help Canadian SMEs improve data readiness and understand emissions hotspots without overclaiming compliance.',
   },
 ];
 
@@ -119,8 +118,8 @@ export default function AboutPage() {
               About CarbonLite AI
             </h1>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-600 sm:text-xl">
-              A lightweight carbon reporting workflow tool built to help SMEs and
-              environmental professionals reduce manual reporting work.
+              A lightweight carbon reporting workflow tool built to help Canadian
+              SMEs and sustainability consultants reduce manual reporting work.
             </p>
           </div>
         </section>
@@ -134,7 +133,8 @@ export default function AboutPage() {
               </h2>
               <p className="mt-5 leading-8 text-slate-600">
                 CarbonLite brings the common steps of an emissions reporting workflow
-                into one practical application.
+                into one practical application for data readiness, factor review,
+                traceable calculations, and emissions hotspot visibility.
               </p>
             </div>
             <ol className="space-y-3">
@@ -164,7 +164,8 @@ export default function AboutPage() {
                 Many SMEs still prepare emissions reports manually from PDFs,
                 spreadsheets, invoices, and utility bills. CarbonLite is designed to
                 reduce repetitive data entry while making source records, conversion
-                factors, and calculation steps easier to review.
+                factors, calculation steps, and records requiring review easier to
+                explain.
               </p>
             </div>
             <div>
@@ -180,6 +181,30 @@ export default function AboutPage() {
                 ))}
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <article className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-sm font-bold uppercase text-emerald-700">For Canadian SMEs</p>
+              <h2 className="mt-3 text-2xl font-bold text-slate-950">Prepare better emissions data</h2>
+              <p className="mt-4 leading-7 text-slate-600">
+                CarbonLite helps Canadian SMEs prepare emissions-related data for
+                reporting, internal decision-making, and consultant review. The
+                platform focuses on data readiness, jurisdiction-aware factor
+                selection, traceable calculations, and emissions hotspot visibility.
+              </p>
+            </article>
+            <article className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-sm font-bold uppercase text-emerald-700">For sustainability consultants</p>
+              <h2 className="mt-3 text-2xl font-bold text-slate-950">Review client data with clearer evidence</h2>
+              <p className="mt-4 leading-7 text-slate-600">
+                CarbonLite supports consultants working with SME clients by reducing
+                manual data organization, making factor choices easier to explain,
+                and surfacing data gaps before reports are finalized.
+              </p>
+            </article>
           </div>
         </section>
 

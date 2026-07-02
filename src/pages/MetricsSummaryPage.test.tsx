@@ -2,6 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 import {
+  buildDataReadinessSummary,
+  buildCarbonCreditReadinessAssessment,
+  CARBON_CREDIT_READINESS_DISCLAIMER,
+  buildHotspotAnalysis,
   buildMetricsSummaryTableRows,
   groupMissingFactors,
   MetricsSummarySection,
@@ -361,7 +365,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.')).toBeInTheDocument();
     expect(screen.getByText('Input Data')).toBeInTheDocument();
     expect(screen.getAllByText('100 liters').length).toBeGreaterThan(0);
-    expect(screen.getByText('Gasoline')).toBeInTheDocument();
+    expect(screen.getAllByText('Gasoline').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Calculation relationship')).toHaveTextContent('↓');
     expect(screen.getByText('Calculated Result')).toBeInTheDocument();
     expect(screen.getByText('Carbon Emissions')).toBeInTheDocument();
@@ -370,7 +374,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(
       screen.getByText('Calculated from: 100 liters gasoline × 2.31 kgCO2e/liters'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Source references used in summary')).toBeInTheDocument();
+    expect(screen.getByText('Calculation details and traceability (1 records)')).toBeInTheDocument();
     expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(0);
   });
 
@@ -638,6 +642,223 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getByText('All records included')).toBeInTheDocument();
+  });
+});
+
+describe('buildHotspotAnalysis', () => {
+  function detail(overrides: Partial<any>) {
+    return {
+      activityDataId: `record-${Math.random()}`,
+      activityType: 'DIESEL',
+      activityQuantity: 1,
+      activityUnit: 'liters',
+      normalizedUnit: 'liters',
+      calculatedEmissionsKgCO2e: null,
+      calculatedEmission: null,
+      status: 'CALCULATED',
+      ...overrides,
+    };
+  }
+
+  it('groups calculated emissions by activity type and ranks descending', () => {
+    const analysis = buildHotspotAnalysis([
+      detail({ activityType: 'DIESEL', calculatedEmissionsKgCO2e: 400 }),
+      detail({ activityType: 'GASOLINE', calculatedEmissionsKgCO2e: 100 }),
+      detail({ activityType: 'NATURAL_GAS', calculatedEmissionsKgCO2e: 500 }),
+    ]);
+
+    expect(analysis.totalCalculatedEmissions).toBe(1000);
+    expect(analysis.categoryHotspots.map((row) => row.activityType)).toEqual([
+      'NATURAL_GAS',
+      'DIESEL',
+      'GASOLINE',
+    ]);
+    expect(analysis.categoryHotspots[0]).toEqual(
+      expect.objectContaining({
+        rank: 1,
+        percentageOfTotal: 50,
+        hotspotLevel: 'HIGH',
+      }),
+    );
+  });
+
+  it('classifies excluded tracked-only and invalid-unit records separately', () => {
+    const analysis = buildHotspotAnalysis([
+      detail({ activityType: 'DIESEL', calculatedEmissionsKgCO2e: 268 }),
+      detail({ activityType: 'WATER', status: 'TRACKED_ONLY' }),
+      detail({ activityType: 'DIESEL', status: 'INVALID_UNIT', calculatedEmissionsKgCO2e: null }),
+    ]);
+
+    expect(analysis.excludedRecordCount).toBe(2);
+    expect(analysis.excludedCategories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityType: 'WATER',
+          reason: 'TRACKED_ONLY',
+          excludedRecordCount: 1,
+        }),
+        expect.objectContaining({
+          activityType: 'DIESEL',
+          reason: 'INVALID_UNIT',
+          excludedRecordCount: 1,
+        }),
+      ]),
+    );
+  });
+
+  it('returns no hotspots and a recommendation when no records are calculated', () => {
+    const analysis = buildHotspotAnalysis([
+      detail({ activityType: 'HOTEL', status: 'MISSING_FACTOR', calculatedEmissionsKgCO2e: null }),
+      detail({ activityType: 'ELECTRICITY', status: 'MISSING_JURISDICTION', calculatedEmissionsKgCO2e: null }),
+    ]);
+
+    expect(analysis.totalCalculatedEmissions).toBe(0);
+    expect(analysis.categoryHotspots).toEqual([]);
+    expect(analysis.focusRecommendations[0]).toEqual(
+      expect.objectContaining({
+        priority: 'HIGH',
+        title: 'No calculated emissions available yet',
+      }),
+    );
+  });
+});
+
+describe('buildDataReadinessSummary', () => {
+  function detail(overrides: Partial<any>) {
+    return {
+      activityDataId: `record-${Math.random()}`,
+      activityType: 'DIESEL',
+      activityQuantity: 100,
+      activityUnit: 'liters',
+      recordDate: '2026-06-30',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      sourceReference: 'Receipt #123',
+      calculatedEmissionsKgCO2e: 268,
+      status: 'CALCULATED',
+      ...overrides,
+    };
+  }
+
+  it('scores complete calculated records as good readiness', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'DIESEL' }),
+      detail({ activityType: 'GASOLINE', activityUnit: 'L' }),
+    ]);
+
+    expect(summary.level).toBe('Good');
+    expect(summary.recordsReadyForCalculation).toBe(2);
+    expect(summary.recordsRequiringReview).toBe(0);
+    expect(Number.isNaN(summary.score)).toBe(false);
+  });
+
+  it('counts invalid units, missing jurisdiction, missing factors, and tracked metrics', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'DIESEL', status: 'INVALID_UNIT', activityUnit: 'bottles', calculatedEmissionsKgCO2e: null }),
+      detail({ activityType: 'ELECTRICITY', status: 'MISSING_JURISDICTION', jurisdictionRegion: null, calculatedEmissionsKgCO2e: null }),
+      detail({ activityType: 'HOTEL', status: 'MISSING_FACTOR', calculatedEmissionsKgCO2e: null }),
+      detail({ activityType: 'WATER', status: 'TRACKED_ONLY', calculatedEmissionsKgCO2e: null }),
+    ]);
+
+    expect(summary.recordsReadyForCalculation).toBe(0);
+    expect(summary.recordsRequiringReview).toBe(4);
+    expect(summary.invalidUnitCount).toBe(1);
+    expect(summary.missingJurisdictionCount).toBe(1);
+    expect(summary.missingFactorCount).toBe(1);
+    expect(summary.trackedOnlyCount).toBe(1);
+  });
+
+  it('returns an incomplete non-NaN score for empty data', () => {
+    const summary = buildDataReadinessSummary([]);
+
+    expect(summary.score).toBe(0);
+    expect(summary.level).toBe('Incomplete');
+    expect(Number.isNaN(summary.score)).toBe(false);
+  });
+});
+
+describe('buildCarbonCreditReadinessAssessment', () => {
+  function detail(overrides: Partial<any>) {
+    return {
+      activityDataId: `record-${Math.random()}`,
+      activityType: 'DIESEL',
+      activityQuantity: 100,
+      activityUnit: 'liters',
+      recordDate: '2026-06-30',
+      recordYear: 2026,
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      sourceReference: 'Receipt #123',
+      sourceAuthority: 'CarbonLite System Defaults',
+      sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+      factorYear: 2025,
+      factorValue: 2.68,
+      calculationFormula: '100 liters × 2.68 kgCO2e/liters = 268 kgCO2e',
+      calculatedEmissionsKgCO2e: 268,
+      status: 'CALCULATED',
+      ...overrides,
+    };
+  }
+
+  it('returns not ready when there are no records', () => {
+    const assessment = buildCarbonCreditReadinessAssessment(
+      [],
+      buildDataReadinessSummary([]),
+    );
+
+    expect(assessment.readinessLevel).toBe('NOT_READY');
+    expect(assessment.summary).toMatch(/Not ready for assessment/i);
+    expect(assessment.disclaimer).toBe(CARBON_CREDIT_READINESS_DISCLAIMER);
+  });
+
+  it('requires more data when current data exists but baseline data is missing', () => {
+    const details = [detail({ recordYear: 2026, calculatedEmissionsKgCO2e: 268 })];
+    const assessment = buildCarbonCreditReadinessAssessment(
+      details,
+      buildDataReadinessSummary(details),
+    );
+
+    expect(assessment.readinessLevel).toBe('NEEDS_MORE_DATA');
+    expect(assessment.checklist.find((item) => item.key === 'baseline-data')?.status).toBe('MISSING');
+    expect(assessment.summary).toMatch(/baseline data is not available/i);
+  });
+
+  it('detects reductions but only marks high scores as ready for professional review', () => {
+    const details = [
+      detail({ recordYear: 2025, recordDate: '2025-06-30', calculatedEmissionsKgCO2e: 500 }),
+      detail({ recordYear: 2026, recordDate: '2026-06-30', calculatedEmissionsKgCO2e: 300 }),
+    ];
+    const assessment = buildCarbonCreditReadinessAssessment(
+      details,
+      buildDataReadinessSummary(details),
+    );
+
+    expect(assessment.readinessLevel).toBe('READY_FOR_PROFESSIONAL_REVIEW');
+    expect(assessment.reductionAmount).toBe(200);
+    expect(assessment.reductionPercentage).toBe(40);
+    expect(assessment.summary).toMatch(/professional carbon credit readiness discussion/i);
+    expect(assessment.summary.toLowerCase()).not.toContain('eligible');
+  });
+
+  it('reduces readiness when many records require review', () => {
+    const details = [
+      detail({ recordYear: 2025, calculatedEmissionsKgCO2e: 500 }),
+      detail({ recordYear: 2026, calculatedEmissionsKgCO2e: 300 }),
+      detail({ status: 'INVALID_UNIT', calculatedEmissionsKgCO2e: null }),
+      detail({ status: 'MISSING_FACTOR', calculatedEmissionsKgCO2e: null }),
+      detail({ status: 'MISSING_JURISDICTION', calculatedEmissionsKgCO2e: null }),
+    ];
+    const assessment = buildCarbonCreditReadinessAssessment(
+      details,
+      buildDataReadinessSummary(details),
+    );
+
+    expect(assessment.score).toBeLessThan(100);
+    expect(assessment.nextSteps).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/Resolve records requiring review/i),
+      ]),
+    );
   });
 });
 

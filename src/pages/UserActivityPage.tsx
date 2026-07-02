@@ -63,9 +63,14 @@ export function UserActivityPage() {
   const [pagePath, setPagePath] = useState('');
   const [user, setUser] = useState('');
   const [organization, setOrganization] = useState('');
+  const [hideTestAccounts, setHideTestAccounts] = useState(true);
   const [showActiveUsers, setShowActiveUsers] = useState(false);
   const [activeUsersLoading, setActiveUsersLoading] = useState(false);
   const [activeUsersError, setActiveUsersError] = useState<string | null>(null);
+  const [selectedActiveUser, setSelectedActiveUser] = useState<ActiveUserItem | null>(null);
+  const [selectedUserEvents, setSelectedUserEvents] = useState<ActivityEventItem[]>([]);
+  const [selectedUserLoading, setSelectedUserLoading] = useState(false);
+  const [selectedUserError, setSelectedUserError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,9 +80,9 @@ export function UserActivityPage() {
       dateTo,
       activityType,
       pagePath,
-      ...(isAdmin ? { user, organization } : {}),
+      ...(isAdmin ? { user, organization, hideTestAccounts } : {}),
     }),
-    [activityType, dateFrom, dateTo, isAdmin, organization, pagePath, user],
+    [activityType, dateFrom, dateTo, hideTestAccounts, isAdmin, organization, pagePath, user],
   );
 
   useEffect(() => {
@@ -88,7 +93,7 @@ export function UserActivityPage() {
     if (isAdmin && showActiveUsers) {
       void loadActiveUsers();
     }
-  }, [dateFrom, dateTo, isAdmin, showActiveUsers]);
+  }, [dateFrom, dateTo, hideTestAccounts, isAdmin, organization, showActiveUsers]);
 
   async function loadActivity() {
     setLoading(true);
@@ -117,8 +122,17 @@ export function UserActivityPage() {
     setActiveUsersError(null);
 
     try {
-      const response = await getAdminActiveUsers({ dateFrom, dateTo });
+      const response = await getAdminActiveUsers({
+        dateFrom,
+        dateTo,
+        organizationId: organization,
+        hideTestAccounts,
+      });
       setActiveUsers(response.items);
+      if (selectedActiveUser && !response.items.some((item) => item.userId === selectedActiveUser.userId)) {
+        setSelectedActiveUser(null);
+        setSelectedUserEvents([]);
+      }
     } catch {
       setActiveUsersError('Unable to load active users. Please try again.');
     } finally {
@@ -129,6 +143,27 @@ export function UserActivityPage() {
   function handleActiveUsersClick() {
     if (!isAdmin) return;
     setShowActiveUsers((current) => !current);
+  }
+
+  async function handleActiveUserDetails(item: ActiveUserItem) {
+    setSelectedActiveUser(item);
+    setSelectedUserLoading(true);
+    setSelectedUserError(null);
+
+    try {
+      const response = await getAdminActivityEvents({
+        dateFrom,
+        dateTo,
+        user: item.email || item.userId,
+        pageSize: 8,
+      });
+      setSelectedUserEvents(response.items);
+    } catch {
+      setSelectedUserEvents([]);
+      setSelectedUserError('Unable to load recent activity for this user.');
+    } finally {
+      setSelectedUserLoading(false);
+    }
   }
 
   return (
@@ -145,15 +180,16 @@ export function UserActivityPage() {
       </div>
 
       <div style={summaryGridStyle}>
-        <SummaryCard label="Today" value={summary.today ?? 0} />
-        <SummaryCard label="This Week" value={summary.thisWeek ?? 0} />
-        <SummaryCard label="This Month" value={summary.thisMonth ?? 0} />
+        <SummaryCard label="Activities Today" value={summary.today ?? 0} />
+        <SummaryCard label="Activities This Month" value={summary.thisMonth ?? 0} />
         <SummaryCard
           label="Active Users"
           value={summary.activeUsers}
           onClick={isAdmin ? handleActiveUsersClick : undefined}
           active={showActiveUsers}
         />
+        {isAdmin ? <SummaryCard label="Organizations" value={summary.organizations ?? 0} /> : null}
+        {isAdmin ? <SummaryCard label="New Users" value={summary.newUsers ?? 0} /> : null}
       </div>
 
       <div style={filterCardStyle}>
@@ -187,6 +223,14 @@ export function UserActivityPage() {
               Organization
               <input value={organization} onChange={(event) => setOrganization(event.target.value)} placeholder="Organization name or id" style={inputStyle} />
             </label>
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={hideTestAccounts}
+                onChange={(event) => setHideTestAccounts(event.target.checked)}
+              />
+              Hide test accounts
+            </label>
           </>
         ) : null}
       </div>
@@ -216,30 +260,87 @@ export function UserActivityPage() {
                 <thead>
                   <tr>
                     <th style={thStyle}>User</th>
-                    <th style={thStyle}>Email</th>
                     <th style={thStyle}>Organization</th>
-                    <th style={thStyle}>Activity Count</th>
+                    <th style={thStyle}>Role</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Activities</th>
                     <th style={thStyle}>Last Active</th>
                     <th style={thStyle}>Last Activity</th>
+                    <th style={thStyle}>First Seen</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activeUsers.map((item) => (
                     <tr key={item.userId}>
-                      <td style={tdStyle}>{item.name || item.email || item.userId}</td>
-                      <td style={tdStyle}>{item.email || '-'}</td>
+                      <td style={tdStyle}>
+                        <div style={userPrimaryStyle}>{getUserDisplayName(item)}</div>
+                        {item.email && item.email !== getUserDisplayName(item) ? (
+                          <div style={userSecondaryStyle}>{item.email}</div>
+                        ) : null}
+                      </td>
                       <td style={tdStyle}>{item.organizationName || item.organizationId || '-'}</td>
-                      <td style={tdStyle}>{item.activityCount}</td>
-                      <td style={tdStyle}>{item.lastActiveAt ? formatDate(item.lastActiveAt) : '-'}</td>
+                      <td style={tdStyle}>{item.role ? formatRole(item.role) : '-'}</td>
+                      <td style={tdStyle}>
+                        <StatusBadge status={getUserStatus(item)} />
+                      </td>
+                      <td style={tdStyle}>
+                        <button
+                          type="button"
+                          style={linkButtonStyle}
+                          onClick={() => void handleActiveUserDetails(item)}
+                          aria-label={`View ${item.activityCount} activities for ${getUserDisplayName(item)}`}
+                        >
+                          {item.activityCount}
+                        </button>
+                      </td>
+                      <td style={tdStyle}>{item.lastActiveAt ? formatCompactDate(item.lastActiveAt) : '-'}</td>
                       <td style={tdStyle}>
                         {item.mostRecentActivityType ? formatEvent(item.mostRecentActivityType) : '-'}
                       </td>
+                      <td style={tdStyle}>{item.firstSeenAt ? formatCompactDate(item.firstSeenAt) : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+
+          {selectedActiveUser ? (
+            <div style={userDetailPanelStyle}>
+              <div style={activeUsersHeaderStyle}>
+                <div>
+                  <h3 style={sectionTitleStyle}>{getUserDisplayName(selectedActiveUser)}</h3>
+                  <p style={sectionSubtitleStyle}>
+                    {selectedActiveUser.email || 'Email unavailable'} · {selectedActiveUser.organizationName || 'No organization'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setSelectedActiveUser(null)} style={secondaryButtonStyle}>
+                  Close
+                </button>
+              </div>
+              <div style={detailMetricsStyle}>
+                <DetailMetric label="Total activities" value={selectedActiveUser.activityCount} />
+                <DetailMetric label="Last active" value={selectedActiveUser.lastActiveAt ? formatCompactDate(selectedActiveUser.lastActiveAt) : '-'} />
+                <DetailMetric label="Status" value={getUserStatus(selectedActiveUser)} />
+              </div>
+              {selectedUserError ? <div style={errorStyle}>{selectedUserError}</div> : null}
+              {selectedUserLoading ? (
+                <div style={emptyStyle}>Loading recent activity...</div>
+              ) : selectedUserEvents.length === 0 ? (
+                <div style={emptyStyle}>No recent activity found for this user.</div>
+              ) : (
+                <div style={recentListStyle}>
+                  {selectedUserEvents.map((event) => (
+                    <div key={event.id} style={recentItemStyle}>
+                      <strong>{formatEvent(event.activityType || event.eventName)}</strong>
+                      <span>{formatCompactDate(event.createdAt)}</span>
+                      <small>{event.page || event.description || formatMetadata(event.metadata)}</small>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -329,6 +430,50 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString();
 }
 
+function formatCompactDate(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function getUserDisplayName(item: ActiveUserItem) {
+  return item.displayName || item.name || item.email || item.userId;
+}
+
+function formatRole(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function getUserStatus(item: ActiveUserItem): 'New' | 'Active' | 'Idle' | 'Inactive' {
+  if (isWithinDays(item.firstSeenAt, 7)) return 'New';
+  if (isWithinDays(item.lastActiveAt, 7)) return 'Active';
+  if (isWithinDays(item.lastActiveAt, 30)) return 'Idle';
+  return 'Inactive';
+}
+
+function isWithinDays(value: string | null | undefined, days: number) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return false;
+  return Date.now() - time <= days * 24 * 60 * 60 * 1000;
+}
+
+function StatusBadge({ status }: { status: 'New' | 'Active' | 'Idle' | 'Inactive' }) {
+  return <span style={getStatusBadgeStyle(status)}>{status}</span>;
+}
+
+function DetailMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div style={detailMetricStyle}>
+      <div style={summaryLabelStyle}>{label}</div>
+      <div style={detailMetricValueStyle}>{value}</div>
+    </div>
+  );
+}
+
 function formatMetadata(metadata?: Record<string, unknown> | null) {
   if (!metadata || Object.keys(metadata).length === 0) return '-';
   return Object.entries(metadata)
@@ -385,6 +530,16 @@ const inputStyle: CSSProperties = {
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 };
+const checkboxLabelStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  minHeight: 38,
+  alignSelf: 'end',
+  color: '#334155',
+  fontSize: 13,
+  fontWeight: 700,
+};
 const cardStyle: CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' };
 const activeUsersPanelStyle: CSSProperties = { ...cardStyle, marginBottom: 16 };
 const activeUsersHeaderStyle: CSSProperties = {
@@ -410,5 +565,66 @@ const tableWrapStyle: CSSProperties = { overflowX: 'auto' };
 const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
 const thStyle: CSSProperties = { textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', color: '#0f172a' };
 const tdStyle: CSSProperties = { padding: '12px 14px', borderBottom: '1px solid #f1f5f9', color: '#334155', verticalAlign: 'top' };
+const userPrimaryStyle: CSSProperties = { fontWeight: 700, color: '#0f172a' };
+const userSecondaryStyle: CSSProperties = { marginTop: 2, color: '#64748b', fontSize: 12 };
+const linkButtonStyle: CSSProperties = {
+  border: 0,
+  background: 'transparent',
+  color: '#047857',
+  fontWeight: 800,
+  textDecoration: 'underline',
+  cursor: 'pointer',
+  padding: 0,
+  font: 'inherit',
+};
+function getStatusBadgeStyle(status: 'New' | 'Active' | 'Idle' | 'Inactive'): CSSProperties {
+  const colors = {
+    New: { background: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
+    Active: { background: '#dcfce7', color: '#166534', border: '#bbf7d0' },
+    Idle: { background: '#fef9c3', color: '#854d0e', border: '#fde68a' },
+    Inactive: { background: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+  }[status];
+
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    borderRadius: 999,
+    border: `1px solid ${colors.border}`,
+    background: colors.background,
+    color: colors.color,
+    padding: '2px 8px',
+    fontSize: 12,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  };
+}
+const userDetailPanelStyle: CSSProperties = {
+  borderTop: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+const detailMetricsStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+  gap: 12,
+  padding: 16,
+};
+const detailMetricStyle: CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  padding: 12,
+};
+const detailMetricValueStyle: CSSProperties = { marginTop: 4, color: '#0f172a', fontWeight: 800 };
+const recentListStyle: CSSProperties = { display: 'grid', gap: 8, padding: '0 16px 16px' };
+const recentItemStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(180px, 1fr) auto',
+  gap: '4px 12px',
+  background: '#fff',
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  padding: 12,
+  color: '#334155',
+};
 const emptyStyle: CSSProperties = { padding: 24, color: '#64748b' };
 const errorStyle: CSSProperties = { marginBottom: 16, border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', borderRadius: 8, padding: 12 };

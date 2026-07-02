@@ -46,7 +46,10 @@ export default function Index() {
         <div>
           <h1 className="text-2xl font-semibold">Welcome to CarbonLite</h1>
           <p className="text-sm text-gray-500">
-            Your one-stop dashboard for emissions tracking, analysis, and reporting.
+            From messy records to traceable emissions insights.
+          </p>
+          <p className="text-sm text-gray-500 mt-1 max-w-3xl">
+            CarbonLite helps organize operational data, match records with appropriate conversion factors, and explain calculation results with source, jurisdiction, confidence level, and review status.
           </p>
         </div>
         <div className="flex gap-2">
@@ -80,7 +83,7 @@ export default function Index() {
         <div className="card">
           <div className="text-xs text-gray-500">Analysis</div>
           <div className="mt-1 text-sm">
-            Explore summaries by month, category, and scope.
+            Explore summaries, emissions hotspots, and data readiness signals.
           </div>
           <div className="mt-2">
             <Link to="/analysis" className="btn btn-ghost">Open Analysis</Link>
@@ -90,7 +93,7 @@ export default function Index() {
         <div className="card">
           <div className="text-xs text-gray-500">Reports</div>
           <div className="mt-1 text-sm">
-            Generate and export reports (coming soon).
+            Generate traceable reports with factor sources and records requiring review.
           </div>
           <div className="mt-2">
             <Link to="/reports" className="btn btn-ghost">Open Reports</Link>

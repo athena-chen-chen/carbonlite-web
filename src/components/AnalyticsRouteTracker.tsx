@@ -21,7 +21,9 @@ export function AnalyticsRouteTracker() {
   const lastTrackedPathRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const pageName = pageNames[location.pathname];
+    const pageName = location.pathname.startsWith('/methodology/')
+      ? 'Methodology'
+      : pageNames[location.pathname];
     const route = `${location.pathname}${location.search}`;
 
     if (!pageName || lastTrackedPathRef.current === route) return;

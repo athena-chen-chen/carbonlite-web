@@ -1,5 +1,5 @@
 
-import { createActivityData } from '../services/activityData';
+import { createActivityData, updateActivityData } from '../services/activityData';
 import { useEffect, useRef, useState } from 'react';
 import { getConversionFactors } from '../services/conversionFactors';
 import {
@@ -12,6 +12,7 @@ import {
   getFactorSourceAuthority,
 } from '../utils/conversionFactorMatching';
 import { getCurrentUser, getOrganizationId } from '../services/auth';
+import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 type Row = {
   id: string;
@@ -19,6 +20,8 @@ type Row = {
   quantity: string;
   unit: string;
   recordDate: string;
+  jurisdictionCountry: string;
+  jurisdictionRegion: string;
   factorId?: string;
   factorName?: string;
   factorValue?: string | number;
@@ -26,6 +29,9 @@ type Row = {
   factorSourceAuthority?: string;
   factorSourceYear?: string | number | null;
   factorStatus?: 'matched' | 'missing';
+  calculationStatus?: 'calculated' | 'invalidUnit' | 'missingFactor' | 'trackedMetric' | 'needsReview';
+  calculationMessage?: string;
+  supportedUnits?: string[];
   errors?: string[];
   status?: 'draft' | 'saved' | 'error' | 'saving';
   savedActivityId?: string;
@@ -133,17 +139,78 @@ function importCSVFile(file: File) {
   reader.readAsText(file);
   setEntrySourceType('CSV');
 }
-function findMatchingFactor(activityType: string, unit: string) {
+function findMatchingFactor(row: Pick<Row, 'activityType' | 'unit' | 'jurisdictionCountry' | 'jurisdictionRegion' | 'recordDate'>) {
+  const { activityType, unit } = row;
   if (!activityType || !unit) return undefined;
 
   return findBestConversionFactorMatch({
     activityType,
     inputUnit: unit,
+    jurisdictionCountry: row.jurisdictionCountry,
+    jurisdictionRegion: row.jurisdictionRegion,
+    recordYear: row.recordDate ? new Date(row.recordDate).getUTCFullYear() : undefined,
     organizationId: getOrganizationId(getCurrentUser()),
     factors: conversionFactors,
   });
 }
 
+function getSupportedUnitsForActivityType(activityType: string) {
+  const units = conversionFactors
+    .filter((factor) => factor.activityType === activityType)
+    .map((factor) => factor.inputUnit || factor.unit)
+    .filter((unit): unit is string => Boolean(unit));
+
+  return Array.from(new Set(units)).sort((a, b) => a.localeCompare(b));
+}
+
+function isTrackedMetricActivity(activityType: string) {
+  return ['WATER', 'WASTE', 'WASTE_VOLUME'].includes(String(activityType).toUpperCase());
+}
+
+function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit'>) {
+  if (!row.activityType || !row.unit) {
+    return {
+      calculationStatus: undefined,
+      calculationMessage: undefined,
+      supportedUnits: [],
+    };
+  }
+
+  const supportedUnits = getSupportedUnitsForActivityType(row.activityType);
+
+  if (isTrackedMetricActivity(row.activityType)) {
+    return {
+      calculationStatus: 'trackedMetric' as const,
+      calculationMessage:
+        'Water usage is tracked for operational insight. Emissions are optional and require a reviewed water emissions factor.',
+      supportedUnits,
+    };
+  }
+
+  const normalizedUnit = normalizeUnitForDisplay(row.unit);
+  if (normalizedUnit.status !== 'valid') {
+    return {
+      calculationStatus: 'invalidUnit' as const,
+      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${row.activityType} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      supportedUnits,
+    };
+  }
+
+  const normalizedSupportedUnits = supportedUnits.map((unit) => normalizeUnitForDisplay(unit).value);
+  if (supportedUnits.length > 0 && !normalizedSupportedUnits.includes(normalizedUnit.value)) {
+    return {
+      calculationStatus: 'invalidUnit' as const,
+      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${row.activityType} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      supportedUnits,
+    };
+  }
+
+  return {
+    calculationStatus: 'missingFactor' as const,
+    calculationMessage: `No conversion factor found for ${row.activityType} / ${normalizedUnit.value}. This record was saved but excluded from emissions totals.`,
+    supportedUnits,
+  };
+}
 
 function applyFactorToRow(row: Row): Row {
   if (isRowCompletelyEmpty(row) || !row.activityType || !row.unit) {
@@ -156,10 +223,14 @@ function applyFactorToRow(row: Row): Row {
       factorSourceAuthority: undefined,
       factorSourceYear: undefined,
       factorStatus: undefined,
+      calculationStatus: undefined,
+      calculationMessage: undefined,
+      supportedUnits: undefined,
     };
   }
 
-  const match = findMatchingFactor(row.activityType, row.unit);
+  const match = findMatchingFactor(row);
+  const review = getRowCalculationReview(row);
 
   if (!match) {
     return {
@@ -171,6 +242,7 @@ function applyFactorToRow(row: Row): Row {
       factorSourceAuthority: undefined,
       factorSourceYear: undefined,
       factorStatus: 'missing',
+      ...review,
     };
   }
 
@@ -185,6 +257,9 @@ function applyFactorToRow(row: Row): Row {
     factorSourceAuthority: getFactorSourceAuthority(factor),
     factorSourceYear: factor.sourceYear,
     factorStatus: 'matched',
+    calculationStatus: 'calculated',
+    calculationMessage: 'Matched factor. This row can be included in emissions totals.',
+    supportedUnits: getSupportedUnitsForActivityType(row.activityType),
   };
 }
 function importExcelFile(file: File) {
@@ -212,6 +287,8 @@ function importExcelFile(file: File) {
           new Date().toISOString().slice(0, 10),
         quantity: row.quantity || row.qty || row.amount || '',
         unit: row.unit || row.uom || getDefaultUnit(activityType),
+        jurisdictionCountry: row.jurisdictionCountry || row.country || 'Canada',
+        jurisdictionRegion: row.jurisdictionRegion || row.province || row.region || '',
       };
     });
 
@@ -281,6 +358,8 @@ function parseCSVText(text: string) {
         unitIndex >= 0
           ? cols[unitIndex]
           : getDefaultUnit(activityType),
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: '',
     };
   });
 
@@ -295,10 +374,14 @@ function validateRow(row: Row) {
 
   if (!row.activityType) errors.push('Missing activity type');
   if (!row.recordDate) errors.push('Missing date');
+  if (row.recordDate && Number.isNaN(new Date(row.recordDate).getTime())) {
+    errors.push('Invalid date');
+  }
   if (!row.quantity) errors.push('Missing quantity');
-  if (Number(row.quantity) <= 0) errors.push('Quantity must be greater than 0');
+  if (!Number.isFinite(Number(row.quantity)) || Number(row.quantity) <= 0) {
+    errors.push('Quantity must be greater than 0');
+  }
   if (!row.unit) errors.push('Missing unit');
-  if (row.factorStatus !== 'matched') errors.push('No matching conversion factor');
 
   return errors;
 }
@@ -323,10 +406,18 @@ function buildActivityPayload(row: Row) {
     recordDate: row.recordDate,
     quantity: Number(row.quantity),
     unit: row.unit,
+    jurisdictionCountry: normalizeOptional(row.jurisdictionCountry) ?? 'Canada',
+    jurisdictionRegion: normalizeOptional(row.jurisdictionRegion),
+    recordYear: row.recordDate ? new Date(row.recordDate).getUTCFullYear() : undefined,
     sourceType: entrySourceType,
     sourceReference: entrySourceType.toLowerCase(),
-    notes: `Created from ${entrySourceType}. Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
+    notes: `Created from ${entrySourceType}. Calculation status: ${getCalculationStatusLabel(row)}. ${row.calculationMessage ?? ''} Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
   };
+}
+
+function normalizeOptional(value?: string | null) {
+  const normalized = String(value ?? '').trim();
+  return normalized ? normalized : undefined;
 }
 
 function updateRowStatus(id: string, patch: Partial<Row>) {
@@ -348,6 +439,8 @@ function createEmptyRow(): Row {
     quantity: '',
     unit: '',
     recordDate: new Date().toISOString().slice(0, 10),
+    jurisdictionCountry: 'Canada',
+    jurisdictionRegion: '',
     status: 'draft',
   };
 }
@@ -364,9 +457,77 @@ function canRemoveRow(row: Row) {
   return Boolean(row.activityType || row.quantity);
 }
 
+function getCalculationStatusLabel(row: Row) {
+  switch (row.calculationStatus) {
+    case 'calculated':
+      return 'Calculated';
+    case 'trackedMetric':
+      return 'Tracked Metric';
+    case 'invalidUnit':
+      return 'Invalid Unit';
+    case 'missingFactor':
+      return 'Missing Factor';
+    case 'needsReview':
+      return 'Needs Review';
+    default:
+      return 'Needs Review';
+  }
+}
+
+function getStatusTone(row: Row): StatusTone {
+  if (row.calculationStatus === 'calculated') return 'success';
+  if (row.calculationStatus === 'trackedMetric') return 'info';
+  if (row.calculationStatus === 'invalidUnit' || row.calculationStatus === 'missingFactor') return 'warning';
+  return 'neutral';
+}
+
+function getSavedReviewLabel(row: Row) {
+  const status = getCalculationStatusLabel(row);
+  return status === 'Calculated' ? 'Saved · Calculated' : `Saved · ${status}`;
+}
+
+function buildImportReviewSummary(rows: Row[]) {
+  const activeRows = rows.filter((row) => !isRowCompletelyEmpty(row));
+
+  return activeRows.reduce(
+    (summary, row) => {
+      const errors = validateRow(row);
+      summary.total += 1;
+      if (errors.some((error) => error.toLowerCase().includes('date'))) summary.missingDate += 1;
+      if (errors.some((error) => error.toLowerCase().includes('quantity'))) summary.missingQuantity += 1;
+      if (row.calculationStatus === 'trackedMetric') summary.tracked += 1;
+      if (row.calculationStatus === 'invalidUnit') summary.invalidUnit += 1;
+
+      if (errors.length === 0 && row.calculationStatus === 'calculated') {
+        summary.ready += 1;
+      } else if (errors.length > 0 || row.calculationStatus !== 'calculated') {
+        summary.review += 1;
+      }
+
+      return summary;
+    },
+    {
+      total: 0,
+      ready: 0,
+      tracked: 0,
+      review: 0,
+      missingDate: 0,
+      missingQuantity: 0,
+      invalidUnit: 0,
+    },
+  );
+}
+
 function renderStatusCell(row: Row) {
   if (row.status === 'saved') {
-    return <span style={{ color: '#047857', fontSize: 12, fontWeight: 700 }}>Saved</span>;
+    return (
+      <div style={{ display: 'grid', gap: 4 }}>
+        <span style={statusBadgeStyle(getStatusTone(row))}>{getSavedReviewLabel(row)}</span>
+        {row.calculationStatus !== 'calculated' && row.calculationMessage ? (
+          <span style={statusMessageStyle}>{row.calculationMessage}</span>
+        ) : null}
+      </div>
+    );
   }
 
   if (row.status === 'saving') {
@@ -387,7 +548,18 @@ function renderStatusCell(row: Row) {
     return <span style={{ color: '#94a3b8', fontSize: 12 }}>-</span>;
   }
 
-  return <span style={{ color: '#475569', fontSize: 12, fontWeight: 700 }}>Draft</span>;
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      <span style={draftBadgeStyle(getStatusTone(row))}>
+        {row.calculationStatus && row.calculationStatus !== 'calculated'
+          ? `Draft · ${getCalculationStatusLabel(row)}`
+          : 'Draft'}
+      </span>
+      {row.calculationStatus && row.calculationStatus !== 'calculated' && row.calculationMessage ? (
+        <span style={statusMessageStyle}>{row.calculationMessage}</span>
+      ) : null}
+    </div>
+  );
 }
 
 function renderFactorCell(row: Row) {
@@ -419,9 +591,45 @@ function renderFactorCell(row: Row) {
     );
   }
 
+  if (row.calculationStatus === 'trackedMetric') {
+    return (
+      <div style={{ color: '#0369a1', fontSize: 12, lineHeight: 1.45 }}>
+        <strong>Tracked metric</strong>
+        <br />
+        No emissions factor required by default.
+        <br />
+        {row.calculationMessage}
+      </div>
+    );
+  }
+
+  if (row.calculationStatus === 'invalidUnit') {
+    return (
+      <div style={{ color: '#b45309', fontSize: 12, lineHeight: 1.45 }}>
+        <strong>No valid factor match</strong>
+        <br />
+        Reason: Invalid unit
+        {row.supportedUnits?.length ? (
+          <>
+            <br />
+            Supported unit: {row.supportedUnits.join(', ')}
+          </>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <div style={{ color: '#be123c', fontSize: 12 }}>
-      No matching factor
+    <div style={{ color: '#be123c', fontSize: 12, lineHeight: 1.45 }}>
+      <strong>No valid factor match</strong>
+      <br />
+      Reason: Missing factor
+      {row.calculationMessage ? (
+        <>
+          <br />
+          {row.calculationMessage}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -438,7 +646,6 @@ function getDefaultUnit(activityType: string) {
         ...row,
         [key]: value,
         status: 'draft' as const,
-        savedActivityId: undefined,
         errors: undefined,
       };
 
@@ -459,6 +666,10 @@ function getDefaultUnit(activityType: string) {
 function removeRow(id: string) {
   setRows((prev) => prev.filter((row) => row.id !== id));
   setEntrySourceType('MANUAL');
+}
+
+function clearSavedRowsFromForm() {
+  setRows((prev) => prev.filter((row) => row.status !== 'saved'));
 }
 
 function handleQuickEntryKeyDown(event: React.KeyboardEvent<HTMLTableElement>) {
@@ -500,6 +711,8 @@ function handlePasteRows(event: React.ClipboardEvent<HTMLTableElement>) {
         recordDate: recordDate || new Date().toISOString().slice(0, 10),
         quantity: quantity || '',
         unit: unit || getDefaultUnit(type),
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '',
       };
     });
 
@@ -547,7 +760,9 @@ async function saveRow(row: Row) {
   });
 
   try {
-    const saved = await createActivityData(buildActivityPayload(row));
+    const saved = row.savedActivityId
+      ? await updateActivityData(row.savedActivityId, buildActivityPayload(row))
+      : await createActivityData(buildActivityPayload(row));
     updateRowStatus(row.id, {
       errors: undefined,
       status: 'saved',
@@ -587,7 +802,9 @@ async function saveAll() {
     const savedRows: Array<{ rowId: string; savedActivityId?: string }> = [];
 
     for (const row of validatedRows) {
-      const saved = await createActivityData(buildActivityPayload(row));
+      const saved = row.savedActivityId
+        ? await updateActivityData(row.savedActivityId, buildActivityPayload(row))
+        : await createActivityData(buildActivityPayload(row));
       savedRows.push({
         rowId: row.id,
         savedActivityId: (saved as { id?: string })?.id,
@@ -619,6 +836,8 @@ const rowsToSave = rows.filter(
   (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
 );
 const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
+const hasSavedRows = rows.some((row) => row.status === 'saved');
+const importReviewSummary = buildImportReviewSummary(rows);
 
   return (
 
@@ -637,6 +856,23 @@ const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
       <p style={{ margin: '6px 0 0', color: '#64748b' }}>
         Type directly, paste rows from Excel, import CSV/XLSX files, or drag and drop a file here. Use + Add Row to add another row.
       </p>
+      {hasSavedRows ? (
+        <p style={savedRowsHelperStyle}>
+          Saved rows remain here so you can review, edit, or remove them before viewing metrics.
+        </p>
+      ) : null}
+      {importReviewSummary.total > 0 ? (
+        <div style={importReviewSummaryStyle}>
+          <strong>Import Review Summary</strong>
+          <span>{importReviewSummary.total} records found</span>
+          <span>{importReviewSummary.ready} ready for calculation</span>
+          <span>{importReviewSummary.tracked} tracked metric</span>
+          <span>{importReviewSummary.review} requires review</span>
+          <span>{importReviewSummary.missingDate} missing date</span>
+          <span>{importReviewSummary.missingQuantity} missing quantity</span>
+          <span>{importReviewSummary.invalidUnit} invalid unit</span>
+        </div>
+      ) : null}
     </div>
   </div>
 
@@ -654,6 +890,8 @@ const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
           <th style={thStyle}>Quantity</th>
           <th style={thStyle}>Unit</th>
           <th style={thStyle}>Date</th>
+          <th style={thStyle}>Country</th>
+          <th style={thStyle}>Province</th>
           <th style={thStyle}>Status</th>
           <th style={thStyle}>Factor</th>
           <th style={thStyle}>Actions</th>
@@ -678,7 +916,6 @@ const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
                             activityType,
                             unit: getDefaultUnit(activityType),
                             status: 'draft',
-                            savedActivityId: undefined,
                             errors: undefined,
                           })
                         : r,
@@ -724,6 +961,27 @@ const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
               />
             </td>
             <td style={tdStyle}>
+              <input
+                value={row.jurisdictionCountry}
+                onChange={(e) => updateRow(row.id, 'jurisdictionCountry', e.target.value)}
+                placeholder="Canada"
+                style={inputStyle}
+              />
+            </td>
+            <td style={tdStyle}>
+              <input
+                value={row.jurisdictionRegion}
+                onChange={(e) => updateRow(row.id, 'jurisdictionRegion', e.target.value)}
+                placeholder="Province"
+                style={inputStyle}
+              />
+              {row.activityType === 'ELECTRICITY' ? (
+                <div style={fieldHelperStyle}>
+                  Electricity factors are province-specific. Please provide the province or facility location.
+                </div>
+              ) : null}
+            </td>
+            <td style={tdStyle}>
   {renderStatusCell(row)}
 </td>
 <td style={tdStyle}>
@@ -759,7 +1017,7 @@ const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
     )}
   </div>
 
-  <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+  <div style={footerActionsStyle}>
     <button type="button" onClick={addRow} style={secondaryButtonStyle}>
       + Add Row
     </button>
@@ -772,6 +1030,31 @@ const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
     >
       Save All
     </button>
+    {hasSavedRows ? (
+      <>
+        <button type="button" onClick={clearSavedRowsFromForm} style={secondaryButtonStyle}>
+          Clear Saved Rows from Form
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = '/metrics-summary';
+          }}
+          style={secondaryButtonStyle}
+        >
+          View Metrics Summary
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = '/activity-records';
+          }}
+          style={secondaryButtonStyle}
+        >
+          View Activity Records
+        </button>
+      </>
+    ) : null}
     {/* <label style={secondaryButtonStyle}>
   Import CSV
   <input
@@ -819,6 +1102,27 @@ const headerStyle: React.CSSProperties = {
   marginBottom: 16,
 };
 
+const savedRowsHelperStyle: React.CSSProperties = {
+  margin: '10px 0 0',
+  color: '#047857',
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const importReviewSummaryStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '8px 12px',
+  alignItems: 'center',
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+  color: '#334155',
+  fontSize: 13,
+};
+
 const tableStyle: React.CSSProperties = {
   width: '100%',
   borderCollapse: 'separate',
@@ -852,6 +1156,14 @@ const inputStyle: React.CSSProperties = {
   background: '#fff',
   fontSize: 14,
   outline: 'none',
+};
+
+const fieldHelperStyle: React.CSSProperties = {
+  marginTop: 6,
+  color: '#64748b',
+  fontSize: 12,
+  lineHeight: 1.35,
+  maxWidth: 220,
 };
 
 const quickEntryEmptyStyle: React.CSSProperties = {
@@ -891,6 +1203,67 @@ const rowActionStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
   flexWrap: 'wrap',
+};
+
+const footerActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 12,
+  marginTop: 16,
+  flexWrap: 'wrap',
+  alignItems: 'center',
+};
+
+type StatusTone = 'success' | 'info' | 'warning' | 'neutral';
+
+function statusBadgeStyle(tone: StatusTone): React.CSSProperties {
+  const styles: Record<StatusTone, React.CSSProperties> = {
+    success: {
+      color: '#047857',
+      background: '#ecfdf5',
+      border: '1px solid #bbf7d0',
+    },
+    info: {
+      color: '#0369a1',
+      background: '#eff6ff',
+      border: '1px solid #bfdbfe',
+    },
+    warning: {
+      color: '#92400e',
+      background: '#fffbeb',
+      border: '1px solid #fde68a',
+    },
+    neutral: {
+      color: '#475569',
+      background: '#f8fafc',
+      border: '1px solid #e2e8f0',
+    },
+  };
+
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    width: 'fit-content',
+    borderRadius: 999,
+    padding: '3px 8px',
+    fontSize: 12,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+    ...styles[tone],
+  };
+}
+
+function draftBadgeStyle(tone: StatusTone): React.CSSProperties {
+  return {
+    ...statusBadgeStyle(tone),
+    opacity: 0.9,
+  };
+}
+
+const statusMessageStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  lineHeight: 1.35,
+  maxWidth: 260,
 };
 
 function rowSaveButtonStyle(disabled: boolean, saved: boolean): React.CSSProperties {

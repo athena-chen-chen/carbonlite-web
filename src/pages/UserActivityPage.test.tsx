@@ -74,6 +74,8 @@ describe('UserActivityPage', () => {
       thisWeek: 7,
       thisMonth: 12,
       activeUsers: 2,
+      organizations: 1,
+      newUsers: 1,
       documentsUploaded: 4,
       extractionAttempts: 3,
       successfulExtractions: 2,
@@ -85,12 +87,15 @@ describe('UserActivityPage', () => {
       items: [
         {
           userId: 'user-1',
-          name: 'Pilot User',
+          displayName: 'Pilot User',
           email: 'pilot@example.com',
+          role: 'USER',
           organizationName: 'Pilot Org',
           activityCount: 5,
+          firstSeenAt: new Date().toISOString(),
           lastActiveAt: '2026-06-05T12:00:00.000Z',
           mostRecentActivityType: 'REPORT_GENERATED',
+          isTestAccount: false,
         },
       ],
     });
@@ -118,9 +123,8 @@ describe('UserActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('User Activity')).toBeInTheDocument();
-    expect(screen.getByText('Today')).toBeInTheDocument();
-    expect(screen.getByText('This Week')).toBeInTheDocument();
-    expect(screen.getByText('This Month')).toBeInTheDocument();
+    expect(screen.getByText('Activities Today')).toBeInTheDocument();
+    expect(screen.getByText('Activities This Month')).toBeInTheDocument();
     expect(screen.getAllByText('Document Uploaded').length).toBeGreaterThan(0);
     expect(screen.getByText('pilot@example.com')).toBeInTheDocument();
     expect(screen.getByText('Document · doc-1')).toBeInTheDocument();
@@ -175,18 +179,55 @@ describe('UserActivityPage', () => {
     const panel = await screen.findByRole('region', { name: 'Active users' });
     expect(panel).toBeInTheDocument();
     expect(within(panel).getByText('Pilot User')).toBeInTheDocument();
+    expect(within(panel).getByText('pilot@example.com')).toBeInTheDocument();
     expect(within(panel).getByText('Pilot Org')).toBeInTheDocument();
-    expect(within(panel).getByText('5')).toBeInTheDocument();
+    expect(within(panel).getAllByText('User').length).toBeGreaterThan(0);
+    expect(within(panel).getByText('New')).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: /View 5 activities/i })).toBeInTheDocument();
     expect(within(panel).getByText('Report Generated')).toBeInTheDocument();
-    expect(getAdminActiveUsers).toHaveBeenCalledWith({ dateFrom: '', dateTo: '' });
+    expect(getAdminActiveUsers).toHaveBeenCalledWith({
+      dateFrom: '',
+      dateTo: '',
+      organizationId: '',
+      hideTestAccounts: true,
+    });
 
     await userEvent.type(screen.getByLabelText(/Date from/i), '2026-06-01');
 
     await waitFor(() => {
       expect(getAdminActiveUsers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ dateFrom: '2026-06-01' }),
+        expect.objectContaining({ dateFrom: '2026-06-01', hideTestAccounts: true }),
       );
     });
+  });
+
+  it('can show test accounts and open active user activity details', async () => {
+    renderPage('ADMIN');
+
+    await screen.findByText('Document Uploaded');
+    await userEvent.click(screen.getByRole('button', { name: /Active Users/i }));
+
+    await userEvent.click(screen.getByLabelText(/Hide test accounts/i));
+
+    await waitFor(() => {
+      expect(getAdminActiveUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ hideTestAccounts: false }),
+      );
+    });
+
+    const panel = await screen.findByRole('region', { name: 'Active users' });
+    await userEvent.click(within(panel).getByRole('button', { name: /View 5 activities/i }));
+
+    await waitFor(() => {
+      expect(getAdminActivityEvents).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          user: 'pilot@example.com',
+          pageSize: 8,
+        }),
+      );
+    });
+    expect(within(panel).getByText('Total activities')).toBeInTheDocument();
+    expect(within(panel).getByText('Document Uploaded')).toBeInTheDocument();
   });
 
   it('does not show active users drilldown for normal users', async () => {

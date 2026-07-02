@@ -28,7 +28,11 @@ export function GA4RouteTracker() {
     if (lastTrackedRouteRef.current === route) return;
     lastTrackedRouteRef.current = route;
 
-    trackPageView(route, pageTitles[location.pathname] ?? 'CarbonLite AI');
+    const pageTitle = location.pathname.startsWith('/methodology/')
+      ? 'Methodology'
+      : pageTitles[location.pathname] ?? 'CarbonLite AI';
+
+    trackPageView(route, pageTitle);
   }, [location.pathname, location.search]);
 
   return null;

@@ -9,6 +9,9 @@ import {
 } from '../services/metricsOverview';
 import {
   MetricsSummarySection,
+  buildDataReadinessSummary,
+  buildCarbonCreditReadinessAssessment,
+  CARBON_CREDIT_READINESS_DISCLAIMER,
   buildMetricsSummaryTableRows,
   type MissingFactorItem,
 } from '../components/MetricsSummarySection';
@@ -68,6 +71,34 @@ const SCOPE_MAP: Record<string, 'Scope 1' | 'Scope 2' | 'Scope 3'> = {
   WATER: 'Scope 3',
   FREIGHT: 'Scope 3',
 };
+
+const SCOPE_HELP = [
+  {
+    scope: 'Scope 1',
+    label: 'Direct emissions',
+    description:
+      'Direct emissions from sources owned or controlled by the organization, such as natural gas, diesel, gasoline, or fleet fuel.',
+    examples: 'Diesel, gasoline, natural gas, fleet fuel',
+  },
+  {
+    scope: 'Scope 2',
+    label: 'Purchased energy',
+    description:
+      'Indirect emissions from purchased electricity, steam, heating, or cooling.',
+    examples: 'Electricity',
+  },
+  {
+    scope: 'Scope 3',
+    label: 'Other indirect emissions',
+    description:
+      'Other indirect emissions from activities outside direct operations, such as business travel, hotels, shipping, waste, or supplier-related activities.',
+    examples: 'Hotel, air travel, shipping, waste, suppliers',
+  },
+] as const;
+
+const scopeLabelByName = Object.fromEntries(
+  SCOPE_HELP.map((item) => [item.scope, item.label]),
+) as Record<string, string>;
 
 export default function ReportingPage() {
   const location = useLocation();
@@ -174,8 +205,8 @@ const trackedReportViewRef = useRef(false);
         report_scope: reportScope,
         record_count: overview.processedRecords,
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load report data');
+    } catch {
+      setError('Unable to load calculation summary. Please refresh or check backend logs.');
     } finally {
       if (inFlightRequestKeyRef.current === requestKey) {
         inFlightRequestKeyRef.current = null;
@@ -429,7 +460,7 @@ function buildScopeNarrative(scopeSummary: Record<string, number>) {
   }
 
   lines.push(
-    `Scope classification is based on activity type and is intended to support internal review and compliance preparation.`
+    `Scope classification is based on activity type and is intended to support internal review, consultant discussion, and data readiness.`
   );
 
   return lines;
@@ -495,6 +526,41 @@ function handleDownloadPDF() {
             ) / 10}%`
           : '0%',
       ],
+    ],
+  });
+
+  nextY = (doc as any).lastAutoTable.finalY + 12;
+  drawPdfSectionTitle(doc, 'Data Quality Notes', nextY);
+  autoTable(doc, {
+    startY: nextY + 6,
+    head: [['Readiness Signal', 'Value']],
+    body: [
+      ['Data Readiness Score', `${formatDisplayNumber(dataReadinessSummary.score)}% (${dataReadinessSummary.level})`],
+      ['Calculated Records', dataReadinessSummary.recordsReadyForCalculation],
+      ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
+      ['Tracked Metrics', dataReadinessSummary.trackedOnlyCount],
+      ['Missing Factors', dataReadinessSummary.missingFactorCount],
+      ['Missing Jurisdiction', dataReadinessSummary.missingJurisdictionCount],
+    ],
+  });
+
+  nextY = (doc as any).lastAutoTable.finalY + 12;
+  drawPdfSectionTitle(doc, 'Carbon Credit Readiness Notes', nextY);
+  autoTable(doc, {
+    startY: nextY + 6,
+    head: [['Readiness Signal', 'Value']],
+    body: [
+      ['Readiness Level', formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)],
+      ['Readiness Score', `${carbonCreditReadiness.score}/100`],
+      [
+        'Reduction Detected',
+        carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
+          ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e (${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%)`
+          : 'Not assessed or not detected',
+      ],
+      ['Baseline Data', carbonCreditReadiness.checklist.find((item) => item.key === 'baseline-data')?.status ?? 'Not assessed'],
+      ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
+      ['Disclaimer', CARBON_CREDIT_READINESS_DISCLAIMER],
     ],
   });
 
@@ -822,6 +888,11 @@ const reportPeriod =
     : reportScope === 'selectedDocuments'
     ? 'Selected documents'
     : 'Selected records';
+const dataReadinessSummary = buildDataReadinessSummary(calculationDetails);
+const carbonCreditReadiness = buildCarbonCreditReadinessAssessment(
+  calculationDetails,
+  dataReadinessSummary,
+);
 const sourceEvidenceRows = buildSourceEvidenceRows(activities);
 const reportRecordCount = countSummary.processedRecords;
 const hasLoadedSummary = Boolean(summary);
@@ -851,11 +922,10 @@ const exportDisabledTitle = exportDisabled
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1>Government Reporting</h1>
+      <h1>Traceable Emissions Reports</h1>
 
       <p style={{ color: '#666', marginBottom: 20 }}>
-        Prepare structured emissions summaries using imported activity records
-        and calculated metrics.
+        Reports include calculation traceability, factor sources, source evidence, data quality notes, and records requiring review so emissions results can be explained and validated.
       </p>
 <div style={filterCardStyle}>
   <div style={{ width: '100%' }}>
@@ -1085,18 +1155,69 @@ const exportDisabledTitle = exportDisabled
           <Section title="Methodology & Assumptions">
             <p style={{ color: '#555', lineHeight: 1.7 }}>
               Emissions estimates are calculated using imported activity data and
-              configured conversion factors. Uploaded documents are processed using
-              AI-assisted extraction and reviewed before import. This report is
-              intended for internal reporting support and compliance preparation.
+              configured conversion factors. CarbonLite records factor sources,
+              matching explanations, calculation formulas, source evidence, and
+              records requiring review so users can validate results before using
+              outputs for internal, consultant, or reporting workflows.
+            </p>
+          </Section>
+          <Section title="Data Quality Notes">
+            <div style={dataQualityNotesGridStyle}>
+              <DataQualityNote label="Data Readiness" value={`${formatDisplayNumber(dataReadinessSummary.score)}% · ${dataReadinessSummary.level}`} />
+              <DataQualityNote label="Calculated Records" value={dataReadinessSummary.recordsReadyForCalculation} />
+              <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
+              <DataQualityNote label="Tracked Metrics" value={dataReadinessSummary.trackedOnlyCount} />
+              <DataQualityNote label="Missing Factors" value={dataReadinessSummary.missingFactorCount} />
+              <DataQualityNote label="Missing Jurisdiction" value={dataReadinessSummary.missingJurisdictionCount} />
+            </div>
+            <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
+              Hotspot analysis is based only on calculated records. Records requiring review are excluded until fixed.
+            </p>
+          </Section>
+          <Section title="Carbon Credit Readiness Notes">
+            <div style={dataQualityNotesGridStyle}>
+              <DataQualityNote label="Readiness Level" value={formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} />
+              <DataQualityNote label="Readiness Score" value={`${carbonCreditReadiness.score}/100`} />
+              <DataQualityNote
+                label="Reduction Detected"
+                value={
+                  carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
+                    ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e · ${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%`
+                    : 'Not assessed or not detected'
+                }
+              />
+              <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
+            </div>
+            <p style={{ color: '#555', lineHeight: 1.7, marginTop: 12 }}>
+              {carbonCreditReadiness.summary}
+            </p>
+            <p style={creditDisclaimerReportStyle}>
+              {CARBON_CREDIT_READINESS_DISCLAIMER}
             </p>
           </Section>
           <Section title="Emissions by Scope">
-  <div style={{ display: 'flex', gap: 16 }}>
-    <Card title="Scope 1" value={formatDisplayNumber(scopeSummary['Scope 1'])} icon="🏭" />
-    <Card title="Scope 2" value={formatDisplayNumber(scopeSummary['Scope 2'])} icon="⚡" />
-    <Card title="Scope 3" value={formatDisplayNumber(scopeSummary['Scope 3'])} icon="🌍" />
-  </div>
-</Section>
+            <ScopeExplanation />
+            <div style={scopeCardGridStyle}>
+              <Card
+                title="Scope 1"
+                subtitle={scopeLabelByName['Scope 1']}
+                value={`${formatDisplayNumber(scopeSummary['Scope 1'])} kgCO2e`}
+                icon="🏭"
+              />
+              <Card
+                title="Scope 2"
+                subtitle={scopeLabelByName['Scope 2']}
+                value={`${formatDisplayNumber(scopeSummary['Scope 2'])} kgCO2e`}
+                icon="⚡"
+              />
+              <Card
+                title="Scope 3"
+                subtitle={scopeLabelByName['Scope 3']}
+                value={`${formatDisplayNumber(scopeSummary['Scope 3'])} kgCO2e`}
+                icon="🌍"
+              />
+            </div>
+          </Section>
         </>
       ) : null}
     </div>
@@ -1105,10 +1226,12 @@ const exportDisabledTitle = exportDisabled
 
 function Card({
   title,
+  subtitle,
   value,
   icon,
 }: {
   title: string;
+  subtitle?: string;
   value: string;
   icon: string;
 }) {
@@ -1116,11 +1239,60 @@ function Card({
     <div style={cardStyle}>
       <div style={{ fontSize: 28 }}>{icon}</div>
       <div style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{title}</div>
+      {subtitle ? <div style={cardSubtitleStyle}>{subtitle}</div> : null}
       <div style={{ marginTop: 6, fontSize: 26, fontWeight: 800 }}>
         {value}
       </div>
     </div>
   );
+}
+
+function ScopeExplanation() {
+  return (
+    <details style={scopeHelpStyle}>
+      <summary style={scopeHelpSummaryStyle} aria-label="What do emissions scopes mean?">
+        <span style={scopeHelpIconStyle} aria-hidden="true">i</span>
+        What do scopes mean?
+      </summary>
+      <div style={scopeHelpGridStyle}>
+        {SCOPE_HELP.map((item) => (
+          <div key={item.scope} style={scopeHelpItemStyle}>
+            <strong>{item.scope}: {item.label}</strong>
+            <p style={scopeHelpTextStyle}>{item.description}</p>
+            <div style={scopeHelpExamplesStyle}>Examples: {item.examples}</div>
+          </div>
+        ))}
+        <div style={scopeHelpNoteStyle}>
+          Water is treated as a tracked operational metric unless a reviewed water emissions factor is enabled.
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function DataQualityNote({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div style={dataQualityNoteStyle}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function formatCarbonCreditReadinessLevel(level: string) {
+  const labels: Record<string, string> = {
+    NOT_READY: 'Not ready',
+    NEEDS_MORE_DATA: 'Needs more data',
+    READY_FOR_PROFESSIONAL_REVIEW: 'Ready for professional review',
+  };
+
+  return labels[level] ?? level;
 }
 
 function Section({
@@ -1144,6 +1316,108 @@ const cardStyle: React.CSSProperties = {
   background: '#fff',
   border: '1px solid #eee',
   boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+};
+
+const cardSubtitleStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: '#334155',
+  fontSize: 13,
+  fontWeight: 800,
+  lineHeight: 1.3,
+};
+
+const scopeCardGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+  gap: 16,
+};
+
+const scopeHelpStyle: React.CSSProperties = {
+  marginBottom: 14,
+  borderRadius: 12,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+
+const scopeHelpSummaryStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '10px 12px',
+  color: '#0f172a',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const scopeHelpIconStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 18,
+  height: 18,
+  borderRadius: 999,
+  background: '#dbeafe',
+  color: '#1d4ed8',
+  fontSize: 12,
+  fontWeight: 900,
+};
+
+const scopeHelpGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  padding: '0 12px 12px',
+};
+
+const scopeHelpItemStyle: React.CSSProperties = {
+  padding: 10,
+  borderRadius: 10,
+  background: '#fff',
+  border: '1px solid #e2e8f0',
+};
+
+const scopeHelpTextStyle: React.CSSProperties = {
+  margin: '6px 0',
+  color: '#475569',
+  lineHeight: 1.5,
+};
+
+const scopeHelpExamplesStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const scopeHelpNoteStyle: React.CSSProperties = {
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.5,
+};
+
+const dataQualityNotesGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+  gap: 10,
+};
+
+const dataQualityNoteStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  padding: 12,
+  borderRadius: 12,
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+  color: '#334155',
+};
+
+const creditDisclaimerReportStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  background: '#fff7ed',
+  border: '1px solid #fed7aa',
+  color: '#7c2d12',
+  lineHeight: 1.6,
+  fontWeight: 700,
 };
 
 const sectionStyle: React.CSSProperties = {

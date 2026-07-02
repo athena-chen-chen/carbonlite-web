@@ -90,6 +90,17 @@ export function FeedbackManagementPage() {
         ) : (
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
+              <colgroup>
+                <col style={{ width: 92 }} />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 118 }} />
+                <col style={{ width: 88 }} />
+                <col style={{ width: 150 }} />
+                <col />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 82 }} />
+                <col style={{ width: 112 }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th style={thStyle}>Date</th>
@@ -107,19 +118,40 @@ export function FeedbackManagementPage() {
                 {items.map((item) => (
                   <tr key={item.id}>
                     <td style={dateCellStyle}>{formatDate(item.createdAt)}</td>
-                    <td style={submitterCellStyle}>{formatSubmitter(item)}</td>
-                    <td style={orgCellStyle}>{formatOrganization(item)}</td>
+                    <td style={submitterCellStyle} title={formatSubmitterTitle(item)}>
+                      <div style={submitterPrimaryStyle}>{formatSubmitterPrimary(item)}</div>
+                      {formatSubmitterSecondary(item) ? (
+                        <div style={submitterSecondaryStyle}>
+                          {formatSubmitterSecondary(item)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td style={orgCellStyle} title={formatOrganization(item)}>
+                      {formatOrganization(item)}
+                    </td>
                     <td style={typeCellStyle}>{formatType(item.type)}</td>
                     <td style={pageCellStyle}>
-                      <div>{item.page || '-'}</div>
-                      {item.url ? <div style={mutedSmallStyle}>{item.url}</div> : null}
+                      <div style={pageRouteStyle} title={item.page || undefined}>
+                        {item.page || '-'}
+                      </div>
+                      {item.url ? (
+                        <div style={mutedSmallStyle} title={item.url}>
+                          {item.url}
+                        </div>
+                      ) : null}
                     </td>
                     <td style={messageCellStyle}>
-                      <div style={intentStyle}>{item.intent}</div>
-                      <div style={messageStyle}>{item.message}</div>
+                      <div style={messageScrollStyle}>
+                        <div style={intentStyle}>{item.intent || 'No intent provided'}</div>
+                        <div style={messageStyle}>{item.message || 'No details provided'}</div>
+                      </div>
                     </td>
-                    <td style={emailCellStyle}>{item.email || '-'}</td>
-                    <td style={versionCellStyle}>{item.appVersion || '-'}</td>
+                    <td style={emailCellStyle} title={item.email || undefined}>
+                      {item.email || '-'}
+                    </td>
+                    <td style={versionCellStyle} title={item.appVersion || undefined}>
+                      {item.appVersion || '-'}
+                    </td>
                     <td style={statusCellStyle}>
                       <span style={statusBadgeWrapStyle}>
                         <select
@@ -172,17 +204,32 @@ function formatStatus(value: string) {
     .join(' ');
 }
 
-function formatSubmitter(item: FeedbackItem) {
+function getSubmitter(item: FeedbackItem) {
+  return item.user ?? item.submitter;
+}
+
+function formatSubmitterPrimary(item: FeedbackItem) {
+  const submitter = getSubmitter(item);
+  return submitter?.name || submitter?.email || item.userId || 'Unknown';
+}
+
+function formatSubmitterSecondary(item: FeedbackItem) {
+  const submitter = getSubmitter(item);
+  if (!submitter?.email || submitter.email === formatSubmitterPrimary(item)) return '';
+  return submitter.email;
+}
+
+function formatSubmitterTitle(item: FeedbackItem) {
   const submitter = item.user ?? item.submitter;
-  return submitter?.email || submitter?.name || item.userId || 'Unknown user';
+  return [submitter?.name, submitter?.email].filter(Boolean).join(' · ') || item.userId || 'Unknown';
 }
 
 function formatOrganization(item: FeedbackItem) {
-  return item.organization?.name || item.organization?.id || item.organizationId || 'Unknown organization';
+  return item.organization?.name || item.organization?.id || item.organizationId || 'Unknown';
 }
 
 const pageStyle: CSSProperties = {
-  maxWidth: 1180,
+  maxWidth: 1360,
   margin: '0 auto',
   padding: '0 24px 48px',
 };
@@ -241,48 +288,61 @@ const tableWrapStyle: CSSProperties = {
 
 const tableStyle: CSSProperties = {
   width: '100%',
-  minWidth: 1120,
+  minWidth: 1040,
   borderCollapse: 'collapse',
+  tableLayout: 'fixed',
 };
 
 const thStyle: CSSProperties = {
   textAlign: 'left',
-  padding: '13px 14px',
+  padding: '11px 10px',
   borderBottom: '1px solid #e2e8f0',
   background: '#f8fafc',
   color: '#0f172a',
-  fontSize: 13,
+  fontSize: 12,
+  whiteSpace: 'nowrap',
 };
 
 const tdStyle: CSSProperties = {
-  padding: '11px 12px',
+  padding: '10px',
   borderBottom: '1px solid #e2e8f0',
   color: '#334155',
   verticalAlign: 'top',
-  fontSize: 14,
+  fontSize: 13,
+  minWidth: 0,
 };
 
 const dateCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 112,
-  maxWidth: 112,
   whiteSpace: 'nowrap',
-  fontSize: 13,
+  fontSize: 12,
+  color: '#475569',
 };
 
 const submitterCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 150,
-  maxWidth: 150,
+  overflow: 'hidden',
+};
+
+const submitterPrimaryStyle: CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
+  color: '#0f172a',
+  fontWeight: 700,
+};
+
+const submitterSecondaryStyle: CSSProperties = {
+  marginTop: 2,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: '#64748b',
+  fontSize: 12,
 };
 
 const orgCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 150,
-  maxWidth: 150,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -290,25 +350,21 @@ const orgCellStyle: CSSProperties = {
 
 const typeCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 96,
   whiteSpace: 'nowrap',
 };
 
 const pageCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 130,
-  maxWidth: 130,
 };
 
 const messageCellStyle: CSSProperties = {
   ...tdStyle,
-  minWidth: 340,
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
 };
 
 const emailCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 150,
-  maxWidth: 150,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -316,33 +372,50 @@ const emailCellStyle: CSSProperties = {
 
 const versionCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 92,
   whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontSize: 12,
 };
 
 const statusCellStyle: CSSProperties = {
   ...tdStyle,
-  width: 108,
-  maxWidth: 108,
   textAlign: 'center',
+  whiteSpace: 'nowrap',
 };
 
 const intentStyle: CSSProperties = {
   color: '#0f172a',
   fontWeight: 800,
-  marginBottom: 6,
+  marginBottom: 4,
+  lineHeight: 1.3,
 };
 
 const messageStyle: CSSProperties = {
   color: '#475569',
-  lineHeight: 1.5,
+  lineHeight: 1.35,
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
+};
+
+const messageScrollStyle: CSSProperties = {
+  maxHeight: 96,
+  overflowY: 'auto',
+  paddingRight: 4,
+};
+
+const pageRouteStyle: CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: '#0f172a',
+  fontWeight: 700,
 };
 
 const mutedSmallStyle: CSSProperties = {
   marginTop: 4,
   color: '#94a3b8',
   fontSize: 12,
-  maxWidth: 220,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -354,13 +427,14 @@ const statusSelectStyle: CSSProperties = {
   MozAppearance: 'none',
   border: 0,
   borderRadius: 999,
-  padding: '4px 22px 4px 10px',
+  padding: '5px 18px 5px 9px',
   background: 'transparent',
   color: '#065f46',
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 800,
-  maxWidth: 96,
-  width: 96,
+  minWidth: 74,
+  maxWidth: 112,
+  width: 'auto',
   whiteSpace: 'nowrap',
   cursor: 'pointer',
   lineHeight: 1.3,
@@ -371,8 +445,10 @@ const statusBadgeWrapStyle: CSSProperties = {
   position: 'relative',
   display: 'inline-flex',
   alignItems: 'center',
-  justifyContent: 'center',
-  maxWidth: 100,
+  justifyContent: 'space-between',
+  width: 'fit-content',
+  minWidth: 78,
+  maxWidth: 120,
   border: '1px solid #a7f3d0',
   borderRadius: 999,
   background: '#ecfdf5',
@@ -381,7 +457,7 @@ const statusBadgeWrapStyle: CSSProperties = {
 
 const statusArrowStyle: CSSProperties = {
   position: 'absolute',
-  right: 9,
+  right: 8,
   top: '50%',
   transform: 'translateY(-50%)',
   color: '#047857',

@@ -46,25 +46,39 @@ export default function CarbonLiteLandingPage() {
     },
     {
       title: 'Generate metrics and reports',
-      text: 'Turn reviewed activity data into emissions summaries, totals by metric, and report-ready outputs.',
+      text: 'Turn reviewed activity data into traceable emissions summaries, calculation issues, and report-ready outputs.',
     },
   ];
   const audienceCards = [
     {
-      title: 'Environmental consultants',
-      text: 'Prepare client activity data with clearer traceability back to source documents.',
+      title: 'Canadian SMEs',
+      text: 'Understand what emissions-related data to collect, organize messy operational records, and see where the largest emissions come from.',
     },
     {
-      title: 'SMEs preparing emissions reports',
-      text: 'Move from scattered bills and spreadsheets into structured emissions reporting inputs.',
+      title: 'Sustainability consultants',
+      text: 'Review client data faster, explain factor choices, identify data gaps, and produce clearer reporting outputs.',
     },
     {
       title: 'Industrial operations teams',
-      text: 'Organize fuel, electricity, water, and operational records before emissions calculations.',
+      text: 'Organize fuel, electricity, water, and operational records before emissions calculations and review.',
     },
     {
       title: 'ESG and reporting teams',
-      text: 'Create report-ready summaries from the documents and spreadsheets your team already uses.',
+      text: 'Create source-backed summaries from the documents and spreadsheets your team already uses.',
+    },
+  ];
+  const positioningCards = [
+    {
+      title: 'Jurisdiction-aware factors',
+      text: 'Select and explain emission factors based on location, year, source, and confidence level, helping users understand which factor was used and why.',
+    },
+    {
+      title: 'Traceable emissions reporting',
+      text: 'Connect each emissions result back to its source data, conversion factor, calculation formula, and review status.',
+    },
+    {
+      title: 'Emissions hotspot analysis',
+      text: 'Identify the highest-emitting categories so SMEs and consultants can focus attention where it matters most.',
     },
   ];
   const documentExamples = [
@@ -74,16 +88,16 @@ export default function CarbonLiteLandingPage() {
     'Operational PDFs',
   ];
   const valuePoints = [
-    'Report-ready summaries',
-    'Source document traceability',
-    'Review-before-import workflow',
-    'Built with environmental workflow feedback',
+    'Jurisdiction-aware factor selection',
+    'Traceable emissions reporting',
+    'Records requiring review',
+    'Data readiness for SME and consultant workflows',
   ];
   const demoBullets = [
     'Upload invoices, utility bills, spreadsheets',
     'Extract structured activity data',
     'Review before import',
-    'Generate emissions summaries and reports',
+    'Generate traceable emissions summaries and reports',
   ];
   const pricingPlans = [
     {
@@ -110,7 +124,7 @@ export default function CarbonLiteLandingPage() {
             <div>
               <div className="text-base font-bold tracking-tight">CarbonLite AI</div>
               <div className="text-xs text-slate-500">
-                {isAuthenticated ? `Workspace: ${workspaceName}` : 'SME emissions reporting workflow'}
+                {isAuthenticated ? `Workspace: ${workspaceName}` : 'Canadian SME emissions workflow'}
               </div>
             </div>
           </div>
@@ -167,13 +181,13 @@ export default function CarbonLiteLandingPage() {
                 Built with real environmental workflow feedback
               </div>
               <h1 className="mt-7 max-w-3xl text-5xl font-black tracking-tight text-slate-950 md:text-6xl lg:text-7xl">
-                Simplify SME carbon reporting.
+                CarbonLite helps Canadian SMEs turn operational data into traceable emissions insights.
               </h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
-                Turn invoices, utility bills, spreadsheets, and operational PDFs into structured emissions reporting workflows.
+                Designed for Canadian SMEs and sustainability consultants, CarbonLite helps organize utility bills, invoices, spreadsheets, and activity data into structured emissions records, jurisdiction-aware factor matching, and clear reporting outputs.
               </p>
               <p className="mt-4 max-w-2xl text-base leading-7 text-slate-700">
-                Upload documents, review extracted activity data, and generate emissions summaries with source document traceability before anything is imported.
+                Supports jurisdiction-aware factor selection, traceable emissions reporting, emissions hotspot analysis, and better data readiness for pilot reporting workflows.
               </p>
 
               <div className="mt-9 flex flex-wrap gap-4">
@@ -182,7 +196,7 @@ export default function CarbonLiteLandingPage() {
                   onClick={() => navigate('/pilot')}
                   className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 px-7 py-3.5 text-sm font-bold text-white shadow-xl shadow-emerald-200 transition hover:-translate-y-0.5"
                 >
-                  Request Pilot Access
+                  Request pilot access
                 </button>
                 <a
                   href="#demo-video"
@@ -194,7 +208,7 @@ export default function CarbonLiteLandingPage() {
                   }
                   className="rounded-2xl border border-emerald-200 bg-emerald-50 px-7 py-3.5 text-sm font-bold text-emerald-800 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white"
                 >
-                  Watch Demo Video
+                  View product demo
                 </a>
                 <button
                   type="button"
@@ -262,6 +276,25 @@ export default function CarbonLiteLandingPage() {
           </div>
         </section>
 
+        <section className="border-y border-slate-200 bg-white">
+          <div className="mx-auto max-w-7xl px-6 py-16">
+            <div className="max-w-3xl">
+              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Why CarbonLite</p>
+              <h2 className="mt-3 text-4xl font-black tracking-tight">
+                Built for data readiness, traceability, and practical review.
+              </h2>
+            </div>
+            <div className="mt-10 grid gap-6 md:grid-cols-3">
+              {positioningCards.map((card) => (
+                <article key={card.title} className="rounded-3xl border border-slate-200 bg-slate-50 p-7 shadow-sm">
+                  <h3 className="text-xl font-bold text-slate-950">{card.title}</h3>
+                  <p className="mt-3 text-sm leading-7 text-slate-600">{card.text}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section id="demo-video" className="border-y border-slate-200 bg-white">
           <div className="mx-auto grid max-w-7xl gap-10 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <div>
@@ -322,9 +355,9 @@ export default function CarbonLiteLandingPage() {
         <section id="audiences" className="mx-auto max-w-7xl px-6 py-20">
           <div className="max-w-3xl">
             <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Pilot users</p>
-            <h2 className="mt-3 text-4xl font-black tracking-tight">Built for real emissions workflows</h2>
+            <h2 className="mt-3 text-4xl font-black tracking-tight">Built for SMEs and sustainability consultants</h2>
             <p className="mt-4 text-lg leading-8 text-slate-600">
-              CarbonLite is for teams who already work with invoices, utility data, spreadsheets, and operational records, but need a clearer path to emissions reporting.
+              CarbonLite is for Canadian-market teams who already work with invoices, utility data, spreadsheets, and operational records, but need a clearer path to data readiness and traceable emissions reporting.
             </p>
           </div>
 

@@ -1,11 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ExcelInputTable } from './ExcelInputTable';
-import { createActivityData } from '../services/activityData';
+import { createActivityData, updateActivityData } from '../services/activityData';
 import { getConversionFactors } from '../services/conversionFactors';
 
 vi.mock('../services/activityData', () => ({
   createActivityData: vi.fn(),
+  updateActivityData: vi.fn(),
 }));
 
 vi.mock('../services/conversionFactors', () => ({
@@ -48,6 +49,7 @@ describe('ExcelInputTable empty activity row UX', () => {
       totalPages: 1,
     });
     vi.mocked(createActivityData).mockResolvedValue({ id: 'activity-1' } as any);
+    vi.mocked(updateActivityData).mockResolvedValue({ id: 'activity-1' } as any);
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
@@ -117,14 +119,49 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.queryByText('No matching factor')).not.toBeInTheDocument();
   });
 
-  it('shows missing factor warning only after a typed row has no match', async () => {
+  it('shows tracked metric guidance for water rows', async () => {
     renderTable();
 
     await userEvent.click(await screen.findByRole('button', { name: '+ Add Row' }));
     await userEvent.selectOptions(screen.getByRole('combobox'), 'WATER');
 
     const row = screen.getByRole('row', { name: /WATER/i });
-    expect(within(row).getByText('No matching factor')).toBeInTheDocument();
+    expect(within(row).getByText('Tracked metric')).toBeInTheDocument();
+    expect(within(row).getByText(/No emissions factor required by default/i)).toBeInTheDocument();
+  });
+
+  it('saves invalid-unit rows as requiring review instead of blocking save', async () => {
+    renderTable();
+
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Row' }));
+    const rows = screen.getAllByRole('row');
+    const row = rows[rows.length - 1];
+    await userEvent.selectOptions(within(row).getByRole('combobox'), 'DIESEL');
+    await userEvent.type(within(row).getByPlaceholderText('Quantity'), '20');
+    await userEvent.clear(within(row).getByPlaceholderText('Auto-filled after type'));
+    await userEvent.type(within(row).getByPlaceholderText('Auto-filled after type'), 'bottles');
+
+    await waitFor(() => {
+      expect(within(row).getByText('No valid factor match')).toBeInTheDocument();
+      expect(within(row).getByText(/Reason: Invalid unit/i)).toBeInTheDocument();
+      expect(within(row).getAllByText(/Supported unit: liters/i).length).toBeGreaterThan(0);
+    });
+
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+
+    await waitFor(() => {
+      expect(createActivityData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activityType: 'DIESEL',
+          quantity: 20,
+          unit: 'bottles',
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(within(row).getByText('Saved · Invalid Unit')).toBeInTheDocument();
+    });
+    expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
   });
 
   it('saves a single row from the row action', async () => {

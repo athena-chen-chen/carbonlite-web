@@ -26,6 +26,8 @@ import { GA4RouteTracker } from '../components/GA4RouteTracker';
 import PrivacyPolicyPage from '../pages/PrivacyPolicyPage';
 import TermsOfUsePage from '../pages/TermsOfUsePage';
 import AboutPage from '../pages/AboutPage';
+import MethodologyPage from '../pages/MethodologyPage';
+import DataCollectionGuidePage from '../pages/DataCollectionGuidePage';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -52,6 +54,7 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsOfUsePage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/methodology/:slug" element={<MethodologyPage />} />
 
         <Route
           path="/data-records"
@@ -59,6 +62,17 @@ export default function App() {
             <ProtectedRoute>
               <AppShell>
                 <ActivityDataPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/data-collection-guide"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <DataCollectionGuidePage />
               </AppShell>
             </ProtectedRoute>
           }

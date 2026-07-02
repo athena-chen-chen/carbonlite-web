@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import {
   createConversionFactor,
@@ -51,29 +52,24 @@ export function getFactorJurisdiction(item: ConversionFactorItem) {
 export function getFactorTraceability(item: ConversionFactorItem) {
   return {
     jurisdiction: getFactorJurisdiction(item),
-    sourceAuthority:
-      item.sourceAuthority ||
-      item.sourceName ||
-      (item.isSystemDefault ? 'CarbonLite system defaults' : ''),
-    sourceDocument:
-      item.sourceDocument ||
-      item.sourceReference ||
-      (item.isSystemDefault ? 'Pilot default factor library' : ''),
+    sourceAuthority: item.sourceAuthority || item.sourceName || '',
+    sourceDocument: item.sourceDocument || item.sourceReference || '',
     sourceYear: item.sourceYear ?? null,
     sourceUrl: item.sourceUrl ?? '',
-    methodology:
-      item.methodology ||
-      (item.isSystemDefault
-        ? 'Used for pilot workflow validation; replace with verified ECCC/Alberta factors before production reporting'
-        : ''),
+    methodology: item.methodology || '',
     confidenceLevel: item.confidenceLevel ?? '',
+    verificationStatus: item.verificationStatus ?? '',
     verified: Boolean(item.verified),
-    notes:
-      item.notes ||
-      (item.isSystemDefault
-        ? 'Demo factor. Verify before client or regulatory reporting.'
-        : ''),
+    notes: item.notes || '',
   };
+}
+
+function isWaterTrackedFactor(item: Pick<ConversionFactorItem, 'activityType' | 'confidenceLevel' | 'verificationStatus'>) {
+  return (
+    String(item.activityType ?? '').toUpperCase() === 'WATER' ||
+    (item.confidenceLevel === 'Pilot Estimate' &&
+      item.verificationStatus === 'Internal Review Required')
+  );
 }
 
 function formatFactorValue(value: ConversionFactorItem['factorValue']) {
@@ -86,6 +82,14 @@ function formatFactorValue(value: ConversionFactorItem['factorValue']) {
   return numericValue.toLocaleString(undefined, {
     maximumFractionDigits: 6,
   });
+}
+
+function formatFactorValueDisplay(item: ConversionFactorItem) {
+  return isWaterTrackedFactor(item) ? 'Tracked only' : formatFactorValue(item.factorValue);
+}
+
+function formatFactorResultUnitDisplay(item: ConversionFactorItem) {
+  return isWaterTrackedFactor(item) ? 'Not applicable' : item.resultUnit;
 }
 
 function formatAuditDate(value?: string | null) {
@@ -120,6 +124,21 @@ function formatTableSourceAuthority(value?: string | null) {
   return value;
 }
 
+function getSourceUrlHref(sourceUrl?: string | null) {
+  if (!sourceUrl) return '';
+
+  try {
+    const url = new URL(sourceUrl);
+    if (url.pathname.startsWith('/methodology/')) {
+      return url.pathname;
+    }
+  } catch {
+    if (sourceUrl.startsWith('/methodology/')) return sourceUrl;
+  }
+
+  return sourceUrl;
+}
+
 export function ConversionFactorsPage() {
   const location = useLocation();
   const prefillFactor = (location.state as ConversionFactorRouteState)?.prefillFactor;
@@ -140,8 +159,11 @@ export function ConversionFactorsPage() {
   const [maxFactorValueFilter, setMaxFactorValueFilter] = useState('');
   const [factorValueSort, setFactorValueSort] = useState<'none' | 'asc' | 'desc'>('none');
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const actionMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   async function loadItems(filters?: {
     activityType?: string;
@@ -191,6 +213,52 @@ export function ConversionFactorsPage() {
       isDefault: true,
     });
   }, [prefillFactor]);
+
+  useEffect(() => {
+    if (!openActionMenuId) return;
+
+    function closeActionMenu() {
+      setOpenActionMenuId(null);
+      setActionMenuPosition(null);
+    }
+
+    function isInsideActiveActionMenu(target: Node | null) {
+      const activeButton = actionMenuButtonRefs.current[openActionMenuId];
+
+      return Boolean(
+        target &&
+          (actionMenuRef.current?.contains(target) || activeButton?.contains(target)),
+      );
+    }
+
+    function handleDocumentPointerDown(event: PointerEvent) {
+      if (isInsideActiveActionMenu(event.target as Node | null)) return;
+      closeActionMenu();
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeActionMenu();
+      }
+    }
+
+    function handleFocusIn(event: FocusEvent) {
+      if (isInsideActiveActionMenu(event.target as Node | null)) return;
+      closeActionMenu();
+    }
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('scroll', closeActionMenu, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('scroll', closeActionMenu, true);
+    };
+  }, [openActionMenuId]);
 
   const defaultCount = useMemo(
     () => items.filter((item) => item.isSystemDefault).length,
@@ -372,6 +440,91 @@ export function ConversionFactorsPage() {
     if (!shouldDelete) return;
 
     await deleteFactorById(item.id);
+  }
+
+  function getActionMenuPosition(button: HTMLButtonElement) {
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 130;
+    const menuHeight = 106;
+    const margin = 8;
+    const top =
+      rect.bottom + menuHeight + margin > window.innerHeight
+        ? Math.max(margin, rect.top - menuHeight - 6)
+        : rect.bottom + 6;
+    const left = Math.min(
+      Math.max(margin, rect.right - menuWidth),
+      Math.max(margin, window.innerWidth - menuWidth - margin),
+    );
+
+    return { top, left };
+  }
+
+  function toggleActionMenu(itemId: string, button: HTMLButtonElement) {
+    setOpenActionMenuId((current) => {
+      if (current === itemId) {
+        setActionMenuPosition(null);
+        return null;
+      }
+
+      setActionMenuPosition(getActionMenuPosition(button));
+      return itemId;
+    });
+  }
+
+  function closeActionMenu() {
+    setOpenActionMenuId(null);
+    setActionMenuPosition(null);
+  }
+
+  function renderActionMenuPortal() {
+    if (!openActionMenuId || !actionMenuPosition) return null;
+
+    const item = items.find((factor) => factor.id === openActionMenuId);
+    if (!item) return null;
+
+    return createPortal(
+      <div
+        ref={actionMenuRef}
+        role="menu"
+        style={{
+          ...overflowMenuStyle,
+          position: 'fixed',
+          top: actionMenuPosition.top,
+          left: actionMenuPosition.left,
+          right: 'auto',
+          zIndex: 9999,
+        }}
+      >
+        {item.isSystemDefault ? (
+          <div style={lockedMenuLabelStyle}>Locked</div>
+        ) : null}
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            closeActionMenu();
+            handleEditFactor(item);
+          }}
+          disabled={item.isSystemDefault || deletingId === item.id || submitting}
+          style={menuItemButtonStyle(item.isSystemDefault)}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            closeActionMenu();
+            void handleDeleteFactor(item);
+          }}
+          disabled={item.isSystemDefault || deletingId === item.id || editingId === item.id}
+          style={menuItemDangerStyle(item.isSystemDefault || deletingId === item.id)}
+        >
+          {deletingId === item.id ? 'Deleting...' : 'Delete'}
+        </button>
+      </div>,
+      document.body,
+    );
   }
 
   function handlePrintFactors() {
@@ -715,7 +868,7 @@ export function ConversionFactorsPage() {
           <div>
             <h2 style={{ margin: 0, fontSize: 20 }}>Conversion Factor Library</h2>
             <p style={{ marginTop: 6, color: '#666' }}>
-              These factors are used when generating emissions and other calculated metrics.
+              Conversion factors should be current, source-backed, and jurisdiction-aware. CarbonLite tracks factor source, year, confidence level, and verification status to support more transparent calculations.
             </p>
           </div>
         </div>
@@ -852,7 +1005,7 @@ export function ConversionFactorsPage() {
                           style={factorValueCellStyle}
                           data-testid={`factor-value-${item.id}`}
                         >
-                          {formatFactorValue(item.factorValue)}
+                          {formatFactorValueDisplay(item)}
                         </td>
                         <td style={tdStyle}>{item.unit}</td>
                         <td style={sourceAuthorityCellStyle}>
@@ -860,7 +1013,7 @@ export function ConversionFactorsPage() {
                         </td>
                         <td style={tdStyle}>
                           {item.isSystemDefault ? (
-                            <Badge label="System" color="#1d4ed8" background="#dbeafe" />
+                            <Badge label="CarbonLite System Factor" color="#1d4ed8" background="#dbeafe" />
                           ) : (
                             <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
                           )}
@@ -875,56 +1028,18 @@ export function ConversionFactorsPage() {
                           </button>
                           <div style={overflowMenuWrapperStyle}>
                             <button
+                              ref={(element) => {
+                                actionMenuButtonRefs.current[item.id] = element;
+                              }}
                               type="button"
                               aria-label={`More actions for ${item.name}`}
                               aria-haspopup="menu"
                               aria-expanded={openActionMenuId === item.id}
-                              onClick={() =>
-                                setOpenActionMenuId((current) =>
-                                  current === item.id ? null : item.id,
-                                )
-                              }
+                              onClick={(event) => toggleActionMenu(item.id, event.currentTarget)}
                               style={overflowButtonStyle}
                             >
                               ⋮
                             </button>
-                            {openActionMenuId === item.id ? (
-                              <div role="menu" style={overflowMenuStyle}>
-                                {item.isSystemDefault ? (
-                                  <div style={lockedMenuLabelStyle}>Locked</div>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  onClick={() => {
-                                    setOpenActionMenuId(null);
-                                    handleEditFactor(item);
-                                  }}
-                                  disabled={item.isSystemDefault || deletingId === item.id || submitting}
-                                  style={menuItemButtonStyle(item.isSystemDefault)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  onClick={() => {
-                                    setOpenActionMenuId(null);
-                                    void handleDeleteFactor(item);
-                                  }}
-                                  disabled={
-                                    item.isSystemDefault ||
-                                    deletingId === item.id ||
-                                    editingId === item.id
-                                  }
-                                  style={menuItemDangerStyle(
-                                    item.isSystemDefault || deletingId === item.id,
-                                  )}
-                                >
-                                  {deletingId === item.id ? 'Deleting...' : 'Delete'}
-                                </button>
-                              </div>
-                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -947,6 +1062,7 @@ export function ConversionFactorsPage() {
           onClose={() => setSelectedFactor(null)}
         />
       ) : null}
+      {renderActionMenuPortal()}
     </div>
   );
 }
@@ -1047,41 +1163,89 @@ function FactorDetailsModal({
             ×
           </button>
         </div>
+        <div style={modalBadgeRowStyle}>
+          {item.isSystemDefault ? (
+            <Badge label="CarbonLite System Factor" color="#1d4ed8" background="#dbeafe" />
+          ) : (
+            <Badge label="Custom Factor" color="#6b7280" background="#f3f4f6" />
+          )}
+          {traceability.verified ? (
+            <Badge label="Verified" color="#047857" background="#dcfce7" />
+          ) : (
+            <Badge label="Internal Review Required" color="#b45309" background="#fef3c7" />
+          )}
+        </div>
+        {item.isSystemDefault ? (
+          <div style={systemFactorNoticeStyle}>
+            System factors are managed by CarbonLite and cannot be edited directly.
+          </div>
+        ) : null}
         <div style={traceabilityDetailsStyle}>
-          <DetailItem label="Factor Value" value={`${item.factorValue} ${item.resultUnit}`} />
-          <DetailItem label="Input Unit" value={item.unit} />
-          <DetailItem label="Result Unit" value={item.resultUnit} />
-          <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
-          <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
-          <DetailItem label="Source Document" value={traceability.sourceDocument} />
-          <DetailItem label="Source Year" value={traceability.sourceYear} />
-          <DetailItem
-            label="Source URL"
-            value={
-              traceability.sourceUrl ? (
-                <a href={traceability.sourceUrl} target="_blank" rel="noreferrer">
-                  {traceability.sourceUrl}
-                </a>
-              ) : ''
-            }
-          />
-          <DetailItem
-            label="Verified"
-            value={traceability.verified ? 'Verified' : 'Unverified / user review required'}
-          />
-          <DetailItem label="Methodology" value={traceability.methodology} />
-          <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
-          <DetailItem label="Notes" value={traceability.notes} />
-          <DetailItem
-            label="Audit History"
-            value={`Created: ${formatAuditDate(item.createdAt)}\nUpdated: ${formatAuditDate(item.updatedAt)}`}
-          />
+          <DetailSection title="Factor Information">
+            <DetailItem label="Activity" value={formatActivityTypeDisplay(item.activityType)} />
+            <DetailItem label="Factor Value" value={formatFactorValueDisplay(item)} />
+            <DetailItem label="Input Unit" value={item.unit} />
+            <DetailItem label="Result Unit" value={formatFactorResultUnitDisplay(item)} />
+            <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
+            {isWaterTrackedFactor(item) ? (
+              <DetailItem label="Calculation" value="Not calculated by default" />
+            ) : null}
+          </DetailSection>
+
+          <DetailSection title="Source Information">
+            <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
+            <DetailItem label="Source Document" value={traceability.sourceDocument} />
+            <DetailItem label="Source Year" value={traceability.sourceYear} />
+            <DetailItem
+              label="Source URL"
+              value={
+                traceability.sourceUrl ? (
+                  <a href={getSourceUrlHref(traceability.sourceUrl)} target="_blank" rel="noopener noreferrer">
+                    {traceability.sourceUrl}
+                  </a>
+                ) : null
+              }
+            />
+          </DetailSection>
+
+          <DetailSection title="Governance">
+            <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
+            <DetailItem label="Verification Status" value={traceability.verificationStatus} />
+            <DetailItem
+              label="Verified"
+              value={traceability.verified ? 'Yes' : 'No / user review required'}
+            />
+          </DetailSection>
+
+          <DetailSection title="Methodology">
+            <DetailItem label="Methodology" value={traceability.methodology} />
+            <DetailItem label="Notes" value={traceability.notes} />
+            <DetailItem
+              label="Audit History"
+              value={`Created: ${formatAuditDate(item.createdAt)}\nUpdated: ${formatAuditDate(item.updatedAt)}`}
+            />
+          </DetailSection>
         </div>
         <div style={{ marginTop: 20, textAlign: 'right' }}>
           <button type="button" onClick={onClose} style={cancelButtonStyle}>Close</button>
         </div>
       </div>
     </div>
+  );
+}
+
+function DetailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section style={detailSectionStyle}>
+      <h3 style={detailSectionTitleStyle}>{title}</h3>
+      <div style={detailSectionGridStyle}>{children}</div>
+    </section>
   );
 }
 
@@ -1097,9 +1261,13 @@ function DetailItem({
       <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
         {label}
       </div>
-      <div style={{ marginTop: 4, color: '#0f172a', whiteSpace: 'pre-line' }}>{value || '-'}</div>
+      <div style={detailValueStyle}>{isMissingDetailValue(value) ? 'Not specified' : value}</div>
     </div>
   );
+}
+
+function isMissingDetailValue(value: React.ReactNode) {
+  return value === null || value === undefined || value === '';
 }
 
 const pageHeaderStyle: React.CSSProperties = {
@@ -1431,8 +1599,53 @@ const detailsButtonStyle: React.CSSProperties = {
 
 const traceabilityDetailsStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
   gap: 14,
+};
+
+const modalBadgeRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  marginBottom: 12,
+};
+
+const systemFactorNoticeStyle: React.CSSProperties = {
+  border: '1px solid #bfdbfe',
+  borderRadius: 8,
+  background: '#eff6ff',
+  color: '#1e40af',
+  padding: '10px 12px',
+  marginBottom: 14,
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const detailSectionStyle: React.CSSProperties = {
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  padding: 14,
+  background: '#fff',
+};
+
+const detailSectionTitleStyle: React.CSSProperties = {
+  margin: '0 0 12px',
+  color: '#0f172a',
+  fontSize: 14,
+};
+
+const detailSectionGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+  gap: 12,
+};
+
+const detailValueStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: '#0f172a',
+  whiteSpace: 'pre-line',
+  overflowWrap: 'anywhere',
+  lineHeight: 1.45,
 };
 
 const modalBackdropStyle: React.CSSProperties = {

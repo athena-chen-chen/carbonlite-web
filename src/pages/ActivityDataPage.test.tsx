@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -117,6 +117,46 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(screen.getAllByLabelText(/More actions for/i)[0]);
     await userEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));
   }
+
+  it('shows an initial loading state inside the records table card', async () => {
+    let resolveRecords: (value: typeof records) => void = () => {};
+    vi.mocked(getAllActivityData).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRecords = resolve;
+      }) as ReturnType<typeof getAllActivityData>,
+    );
+
+    renderPage();
+
+    expect(screen.getByText('Loading activity records...')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/No activity records yet/i),
+    ).not.toBeInTheDocument();
+
+    resolveRecords(records);
+
+    expect(await screen.findByText('DIESEL')).toBeInTheDocument();
+  });
+
+  it('shows a retryable error state when activity records fail to load', async () => {
+    vi.mocked(getAllActivityData)
+      .mockRejectedValueOnce(new Error('Network failed'))
+      .mockResolvedValueOnce(records);
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Unable to load activity records.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Please try again.')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(getAllActivityData).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText('DIESEL')).toBeInTheDocument();
+  });
 
   it('uses neutral disabled state when no rows are selected and red enabled state when selected', async () => {
     renderPage();
@@ -244,7 +284,8 @@ describe('ActivityDataPage delete flows', () => {
   it('shows source references for imported records and manual fallback for manual records', async () => {
     renderPage();
 
-    expect(await screen.findByText('Source Reference')).toBeInTheDocument();
+    expect(await screen.findByText('DIESEL')).toBeInTheDocument();
+    expect(screen.getByText('Source Reference')).toBeInTheDocument();
     expect(screen.getAllByText('Manual Entry').length).toBeGreaterThan(0);
     expect(screen.getByText('Document')).toBeInTheDocument();
     expect(
@@ -403,12 +444,12 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-activity-incomplete');
 
-    expect(within(row).getByText('Incomplete')).toBeInTheDocument();
+    expect(within(row).getByText('Requires Review')).toBeInTheDocument();
     expect(within(row).getByText('⚠ Missing')).toBeInTheDocument();
     expect(within(row).getByText('Missing unit')).toBeInTheDocument();
-    expect(within(row).getByText('Incomplete')).toHaveAttribute(
+    expect(within(row).getByText('Requires Review')).toHaveAttribute(
       'title',
-      'This record requires additional information before calculations can be performed.',
+      'This record requires required fields before calculations can be performed.',
     );
     expect(within(row).getByRole('button', { name: 'View' })).toBeDisabled();
     expect(
@@ -434,7 +475,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-activity-missing-source');
 
-    expect(within(row).getByText('Complete')).toBeInTheDocument();
+    expect(within(row).getByText('Missing Source')).toBeInTheDocument();
     expect(within(row).getByText('Source unavailable')).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
   });

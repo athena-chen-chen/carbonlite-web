@@ -20,6 +20,7 @@ export type ConversionFactorInput = {
   sourceUrl?: string;
   methodology?: string;
   confidenceLevel?: string;
+  verificationStatus?: string;
   verified?: boolean;
   notes?: string;
   effectiveFrom?: string;
@@ -48,6 +49,7 @@ export type ConversionFactorItem = {
   sourceUrl?: string | null;
   methodology?: string | null;
   confidenceLevel?: string | null;
+  verificationStatus?: string | null;
   verified?: boolean | null;
   notes?: string | null;
   effectiveFrom?: string | null;

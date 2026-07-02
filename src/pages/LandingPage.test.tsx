@@ -59,7 +59,7 @@ describe('LandingPage auth buttons', () => {
   it('tracks the demo video CTA', async () => {
     renderLanding();
 
-    await userEvent.click(screen.getByRole('link', { name: /watch demo/i }));
+    await userEvent.click(screen.getByRole('link', { name: /view product demo/i }));
 
     expect(trackEvent).toHaveBeenCalledWith('DEMO_VIDEO_VIEWED', {
       video_name: 'CarbonLite AI demo',

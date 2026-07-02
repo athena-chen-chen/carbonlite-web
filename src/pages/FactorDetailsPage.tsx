@@ -178,13 +178,54 @@ function formatNumber(value?: number | null) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 8 });
 }
 
+function isWaterTrackedVersion(version: FactorVersion) {
+  const label = `${version.displayName ?? ''} ${version.source?.sourceDocument ?? ''}`.toLowerCase();
+
+  return (
+    label.includes('water') ||
+    (version.confidenceLevel === 'Pilot Estimate' &&
+      version.verificationStatus === 'Internal Review Required')
+  );
+}
+
+function formatFactorValueDisplay(version: FactorVersion) {
+  return isWaterTrackedVersion(version) ? 'Tracked only' : formatNumber(version.factorValue);
+}
+
+function formatResultUnitDisplay(version: FactorVersion) {
+  return isWaterTrackedVersion(version) ? 'Not applicable' : version.resultUnit;
+}
+
 function titleCase(value?: string | null) {
-  if (!value) return '-';
+  if (!value) return 'Not specified';
   return value
     .toLowerCase()
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function displayValue(value?: React.ReactNode | null) {
+  return value || 'Not specified';
+}
+
+function getSourceUrlHref(sourceUrl?: string | null) {
+  if (!sourceUrl) return '';
+
+  try {
+    const url = new URL(sourceUrl);
+    if (url.pathname.startsWith('/methodology/')) return url.pathname;
+  } catch {
+    if (sourceUrl.startsWith('/methodology/')) return sourceUrl;
+  }
+
+  return sourceUrl;
+}
+
+function getFactorTypeLabel(version: FactorVersion) {
+  if (version.source?.isOfficial) return 'Official Factor';
+  if (version.isSystem) return 'CarbonLite System Factor';
+  return 'Custom Factor';
 }
 
 function productionReady(version: FactorVersion) {
@@ -289,6 +330,9 @@ export function FactorDetailsPage() {
             </h1>
             <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <span style={statusBadgeStyle(version.status)}>{formatStatus(version.status)}</span>
+              <span style={statusBadgeStyle(version.source?.isOfficial ? 'OFFICIAL' : 'DRAFT')}>
+                {getFactorTypeLabel(version)}
+              </span>
               {version.verified ? <span style={statusBadgeStyle('VERIFIED')}>Verified</span> : null}
               <span style={statusBadgeStyle(ready ? 'OFFICIAL' : 'DRAFT')}>
                 {ready ? 'Production Ready' : 'Review Required'}
@@ -308,9 +352,9 @@ export function FactorDetailsPage() {
             </button>
             {source?.sourceUrl ? (
               <a
-                href={source.sourceUrl}
+                href={getSourceUrlHref(source.sourceUrl)}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 style={buttonStyle}
               >
                 View Source
@@ -335,9 +379,9 @@ export function FactorDetailsPage() {
             <Info label="Activity Type" value={titleCase(version.displayName)} />
             <Info label="Fuel Type" value={titleCase(version.displayName)} />
             <Info label="Scope" value="Source-specific" />
-            <Info label="Description" value={version.notes || 'No description provided.'} wide />
-            <Info label="Jurisdiction" value={version.jurisdictionRegion || '-'} />
-            <Info label="Country" value={version.jurisdictionCountry || '-'} />
+            <Info label="Description" value={displayValue(version.notes)} wide />
+            <Info label="Jurisdiction" value={displayValue(version.jurisdictionRegion)} />
+            <Info label="Country" value={displayValue(version.jurisdictionCountry)} />
             <Info label="Applicable Industry" value="Future field" />
           </InfoGrid>
         </Card>
@@ -345,40 +389,44 @@ export function FactorDetailsPage() {
         <Card title="Factor Information">
           <div style={{ marginBottom: 16 }}>
             <div style={labelStyle}>Factor Value</div>
-            <div style={factorValueStyle}>{formatNumber(version.factorValue)}</div>
+            <div style={factorValueStyle}>{formatFactorValueDisplay(version)}</div>
           </div>
           <InfoGrid>
             <Info label="Input Unit" value={version.inputUnit} />
-            <Info label="Output Unit" value={version.resultUnit} />
-            <Info label="Factor Year" value={version.factorYear ?? '-'} />
+            <Info label="Output Unit" value={formatResultUnitDisplay(version)} />
+            {isWaterTrackedVersion(version) ? (
+              <Info label="Calculation" value="Not calculated by default" />
+            ) : null}
+            <Info label="Factor Year" value={version.factorYear ?? 'Not specified'} />
             <Info label="Effective From" value={formatDate(version.effectiveFrom)} />
             <Info label="Effective To" value={formatDate(version.effectiveTo)} />
-            <Info label="Calculation Notes" value={version.notes || 'No calculation notes provided.'} wide />
+            <Info label="Methodology" value={displayValue(version.methodology)} wide />
+            <Info label="Calculation Notes" value={displayValue(version.notes)} wide />
           </InfoGrid>
         </Card>
 
         <Card title="Source Information" style={fullWidthCardStyle}>
           <InfoGrid>
-            <Info label="Source Authority" value={source?.sourceAuthority || 'Source not specified'} />
-            <Info label="Source Document" value={source?.sourceDocument || '-'} />
-            <Info label="Source Version" value={source?.sourceVersion || '-'} />
-            <Info label="Source Year" value={source?.sourceYear ?? '-'} />
+            <Info label="Source Authority" value={displayValue(source?.sourceAuthority)} />
+            <Info label="Source Document" value={displayValue(source?.sourceDocument)} />
+            <Info label="Source Version" value={displayValue(source?.sourceVersion)} />
+            <Info label="Source Year" value={source?.sourceYear ?? 'Not specified'} />
             <Info label="Publisher Type" value={titleCase(source?.publisherType)} />
             <Info label="Official Source" value={source?.isOfficial ? 'Yes' : 'No'} />
             <Info label="Publication Date" value={formatDate(source?.publishedDate)} />
-            <Info label="Page" value={version.sourcePage || source?.page || '-'} />
-            <Info label="Table" value={version.sourceTable || source?.tableReference || '-'} />
-            <Info label="Section" value={version.sourceSection || '-'} />
+            <Info label="Page" value={displayValue(version.sourcePage || source?.page)} />
+            <Info label="Table" value={displayValue(version.sourceTable || source?.tableReference)} />
+            <Info label="Section" value={displayValue(version.sourceSection)} />
             <Info label="Citation" value={citation} wide />
             <Info
               label="Source URL"
               value={
                 source?.sourceUrl ? (
-                  <a href={source.sourceUrl} target="_blank" rel="noreferrer">
+                  <a href={getSourceUrlHref(source.sourceUrl)} target="_blank" rel="noopener noreferrer">
                     {source.sourceUrl}
                   </a>
                 ) : (
-                  '-'
+                  'Not specified'
                 )
               }
               wide
@@ -386,7 +434,7 @@ export function FactorDetailsPage() {
           </InfoGrid>
           <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
             {source?.sourceUrl ? (
-              <a href={source.sourceUrl} target="_blank" rel="noreferrer" style={primaryButtonStyle}>
+              <a href={getSourceUrlHref(source.sourceUrl)} target="_blank" rel="noopener noreferrer" style={primaryButtonStyle}>
                 Open PDF
               </a>
             ) : null}
@@ -403,12 +451,13 @@ export function FactorDetailsPage() {
           <InfoGrid>
             <Info label="Status" value={<span style={statusBadgeStyle(version.status)}>{formatStatus(version.status)}</span>} />
             <Info label="Confidence Level" value={titleCase(version.confidenceLevel)} />
+            <Info label="Verification Status" value={displayValue(version.verificationStatus)} />
             <Info label="Verified" value={version.verified ? 'Yes' : 'No'} />
-            <Info label="Reviewed By" value={version.reviewedBy || '-'} />
+            <Info label="Reviewed By" value={displayValue(version.reviewedBy)} />
             <Info label="Reviewed At" value={formatDateTime(version.reviewedAt)} />
-            <Info label="Approval Source" value={version.approvalSource || '-'} />
+            <Info label="Approval Source" value={displayValue(version.approvalSource)} />
             <Info label="Production Ready" value={ready ? 'Yes' : 'No'} />
-            <Info label="Review Notes" value={version.reviewNotes || 'No review notes provided.'} wide />
+            <Info label="Review Notes" value={displayValue(version.reviewNotes)} wide />
           </InfoGrid>
         </Card>
 
@@ -448,7 +497,9 @@ export function FactorDetailsPage() {
                       <strong>{item.version}</strong>
                       {item.id === version.id ? <div style={mutedStyle}>Current view</div> : null}
                     </td>
-                    <td style={tdStyle}>{formatNumber(item.factorValue)} {item.resultUnit}</td>
+                    <td style={tdStyle}>
+                      {formatFactorValueDisplay(item)} {isWaterTrackedVersion(item) ? '' : item.resultUnit}
+                    </td>
                     <td style={tdStyle}>
                       <span style={statusBadgeStyle(item.status)}>{formatStatus(item.status)}</span>
                     </td>
@@ -544,7 +595,7 @@ function Info({
   return (
     <div style={wide ? { gridColumn: '1 / -1' } : undefined}>
       <div style={labelStyle}>{label}</div>
-      <div style={valueStyle}>{value || '-'}</div>
+      <div style={valueStyle}>{value || 'Not specified'}</div>
     </div>
   );
 }

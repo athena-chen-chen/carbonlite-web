@@ -7,6 +7,9 @@ export type ActivityDataInput = {
   recordDate: string | null;
   quantity: number;
   unit: string;
+  jurisdictionCountry?: string;
+  jurisdictionRegion?: string;
+  recordYear?: number;
   sourceType: string;
   sourceReference?: string;
   notes?: string;
@@ -45,6 +48,9 @@ export type ActivityDataItem = {
   periodEnd?: string | null;
   quantity: string | number;
   unit: string;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  recordYear?: number | null;
   sourceType: string;
   sourceReference?: string | null;
   notes?: string | null;
@@ -92,6 +98,9 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     recordDate: input.recordDate,
     quantity: Number(input.quantity),
     unit: input.unit.trim(),
+    jurisdictionCountry: normalizeOptionalString(input.jurisdictionCountry),
+    jurisdictionRegion: normalizeOptionalString(input.jurisdictionRegion),
+    recordYear: input.recordYear,
     sourceType: input.sourceType.trim(),
     sourceReference: normalizeOptionalString(input.sourceReference),
     notes: normalizeOptionalString(input.notes),

@@ -47,14 +47,28 @@ describe('ConversionFactorsPage traceability', () => {
     vi.clearAllMocks();
   });
 
-  it('provides MVP traceability defaults for system factors without confirmed sources', () => {
-    expect(getFactorTraceability(baseFactor)).toMatchObject({
-      sourceAuthority: 'CarbonLite system defaults',
-      sourceDocument: 'Pilot default factor library',
+  it('uses database traceability values for system factors', () => {
+    expect(
+      getFactorTraceability({
+        ...baseFactor,
+        sourceAuthority: 'CarbonLite System Defaults',
+        sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+        methodology:
+          'Used for pilot validation. Intended for demonstration workflows only. Replace with official ECCC or provincial emission factors before production reporting.',
+        confidenceLevel: 'Medium (Engineering Estimate)',
+        verificationStatus: 'Internal Review Required',
+        verified: false,
+        notes: 'Default system factor included with CarbonLite MVP. Not intended for regulatory reporting.',
+      }),
+    ).toMatchObject({
+      sourceAuthority: 'CarbonLite System Defaults',
+      sourceDocument: 'CarbonLite MVP Default Factors v1.0',
       methodology:
-        'Used for pilot workflow validation; replace with verified ECCC/Alberta factors before production reporting',
+        'Used for pilot validation. Intended for demonstration workflows only. Replace with official ECCC or provincial emission factors before production reporting.',
+      confidenceLevel: 'Medium (Engineering Estimate)',
+      verificationStatus: 'Internal Review Required',
       verified: false,
-      notes: 'Demo factor. Verify before client or regulatory reporting.',
+      notes: 'Default system factor included with CarbonLite MVP. Not intended for regulatory reporting.',
     });
   });
 
@@ -79,7 +93,18 @@ describe('ConversionFactorsPage traceability', () => {
   it('displays system factor traceability and verified badge only for verified factors', async () => {
     vi.mocked(getConversionFactors).mockResolvedValue({
       items: [
-        baseFactor,
+        {
+          ...baseFactor,
+          sourceAuthority: 'CarbonLite System Defaults',
+          sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+          sourceYear: 2025,
+          sourceUrl: 'https://carbonlite.ai/methodology/default-factors',
+          methodology:
+            'Used for pilot validation. Intended for demonstration workflows only. Replace with official ECCC or provincial emission factors before production reporting.',
+          confidenceLevel: 'Medium (Engineering Estimate)',
+          verificationStatus: 'Internal Review Required',
+          notes: 'Default system factor included with CarbonLite MVP. Not intended for regulatory reporting.',
+        },
         {
           ...baseFactor,
           id: 'factor-2',
@@ -110,12 +135,12 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('CarbonLite')).toBeInTheDocument();
-    expect(screen.getByText('Environment and Climate Change Canada')).toBeInTheDocument();
+    const viewButtons = await screen.findAllByRole('button', { name: 'View' });
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'View' })[1]);
+    await userEvent.click(viewButtons[1]);
 
     expect(screen.getAllByText('Verified').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Environment and Climate Change Canada').length).toBeGreaterThan(0);
     expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
     expect(screen.getByText('Canada National Inventory Report')).toBeInTheDocument();
     expect(screen.getByText('ISO-aligned methodology review.')).toBeInTheDocument();

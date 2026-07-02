@@ -35,6 +35,9 @@ type ActivityDataItem = {
   recordDate?: string | null;
   quantity?: string | number | null;
   unit?: string | null;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  recordYear?: number | null;
   documentId?: string | null;
   sourceDocumentId?: string | null;
   sourceFileName?: string | null;
@@ -52,6 +55,7 @@ export function ActivityDataPage() {
   const [items, setItems] = useState<ActivityDataItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recordLoadError, setRecordLoadError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
 const [editingId, setEditingId] = useState<string | null>(null);
@@ -65,6 +69,7 @@ const [bulkDeleting, setBulkDeleting] = useState(false);
 const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
 const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
+const [qualityFilter, setQualityFilter] = useState('all');
 const [visibleColumns, setVisibleColumns] = useState<Record<ActivityTableColumnKey, boolean>>({
   status: true,
   date: true,
@@ -78,11 +83,12 @@ const [tableHasOverflow, setTableHasOverflow] = useState(false);
 const tableScrollRef = useRef<HTMLDivElement | null>(null);
 const columnMenuRef = useRef<HTMLDivElement | null>(null);
 const actionMenuRef = useRef<HTMLDivElement | null>(null);
+const actionMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const documentFilterId = searchParams.get('documentId');
 const recordFilterId = searchParams.get('recordId');
 const sourceDocumentNameFromState =
   (location.state as { sourceDocumentName?: string } | null)?.sourceDocumentName;
-const filteredItems = recordFilterId
+const scopeFilteredItems = recordFilterId
   ? items.filter((item) => item.id === recordFilterId)
   : documentFilterId
   ? items.filter((item) => {
@@ -90,14 +96,18 @@ const filteredItems = recordFilterId
       return recordDocumentId === documentFilterId;
     })
   : items;
+const filteredItems = scopeFilteredItems.filter((item) =>
+  qualityFilter === 'all' ? true : getActivityRecordQuality(item).filterKey === qualityFilter,
+);
 const documentFilterName =
   sourceDocumentNameFromState ??
-  filteredItems.find((item) => item.sourceFileName)?.sourceFileName ??
+  scopeFilteredItems.find((item) => item.sourceFileName)?.sourceFileName ??
   documentFilterId;
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
     setLoading(true);
+    setRecordLoadError(null);
     try {
       const nextItems = (await getAllActivityData()) as ActivityDataItem[];
 
@@ -105,7 +115,13 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
         setItems(nextItems);
       }
 
+      setRecordLoadError(null);
       return nextItems;
+    } catch {
+      const message = 'Unable to load activity records. Please try again.';
+      setRecordLoadError(message);
+      setError(message);
+      return items;
     } finally {
       setLoading(false);
     }
@@ -154,6 +170,9 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
   useEffect(() => {
     loadItems();
   }, []);
+
+  const isInitialRecordsLoading = loading && items.length === 0 && !recordLoadError;
+  const isRefreshingRecords = loading && items.length > 0;
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const paginatedItems = filteredItems.slice(
@@ -242,10 +261,17 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
       setActionMenuPosition(null);
     }
 
-    function handleDocumentClick(event: MouseEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target && actionMenuRef.current?.contains(target)) return;
-      if (target?.closest('[data-activity-action-menu-button="true"]')) return;
+    function isInsideActiveActionMenu(target: Node | null) {
+      const activeButton = actionMenuButtonRefs.current[openActionMenuId];
+
+      return Boolean(
+        target &&
+          (actionMenuRef.current?.contains(target) || activeButton?.contains(target)),
+      );
+    }
+
+    function handleDocumentPointerDown(event: PointerEvent) {
+      if (isInsideActiveActionMenu(event.target as Node | null)) return;
       closeActionMenu();
     }
 
@@ -255,13 +281,25 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
       }
     }
 
-    document.addEventListener('click', handleDocumentClick);
+    function handleFocusIn(event: FocusEvent) {
+      if (isInsideActiveActionMenu(event.target as Node | null)) return;
+      closeActionMenu();
+    }
+
+    const tableScrollContainer = tableScrollRef.current;
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('focusin', handleFocusIn);
     window.addEventListener('scroll', closeActionMenu, true);
+    tableScrollContainer?.addEventListener('scroll', closeActionMenu);
+
     return () => {
-      document.removeEventListener('click', handleDocumentClick);
+      document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
       document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('focusin', handleFocusIn);
       window.removeEventListener('scroll', closeActionMenu, true);
+      tableScrollContainer?.removeEventListener('scroll', closeActionMenu);
     };
   }, [openActionMenuId]);
 
@@ -413,6 +451,85 @@ function isActivityRecordIncomplete(row: ActivityDataItem) {
     !Number.isFinite(quantity) ||
     quantity <= 0
   );
+}
+
+function getActivityRecordQuality(row: ActivityDataItem) {
+  const normalizedUnit = normalizeUnitForDisplay(row.unit);
+  const notes = String(row.notes ?? '').toLowerCase();
+  const activityType = String(row.activityType ?? '').toUpperCase();
+  const missingRequired =
+    isMissingRecordValue(row.activityType) ||
+    isMissingRecordValue(row.recordDate) ||
+    isMissingRecordValue(row.quantity) ||
+    isMissingRecordValue(row.unit) ||
+    Number(row.quantity) <= 0;
+  const missingSource =
+    row.sourceType !== 'MANUAL' &&
+    !row.sourceDocumentId &&
+    !row.documentId &&
+    !row.sourceFileName &&
+    !row.sourceReference;
+
+  if (activityType === 'ELECTRICITY' && isMissingRecordValue(row.jurisdictionRegion)) {
+    return {
+      label: 'Province required',
+      filterKey: 'missing-jurisdiction',
+      tone: 'warning' as const,
+      title: 'Electricity emissions require a province-specific factor. Add province or facility location.',
+    };
+  }
+
+  if (normalizedUnit.status === 'invalid' || notes.includes('invalid unit')) {
+    return {
+      label: 'Invalid Unit',
+      filterKey: 'invalid-unit',
+      tone: 'warning' as const,
+      title: 'Invalid unit. Please review this record before calculation.',
+    };
+  }
+
+  if (missingRequired || normalizedUnit.status === 'missing') {
+    return {
+      label: 'Requires Review',
+      filterKey: 'requires-review',
+      tone: 'warning' as const,
+      title: 'This record requires required fields before calculations can be performed.',
+    };
+  }
+
+  if (['WATER', 'WASTE', 'WASTE_VOLUME'].includes(activityType) || notes.includes('tracked metric')) {
+    return {
+      label: 'Tracked Metric',
+      filterKey: 'tracked-metric',
+      tone: 'info' as const,
+      title: 'This record is tracked for operational insight and excluded from emissions totals by default.',
+    };
+  }
+
+  if (notes.includes('missing factor') || notes.includes('no conversion factor')) {
+    return {
+      label: 'Missing Factor',
+      filterKey: 'missing-factor',
+      tone: 'warning' as const,
+      title: 'No matching conversion factor is available yet.',
+    };
+  }
+
+  if (missingSource) {
+    return {
+      label: 'Missing Source',
+      filterKey: 'missing-source',
+      tone: 'neutral' as const,
+      title: 'Add a source reference to improve traceability.',
+    };
+  }
+
+  return {
+    label: 'Ready',
+    filterKey: 'ready',
+    tone: 'success' as const,
+    title: 'This record has the required fields for calculation review.',
+  };
 }
 
 function formatRequiredRecordValue(value: unknown) {
@@ -631,6 +748,7 @@ function getEditInputStyle(field: string): React.CSSProperties {
 }
 function renderNormalRow(row){
   const isIncomplete = isActivityRecordIncomplete(row);
+  const quality = getActivityRecordQuality(row);
 
   return (
     <tr
@@ -648,14 +766,10 @@ function renderNormalRow(row){
       {visibleColumns.status ? (
       <td style={tdStyle}>
         <span
-          style={recordStatusBadgeStyle(isIncomplete)}
-          title={
-            isIncomplete
-              ? 'This record requires additional information before calculations can be performed.'
-              : 'This record is complete.'
-          }
+          style={recordStatusBadgeStyle(quality.tone)}
+          title={quality.title}
         >
-          {isIncomplete ? 'Incomplete' : 'Complete'}
+          {quality.label}
         </span>
       </td>
       ) : null}
@@ -685,6 +799,9 @@ function renderNormalRow(row){
           </button>
           <div style={overflowMenuWrapperStyle}>
             <button
+              ref={(element) => {
+                actionMenuButtonRefs.current[row.id] = element;
+              }}
               type="button"
               data-activity-action-menu-button="true"
               aria-label={`More actions for ${row.activityType} ${row.recordDate?.slice(0, 10) ?? ''}`}
@@ -714,7 +831,7 @@ function renderEditRow(row){
 
       {visibleColumns.status ? (
       <td style={tdStyle}>
-        <span style={recordStatusBadgeStyle(false)}>Editing</span>
+        <span style={recordStatusBadgeStyle('info')}>Editing</span>
       </td>
       ) : null}
 
@@ -822,6 +939,11 @@ function cancelEdit() {
   setEditRow({});
   setEditErrors({});
 }
+function handleRetryLoad() {
+  setError(null);
+  setRecordLoadError(null);
+  void loadItems();
+}
 const errorTextStyle: React.CSSProperties = {
   marginTop: 4,
   color: '#dc2626',
@@ -896,6 +1018,24 @@ const errorTextStyle: React.CSSProperties = {
   <h2 style={{ margin: 0 }}>Activity Records</h2>
 
   <div style={tableToolbarStyle}>
+    <label style={qualityFilterLabelStyle}>
+      <span>Show</span>
+      <select
+        value={qualityFilter}
+        onChange={(event) => setQualityFilter(event.target.value)}
+        style={qualityFilterSelectStyle}
+      >
+        <option value="all">All records</option>
+        <option value="ready">Ready records</option>
+        <option value="requires-review">Records requiring review</option>
+        <option value="tracked-metric">Tracked metrics</option>
+        <option value="missing-factor">Missing factor records</option>
+        <option value="missing-jurisdiction">Missing province records</option>
+        <option value="invalid-unit">Invalid unit records</option>
+        <option value="missing-source">Missing source records</option>
+      </select>
+    </label>
+
     <div ref={columnMenuRef} style={columnMenuWrapperStyle}>
       <button
         type="button"
@@ -981,8 +1121,23 @@ const errorTextStyle: React.CSSProperties = {
           </div>
         ) : null}
 
-        {loading ? (
-          <p>Loading...</p>
+        {isRefreshingRecords ? (
+          <div style={refreshingNoticeStyle}>
+            <span style={loadingBarStyle} aria-hidden="true" />
+            Refreshing activity records...
+          </div>
+        ) : null}
+
+        {isInitialRecordsLoading ? (
+          <ActivityRecordsLoadingState visibleColumns={visibleColumns} />
+        ) : recordLoadError && items.length === 0 ? (
+          <div style={tableErrorStateStyle}>
+            <div style={{ fontWeight: 800 }}>Unable to load activity records.</div>
+            <div>Please try again.</div>
+            <button type="button" onClick={handleRetryLoad} style={retryButtonStyle}>
+              Retry
+            </button>
+          </div>
         ) : filteredItems.length === 0 ? (
           <div style={emptyStateStyle}>
             {recordFilterId
@@ -1074,6 +1229,55 @@ function Card({ title, value, icon }: any) {
   );
 }
 
+function ActivityRecordsLoadingState({
+  visibleColumns,
+}: {
+  visibleColumns: Record<ActivityTableColumnKey, boolean>;
+}) {
+  const skeletonRows = Array.from({ length: 5 }, (_, index) => index);
+
+  return (
+    <div style={loadingStateStyle} aria-busy="true" aria-live="polite">
+      <div style={loadingStateHeaderStyle}>
+        <span>Loading activity records...</span>
+        <span style={loadingBarStyle} aria-hidden="true" />
+      </div>
+      <div style={tableScrollContainerStyle}>
+        <table style={activityRecordsTableStyle}>
+          <thead>
+            <tr>
+              <th style={checkboxThStyle} />
+              {visibleColumns.status ? <th style={statusThStyle}>Status</th> : null}
+              {visibleColumns.date ? <th style={dateThStyle}>Date</th> : null}
+              {visibleColumns.type ? <th style={typeThStyle}>Type</th> : null}
+              {visibleColumns.quantity ? <th style={quantityThStyle}>Quantity</th> : null}
+              {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
+              {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
+              {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
+              <th style={actionsThStyle} />
+            </tr>
+          </thead>
+          <tbody>
+            {skeletonRows.map((row) => (
+              <tr key={row}>
+                <td style={tdStyle}><span style={skeletonDotStyle} /></td>
+                {visibleColumns.status ? <td style={tdStyle}><span style={skeletonPillStyle} /></td> : null}
+                {visibleColumns.date ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
+                {visibleColumns.type ? <td style={tdStyle}><span style={skeletonLineWideStyle} /></td> : null}
+                {visibleColumns.quantity ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
+                {visibleColumns.unit ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
+                {visibleColumns.source ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
+                {visibleColumns.sourceReference ? <td style={tdStyle}><span style={skeletonLineFullStyle} /></td> : null}
+                <td style={actionsCellStyle}><span style={skeletonButtonStyle} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ⭐ Styles */
 
 const card = {
@@ -1136,6 +1340,25 @@ const tableToolbarStyle: React.CSSProperties = {
   flexWrap: 'wrap',
   justifyContent: 'flex-end',
   marginLeft: 'auto',
+};
+
+const qualityFilterLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  color: '#475569',
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const qualityFilterSelectStyle: React.CSSProperties = {
+  height: 38,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#0f172a',
+  padding: '0 10px',
+  fontWeight: 700,
 };
 
 const columnMenuWrapperStyle: React.CSSProperties = {
@@ -1395,7 +1618,14 @@ const highlightedRecordRowStyle: React.CSSProperties = {
   transition: 'background 0.2s ease, box-shadow 0.2s ease',
 };
 
-function recordStatusBadgeStyle(incomplete: boolean): React.CSSProperties {
+function recordStatusBadgeStyle(tone: 'success' | 'warning' | 'info' | 'neutral'): React.CSSProperties {
+  const colors = {
+    success: { color: '#047857', background: '#d1fae5' },
+    warning: { color: '#b45309', background: '#fef3c7' },
+    info: { color: '#0369a1', background: '#dbeafe' },
+    neutral: { color: '#475569', background: '#f1f5f9' },
+  }[tone];
+
   return {
     display: 'inline-flex',
     alignItems: 'center',
@@ -1403,8 +1633,8 @@ function recordStatusBadgeStyle(incomplete: boolean): React.CSSProperties {
     padding: '3px 8px',
     fontSize: 12,
     fontWeight: 700,
-    color: incomplete ? '#b45309' : '#047857',
-    background: incomplete ? '#fef3c7' : '#d1fae5',
+    color: colors.color,
+    background: colors.background,
     whiteSpace: 'nowrap',
   };
 }
@@ -1558,4 +1788,105 @@ const emptyStateStyle: React.CSSProperties = {
   border: '1px solid #e2e8f0',
   background: '#f8fafc',
   color: '#475569',
+};
+
+const loadingStateStyle: React.CSSProperties = {
+  marginTop: 14,
+};
+
+const loadingStateHeaderStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  color: '#475569',
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const loadingBarStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  height: 4,
+  borderRadius: 999,
+  overflow: 'hidden',
+  background:
+    'linear-gradient(90deg, #d1fae5 0%, #10b981 45%, #d1fae5 90%)',
+  backgroundSize: '180% 100%',
+};
+
+const refreshingNoticeStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  marginTop: 12,
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #bbf7d0',
+  background: '#f0fdf4',
+  color: '#047857',
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const tableErrorStateStyle: React.CSSProperties = {
+  marginTop: 16,
+  padding: 18,
+  borderRadius: 12,
+  border: '1px solid #fecaca',
+  background: '#fff1f2',
+  color: '#991b1b',
+  display: 'grid',
+  gap: 10,
+};
+
+const retryButtonStyle: React.CSSProperties = {
+  justifySelf: 'start',
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: '1px solid #be123c',
+  background: '#fff',
+  color: '#be123c',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const skeletonBaseStyle: React.CSSProperties = {
+  display: 'inline-block',
+  borderRadius: 999,
+  background: '#e2e8f0',
+};
+
+const skeletonDotStyle: React.CSSProperties = {
+  ...skeletonBaseStyle,
+  width: 16,
+  height: 16,
+};
+
+const skeletonPillStyle: React.CSSProperties = {
+  ...skeletonBaseStyle,
+  width: 78,
+  height: 20,
+};
+
+const skeletonLineStyle: React.CSSProperties = {
+  ...skeletonBaseStyle,
+  width: 72,
+  height: 12,
+};
+
+const skeletonLineWideStyle: React.CSSProperties = {
+  ...skeletonBaseStyle,
+  width: 110,
+  height: 12,
+};
+
+const skeletonLineFullStyle: React.CSSProperties = {
+  ...skeletonBaseStyle,
+  width: '82%',
+  height: 12,
+};
+
+const skeletonButtonStyle: React.CSSProperties = {
+  ...skeletonBaseStyle,
+  width: 72,
+  height: 28,
+  borderRadius: 8,
 };

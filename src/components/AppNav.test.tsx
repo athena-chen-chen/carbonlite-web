@@ -47,9 +47,9 @@ describe('AppNav logout flow', () => {
 
     [
       'Upload',
-      'Data Records',
-      'Conversion Factors',
-      'Metrics Summary',
+      'Records',
+      'Factors',
+      'Metrics',
       'Reports',
     ].forEach((label) => {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href');
@@ -76,12 +76,13 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
+    expect(screen.queryByRole('button', { name: /admin/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Feedback' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument();
   });
 
-  it('shows internal navigation to administrators', () => {
+  it('shows admin feedback and activity navigation in a compact dropdown', async () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
       'currentUser',
@@ -100,9 +101,21 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('link', { name: 'Feedback' })).toHaveAttribute('href', '/feedback');
-    expect(screen.getByRole('link', { name: 'Activity' })).toHaveAttribute('href', '/activity');
-    expect(screen.getByRole('link', { name: 'Audit Log' })).toHaveAttribute('href', '/audit-log');
+    expect(screen.getByRole('button', { name: /admin/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByRole('link', { name: 'Feedback' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /admin/i }));
+
+    expect(screen.getByRole('button', { name: /admin/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByRole('menuitem', { name: 'Feedback' })).toHaveAttribute('href', '/feedback');
+    expect(screen.getByRole('menuitem', { name: 'Activity' })).toHaveAttribute('href', '/activity');
+    expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument();
   });
 
 

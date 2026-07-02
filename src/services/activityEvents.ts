@@ -35,6 +35,10 @@ export type ActivityEventQuery = {
   pagePath?: string;
   user?: string;
   organization?: string;
+  organizationId?: string;
+  hideTestAccounts?: boolean;
+  page?: number;
+  pageSize?: number;
 };
 
 export type ActivityEventListResponse = {
@@ -50,6 +54,8 @@ export type ActivityEventSummary = {
   thisWeek?: number;
   thisMonth?: number;
   activeUsers: number;
+  organizations?: number;
+  newUsers?: number;
   documentsUploaded: number;
   extractionAttempts: number;
   successfulExtractions: number;
@@ -60,13 +66,17 @@ export type ActivityEventSummary = {
 
 export type ActiveUserItem = {
   userId: string;
+  displayName?: string | null;
   name?: string | null;
   email?: string | null;
+  role?: string | null;
   organizationId?: string | null;
   organizationName?: string | null;
   activityCount: number;
+  firstSeenAt?: string | null;
   lastActiveAt?: string | null;
   mostRecentActivityType?: string | null;
+  isTestAccount?: boolean;
 };
 
 export type ActiveUsersResponse = {
@@ -86,7 +96,7 @@ function buildQuery(query: ActivityEventQuery) {
   const params = new URLSearchParams();
 
   Object.entries(query).forEach(([key, value]) => {
-    if (value) params.set(key, value);
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
   });
 
   const suffix = params.toString();

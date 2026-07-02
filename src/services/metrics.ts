@@ -62,6 +62,86 @@ export type MetricsSummaryResponse = {
   missingFactorRecords?: number;
   invalidRecordCount?: number;
   dataQualityCoverage?: number;
+  calculatedRecordCount?: number;
+  skippedRecordCount?: number;
+  totalRecordCount?: number;
+  totalEmissions?: number;
+  emissionsUnit?: 'kgCO2e' | 'tCO2e';
+  categoryBreakdown?: Array<{
+    activityType: string;
+    emissions: number;
+    recordCount: number;
+    calculatedRecordCount: number;
+    skippedRecordCount: number;
+  }>;
+  calculationIssues?: Array<{
+    issueType: string;
+    count: number;
+    message: string;
+  }>;
+  hotspotSummary?: {
+    totalCalculatedEmissions: number;
+    emissionsUnit: 'kgCO2e' | 'tCO2e';
+    calculatedRecordCount: number;
+    excludedRecordCount: number;
+    totalRecordCount: number;
+    topCategory?: {
+      activityType: string;
+      emissions: number;
+      percentageOfTotal: number;
+    } | null;
+    categoryHotspots: Array<{
+      activityType: string;
+      displayName: string;
+      emissions: number;
+      percentageOfTotal: number;
+      recordCount: number;
+      calculatedRecordCount: number;
+      excludedRecordCount: number;
+      rank: number;
+      hotspotLevel: 'HIGH' | 'MEDIUM' | 'LOW';
+      focusMessage: string;
+    }>;
+    excludedCategories: Array<{
+      activityType: string;
+      displayName: string;
+      excludedRecordCount: number;
+      reason: 'MISSING_FACTOR' | 'INVALID_UNIT' | 'TRACKED_ONLY' | 'NEEDS_REVIEW' | 'MISSING_JURISDICTION';
+      message: string;
+    }>;
+    focusRecommendations: Array<{
+      priority: 'HIGH' | 'MEDIUM' | 'LOW';
+      title: string;
+      message: string;
+      relatedActivityType?: string;
+    }>;
+  };
+  dataQualitySummary?: {
+    totalRecords: number;
+    recordsReadyForCalculation: number;
+    recordsRequiringReview: number;
+    missingActivityTypeCount: number;
+    missingQuantityCount: number;
+    missingUnitCount: number;
+    invalidUnitCount: number;
+    missingDateCount: number;
+    missingJurisdictionCount: number;
+    missingFactorCount: number;
+    trackedOnlyCount: number;
+    sourceReferenceCoverage: number;
+    costDataCoverage: number;
+    dataReadinessScore: number;
+    readinessLevel: 'Good' | 'Needs Review' | 'Incomplete';
+    message: string;
+    checklist: Array<{
+      key: string;
+      label: string;
+      passed: boolean;
+      count?: number;
+      total?: number;
+      message: string;
+    }>;
+  };
   skippedReasons?: {
     missingFactor: number;
     invalidQuantity: number;
@@ -69,6 +149,7 @@ export type MetricsSummaryResponse = {
     outsideScope: number;
     outsideDateRange: number;
     invalidData: number;
+    trackedOnly?: number;
   };
   usageTotals?: {
     fuel: number;
@@ -88,6 +169,7 @@ export type MetricsSummaryResponse = {
     availableUnitsForActivityType?: string[];
   }>;
   calculationDetails?: CalculationAuditDetail[];
+  records?: CalculationExplanation[];
   matchedActivityEmissions?: Array<{
     activityDataId: string;
     activityType: string;
@@ -172,6 +254,7 @@ export type CalculationAuditDetail = {
   sourceYear?: number | null;
   factorVerified: boolean;
   factorConfidenceLevel?: string | null;
+  factorVerificationStatus?: string | null;
   factorType?: 'System' | 'Custom' | null;
   calculatedEmission?: number | null;
   calculatedEmissionsKgCO2e?: number | null;
@@ -181,12 +264,16 @@ export type CalculationAuditDetail = {
   matchedBy?: string | null;
   matchingMethod?: string | null;
   matchingMessage?: string | null;
+  explanationStatus?: string | null;
+  explanationMatchedBy?: string | null;
   status:
     | 'CALCULATED'
     | 'MISSING_FACTOR'
     | 'INVALID_QUANTITY'
     | 'INVALID_UNIT'
     | 'MISSING_DATA'
+    | 'MISSING_JURISDICTION'
+    | 'TRACKED_ONLY'
     | 'OUTSIDE_SCOPE';
   reason?: string | null;
   availableUnitsForActivityType?: string[];
@@ -198,6 +285,56 @@ export type CalculationAuditDetail = {
   sourceTextSnippet?: string | null;
   sourceDocumentId?: string | null;
   notes?: string | null;
+};
+
+export type CalculationExplanation = {
+  activityRecordId: string;
+  activityType: string;
+  quantity: number | null;
+  unit: string | null;
+  normalizedQuantity?: number | null;
+  normalizedUnit?: string | null;
+  recordDate?: string | null;
+  recordYear?: number | null;
+  facilityName?: string | null;
+  jurisdiction?: string | null;
+  calculationStatus: string;
+  calculatedEmissions?: number | null;
+  resultUnit?: string | null;
+  factor?: {
+    factorId?: string | null;
+    factorVersionId?: string | null;
+    activityType?: string | null;
+    factorValue?: number | null;
+    inputUnit?: string | null;
+    resultUnit?: string | null;
+    jurisdiction?: string | null;
+    factorYear?: number | null;
+    sourceAuthority?: string | null;
+    sourceDocument?: string | null;
+    sourceYear?: number | null;
+    sourceUrl?: string | null;
+    confidenceLevel?: string | null;
+    verificationStatus?: string | null;
+    verified?: boolean | null;
+    isSystem?: boolean | null;
+    isOfficial?: boolean | null;
+  } | null;
+  matching?: {
+    matched: boolean;
+    matchedBy:
+      | 'EXACT'
+      | 'COUNTRY_LEVEL'
+      | 'SYSTEM_DEFAULT'
+      | 'PRIOR_YEAR'
+      | 'PLACEHOLDER'
+      | 'TRACKED_ONLY'
+      | 'NO_MATCH'
+      | 'INVALID_UNIT';
+    message: string;
+  };
+  formula?: string | null;
+  warning?: string | null;
 };
 
 export async function calculateMetrics(activityDataIds: string[]) {
@@ -262,6 +399,10 @@ export async function getCalculationSummary(params?: {
   const searchParams = new URLSearchParams();
   if (params?.periodStart) searchParams.set('periodStart', params.periodStart);
   if (params?.periodEnd) searchParams.set('periodEnd', params.periodEnd);
+  const hasSelectedScope = Boolean(
+    params?.selectedActivityRecordIds?.length || params?.selectedDocumentIds?.length,
+  );
+
   if (params?.selectedActivityRecordIds?.length) {
     searchParams.set(
       'selectedActivityRecordIds',
@@ -273,7 +414,11 @@ export async function getCalculationSummary(params?: {
   }
 
   const query = searchParams.toString();
+  const endpoint = hasSelectedScope
+    ? '/metrics/calculation-summary'
+    : '/metrics/summary';
+
   return apiFetch<MetricsSummaryResponse>(
-    `/metrics/calculation-summary${query ? `?${query}` : ''}`,
+    `${endpoint}${query ? `?${query}` : ''}`,
   );
 }

@@ -235,6 +235,10 @@ export async function loadMetricsOverview(options?: {
     supplementalCalculations,
     activities,
   );
+  const mergedCalculationIssues = mergeCalculationDetailsIntoIssueItems(
+    mergedMissingFactors,
+    mergedCalculationDetails,
+  );
   const mergedMatchedActivityEmissions = [
     ...(summary.matchedActivityEmissions ?? []),
     ...supplementalCalculations.map((item) =>
@@ -254,7 +258,7 @@ export async function loadMetricsOverview(options?: {
     totalEstimatedEmissionsKgCO2e:
       (summary.totalEstimatedEmissionsKgCO2e ?? 0) + supplementalEmissions,
     matchedFactorsCount: mergedProcessedRecords,
-    missingFactors: mergedMissingFactors,
+    missingFactors: mergedCalculationIssues,
     matchedActivityEmissions: mergedMatchedActivityEmissions,
     conversionFactorsUsed: mergedConversionFactorsUsed,
     calculationDetails: mergedCalculationDetails,
@@ -272,6 +276,36 @@ export async function loadMetricsOverview(options?: {
     totalRecords: recordsInScope,
     recordsInScope,
   };
+}
+
+function mergeCalculationDetailsIntoIssueItems(
+  missingFactors: MetricsSummaryResponse['missingFactors'] = [],
+  calculationDetails: CalculationAuditDetail[] = [],
+) {
+  const existingIds = new Set(
+    missingFactors.map((item) => item.activityDataId).filter(Boolean),
+  );
+  const issueItems = [...missingFactors];
+
+  calculationDetails.forEach((detail) => {
+    if (detail.status === 'CALCULATED' || detail.status === 'OUTSIDE_SCOPE') return;
+    if (existingIds.has(detail.activityDataId)) return;
+
+    issueItems.push({
+      activityDataId: detail.activityDataId,
+      activityType: detail.activityType,
+      unit: getIssueUnitLabel(detail),
+      availableUnitsForActivityType: detail.availableUnitsForActivityType ?? [],
+    });
+  });
+
+  return issueItems;
+}
+
+function getIssueUnitLabel(detail: CalculationAuditDetail) {
+  if (detail.status === 'INVALID_UNIT') return 'Invalid unit';
+  if (detail.status === 'MISSING_DATA' && !detail.activityUnit) return 'Missing unit';
+  return detail.normalizedUnit || detail.activityUnit || 'Missing unit';
 }
 
 async function buildSupplementalCalculations(input: {
@@ -314,6 +348,9 @@ async function buildSupplementalCalculations(input: {
     const match = findBestConversionFactorMatch({
       activityType,
       inputUnit: normalizedUnit.value,
+      jurisdictionCountry: activity.jurisdictionCountry,
+      jurisdictionRegion: activity.jurisdictionRegion,
+      recordYear: activity.recordDate ? new Date(activity.recordDate).getUTCFullYear() : undefined,
       organizationId,
       factors: factors as MatchableConversionFactor[],
     });

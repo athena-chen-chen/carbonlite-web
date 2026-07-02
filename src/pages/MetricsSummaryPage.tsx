@@ -301,7 +301,7 @@ function handleDownloadPDF() {
 
   doc.setFontSize(10);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
-  doc.text('Prepared for internal reporting and compliance preparation.', 14, 35);
+  doc.text('Prepared for internal reporting review and data readiness discussions.', 14, 35);
 
   autoTable(doc, {
     startY: 45,
@@ -343,7 +343,7 @@ function handleDownloadPDF() {
       <h1 style={{ marginBottom: 8 }}>Metrics Summary</h1>
 
       <p style={{ color: '#666', marginBottom: 24 }}>
-        Your uploaded documents have been automatically converted into structured data and summarized.
+        Metrics Summary shows calculated emissions, records requiring review, tracked metrics, and calculation issues so users can understand not only the total emissions, but also what was included, excluded, and why.
       </p>
       <div style={filterCardStyle}>
         <div>

@@ -11,6 +11,7 @@ export type FactorVersion = {
   id: string;
   factorId: string;
   displayName?: string | null;
+  isSystem?: boolean | null;
   version: string;
   factorValue: number;
   inputUnit: string;
@@ -22,6 +23,8 @@ export type FactorVersion = {
   effectiveTo?: string | null;
   status: FactorVersionStatus;
   confidenceLevel: string;
+  methodology?: string | null;
+  verificationStatus?: string | null;
   verified: boolean;
   reviewedBy?: string | null;
   reviewedAt?: string | null;

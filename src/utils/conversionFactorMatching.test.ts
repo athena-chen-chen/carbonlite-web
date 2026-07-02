@@ -1,6 +1,7 @@
 import {
   findBestConversionFactorMatch,
   normalizeActivityType,
+  normalizeJurisdictionRegion,
 } from './conversionFactorMatching';
 
 const systemDiesel = {
@@ -115,7 +116,6 @@ describe('findBestConversionFactorMatch', () => {
   it.each([
     ['DIESEL', 'liters', 'Diesel', 'liters'],
     ['GASOLINE', 'L', 'Gasoline emission factor', 'liters'],
-    ['ELECTRICITY', 'KWH', 'Electricity - Alberta - 2025', 'kWh'],
   ])('matches %s / %s to %s / %s', (activityType, inputUnit, factorName, factorUnit) => {
     const match = findBestConversionFactorMatch({
       activityType,
@@ -137,6 +137,89 @@ describe('findBestConversionFactorMatch', () => {
     });
 
     expect(match?.factor.id).toBe(`factor-${activityType}`);
+  });
+
+  it('matches electricity only when province matches', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'KWH',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'AB',
+      recordYear: 2025,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-electricity-ab',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2025',
+          type: 'EMISSION',
+          inputUnit: 'kWh',
+          factorValue: 1,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2025,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('factor-electricity-ab');
+  });
+
+  it('does not fall back across provinces for electricity', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'British Columbia',
+      recordYear: 2025,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-electricity-ab',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2025',
+          type: 'EMISSION',
+          inputUnit: 'kWh',
+          factorValue: 1,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2025,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match).toBeUndefined();
+  });
+
+  it('does not match electricity when province is missing', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-electricity-ab',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2025',
+          type: 'EMISSION',
+          inputUnit: 'kWh',
+          factorValue: 1,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match).toBeUndefined();
   });
 
   it('does not match unsupported units without a factor', () => {
@@ -182,5 +265,22 @@ describe('normalizeActivityType', () => {
     expect(normalizeActivityType('Gasoline emission factor')).toBe('GASOLINE');
     expect(normalizeActivityType('Electricity - Alberta - 2025')).toBe('ELECTRICITY');
     expect(normalizeActivityType('Water')).toBe('WATER');
+  });
+});
+
+describe('normalizeJurisdictionRegion', () => {
+  it.each([
+    ['AB', 'Alberta'],
+    ['Alta.', 'Alberta'],
+    ['Alberta', 'Alberta'],
+    ['BC', 'British Columbia'],
+    ['B.C.', 'British Columbia'],
+    ['British Columbia', 'British Columbia'],
+    ['ON', 'Ontario'],
+    ['Ont.', 'Ontario'],
+    ['Ontario', 'Ontario'],
+    [null, null],
+  ])('normalizes %s to %s', (input, expected) => {
+    expect(normalizeJurisdictionRegion(input)).toBe(expected);
   });
 });
