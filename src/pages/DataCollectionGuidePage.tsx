@@ -93,26 +93,22 @@ const checklist = [
 ];
 
 const templateRows = [
-  ['Diesel', '100', 'liters', '2026-06-30', 'Main Facility', 'Alberta', 'Canada', 'Shell', '158.00', 'CAD', 'Receipt #123', ''],
-  ['Gasoline', '80', 'L', '2026-06-30', 'Main Facility', 'Alberta', 'Canada', 'Petro-Canada', '128.00', 'CAD', 'Receipt #124', ''],
-  ['Natural Gas', '50', 'm3', '2026-06-30', 'Warehouse', 'Alberta', 'Canada', 'ATCO', '75.00', 'CAD', 'Bill #456', ''],
-  ['Electricity', '1000', 'kWh', '2026-06-30', 'Vancouver Office', 'British Columbia', 'Canada', 'BC Hydro', '140.00', 'CAD', 'Bill #789', ''],
-  ['Water', '20', 'm3', '2026-06-30', 'Main Facility', 'Alberta', 'Canada', 'City Water', '45.00', 'CAD', 'Bill #321', 'Tracked metric'],
+  ['Electricity', '1000', 'kWh', '2026-01-01', 'Canada', 'British Columbia', 'Vancouver Office', 'Electricity bill', 'BC electricity example'],
+  ['Electricity', '1000', 'kWh', '2026-01-01', 'Canada', 'Alberta', 'Calgary Office', 'Electricity bill', 'Alberta electricity example'],
+  ['Diesel', '100', 'liters', '2026-01-01', 'Canada', 'British Columbia', 'Vancouver Office', 'Fuel receipt', 'Fuel can use Canada-level fallback if needed'],
+  ['Water', '20', 'm3', '2026-01-01', 'Canada', 'British Columbia', 'Vancouver Office', 'Water bill', 'Tracked metric only'],
 ];
 
 const templateColumns = [
-  'activityType',
-  'quantity',
-  'unit',
-  'date',
-  'facility',
-  'province',
-  'country',
-  'vendor',
-  'cost',
-  'currency',
-  'sourceReference',
-  'notes',
+  'Activity Type',
+  'Quantity',
+  'Unit',
+  'Date',
+  'Country',
+  'Province',
+  'Facility',
+  'Source Reference',
+  'Notes',
 ];
 
 export default function DataCollectionGuidePage() {

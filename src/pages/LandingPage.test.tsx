@@ -67,7 +67,7 @@ describe('LandingPage auth buttons', () => {
     });
   });
 
-  it('shows Dashboard and Logout instead of Login when authenticated', () => {
+  it('shows Dashboard instead of Login when authenticated', () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
       'currentUser',
@@ -81,7 +81,22 @@ describe('LandingPage auth buttons', () => {
 
     expect(screen.queryByRole('button', { name: /^login$/i })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /dashboard/i }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /logout/i })).toBeInTheDocument();
-    expect(screen.getByText('Workspace: KACH CANADA LTD.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /logout/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Workspace: KACH CANADA LTD.')).not.toBeInTheDocument();
+  });
+
+  it('shows updated positioning sections for SMEs, factors, hotspots, and pilot access', () => {
+    renderLanding();
+
+    expect(
+      screen.getByRole('heading', {
+        name: /messy operational records into traceable emissions insights/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Data readiness for SMEs/i)).toBeInTheDocument();
+    expect(screen.getByText(/Emission factors should be explainable/i)).toBeInTheDocument();
+    expect(screen.getByText(/Know where to focus first/i)).toBeInTheDocument();
+    expect(screen.getByText(/CarbonLite does not determine carbon credit eligibility/i)).toBeInTheDocument();
+    expect(screen.getByText(/Start with pilot access/i)).toBeInTheDocument();
   });
 });

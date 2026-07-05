@@ -488,7 +488,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.queryByRole('button', { name: /Create Factor/i })).not.toBeInTheDocument();
   });
 
-  it('shows invalid numeric units as missing data without create factor action', () => {
+  it('shows invalid numeric units as invalid unit without create factor action', () => {
     render(
       <MemoryRouter>
         <MetricsSummarySection
@@ -513,7 +513,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Missing Data')).toBeInTheDocument();
+    expect(screen.getByText('Invalid Unit')).toBeInTheDocument();
     expect(screen.getByText('Electricity — invalid unit')).toBeInTheDocument();
     expect(
       screen.getByText('Invalid unit detected. Please review this record.'),
@@ -811,19 +811,19 @@ describe('buildCarbonCreditReadinessAssessment', () => {
     expect(assessment.disclaimer).toBe(CARBON_CREDIT_READINESS_DISCLAIMER);
   });
 
-  it('requires more data when current data exists but baseline data is missing', () => {
+  it('is not ready when current data exists but explicit baseline/current periods are missing', () => {
     const details = [detail({ recordYear: 2026, calculatedEmissionsKgCO2e: 268 })];
     const assessment = buildCarbonCreditReadinessAssessment(
       details,
       buildDataReadinessSummary(details),
     );
 
-    expect(assessment.readinessLevel).toBe('NEEDS_MORE_DATA');
+    expect(assessment.readinessLevel).toBe('NOT_READY');
     expect(assessment.checklist.find((item) => item.key === 'baseline-data')?.status).toBe('MISSING');
-    expect(assessment.summary).toMatch(/baseline data is not available/i);
+    expect(assessment.summary).toMatch(/baseline\/current periods/i);
   });
 
-  it('detects reductions but only marks high scores as ready for professional review', () => {
+  it('does not infer reductions from record years without explicit baseline/current periods', () => {
     const details = [
       detail({ recordYear: 2025, recordDate: '2025-06-30', calculatedEmissionsKgCO2e: 500 }),
       detail({ recordYear: 2026, recordDate: '2026-06-30', calculatedEmissionsKgCO2e: 300 }),
@@ -833,10 +833,10 @@ describe('buildCarbonCreditReadinessAssessment', () => {
       buildDataReadinessSummary(details),
     );
 
-    expect(assessment.readinessLevel).toBe('READY_FOR_PROFESSIONAL_REVIEW');
-    expect(assessment.reductionAmount).toBe(200);
-    expect(assessment.reductionPercentage).toBe(40);
-    expect(assessment.summary).toMatch(/professional carbon credit readiness discussion/i);
+    expect(assessment.readinessLevel).toBe('NOT_READY');
+    expect(assessment.reductionAmount).toBeNull();
+    expect(assessment.reductionPercentage).toBeNull();
+    expect(assessment.summary).toMatch(/baseline\/current periods/i);
     expect(assessment.summary.toLowerCase()).not.toContain('eligible');
   });
 

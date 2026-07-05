@@ -11,16 +11,23 @@ import {
   MetricsSummarySection,
   buildDataReadinessSummary,
   buildCarbonCreditReadinessAssessment,
+  buildHotspotAnalysis,
   CARBON_CREDIT_READINESS_DISCLAIMER,
   buildMetricsSummaryTableRows,
+  type HotspotAnalysis,
   type MissingFactorItem,
 } from '../components/MetricsSummarySection';
 import {
   FORMAL_REPORT_METHODOLOGY,
   FormalReportPreview,
+  buildPrimarySkippedReasonSummary,
+  buildReportCountSummary,
   buildReportExecutiveSummary,
   buildSourceEvidenceRows,
   formatSourceType,
+  formatReportJurisdiction,
+  formatReportUnit,
+  formatSkippedReasons,
   type FormalActivityEmission,
   type FormalConversionFactorUsed,
 } from '../components/FormalReportPreview';
@@ -332,7 +339,7 @@ const scopeRows = useMemo(() => {
     scope: classifyScope(item.activityType),
     activityType: item.activityType,
     quantity: item.quantity,
-    unit: item.unit,
+    unit: formatReportUnit(item.unit),
     source: formatSourceType(item.sourceType),
     reference: item.sourceReference ?? '-',
   }));
@@ -345,13 +352,16 @@ const scopeRows = useMemo(() => {
     'Scope 3': 0,
   };
 
-  activities.forEach((item) => {
+  calculationDetails.forEach((item) => {
+    if (item.status !== 'CALCULATED') return;
+    const emissions = Number(item.calculatedEmissionsKgCO2e ?? item.calculatedEmission ?? 0);
+    if (!Number.isFinite(emissions)) return;
     const scope = classifyScope(item.activityType);
-    summary[scope] += Number(item.quantity || 0);
+    summary[scope] += emissions;
   });
 
   return summary;
-}, [activities]);
+}, [calculationDetails]);
 
 function handleDownloadCSV() {
   if (!hasReportOutput) return;
@@ -380,14 +390,14 @@ function handleDownloadCSV() {
         item.activityDataId,
         item.activityType,
         formatDisplayNumber(item.activityQuantity),
-        item.activityUnit || 'Missing unit',
+        formatReportUnit(item.activityUnit, item),
         item.recordDate?.slice(0, 10) ?? '',
         item.sourceFileName || (String(item.sourceType).toUpperCase() === 'MANUAL' ? 'Manual entry' : ''),
         formatRecordSource(item),
         item.factorVersionId || '',
         item.factorValue ?? '',
         item.factorYear ?? '',
-        [item.factorJurisdictionRegion, item.factorJurisdictionCountry].filter(Boolean).join(', '),
+        formatReportJurisdiction(item.factorJurisdictionRegion, item.factorJurisdictionCountry),
         item.sourceAuthority || '',
         item.sourceDocument || '',
         formatMatchingMethod(item),
@@ -421,7 +431,7 @@ function handleDownloadCSV() {
     entityType: 'Report',
     metadata: {
       reportScope,
-      recordsIncluded: countSummary.processedRecords,
+      recordsIncluded: reportCountSummary.processedRecords,
     },
   }).catch(() => {
     // Export should not be blocked by usage tracking.
@@ -465,6 +475,227 @@ function buildScopeNarrative(scopeSummary: Record<string, number>) {
 
   return lines;
 }
+
+function ensurePdfSpace(doc: jsPDF, y: number, requiredHeight = 50) {
+  if (y + requiredHeight <= 276) return y;
+  doc.addPage();
+  return 18;
+}
+
+function drawPdfTextBlock(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth = 182,
+  lineHeight = 4.5,
+) {
+  const lines = doc.splitTextToSize(text, maxWidth);
+  doc.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+function formatHotspotLevelForPdf(level: HotspotAnalysis['categoryHotspots'][number]['hotspotLevel']) {
+  const labels = {
+    HIGH: 'High',
+    MEDIUM: 'Medium',
+    LOW: 'Low',
+  };
+
+  return labels[level] ?? level;
+}
+
+function formatExcludedReasonForPdf(reason: HotspotAnalysis['excludedCategories'][number]['reason']) {
+  const labels = {
+    MISSING_FACTOR: 'Missing factor',
+    INVALID_UNIT: 'Invalid unit',
+    TRACKED_ONLY: 'Tracked metric',
+    NEEDS_REVIEW: 'Needs review',
+    MISSING_JURISDICTION: 'Missing jurisdiction',
+  };
+
+  return labels[reason] ?? reason;
+}
+
+function drawEmissionsHotspotsPdfSection(
+  doc: jsPDF,
+  analysis: HotspotAnalysis,
+  startY: number,
+) {
+  let y = ensurePdfSpace(doc, startY, 92);
+  drawPdfSectionTitle(doc, 'Emissions Hotspots', y);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  y = drawPdfTextBlock(
+    doc,
+    'This section highlights the activity categories contributing the largest share of calculated emissions. Hotspot analysis helps identify where the organization may want to focus first for review, data quality improvement, or reduction planning.',
+    14,
+    y + 7,
+  ) + 2;
+  y = drawPdfTextBlock(
+    doc,
+    'Hotspot analysis only includes records that were successfully calculated. Records requiring review, tracked-only metrics, missing factors, invalid units, or missing jurisdiction are excluded from hotspot totals and listed separately.',
+    14,
+    y,
+  ) + 4;
+
+  if (analysis.totalRecordCount <= 0) {
+    y = ensurePdfSpace(doc, y, 20);
+    doc.setTextColor(100, 116, 139);
+    drawPdfTextBlock(
+      doc,
+      'Emissions hotspots are not available because no activity records were found.',
+      14,
+      y,
+    );
+    return y + 10;
+  }
+
+  if (!analysis.categoryHotspots.length || analysis.totalCalculatedEmissions <= 0) {
+    y = ensurePdfSpace(doc, y, 24);
+    doc.setTextColor(100, 116, 139);
+    y = drawPdfTextBlock(
+      doc,
+      'Emissions hotspots are not available yet because no records could be calculated. Resolve calculation issues before using hotspot analysis.',
+      14,
+      y,
+    ) + 4;
+  } else {
+    const top = analysis.categoryHotspots[0];
+    const second = analysis.categoryHotspots[1];
+
+    y = ensurePdfSpace(doc, y, 30);
+    doc.setFillColor(236, 253, 245);
+    doc.setDrawColor(187, 247, 208);
+    doc.roundedRect(14, y, 182, 25, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(6, 95, 70);
+    doc.text(`Top Emissions Hotspot: ${top.displayName}`, 18, y + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(
+      `${top.displayName} contributes ${formatDisplayNumber(top.percentageOfTotal)}% of calculated emissions. Focus first on this category because it represents the largest share of calculated emissions.`,
+      18,
+      y + 15,
+      { maxWidth: 170 },
+    );
+    y += 32;
+
+    if (second) {
+      y = ensurePdfSpace(doc, y, 12);
+      doc.setTextColor(71, 85, 105);
+      y = drawPdfTextBlock(
+        doc,
+        `${top.displayName} and ${second.displayName} together represent ${formatDisplayNumber(top.percentageOfTotal + second.percentageOfTotal)}% of calculated emissions.`,
+        14,
+        y,
+      ) + 3;
+    }
+
+    y = ensurePdfSpace(doc, y, 22 + analysis.categoryHotspots.slice(0, 5).length * 11);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Top Emission Categories', 14, y);
+    y += 8;
+
+    analysis.categoryHotspots.slice(0, 5).forEach((row) => {
+      y = ensurePdfSpace(doc, y, 12);
+      const barWidth = Math.max(3, Math.min(86, row.percentageOfTotal * 0.86));
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      doc.text(row.displayName, 14, y);
+      doc.setFillColor(226, 232, 240);
+      doc.roundedRect(60, y - 4, 88, 5, 1.5, 1.5, 'F');
+      doc.setFillColor(16, 185, 129);
+      doc.roundedRect(60, y - 4, barWidth, 5, 1.5, 1.5, 'F');
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${formatDisplayNumber(row.percentageOfTotal)}%`, 152, y);
+      doc.text(`${formatEmissionsValue(row.emissions)} kgCO2e`, 169, y);
+      y += 10;
+    });
+
+    y += 2;
+    y = ensurePdfSpace(doc, y, 42);
+    autoTable(doc, {
+      startY: y,
+      head: [['Rank', 'Category', 'Calculated Emissions', 'Share', 'Records', 'Hotspot Level', 'Focus Message']],
+      body: analysis.categoryHotspots.map((row) => [
+        row.rank,
+        row.displayName,
+        `${formatEmissionsValue(row.emissions)} kgCO2e`,
+        `${formatDisplayNumber(row.percentageOfTotal)}%`,
+        row.calculatedRecordCount,
+        formatHotspotLevelForPdf(row.hotspotLevel),
+        row.focusMessage,
+      ]),
+      styles: { fontSize: 6.5, cellPadding: 1.5 },
+      headStyles: { fillColor: [15, 23, 42] },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 24 },
+        2: { cellWidth: 27 },
+        3: { cellWidth: 16 },
+        4: { cellWidth: 14 },
+        5: { cellWidth: 20 },
+        6: { cellWidth: 70 },
+      },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y) + 10;
+  }
+
+  if (analysis.focusRecommendations.length > 0) {
+    y = ensurePdfSpace(doc, y, 34);
+    autoTable(doc, {
+      startY: y,
+      head: [['What to focus on first', 'Recommendation']],
+      body: analysis.focusRecommendations.map((item) => [
+        `${formatHotspotLevelForPdf(item.priority)} priority: ${item.title}`,
+        item.message,
+      ]),
+      styles: { fontSize: 7, cellPadding: 1.6 },
+      headStyles: { fillColor: [4, 120, 87] },
+      columnStyles: {
+        0: { cellWidth: 52 },
+        1: { cellWidth: 130 },
+      },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y) + 10;
+  }
+
+  if (analysis.excludedRecordCount > 0) {
+    y = ensurePdfSpace(doc, y, 32);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(146, 64, 14);
+    y = drawPdfTextBlock(
+      doc,
+      'Some records were excluded from hotspot analysis because they require review or are tracked-only. See Records Requiring Review for details.',
+      14,
+      y,
+    ) + 3;
+    autoTable(doc, {
+      startY: y,
+      head: [['Excluded Category', 'Reason', 'Records']],
+      body: analysis.excludedCategories.length
+        ? analysis.excludedCategories.map((item) => [
+            item.displayName,
+            formatExcludedReasonForPdf(item.reason),
+            item.excludedRecordCount,
+          ])
+        : [['Records requiring review', 'Needs review', analysis.excludedRecordCount]],
+      styles: { fontSize: 7, cellPadding: 1.5 },
+      headStyles: { fillColor: [146, 64, 14] },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y) + 8;
+  }
+
+  return y;
+}
 const scopeNarrative = useMemo(() => {
   return buildScopeNarrative(scopeSummary);
 }, [scopeSummary]);
@@ -477,13 +708,15 @@ function handleDownloadPDF() {
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
-    recordsIncluded: countSummary.processedRecords,
+    recordsIncluded: reportCountSummary.processedRecords,
   });
   const executiveSummary = buildReportExecutiveSummary({
     totalEstimatedEmissionsKgCO2e,
-    countSummary,
+    countSummary: reportCountSummary,
     matchedActivityEmissions,
   });
+  const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
+  const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
   drawReportPdfCover(doc, {
     organizationName,
     reportPeriod,
@@ -501,27 +734,33 @@ function handleDownloadPDF() {
       ['Records Included', executiveSummary.recordsIncluded],
       ['Records Skipped', executiveSummary.recordsSkipped],
       ['Primary Activity Types', executiveSummary.primaryActivityTypes],
-      ['Missing Factor Count', executiveSummary.missingFactorCount],
+      ['Missing Factor Count', primarySkippedReasons.missingFactor],
       ['Data Quality Coverage', executiveSummary.dataQualityCoverage],
     ],
   });
 
   let nextY = (doc as any).lastAutoTable.finalY + 12;
+  nextY = drawEmissionsHotspotsPdfSection(doc, hotspotAnalysis, nextY);
+
+  nextY = ensurePdfSpace(doc, nextY, 52);
   drawPdfSectionTitle(doc, 'Calculation Quality Summary', nextY);
   autoTable(doc, {
     startY: nextY + 6,
     head: [['Quality Measure', 'Value']],
     body: [
-      ['Total Records Found', countSummary.totalRecordsFound],
-      ['Records Calculated', countSummary.processedRecords],
-      ['Records Skipped', countSummary.skippedRecords],
-      ['Missing Factors', countSummary.missingFactorRecords],
-      ['Invalid Records', countSummary.skippedReasons.invalidData],
+      ['Total Records Found', reportCountSummary.totalRecordsFound],
+      ['Records Calculated', reportCountSummary.processedRecords],
+      ['Records Skipped', reportCountSummary.skippedRecords],
+      ['Missing Factors', primarySkippedReasons.missingFactor],
+      ['Missing Jurisdiction', primarySkippedReasons.missingJurisdiction],
+      ['Invalid Unit', primarySkippedReasons.invalidUnit],
+      ['Tracked Metrics', primarySkippedReasons.trackedOnly],
+      ['Skipped Reasons', formatSkippedReasons(primarySkippedReasons)],
       [
         'Data Quality Coverage',
-        countSummary.totalRecordsFound > 0
+        reportCountSummary.totalRecordsFound > 0
           ? `${Math.round(
-              (countSummary.processedRecords / countSummary.totalRecordsFound) *
+              (reportCountSummary.processedRecords / reportCountSummary.totalRecordsFound) *
                 1000,
             ) / 10}%`
           : '0%',
@@ -565,21 +804,11 @@ function handleDownloadPDF() {
   });
 
   nextY = (doc as any).lastAutoTable.finalY + 12;
-  drawPdfSectionTitle(doc, 'Methodology', nextY);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105);
-  FORMAL_REPORT_METHODOLOGY.forEach((paragraph) => {
-    const lines = doc.splitTextToSize(paragraph, 180);
-    doc.text(lines, 14, nextY + 7);
-    nextY += lines.length * 4.4 + 6;
-  });
-
   if (nextY > 235) {
     doc.addPage();
     nextY = 18;
   }
-  drawPdfSectionTitle(doc, 'Calculation Summary', nextY);
+  drawPdfSectionTitle(doc, 'Emissions Breakdown', nextY);
   autoTable(doc, {
     startY: nextY + 6,
     head: [['Category', 'Metric Type', 'Unit', 'Total']],
@@ -589,6 +818,23 @@ function handleDownloadPDF() {
       item.unit,
       item.totalValue,
     ]),
+  });
+
+  nextY = (doc as any).lastAutoTable.finalY + 14;
+  drawPdfSectionTitle(doc, 'Emissions by Scope', nextY);
+  autoTable(doc, {
+    startY: nextY + 6,
+    head: [['Scope', 'Description', 'Calculated Emissions', 'Share of Total']],
+    body: ['Scope 1', 'Scope 2', 'Scope 3'].map((scope) => {
+      const emissions = scopeSummary[scope] ?? 0;
+      const share = totalEstimatedEmissionsKgCO2e > 0 ? (emissions / totalEstimatedEmissionsKgCO2e) * 100 : 0;
+      return [
+        scope,
+        getScopeDescription(scope),
+        `${formatEmissionsValue(emissions)} kgCO2e`,
+        `${formatDisplayNumber(share)}%`,
+      ];
+    }),
   });
 
   const activityStartY = (doc as any).lastAutoTable.finalY + 14;
@@ -671,7 +917,7 @@ function handleDownloadPDF() {
     body: calculationDetails.length
       ? calculationDetails.map((item) => [
           item.activityType,
-          `${formatDisplayNumber(item.activityQuantity)} ${item.activityUnit}`,
+          `${formatDisplayNumber(item.activityQuantity)} ${formatReportUnit(item.activityUnit, item)}`,
           formatTraceableFactor(item),
           formatTraceabilitySource(item),
           formatMatchingMethod(item),
@@ -726,7 +972,7 @@ function handleDownloadPDF() {
       ? reviewRows.map((item) => [
           item.activityType,
           formatDisplayNumber(item.activityQuantity),
-          item.activityUnit || 'Missing unit',
+          formatReportUnit(item.activityUnit, item),
           formatCalculationStatus(item.status),
           item.matchingMessage || item.reason || 'Review this record before calculation.',
           formatRecordSource(item),
@@ -735,6 +981,22 @@ function handleDownloadPDF() {
       : [['No records require review for this report scope.', '', '', '', '', '', '']],
     styles: { fontSize: 6.5, cellPadding: 1.5 },
     headStyles: { fillColor: [15, 23, 42] },
+  });
+
+  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (nextY > 230) {
+    doc.addPage();
+    nextY = 20;
+  }
+
+  drawPdfSectionTitle(doc, 'Methodology and Disclaimer', nextY + 10);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  nextY += 18;
+  FORMAL_REPORT_METHODOLOGY.forEach((paragraph) => {
+    nextY = ensurePdfSpace(doc, nextY, 18);
+    nextY = drawPdfTextBlock(doc, paragraph, 14, nextY, 180, 4.4) + 5;
   });
 
   doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
@@ -753,7 +1015,7 @@ function handleDownloadPDF() {
     entityType: 'Report',
     metadata: {
       reportScope,
-      recordsIncluded: countSummary.processedRecords,
+      recordsIncluded: reportCountSummary.processedRecords,
     },
   }).catch(() => {
     // PDF export should not be blocked by usage tracking.
@@ -761,7 +1023,7 @@ function handleDownloadPDF() {
   track('REPORT_PDF_EXPORTED', {
     reportType: 'emissions',
     reportScope,
-    recordCount: countSummary.processedRecords,
+    recordCount: reportCountSummary.processedRecords,
   });
 }
 
@@ -893,8 +1155,10 @@ const carbonCreditReadiness = buildCarbonCreditReadinessAssessment(
   calculationDetails,
   dataReadinessSummary,
 );
-const sourceEvidenceRows = buildSourceEvidenceRows(activities);
-const reportRecordCount = countSummary.processedRecords;
+const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails);
+const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
+const sourceEvidenceRows = buildSourceEvidenceRows(activities, calculationDetails);
+const reportRecordCount = reportCountSummary.processedRecords;
 const hasLoadedSummary = Boolean(summary);
 const hasImportedActivityData = countSummary.totalRecordsFound > 0;
 const hasReportOutput =
@@ -1070,7 +1334,7 @@ const exportDisabledTitle = exportDisabled
           <MetricsSummarySection
             usageTotals={usageTotals}
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
-            countSummary={countSummary}
+            countSummary={reportCountSummary}
             missingFactors={missingFactors}
             calculationDetails={calculationDetails}
             emptyMessage={
@@ -1117,7 +1381,7 @@ const exportDisabledTitle = exportDisabled
             calculationDetails={calculationDetails}
           />
 
-          <Section title="Scope Breakdown">
+          <Section title="Activity Records">
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -1142,7 +1406,7 @@ const exportDisabledTitle = exportDisabled
                       <td style={tdStyle}>{item.recordDate?.slice(0, 10)}</td>
                       <td style={tdStyle}>{item.activityType}</td>
                       <td style={tdStyle}>{formatDisplayNumber(item.quantity)}</td>
-                      <td style={tdStyle}>{item.unit}</td>
+                      <td style={tdStyle}>{formatReportUnit(item.unit)}</td>
                       <td style={tdStyle}>{formatSourceType(item.sourceType)}</td>
                       <td style={tdStyle}>{item.sourceReference ?? '-'}</td>
                     </tr>
@@ -1152,15 +1416,6 @@ const exportDisabledTitle = exportDisabled
             </table>
           </Section>
 
-          <Section title="Methodology & Assumptions">
-            <p style={{ color: '#555', lineHeight: 1.7 }}>
-              Emissions estimates are calculated using imported activity data and
-              configured conversion factors. CarbonLite records factor sources,
-              matching explanations, calculation formulas, source evidence, and
-              records requiring review so users can validate results before using
-              outputs for internal, consultant, or reporting workflows.
-            </p>
-          </Section>
           <Section title="Data Quality Notes">
             <div style={dataQualityNotesGridStyle}>
               <DataQualityNote label="Data Readiness" value={`${formatDisplayNumber(dataReadinessSummary.score)}% · ${dataReadinessSummary.level}`} />
@@ -1170,6 +1425,11 @@ const exportDisabledTitle = exportDisabled
               <DataQualityNote label="Missing Factors" value={dataReadinessSummary.missingFactorCount} />
               <DataQualityNote label="Missing Jurisdiction" value={dataReadinessSummary.missingJurisdictionCount} />
             </div>
+            {reportCountSummary.skippedRecords > 0 ? (
+              <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
+                Skipped reasons: {formatSkippedReasons(primarySkippedReasons)}.
+              </p>
+            ) : null}
             <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
               Hotspot analysis is based only on calculated records. Records requiring review are excluded until fixed.
             </p>

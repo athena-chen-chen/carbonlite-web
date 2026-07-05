@@ -119,14 +119,15 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('Prepared by:')).toBeInTheDocument();
     expect(screen.getByText('A. Report Scope')).toBeInTheDocument();
     expect(screen.getByText('B. Executive Summary')).toBeInTheDocument();
-    expect(screen.getByText('C. Calculation Quality Summary')).toBeInTheDocument();
-    expect(screen.getByText('D. Calculation Summary')).toBeInTheDocument();
-    expect(screen.getByText('E. Activity Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('F. Emission Factors Used')).toBeInTheDocument();
-    expect(screen.getByText('G. Calculation Traceability')).toBeInTheDocument();
-    expect(screen.getByText('H. Source Evidence')).toBeInTheDocument();
-    expect(screen.getByText('I. Records Requiring Review')).toBeInTheDocument();
-    expect(screen.getByText('J. Methodology and Disclaimer')).toBeInTheDocument();
+    expect(screen.getByText('C. Emissions Hotspots')).toBeInTheDocument();
+    expect(screen.getByText('D. Calculation Quality Summary')).toBeInTheDocument();
+    expect(screen.getByText('E. Emissions Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('F. Activity Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('G. Emission Factors Used')).toBeInTheDocument();
+    expect(screen.getByText('H. Calculation Traceability')).toBeInTheDocument();
+    expect(screen.getByText('I. Source Evidence')).toBeInTheDocument();
+    expect(screen.getByText('J. Records Requiring Review')).toBeInTheDocument();
+    expect(screen.getByText('K. Methodology and Disclaimer')).toBeInTheDocument();
     expect(screen.getAllByText('321.60 kgCO2e').length).toBeGreaterThan(0);
     expect(screen.getAllByText('CarbonLite system defaults').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
@@ -142,11 +143,14 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('fuel-invoice.pdf · Page 1 · Line item 3')).toBeInTheDocument();
 
     const tables = screen.getAllByRole('table');
-    expect(within(tables[0]).getAllByText('Input Data').length).toBeGreaterThan(0);
-    expect(within(tables[0]).getByText('Calculated Result')).toBeInTheDocument();
-    expect(within(tables[0]).getByText('Carbon Emissions')).toBeInTheDocument();
-    expect(within(tables[0]).getByText('Fuel Usage — Diesel')).toBeInTheDocument();
-    expect(within(tables[0]).queryByText('Count')).not.toBeInTheDocument();
+    const emissionsBreakdownTable = tables.find((table) =>
+      within(table).queryByText('Carbon Emissions'),
+    );
+    expect(emissionsBreakdownTable).toBeTruthy();
+    expect(within(emissionsBreakdownTable!).getAllByText('Input Data').length).toBeGreaterThan(0);
+    expect(within(emissionsBreakdownTable!).getByText('Calculated Result')).toBeInTheDocument();
+    expect(within(emissionsBreakdownTable!).getByText('Fuel Usage — Diesel')).toBeInTheDocument();
+    expect(within(emissionsBreakdownTable!).queryByText('Count')).not.toBeInTheDocument();
   });
 
   it('shows empty states when no records or factors are available', () => {

@@ -57,6 +57,8 @@ type EditableParsedActivity = {
   recordDate: EditableConfidenceField<string>;
   quantity: EditableConfidenceField<number>;
   unit: EditableConfidenceField<string>;
+  jurisdictionCountry: EditableConfidenceField<string>;
+  jurisdictionRegion: EditableConfidenceField<string>;
   sourceReference: EditableConfidenceField<string>;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
@@ -637,6 +639,14 @@ export function UploadPage() {
         unit: {
           value: String(getFieldValue(item.unit, '')),
           confidence: extractFieldConfidence(item.unit),
+        },
+        jurisdictionCountry: {
+          value: formatOptionalExtractionField(item.jurisdictionCountry) || 'Canada',
+          confidence: item.jurisdictionCountry ? extractFieldConfidence(item.jurisdictionCountry) : 'medium',
+        },
+        jurisdictionRegion: {
+          value: formatOptionalExtractionField(item.jurisdictionRegion),
+          confidence: item.jurisdictionRegion ? extractFieldConfidence(item.jurisdictionRegion) : 'low',
         },
         sourceReference: {
           value: formatSourceReference(item.sourceReference, document.fileName),
@@ -1453,6 +1463,8 @@ ${sampleRows.join('\n')}`,
           recordDate: item.recordDate.value || null,
           quantity: item.quantity.value,
           unit: item.unit.value,
+          jurisdictionCountry: item.jurisdictionCountry.value || 'Canada',
+          jurisdictionRegion: item.jurisdictionRegion.value || undefined,
           sourceType: 'AI_EXTRACTION',
           sourceReference: item.sourceReference.value || sourceFileName,
           documentId: activityDocumentId,
@@ -1635,6 +1647,8 @@ function updateParsedActivityField(
         },
         quantity: { value: 0, confidence: 'low' },
         unit: { value: 'liters', confidence: 'medium' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'medium' },
+        jurisdictionRegion: { value: '', confidence: 'low' },
         sourceReference: {
           value:
             documents.find((doc) => doc.id === (previewDocumentIds[0] ?? previewDocumentId))

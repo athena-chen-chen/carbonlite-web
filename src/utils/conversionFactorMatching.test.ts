@@ -159,6 +159,7 @@ describe('findBestConversionFactorMatch', () => {
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Alberta',
           sourceYear: 2025,
+          verified: true,
           isSystemDefault: true,
           isDefault: true,
         },
@@ -265,6 +266,8 @@ describe('normalizeActivityType', () => {
     expect(normalizeActivityType('Gasoline emission factor')).toBe('GASOLINE');
     expect(normalizeActivityType('Electricity - Alberta - 2025')).toBe('ELECTRICITY');
     expect(normalizeActivityType('Water')).toBe('WATER');
+    expect(normalizeActivityType('Hotel Stay')).toBe('HOTEL');
+    expect(normalizeActivityType('Accommodation')).toBe('HOTEL');
   });
 });
 

@@ -55,8 +55,8 @@ export type MissingFactorGroup = {
 };
 
 type CalculationIssueGroup = MissingFactorGroup & {
-  issueType: 'missingData' | 'missingFactor' | 'informational';
-  missingField?: 'activityType' | 'unit';
+  issueType: 'missingData' | 'missingFactor' | 'informational' | 'invalidUnit' | 'missingJurisdiction';
+  missingField?: 'activityType' | 'unit' | 'quantity' | 'date' | 'jurisdiction';
 };
 
 export type HotspotAnalysis = {
@@ -267,9 +267,10 @@ export function MetricsSummarySection({
       : calculatedFromLine
       ? `Calculated from: ${calculatedFromLine}`
       : undefined;
-  const calculationIssueGroups = groupMissingFactors(missingFactors).map(
-    classifyCalculationIssue,
-  );
+  const calculationIssueGroups =
+    calculationDetails.length > 0
+      ? groupCalculationIssuesFromDetails(calculationDetails)
+      : groupMissingFactors(missingFactors).map(classifyCalculationIssue);
   const informationalIssueGroups = calculationIssueGroups.filter(
     (group) => group.issueType === 'informational',
   );
@@ -288,6 +289,9 @@ export function MetricsSummarySection({
     calculationDetails,
     dataReadiness,
   );
+  const electricityReviewCount = calculationDetails.filter(
+    (detail) => detail.activityType === 'ELECTRICITY' && detail.status !== 'CALCULATED',
+  ).length;
 
   function handleCreateFactor(group: MissingFactorGroup) {
     navigate('/conversion-factors', {
@@ -331,7 +335,7 @@ export function MetricsSummarySection({
               usageTotals.electricity,
               usageTotals.electricityUnitLabel,
             ),
-            usageTotals.invalidElectricityRecordCount,
+            electricityReviewCount || usageTotals.invalidElectricityRecordCount,
           )}
           icon="⚡"
           color="#3b82f6"
@@ -424,7 +428,7 @@ export function MetricsSummarySection({
           </div>
           <div style={missingFactorListStyle}>
             {calculationIssueGroups.map((group) => (
-              <div key={`${group.activityType}-${group.unit}`} style={missingFactorRowStyle}>
+              <div key={`${group.issueType}-${group.activityType}-${group.unit}`} style={missingFactorRowStyle}>
                 <div style={missingFactorTextStyle}>
                   <div style={issueHeaderStyle}>
                     <IssueBadge type={group.issueType} />
@@ -454,7 +458,9 @@ export function MetricsSummarySection({
                   >
                     Create Factor
                   </button>
-                ) : group.issueType === 'missingData' ? (
+                ) : group.issueType === 'missingData' ||
+                  group.issueType === 'invalidUnit' ||
+                  group.issueType === 'missingJurisdiction' ? (
                   <button
                     type="button"
                     onClick={() => handleFixRecord(group)}
@@ -577,6 +583,7 @@ export function MetricsSummarySection({
                 <th style={thStyle}>Activity</th>
                 <th style={thStyle}>Quantity</th>
                 <th style={thStyle}>Activity Source</th>
+                <th style={thStyle}>Jurisdiction</th>
                 <th style={thStyle}>Status</th>
                 <th style={thStyle}>Factor Used</th>
                 <th style={thStyle}>Factor Source</th>
@@ -590,6 +597,7 @@ export function MetricsSummarySection({
                   <td style={tdStyle}>{formatActivityTypeLabel(detail.activityType)}</td>
                   <td style={tdStyle}>{formatDisplayNumber(detail.activityQuantity)} {detail.activityUnit}</td>
                   <td style={tdStyle}>{formatCalculationSourceReference(detail)}</td>
+                  <td style={tdStyle}>{formatDetailJurisdiction(detail)}</td>
                   <td style={tdStyle}>{formatCalculationStatus(detail.status)}</td>
                   <td style={tdStyle}>
                     {detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'Not calculated'}
@@ -845,6 +853,9 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
   const missingFactorCount = calculationDetails.filter((detail) => detail.status === 'MISSING_FACTOR').length;
   const invalidUnitCount = calculationDetails.filter((detail) => detail.status === 'INVALID_UNIT').length;
   const missingJurisdictionCount = calculationDetails.filter((detail) => detail.status === 'MISSING_JURISDICTION').length;
+  const electricityMissingProvinceCount = calculationDetails.filter(
+    (detail) => detail.activityType === 'ELECTRICITY' && !detail.jurisdictionRegion,
+  ).length;
   const requiredCompleteCount = calculationDetails.filter((detail) => {
     const quantity = Number(detail.activityQuantity);
     return Boolean(
@@ -858,7 +869,7 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
   }).length;
   const jurisdictionCompleteCount = calculationDetails.filter((detail) => {
     if (detail.activityType === 'ELECTRICITY') {
-      return Boolean(detail.jurisdictionRegion || detail.jurisdiction);
+      return Boolean(detail.jurisdictionRegion);
     }
 
     return Boolean(detail.jurisdictionCountry || detail.jurisdiction);
@@ -881,8 +892,15 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
       sourceCoverageScore * 0.1 +
       costCoverageScore * 0.05,
   );
+  const calculatedCoverage = totalRecords > 0 ? recordsReadyForCalculation / totalRecords : 0;
+  const hasCriticalIssues =
+    missingFactorCount > 0 || invalidUnitCount > 0 || missingJurisdictionCount > 0;
   const level: DataReadinessSummary['level'] =
-    score >= 80 ? 'Good' : score >= 50 ? 'Needs Review' : 'Incomplete';
+    totalRecords <= 0 || calculatedCoverage < 0.5
+      ? 'Incomplete'
+      : score >= 80 && !hasCriticalIssues && calculatedCoverage >= 0.8
+      ? 'Good'
+      : 'Needs Review';
 
   return {
     score,
@@ -915,10 +933,13 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
       {
         key: 'jurisdiction',
         label: 'Jurisdiction completeness',
-        passed: jurisdictionScore >= 90,
+        passed: electricityMissingProvinceCount === 0 && jurisdictionScore >= 90,
         count: jurisdictionCompleteCount,
         total: totalRecords,
-        message: 'Province is required for electricity because electricity factors vary by province.',
+        message:
+          electricityMissingProvinceCount > 0
+            ? `${electricityMissingProvinceCount} electricity ${electricityMissingProvinceCount === 1 ? 'record is' : 'records are'} missing province. Province is required because electricity factors vary by province.`
+            : 'Province is required for electricity because electricity factors vary by province.',
       },
       {
         key: 'source-traceability',
@@ -976,10 +997,13 @@ export function assessCarbonCreditReadiness(input: {
   projectBoundaryDefined: boolean;
 }): CarbonCreditReadinessAssessment {
   const reductionDetected =
+    input.hasBaselineData &&
+    input.hasMonitoringData &&
     Number(input.reductionAmount ?? 0) > 0 &&
     Number(input.reductionPercentage ?? 0) > 0;
   const jurisdictionKnown = Boolean(input.jurisdictionCountry || input.jurisdictionRegion);
   const reviewThresholdPassed = input.recordsRequiringReviewCount <= 2;
+  const hasReviewBlockers = input.recordsRequiringReviewCount > 0;
   let score = 0;
 
   if (input.hasBaselineData) score += 20;
@@ -989,9 +1013,12 @@ export function assessCarbonCreditReadiness(input: {
   if (input.hasTraceableFactors && input.hasConsistentMethodology) score += 15;
   if (jurisdictionKnown) score += 10;
   if (reviewThresholdPassed) score += 5;
+  if (!input.protocolKnown) score = Math.min(score, 69);
+  if (hasReviewBlockers) score = Math.min(score, 69);
+  if (!input.hasBaselineData || !input.hasMonitoringData) score = Math.min(score, 39);
 
   const readinessLevel: CarbonCreditReadinessAssessment['readinessLevel'] =
-    score >= 70
+    score >= 70 && input.protocolKnown && !hasReviewBlockers
       ? 'READY_FOR_PROFESSIONAL_REVIEW'
       : score >= 40
       ? 'NEEDS_MORE_DATA'
@@ -1010,26 +1037,26 @@ export function assessCarbonCreditReadiness(input: {
       {
         key: 'baseline-data',
         label: 'Baseline data available',
-        status: input.hasBaselineData ? 'PASS' : 'MISSING',
+        status: input.hasBaselineData && Number(input.baselineEmissions ?? 0) > 0 ? 'PASS' : 'MISSING',
         message:
-          'A carbon credit assessment usually requires a clear baseline period or reference scenario. CarbonLite can compare current emissions against historical data if available.',
+          'A carbon credit assessment usually requires an explicitly selected baseline period with calculated emissions.',
       },
       {
         key: 'monitoring-data',
         label: 'Current monitoring data available',
-        status: input.hasMonitoringData ? 'PASS' : 'MISSING',
+        status: input.hasMonitoringData && Number(input.currentEmissions ?? 0) > 0 ? 'PASS' : 'MISSING',
         message:
-          'Current period emissions should be supported by consistent activity records and calculation methodology.',
+          'Current period emissions should be explicitly selected and supported by consistent activity records and calculation methodology.',
       },
       {
         key: 'reduction-evidence',
         label: 'Emissions reduction detected',
-        status: !input.hasBaselineData ? 'NOT_ASSESSED' : reductionDetected ? 'PASS' : 'WARNING',
+        status: !input.hasBaselineData || !input.hasMonitoringData ? 'NOT_ASSESSED' : reductionDetected ? 'PASS' : 'WARNING',
         message: reductionDetected
           ? 'A reduction was detected between available baseline and current periods.'
-          : input.hasBaselineData
+          : input.hasBaselineData && input.hasMonitoringData
           ? 'No reduction was detected in the available periods.'
-          : 'Baseline data is not available yet, so reduction evidence cannot be assessed.',
+          : 'Baseline and current reporting periods are not clearly defined, so reduction evidence cannot be assessed.',
       },
       {
         key: 'source-evidence',
@@ -1048,13 +1075,15 @@ export function assessCarbonCreditReadiness(input: {
       {
         key: 'jurisdiction',
         label: 'Jurisdiction identified',
-        status: jurisdictionKnown ? 'PASS' : 'WARNING',
+        status: jurisdictionKnown && reviewThresholdPassed ? 'PASS' : 'WARNING',
         message:
-          'Carbon credit programs and protocols may depend on jurisdiction, project type, and applicable program rules.',
+          hasReviewBlockers
+            ? 'Resolve records requiring jurisdiction or factor review before using this in carbon credit readiness discussions.'
+            : 'Carbon credit programs and protocols may depend on jurisdiction, project type, and applicable program rules.',
       },
       {
         key: 'protocol',
-        label: 'Applicable protocol not confirmed',
+        label: 'Applicable protocol confirmed',
         status: input.protocolKnown ? 'PASS' : 'NOT_ASSESSED',
         message:
           'A recognized protocol or program rule may be required. CarbonLite does not determine protocol eligibility.',
@@ -1085,33 +1114,23 @@ export function buildCarbonCreditReadinessAssessment(
   dataReadiness: DataReadinessSummary,
 ): CarbonCreditReadinessAssessment {
   const calculatedDetails = calculationDetails.filter((detail) => detail.status === 'CALCULATED');
-  const emissionsByYear = new Map<number, number>();
-
-  calculatedDetails.forEach((detail) => {
-    const year = Number(detail.recordYear ?? detail.reportingYear ?? getYearFromDate(detail.recordDate));
-    const emissions = Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0);
-    if (!Number.isFinite(year) || !Number.isFinite(emissions) || emissions <= 0) return;
-    emissionsByYear.set(year, roundDisplay((emissionsByYear.get(year) ?? 0) + emissions));
-  });
-
-  const years = Array.from(emissionsByYear.keys()).sort((a, b) => a - b);
-  const hasBaselineData = years.length >= 2;
-  const baselineEmissions = hasBaselineData ? emissionsByYear.get(years[0]) ?? null : null;
-  const currentEmissions = years.length > 0 ? emissionsByYear.get(years[years.length - 1]) ?? null : null;
-  const reductionAmount =
-    baselineEmissions !== null && currentEmissions !== null
-      ? baselineEmissions - currentEmissions
-      : null;
-  const reductionPercentage =
-    reductionAmount !== null && baselineEmissions && baselineEmissions > 0
-      ? (reductionAmount / baselineEmissions) * 100
-      : null;
-  const hasSourceEvidence = calculatedDetails.some((detail) =>
+  const sourceEvidenceCount = calculatedDetails.filter((detail) =>
     Boolean(detail.sourceReference || detail.sourceFileName || detail.sourceDocumentId),
-  );
-  const hasTraceableFactors = calculatedDetails.some((detail) =>
-    Boolean(detail.factorValue && (detail.sourceAuthority || detail.sourceDocument) && detail.factorYear),
-  );
+  ).length;
+  const hasSourceEvidence =
+    calculatedDetails.length > 0 && sourceEvidenceCount / calculatedDetails.length >= 0.8;
+  const hasTraceableFactors =
+    calculatedDetails.length > 0 &&
+    calculatedDetails.every((detail) =>
+      Boolean(
+        detail.factorValue &&
+          (detail.sourceAuthority || detail.sourceDocument) &&
+          detail.factorYear &&
+          (detail.factorJurisdictionRegion || detail.factorJurisdictionCountry || detail.jurisdictionRegion) &&
+          detail.factorConfidenceLevel &&
+          detail.factorVerificationStatus,
+      ),
+    );
   const hasConsistentMethodology =
     calculatedDetails.length > 0 &&
     calculatedDetails.every((detail) => Boolean(detail.calculationFormula || detail.factorValue));
@@ -1125,15 +1144,15 @@ export function buildCarbonCreditReadinessAssessment(
     null;
 
   return assessCarbonCreditReadiness({
-    baselineEmissions,
-    currentEmissions,
-    reductionAmount,
-    reductionPercentage,
+    baselineEmissions: null,
+    currentEmissions: null,
+    reductionAmount: null,
+    reductionPercentage: null,
     jurisdictionCountry,
     jurisdictionRegion,
     dataQualityScore: dataReadiness.score,
-    hasBaselineData,
-    hasMonitoringData: calculatedDetails.length > 0,
+    hasBaselineData: false,
+    hasMonitoringData: false,
     hasSourceEvidence,
     hasTraceableFactors,
     hasConsistentMethodology,
@@ -1154,10 +1173,10 @@ function getCarbonCreditReadinessSummary(
   if (level === 'NEEDS_MORE_DATA') {
     return context.hasBaselineData
       ? 'Some supporting data is available, but additional documentation or methodology review is needed before discussing carbon credit potential.'
-      : 'Carbon credit readiness cannot be fully assessed yet because baseline data is not available.';
+      : 'Carbon credit readiness cannot be assessed because baseline and current reporting periods are not clearly defined.';
   }
 
-  return 'Not ready for assessment. Baseline data, source evidence, jurisdiction information, or calculation readiness is missing.';
+  return 'Not ready for assessment. Baseline/current periods, source evidence, jurisdiction information, or calculation readiness is missing.';
 }
 
 function buildCarbonCreditNextSteps(input: {
@@ -1207,6 +1226,11 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
         </div>
       </div>
       <p style={readinessMessageStyle}>{summary.message}</p>
+      <p style={summaryHelperTextStyle}>
+        Data readiness score is based on required field completeness, factor match coverage,
+        jurisdiction completeness, source traceability, and optional cost data. It is not
+        the same as the percentage of records calculated.
+      </p>
       <div style={readinessStatsGridStyle}>
         <div><strong>{summary.recordsReadyForCalculation}</strong> ready for calculation</div>
         <div><strong>{summary.recordsRequiringReview}</strong> require review</div>
@@ -1268,7 +1292,7 @@ function CarbonCreditReadinessPanel({
         </div>
       ) : (
         <div style={creditNoticeStyle}>
-          Baseline data is not available yet, or no reduction was detected in the available periods.
+          Carbon credit readiness cannot be assessed because baseline and current reporting periods are not clearly defined.
         </div>
       )}
 
@@ -1538,6 +1562,99 @@ function isTrackedNonEmissionMetric(activityType: string) {
   return ['WATER', 'WASTE', 'WASTE_VOLUME'].includes(activityType.toUpperCase());
 }
 
+function groupCalculationIssuesFromDetails(
+  calculationDetails: CalculationAuditDetail[],
+): CalculationIssueGroup[] {
+  const groups = new Map<string, CalculationIssueGroup>();
+
+  calculationDetails
+    .filter((detail) => detail.status !== 'CALCULATED' && detail.status !== 'OUTSIDE_SCOPE')
+    .forEach((detail) => {
+      const activityType = String(detail.activityType || 'UNKNOWN').toUpperCase();
+      const classification = classifyCalculationDetailIssue(detail);
+      const unit =
+        classification.issueType === 'missingJurisdiction'
+          ? 'Missing province'
+          : classification.issueType === 'invalidUnit'
+          ? 'Invalid unit'
+          : classification.issueType === 'informational'
+          ? normalizeUnitForDisplay(detail.activityUnit).value
+          : classification.issueType === 'missingFactor'
+          ? normalizeUnitForDisplay(detail.activityUnit).value
+          : classification.missingField === 'unit'
+          ? 'Missing unit'
+          : classification.missingField === 'quantity'
+          ? 'Missing quantity'
+          : classification.missingField === 'date'
+          ? 'Missing date'
+          : 'Missing data';
+      const key = `${classification.issueType}:${activityType}:${unit}`;
+      const existing = groups.get(key) ?? {
+        activityType,
+        unit,
+        count: 0,
+        availableUnitsForActivityType: [],
+        activityDataIds: [],
+        issueType: classification.issueType,
+        missingField: classification.missingField,
+      };
+
+      existing.count += 1;
+      if (detail.activityDataId && !existing.activityDataIds.includes(detail.activityDataId)) {
+        existing.activityDataIds.push(detail.activityDataId);
+      }
+      detail.availableUnitsForActivityType?.forEach((availableUnit) => {
+        const normalizedAvailableUnit = normalizeUnitForDisplay(availableUnit);
+        const nextUnit =
+          normalizedAvailableUnit.status === 'valid'
+            ? normalizedAvailableUnit.value
+            : availableUnit;
+
+        if (!existing.availableUnitsForActivityType.includes(nextUnit)) {
+          existing.availableUnitsForActivityType.push(nextUnit);
+        }
+      });
+      groups.set(key, existing);
+    });
+
+  return Array.from(groups.values()).sort((a, b) =>
+    `${a.issueType}:${a.activityType}:${a.unit}`.localeCompare(
+      `${b.issueType}:${b.activityType}:${b.unit}`,
+    ),
+  );
+}
+
+function classifyCalculationDetailIssue(detail: CalculationAuditDetail): Pick<CalculationIssueGroup, 'issueType' | 'missingField'> {
+  if (detail.status === 'MISSING_JURISDICTION') {
+    return { issueType: 'missingJurisdiction', missingField: 'jurisdiction' };
+  }
+
+  if (detail.status === 'INVALID_UNIT') {
+    return { issueType: 'invalidUnit', missingField: 'unit' };
+  }
+
+  if (detail.status === 'TRACKED_ONLY' || isTrackedNonEmissionMetric(detail.activityType)) {
+    return { issueType: 'informational' };
+  }
+
+  if (detail.status === 'MISSING_FACTOR') {
+    return { issueType: 'missingFactor' };
+  }
+
+  if (detail.status === 'INVALID_QUANTITY') {
+    return { issueType: 'missingData', missingField: 'quantity' };
+  }
+
+  if (detail.status === 'MISSING_DATA') {
+    if (!detail.activityType) return { issueType: 'missingData', missingField: 'activityType' };
+    if (!detail.activityUnit) return { issueType: 'missingData', missingField: 'unit' };
+    if (!detail.recordDate) return { issueType: 'missingData', missingField: 'date' };
+    return { issueType: 'missingData' };
+  }
+
+  return { issueType: 'missingData' };
+}
+
 function classifyCalculationIssue(group: MissingFactorGroup): CalculationIssueGroup {
   if (isMissingIssueValue(group.activityType) || group.activityType === 'UNKNOWN') {
     return { ...group, issueType: 'missingData', missingField: 'activityType' };
@@ -1553,7 +1670,7 @@ function classifyCalculationIssue(group: MissingFactorGroup): CalculationIssueGr
   }
 
   if (group.unit === 'Invalid unit' || normalizeUnitForDisplay(group.unit).status === 'invalid') {
-    return { ...group, issueType: 'missingData', missingField: 'unit' };
+    return { ...group, issueType: 'invalidUnit', missingField: 'unit' };
   }
 
   if (isTrackedNonEmissionMetric(group.activityType)) {
@@ -1573,6 +1690,29 @@ function formatCalculationSourceReference(detail: CalculationAuditDetail) {
   ].filter(Boolean);
 
   return parts.length ? parts.join(' · ') : 'Source not specified';
+}
+
+function formatDetailJurisdiction(detail: CalculationAuditDetail) {
+  const province = detail.jurisdictionRegion?.trim();
+  const country = detail.jurisdictionCountry?.trim();
+  const location = [province, country].filter(Boolean).join(', ') || detail.jurisdiction || 'Not specified';
+  const source = detail.jurisdictionSource ? formatJurisdictionSource(detail.jurisdictionSource) : null;
+  const assumed = detail.jurisdictionAssumed ? ' · assumed; review before reporting' : '';
+
+  return `${location}${source ? ` · ${source}` : ''}${assumed}`;
+}
+
+function formatJurisdictionSource(source: NonNullable<CalculationAuditDetail['jurisdictionSource']>) {
+  const normalized = String(source).toLowerCase();
+  const labels: Record<string, string> = {
+    record: 'record',
+    facility: 'facility',
+    organization: 'organization default',
+    user: 'user profile',
+    unknown: 'source unknown',
+  };
+
+  return labels[normalized] ?? normalized;
 }
 
 function MetricRelationshipLabel({ item }: { item: MetricsSummaryTableRow }) {
@@ -1600,8 +1740,18 @@ function buildSkippedReasonRows(
 }
 
 function getCalculationIssueTitle(group: CalculationIssueGroup) {
+  if (group.issueType === 'invalidUnit') {
+    return `${formatActivityTypeLabel(group.activityType)} — invalid unit`;
+  }
+
+  if (group.issueType === 'missingJurisdiction') {
+    return `${formatActivityTypeLabel(group.activityType)} — missing province`;
+  }
+
   if (group.issueType === 'missingData') {
     if (group.missingField === 'activityType') return 'Activity type required.';
+    if (group.missingField === 'quantity') return `${formatActivityTypeLabel(group.activityType)} — missing quantity`;
+    if (group.missingField === 'date') return `${formatActivityTypeLabel(group.activityType)} — missing date`;
 
     return group.unit === 'Invalid unit' || normalizeUnitForDisplay(group.unit).status === 'invalid'
       ? `${formatActivityTypeLabel(group.activityType)} — invalid unit`
@@ -1616,9 +1766,23 @@ function getCalculationIssueTitle(group: CalculationIssueGroup) {
 }
 
 function getCalculationIssueDescription(group: CalculationIssueGroup) {
+  if (group.issueType === 'invalidUnit') {
+    return 'Invalid unit detected. Please review this record.';
+  }
+
+  if (group.issueType === 'missingJurisdiction') {
+    return `${group.count} electricity ${group.count === 1 ? 'record is' : 'records are'} missing province. Province is required because electricity factors vary by province.`;
+  }
+
   if (group.issueType === 'missingData') {
     if (group.missingField === 'activityType') {
       return 'Add an activity type before calculations can be performed.';
+    }
+    if (group.missingField === 'quantity') {
+      return 'Quantity must be present and greater than zero before calculations can be performed.';
+    }
+    if (group.missingField === 'date') {
+      return 'A record date or billing period is required before calculations can be performed.';
     }
 
     return group.unit === 'Invalid unit' || normalizeUnitForDisplay(group.unit).status === 'invalid'
@@ -1635,14 +1799,18 @@ function getCalculationIssueDescription(group: CalculationIssueGroup) {
 
 function IssueBadge({ type }: { type: CalculationIssueGroup['issueType'] }) {
   const label =
-    type === 'missingData'
+    type === 'invalidUnit'
+      ? 'Invalid Unit'
+      : type === 'missingJurisdiction'
+      ? 'Missing Jurisdiction'
+      : type === 'missingData'
       ? 'Missing Data'
       : type === 'missingFactor'
       ? 'Missing Factor'
       : 'Informational';
 
   const style =
-    type === 'missingData'
+    type === 'missingData' || type === 'invalidUnit' || type === 'missingJurisdiction'
       ? missingDataBadgeStyle
       : type === 'missingFactor'
       ? missingFactorBadgeStyle

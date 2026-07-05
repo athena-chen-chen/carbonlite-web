@@ -185,7 +185,10 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByText('kgCO2e')).toBeInTheDocument();
     expect(screen.getByText('Alberta, Canada')).toBeInTheDocument();
     expect(screen.getByText('2025')).toBeInTheDocument();
-    expect(screen.getByText('https://example.com/factor-source')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View methodology' })).toHaveAttribute(
+      'href',
+      'https://example.com/factor-source',
+    );
     expect(screen.getByText('Review before reporting.')).toBeInTheDocument();
   });
 
@@ -293,9 +296,9 @@ describe('ConversionFactorsPage traceability', () => {
     await userEvent.selectOptions(screen.getByLabelText('Sort by Factor Value'), 'asc');
 
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
-      '0.53',
-      '1.89',
-      '2.68',
+      '0.53 kgCO2e/kWh',
+      '1.89 kgCO2e/m3',
+      '2.68 kgCO2e/liter',
     ]);
   });
 

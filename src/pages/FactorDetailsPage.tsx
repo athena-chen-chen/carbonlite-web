@@ -173,6 +173,17 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString();
 }
 
+function formatShortDate(value?: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 function formatNumber(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 8 });
@@ -188,12 +199,73 @@ function isWaterTrackedVersion(version: FactorVersion) {
   );
 }
 
+function isElectricityVersion(version: FactorVersion) {
+  return String(version.displayName ?? '').toLowerCase().includes('electricity');
+}
+
+function isProvinceRequiredJurisdiction(value?: string | null) {
+  return String(value ?? '').trim().toLowerCase() === 'province required';
+}
+
+function isPlaceholderElectricityVersion(version: FactorVersion) {
+  return (
+    isElectricityVersion(version) &&
+    (isProvinceRequiredJurisdiction(version.jurisdictionRegion) ||
+      String(version.confidenceLevel ?? '').toLowerCase().includes('placeholder') ||
+      (!version.verified && version.verificationStatus === 'Internal Review Required'))
+  );
+}
+
+function formatJurisdiction(version: FactorVersion) {
+  if (isProvinceRequiredJurisdiction(version.jurisdictionRegion)) return 'Province Required';
+  const region = String(version.jurisdictionRegion ?? '').trim();
+  const country = String(version.jurisdictionCountry ?? '').trim();
+  if (!region && !country) return 'Not specified';
+  if (!region) return country;
+  if (!country || region === country || region.toLowerCase().includes(country.toLowerCase())) return region;
+  return `${region}, ${country}`;
+}
+
+function formatFactorTitle(version: FactorVersion) {
+  if (isElectricityVersion(version)) {
+    if (isProvinceRequiredJurisdiction(version.jurisdictionRegion)) return 'Electricity - Province Required';
+    if (version.jurisdictionRegion) return `Electricity - ${version.jurisdictionRegion}`;
+  }
+  return version.displayName || 'Emission Factor';
+}
+
+function singularUnit(unit?: string | null) {
+  const value = String(unit ?? '').trim();
+  const normalized = value.toLowerCase();
+  if (normalized === 'liters' || normalized === 'litres') return 'liter';
+  if (normalized === 'nights') return 'night';
+  if (normalized === 'tonnes') return 'tonne';
+  return value || 'unit';
+}
+
 function formatFactorValueDisplay(version: FactorVersion) {
-  return isWaterTrackedVersion(version) ? 'Tracked only' : formatNumber(version.factorValue);
+  if (isWaterTrackedVersion(version)) return 'Tracked only';
+  const value = formatNumber(version.factorValue);
+  const resultUnit = version.resultUnit || 'kgCO2e';
+  return `${value} ${resultUnit}/${singularUnit(version.inputUnit)}`;
 }
 
 function formatResultUnitDisplay(version: FactorVersion) {
   return isWaterTrackedVersion(version) ? 'Not applicable' : version.resultUnit;
+}
+
+function formatMethodology(version: FactorVersion) {
+  if (isWaterTrackedVersion(version)) {
+    return 'Water usage is tracked as an operational metric. CarbonLite does not calculate water-related emissions by default because water emission factors vary by municipality, treatment process, and reporting methodology.';
+  }
+  return displayValue(version.methodology);
+}
+
+function formatNotes(version: FactorVersion) {
+  if (isWaterTrackedVersion(version)) {
+    return 'Tracked metric only. Not included in emissions totals unless a reviewed water factor is configured.';
+  }
+  return displayValue(version.notes);
 }
 
 function titleCase(value?: string | null) {
@@ -222,6 +294,16 @@ function getSourceUrlHref(sourceUrl?: string | null) {
   return sourceUrl;
 }
 
+function getSourceLinkLabel(sourceUrl?: string | null, version?: FactorVersion | null) {
+  const href = getSourceUrlHref(sourceUrl);
+  if (!href) return 'View source';
+  if (href.includes('/methodology/water-emissions') || (version && isWaterTrackedVersion(version))) {
+    return 'View water emissions methodology';
+  }
+  if (href.includes('/methodology/default-factors')) return 'CarbonLite default factors methodology';
+  return 'View methodology';
+}
+
 function getFactorTypeLabel(version: FactorVersion) {
   if (version.source?.isOfficial) return 'Official Factor';
   if (version.isSystem) return 'CarbonLite System Factor';
@@ -235,6 +317,21 @@ function productionReady(version: FactorVersion) {
       version.source?.isOfficial &&
       version.source?.isActive,
   );
+}
+
+function defaultScopeForVersion(version: FactorVersion) {
+  const label = String(version.displayName ?? '').toUpperCase();
+  if (isWaterTrackedVersion(version)) return 'Tracked Metric / Not included in emissions total by default';
+  if (['DIESEL', 'GASOLINE', 'NATURAL_GAS', 'PROPANE'].some((type) => label.includes(type))) return 'Scope 1';
+  if (label.includes('ELECTRICITY')) return 'Scope 2';
+  if (
+    ['HOTEL', 'AIR TRAVEL', 'AIR_TRAVEL', 'SHIPPING', 'FREIGHT', 'WASTE'].some((type) =>
+      label.includes(type),
+    )
+  ) {
+    return 'Scope 3';
+  }
+  return 'Not specified';
 }
 
 export function FactorDetailsPage() {
@@ -326,7 +423,7 @@ export function FactorDetailsPage() {
           <div>
             <div style={{ ...mutedStyle, marginBottom: 6 }}>Factor Details</div>
             <h1 style={{ margin: 0, color: '#0f172a' }}>
-              {version.displayName || 'Emission Factor'}
+              {formatFactorTitle(version)}
             </h1>
             <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <span style={statusBadgeStyle(version.status)}>{formatStatus(version.status)}</span>
@@ -373,14 +470,33 @@ export function FactorDetailsPage() {
       </div>
 
       <div style={gridStyle}>
+        {isPlaceholderElectricityVersion(version) ? (
+          <Card title="Electricity Factor Warning" style={fullWidthCardStyle}>
+            <div style={warningStyle}>
+              This is a placeholder electricity factor for pilot testing only. Electricity
+              factors vary by province and should be replaced with verified provincial
+              factors before production or client-facing reporting.
+            </div>
+          </Card>
+        ) : null}
+
+        {version.isSystem && !version.verified ? (
+          <Card title="System Factor Review" style={fullWidthCardStyle}>
+            <div style={reviewNoticeStyle}>
+              This system factor is included for pilot validation and should be reviewed
+              before regulatory, client-facing, or compliance reporting.
+            </div>
+          </Card>
+        ) : null}
+
         <Card title="Basic Information">
           <InfoGrid>
             <Info label="Category" value={titleCase(version.source?.publisherType)} />
             <Info label="Activity Type" value={titleCase(version.displayName)} />
             <Info label="Fuel Type" value={titleCase(version.displayName)} />
-            <Info label="Scope" value="Source-specific" />
+            <Info label="Default Scope" value={defaultScopeForVersion(version)} />
             <Info label="Description" value={displayValue(version.notes)} wide />
-            <Info label="Jurisdiction" value={displayValue(version.jurisdictionRegion)} />
+            <Info label="Jurisdiction" value={formatJurisdiction(version)} />
             <Info label="Country" value={displayValue(version.jurisdictionCountry)} />
             <Info label="Applicable Industry" value="Future field" />
           </InfoGrid>
@@ -392,16 +508,17 @@ export function FactorDetailsPage() {
             <div style={factorValueStyle}>{formatFactorValueDisplay(version)}</div>
           </div>
           <InfoGrid>
-            <Info label="Input Unit" value={version.inputUnit} />
-            <Info label="Output Unit" value={formatResultUnitDisplay(version)} />
+            <Info label="Activity Unit" value={version.inputUnit} />
+            <Info label="Emission Unit" value={formatResultUnitDisplay(version)} />
             {isWaterTrackedVersion(version) ? (
               <Info label="Calculation" value="Not calculated by default" />
             ) : null}
             <Info label="Factor Year" value={version.factorYear ?? 'Not specified'} />
             <Info label="Effective From" value={formatDate(version.effectiveFrom)} />
             <Info label="Effective To" value={formatDate(version.effectiveTo)} />
-            <Info label="Methodology" value={displayValue(version.methodology)} wide />
-            <Info label="Calculation Notes" value={displayValue(version.notes)} wide />
+            <Info label="Default Scope" value={defaultScopeForVersion(version)} />
+            <Info label="Methodology" value={formatMethodology(version)} wide />
+            <Info label="Calculation Notes" value={formatNotes(version)} wide />
           </InfoGrid>
         </Card>
 
@@ -423,7 +540,7 @@ export function FactorDetailsPage() {
               value={
                 source?.sourceUrl ? (
                   <a href={getSourceUrlHref(source.sourceUrl)} target="_blank" rel="noopener noreferrer">
-                    {source.sourceUrl}
+                    {getSourceLinkLabel(source.sourceUrl, version)}
                   </a>
                 ) : (
                   'Not specified'
@@ -435,7 +552,7 @@ export function FactorDetailsPage() {
           <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
             {source?.sourceUrl ? (
               <a href={getSourceUrlHref(source.sourceUrl)} target="_blank" rel="noopener noreferrer" style={primaryButtonStyle}>
-                Open PDF
+                {getSourceLinkLabel(source.sourceUrl, version)}
               </a>
             ) : null}
             <button type="button" style={buttonStyle} onClick={() => void copyText(citation, 'Citation')}>
@@ -454,7 +571,7 @@ export function FactorDetailsPage() {
             <Info label="Verification Status" value={displayValue(version.verificationStatus)} />
             <Info label="Verified" value={version.verified ? 'Yes' : 'No'} />
             <Info label="Reviewed By" value={displayValue(version.reviewedBy)} />
-            <Info label="Reviewed At" value={formatDateTime(version.reviewedAt)} />
+            <Info label="Reviewed At" value={formatShortDate(version.reviewedAt)} />
             <Info label="Approval Source" value={displayValue(version.approvalSource)} />
             <Info label="Production Ready" value={ready ? 'Yes' : 'No'} />
             <Info label="Review Notes" value={displayValue(version.reviewNotes)} wide />
@@ -498,7 +615,7 @@ export function FactorDetailsPage() {
                       {item.id === version.id ? <div style={mutedStyle}>Current view</div> : null}
                     </td>
                     <td style={tdStyle}>
-                      {formatFactorValueDisplay(item)} {isWaterTrackedVersion(item) ? '' : item.resultUnit}
+                      {formatFactorValueDisplay(item)}
                     </td>
                     <td style={tdStyle}>
                       <span style={statusBadgeStyle(item.status)}>{formatStatus(item.status)}</span>
@@ -507,7 +624,7 @@ export function FactorDetailsPage() {
                     <td style={tdStyle}>
                       {formatDate(item.effectiveFrom)} to {formatDate(item.effectiveTo)}
                     </td>
-                    <td style={tdStyle}>{formatDateTime(item.updatedAt)}</td>
+                    <td style={tdStyle} title={formatDateTime(item.updatedAt)}>{formatShortDate(item.updatedAt)}</td>
                     <td style={tdStyle}>
                       <Link to={`/factor-details/${item.id}`} style={buttonStyle}>
                         View Version
@@ -527,7 +644,9 @@ export function FactorDetailsPage() {
             <div style={{ display: 'grid', gap: 12 }}>
               {(history?.items ?? []).map((item) => (
                 <div key={item.id} style={timelineItemStyle}>
-                  <div style={{ fontWeight: 800 }}>{formatDateTime(item.createdAt)}</div>
+                  <div style={{ fontWeight: 800 }} title={formatDateTime(item.createdAt)}>
+                    {formatShortDate(item.createdAt)}
+                  </div>
                   <div>{titleCase(item.action)}</div>
                   {item.reason ? <div style={mutedStyle}>{item.reason}</div> : null}
                 </div>
@@ -662,6 +781,26 @@ const errorStyle: React.CSSProperties = {
   background: '#fef2f2',
   color: '#991b1b',
   fontWeight: 750,
+};
+
+const warningStyle: React.CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 8,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+  lineHeight: 1.55,
+  fontWeight: 700,
+};
+
+const reviewNoticeStyle: React.CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 8,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1e40af',
+  lineHeight: 1.55,
+  fontWeight: 700,
 };
 
 const timelineItemStyle: React.CSSProperties = {

@@ -71,6 +71,7 @@ export function findBestConversionFactorMatch(input: {
       factorKind === 'EMISSION' &&
       isUsableFactor(factor) &&
       normalizeFactorActivityType(factor) === activityType &&
+      !(activityType === 'ELECTRICITY' && isPlaceholderFactor(factor)) &&
       normalizeUnit(getFactorInputUnit(factor)) === inputUnit &&
       factorYearMatches(getFactorYear(factor), recordYear) &&
       countryMatches(getFactorCountry(factor), country) &&
@@ -178,6 +179,15 @@ function isUsableFactor(factor: MatchableConversionFactor) {
   return true;
 }
 
+function isPlaceholderFactor(factor: MatchableConversionFactor) {
+  const currentVersion = factor.currentActiveVersion ?? factor.version;
+  return (
+    normalizeJurisdictionRegion(getFactorRegion(factor)) === 'Province Required' ||
+    String(currentVersion?.confidenceLevel ?? factor.confidenceLevel ?? '').toLowerCase().includes('placeholder') ||
+    Boolean(currentVersion?.verified ?? factor.verified) === false
+  );
+}
+
 function compareNewestDefaultFirst(
   a: MatchableConversionFactor,
   b: MatchableConversionFactor,
@@ -204,6 +214,13 @@ export function normalizeActivityType(value?: string | null) {
   if (normalized.includes('ELECTRICITY')) return 'ELECTRICITY';
   if (normalized.includes('WATER')) return 'WATER';
   if (normalized.includes('WASTE')) return 'WASTE';
+  if (
+    normalized.includes('HOTEL') ||
+    normalized.includes('ACCOMMODATION') ||
+    normalized.includes('LODGING')
+  ) {
+    return 'HOTEL';
+  }
 
   return normalized
     .replace(/_EMISSION_FACTOR$/, '')

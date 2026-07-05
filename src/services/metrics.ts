@@ -229,6 +229,10 @@ export type CalculationAuditDetail = {
   jurisdiction: string;
   jurisdictionCountry?: string | null;
   jurisdictionRegion?: string | null;
+  jurisdictionSource?: 'record' | 'facility' | 'organization' | 'user' | 'unknown' | string | null;
+  jurisdictionAssumed?: boolean | null;
+  facilityId?: string | null;
+  facilityName?: string | null;
   activityQuantity: number;
   activityUnit: string;
   quantityUnit?: string | null;
@@ -298,6 +302,10 @@ export type CalculationExplanation = {
   recordYear?: number | null;
   facilityName?: string | null;
   jurisdiction?: string | null;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  jurisdictionSource?: 'record' | 'facility' | 'organization' | 'user' | 'unknown' | string | null;
+  jurisdictionAssumed?: boolean | null;
   calculationStatus: string;
   calculatedEmissions?: number | null;
   resultUnit?: string | null;

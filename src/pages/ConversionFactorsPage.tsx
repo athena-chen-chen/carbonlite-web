@@ -45,8 +45,13 @@ const initialForm: ConversionFactorInput = {
 };
 
 export function getFactorJurisdiction(item: ConversionFactorItem) {
-  if (item.jurisdiction?.trim()) return item.jurisdiction.trim();
-  return [item.region, item.country].filter(Boolean).join(', ') || '';
+  const region = item.jurisdiction?.trim() || item.region?.trim() || '';
+  const country = item.country?.trim() || '';
+  if (isProvinceRequiredJurisdiction(region)) return 'Province Required';
+  if (!region && !country) return '';
+  if (!region) return country;
+  if (!country || region === country || region.toLowerCase().includes(country.toLowerCase())) return region;
+  return `${region}, ${country}`;
 }
 
 export function getFactorTraceability(item: ConversionFactorItem) {
@@ -72,6 +77,26 @@ function isWaterTrackedFactor(item: Pick<ConversionFactorItem, 'activityType' | 
   );
 }
 
+function isElectricityFactor(item: Pick<ConversionFactorItem, 'activityType' | 'name'>) {
+  return (
+    String(item.activityType ?? '').toUpperCase() === 'ELECTRICITY' ||
+    String(item.name ?? '').toLowerCase().includes('electricity')
+  );
+}
+
+function isProvinceRequiredJurisdiction(value?: string | null) {
+  return String(value ?? '').trim().toLowerCase() === 'province required';
+}
+
+function isPlaceholderElectricityFactor(item: ConversionFactorItem) {
+  return (
+    isElectricityFactor(item) &&
+    (isProvinceRequiredJurisdiction(getFactorJurisdiction(item)) ||
+      String(item.confidenceLevel ?? '').toLowerCase().includes('placeholder') ||
+      (!item.verified && item.verificationStatus === 'Internal Review Required'))
+  );
+}
+
 function formatFactorValue(value: ConversionFactorItem['factorValue']) {
   const numericValue = Number(value);
 
@@ -85,11 +110,21 @@ function formatFactorValue(value: ConversionFactorItem['factorValue']) {
 }
 
 function formatFactorValueDisplay(item: ConversionFactorItem) {
-  return isWaterTrackedFactor(item) ? 'Tracked only' : formatFactorValue(item.factorValue);
+  if (isWaterTrackedFactor(item)) return 'Tracked only';
+  return `${formatFactorValue(item.factorValue)} ${item.resultUnit || 'kgCO2e'}/${singularUnit(item.unit)}`;
 }
 
 function formatFactorResultUnitDisplay(item: ConversionFactorItem) {
   return isWaterTrackedFactor(item) ? 'Not applicable' : item.resultUnit;
+}
+
+function singularUnit(unit?: string | null) {
+  const value = String(unit ?? '').trim();
+  const normalized = value.toLowerCase();
+  if (normalized === 'liters' || normalized === 'litres' || normalized === 'l') return 'liter';
+  if (normalized === 'nights') return 'night';
+  if (normalized === 'tonnes') return 'tonne';
+  return value || 'unit';
 }
 
 function formatAuditDate(value?: string | null) {
@@ -98,7 +133,11 @@ function formatAuditDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
 
-  return date.toLocaleString();
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function formatActivityTypeDisplay(value?: string | null) {
@@ -112,9 +151,41 @@ function formatActivityTypeDisplay(value?: string | null) {
 }
 
 function formatFactorNameDisplay(item: ConversionFactorItem) {
+  if (isElectricityFactor(item)) {
+    const jurisdiction = getFactorJurisdiction(item);
+    if (isProvinceRequiredJurisdiction(jurisdiction)) return 'Electricity - Province Required';
+    const region = jurisdiction.split(',')[0]?.trim();
+    if (region) return `Electricity - ${region}`;
+  }
+
   const activityTypeLabel = item.activityType ? formatActivityTypeDisplay(item.activityType) : '';
 
   return activityTypeLabel || item.name;
+}
+
+function defaultScopeForFactor(item: ConversionFactorItem) {
+  const type = String(item.activityType ?? item.name ?? '').toUpperCase();
+  if (isWaterTrackedFactor(item)) return 'Tracked Metric / Not included in emissions total by default';
+  if (['DIESEL', 'GASOLINE', 'NATURAL_GAS', 'PROPANE'].some((value) => type.includes(value))) return 'Scope 1';
+  if (type.includes('ELECTRICITY')) return 'Scope 2';
+  if (['HOTEL', 'AIR_TRAVEL', 'AIR TRAVEL', 'SHIPPING', 'FREIGHT', 'WASTE'].some((value) => type.includes(value))) {
+    return 'Scope 3';
+  }
+  return 'Not specified';
+}
+
+function formatMethodologyDisplay(item: ConversionFactorItem) {
+  if (isWaterTrackedFactor(item)) {
+    return 'Water usage is tracked as an operational metric. CarbonLite does not calculate water-related emissions by default because water emission factors vary by municipality, treatment process, and reporting methodology.';
+  }
+  return item.methodology || '';
+}
+
+function formatNotesDisplay(item: ConversionFactorItem) {
+  if (isWaterTrackedFactor(item)) {
+    return 'Tracked metric only. Not included in emissions totals unless a reviewed water factor is configured.';
+  }
+  return item.notes || '';
 }
 
 function formatTableSourceAuthority(value?: string | null) {
@@ -137,6 +208,16 @@ function getSourceUrlHref(sourceUrl?: string | null) {
   }
 
   return sourceUrl;
+}
+
+function getSourceLinkLabel(sourceUrl?: string | null, item?: ConversionFactorItem) {
+  const href = getSourceUrlHref(sourceUrl);
+  if (!href) return 'View source';
+  if (href.includes('/methodology/water-emissions') || (item && isWaterTrackedFactor(item))) {
+    return 'View water emissions methodology';
+  }
+  if (href.includes('/methodology/default-factors')) return 'CarbonLite default factors methodology';
+  return 'View methodology';
 }
 
 export function ConversionFactorsPage() {
@@ -1157,7 +1238,7 @@ function FactorDetailsModal({
             <div style={{ color: '#047857', fontWeight: 700, fontSize: 13 }}>
               {item.activityType || 'Conversion Factor'}
             </div>
-            <h2 id="factor-details-title" style={{ margin: '4px 0 0' }}>{item.name}</h2>
+            <h2 id="factor-details-title" style={{ margin: '4px 0 0' }}>{formatFactorNameDisplay(item)}</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Close factor details" style={modalCloseStyle}>
             ×
@@ -1178,15 +1259,26 @@ function FactorDetailsModal({
         {item.isSystemDefault ? (
           <div style={systemFactorNoticeStyle}>
             System factors are managed by CarbonLite and cannot be edited directly.
+            {!traceability.verified
+              ? ' This system factor is included for pilot validation and should be reviewed before regulatory, client-facing, or compliance reporting.'
+              : ''}
+          </div>
+        ) : null}
+        {isPlaceholderElectricityFactor(item) ? (
+          <div style={placeholderWarningStyle}>
+            This is a placeholder electricity factor for pilot testing only. Electricity
+            factors vary by province and should be replaced with verified provincial
+            factors before production or client-facing reporting.
           </div>
         ) : null}
         <div style={traceabilityDetailsStyle}>
           <DetailSection title="Factor Information">
             <DetailItem label="Activity" value={formatActivityTypeDisplay(item.activityType)} />
-            <DetailItem label="Factor Value" value={formatFactorValueDisplay(item)} />
-            <DetailItem label="Input Unit" value={item.unit} />
-            <DetailItem label="Result Unit" value={formatFactorResultUnitDisplay(item)} />
+            <DetailItem label="Factor" value={formatFactorValueDisplay(item)} />
+            <DetailItem label="Activity Unit" value={item.unit} />
+            <DetailItem label="Emission Unit" value={formatFactorResultUnitDisplay(item)} />
             <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
+            <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
             {isWaterTrackedFactor(item) ? (
               <DetailItem label="Calculation" value="Not calculated by default" />
             ) : null}
@@ -1201,7 +1293,7 @@ function FactorDetailsModal({
               value={
                 traceability.sourceUrl ? (
                   <a href={getSourceUrlHref(traceability.sourceUrl)} target="_blank" rel="noopener noreferrer">
-                    {traceability.sourceUrl}
+                    {getSourceLinkLabel(traceability.sourceUrl, item)}
                   </a>
                 ) : null
               }
@@ -1218,8 +1310,8 @@ function FactorDetailsModal({
           </DetailSection>
 
           <DetailSection title="Methodology">
-            <DetailItem label="Methodology" value={traceability.methodology} />
-            <DetailItem label="Notes" value={traceability.notes} />
+            <DetailItem label="Methodology" value={formatMethodologyDisplay(item)} />
+            <DetailItem label="Notes" value={formatNotesDisplay(item)} />
             <DetailItem
               label="Audit History"
               value={`Created: ${formatAuditDate(item.createdAt)}\nUpdated: ${formatAuditDate(item.updatedAt)}`}
@@ -1618,6 +1710,18 @@ const systemFactorNoticeStyle: React.CSSProperties = {
   padding: '10px 12px',
   marginBottom: 14,
   fontSize: 13,
+  fontWeight: 700,
+};
+
+const placeholderWarningStyle: React.CSSProperties = {
+  border: '1px solid #fed7aa',
+  borderRadius: 8,
+  background: '#fff7ed',
+  color: '#9a3412',
+  padding: '10px 12px',
+  marginBottom: 14,
+  fontSize: 13,
+  lineHeight: 1.5,
   fontWeight: 700,
 };
 

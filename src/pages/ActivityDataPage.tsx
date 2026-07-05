@@ -629,6 +629,8 @@ async function saveEdit() {
       recordDate: editRow.recordDate,
       quantity: Number(editRow.quantity),
       unit: editRow.unit,
+      jurisdictionCountry: editRow.jurisdictionCountry ?? '',
+      jurisdictionRegion: editRow.jurisdictionRegion ?? '',
       sourceType: editRow.sourceType,
       sourceReference: editRow.sourceReference ?? '',
       notes: editRow.notes ?? '',

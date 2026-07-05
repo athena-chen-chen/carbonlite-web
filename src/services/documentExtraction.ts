@@ -6,6 +6,8 @@ export type ParsedActivity = {
   recordDate: string | null;
   quantity: number;
   unit: string;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
   sourceType?: string | null;
   sourceReference?: string | null;
   sourceDocumentId?: string | null;

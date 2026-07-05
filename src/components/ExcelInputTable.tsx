@@ -10,9 +10,12 @@ import * as XLSX from 'xlsx';
 import {
   findBestConversionFactorMatch,
   getFactorSourceAuthority,
+  normalizeActivityType,
+  normalizeJurisdictionRegion,
 } from '../utils/conversionFactorMatching';
 import { getCurrentUser, getOrganizationId } from '../services/auth';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import { getFacilities, type FacilityItem } from '../services/facilities';
 
 type Row = {
   id: string;
@@ -22,6 +25,10 @@ type Row = {
   recordDate: string;
   jurisdictionCountry: string;
   jurisdictionRegion: string;
+  facilityId?: string;
+  facilityName?: string;
+  sourceReference?: string;
+  notes?: string;
   factorId?: string;
   factorName?: string;
   factorValue?: string | number;
@@ -29,7 +36,7 @@ type Row = {
   factorSourceAuthority?: string;
   factorSourceYear?: string | number | null;
   factorStatus?: 'matched' | 'missing';
-  calculationStatus?: 'calculated' | 'invalidUnit' | 'missingFactor' | 'trackedMetric' | 'needsReview';
+  calculationStatus?: 'calculated' | 'invalidUnit' | 'missingFactor' | 'missingJurisdiction' | 'trackedMetric' | 'needsReview';
   calculationMessage?: string;
   supportedUnits?: string[];
   errors?: string[];
@@ -42,22 +49,29 @@ export function ExcelInputTable({ onSuccess }: { onSuccess: () => void }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const [entrySourceType, setEntrySourceType] = useState<'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE'>('MANUAL');
+  const [bulkProvince, setBulkProvince] = useState('');
+  const [facilities, setFacilities] = useState<FacilityItem[]>([]);
   useEffect(() => {
-  async function loadFactors() {
+  async function loadReferenceData() {
     try {
-      const data = await getConversionFactors();
-      setConversionFactors(data.items ?? []);
+      const [factorData, facilityData] = await Promise.all([
+        getConversionFactors(),
+        getFacilities().catch(() => []),
+      ]);
+      setConversionFactors(factorData.items ?? []);
+      setFacilities(facilityData);
     } catch {
       setConversionFactors([]);
+      setFacilities([]);
     }
   }
 
-  loadFactors();
+  loadReferenceData();
 }, []);
 const [conversionFactors, setConversionFactors] = useState<any[]>([]);
 useEffect(() => {
   setRows((prev) => prev.map(applyFactorToRow));
-}, [conversionFactors]);
+}, [conversionFactors, facilities]);
 
 const hasUnsavedRows = rows.some(
   (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
@@ -167,7 +181,7 @@ function isTrackedMetricActivity(activityType: string) {
   return ['WATER', 'WASTE', 'WASTE_VOLUME'].includes(String(activityType).toUpperCase());
 }
 
-function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit'>) {
+function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'jurisdictionRegion'>) {
   if (!row.activityType || !row.unit) {
     return {
       calculationStatus: undefined,
@@ -177,6 +191,15 @@ function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit'>) {
   }
 
   const supportedUnits = getSupportedUnitsForActivityType(row.activityType);
+
+  if (row.activityType === 'ELECTRICITY' && !normalizeJurisdictionRegion(row.jurisdictionRegion)) {
+    return {
+      calculationStatus: 'missingJurisdiction' as const,
+      calculationMessage:
+        'Electricity emissions require a province-specific factor. Please select the province where the electricity was used.',
+      supportedUnits,
+    };
+  }
 
   if (isTrackedMetricActivity(row.activityType)) {
     return {
@@ -229,12 +252,21 @@ function applyFactorToRow(row: Row): Row {
     };
   }
 
-  const match = findMatchingFactor(row);
-  const review = getRowCalculationReview(row);
+  const matchedFacility = findFacilityByName(row.facilityName, facilities);
+  const facilityProvince = normalizeProvince(matchedFacility?.provinceState);
+  const facilityCountry = normalizeCountry(matchedFacility?.country);
+  const normalizedRow = {
+    ...row,
+    facilityId: matchedFacility?.id ?? row.facilityId,
+    jurisdictionCountry: normalizeCountry(row.jurisdictionCountry || facilityCountry),
+    jurisdictionRegion: normalizeProvince(row.jurisdictionRegion) || facilityProvince,
+  };
+  const match = findMatchingFactor(normalizedRow);
+  const review = getRowCalculationReview(normalizedRow);
 
   if (!match) {
     return {
-      ...row,
+      ...normalizedRow,
       factorId: undefined,
       factorName: undefined,
       factorValue: undefined,
@@ -249,7 +281,7 @@ function applyFactorToRow(row: Row): Row {
   const { factor } = match;
 
   return {
-    ...row,
+    ...normalizedRow,
     factorId: factor.id,
     factorName: factor.name,
     factorValue: factor.factorValue,
@@ -276,19 +308,38 @@ function importExcelFile(file: File) {
 
     const importedRows = jsonData.map((row) => {
       const activityType =
-        row.activityType || row.type || row.activity || '';
+        normalizeActivityType(readAliasedField(row, ['activityType', 'Activity Type', 'type', 'activity'])) || '';
 
       return {
         id: Math.random().toString(),
         activityType,
         recordDate:
-          row.recordDate ||
-          row.date ||
+          readAliasedField(row, ['recordDate', 'Record Date', 'date', 'Date']) ||
           new Date().toISOString().slice(0, 10),
-        quantity: row.quantity || row.qty || row.amount || '',
-        unit: row.unit || row.uom || getDefaultUnit(activityType),
-        jurisdictionCountry: row.jurisdictionCountry || row.country || 'Canada',
-        jurisdictionRegion: row.jurisdictionRegion || row.province || row.region || '',
+        quantity: readAliasedField(row, ['quantity', 'Quantity', 'qty', 'amount', 'usage']) || '',
+        unit: readAliasedField(row, ['unit', 'Unit', 'uom', 'measurement']) || getDefaultUnit(activityType),
+        jurisdictionCountry: normalizeCountry(readAliasedField(row, [
+          'jurisdictionCountry',
+          'Jurisdiction Country',
+          'Country',
+          'country',
+        ])),
+        jurisdictionRegion: normalizeProvince(readAliasedField(row, [
+          'jurisdictionRegion',
+          'Jurisdiction Region',
+          'Province',
+          'province',
+          'Jurisdiction',
+          'jurisdiction',
+          'Region',
+          'region',
+          'State/Province',
+          'Facility Province',
+          'facilityProvince',
+        ])),
+        facilityName: readAliasedField(row, ['Facility', 'facility', 'facilityName', 'Facility Name']),
+        sourceReference: readAliasedField(row, ['Source Reference', 'sourceReference', 'reference']),
+        notes: readAliasedField(row, ['Notes', 'notes']),
       };
     });
 
@@ -336,6 +387,21 @@ function parseCSVText(text: string) {
   ]);
 
   const unitIndex = findColumnIndex(headers, ['unit', 'uom', 'measurement']);
+  const countryIndex = findColumnIndex(headers, ['country', 'jurisdictionCountry', 'jurisdiction country']);
+  const provinceIndex = findColumnIndex(headers, [
+    'province',
+    'jurisdiction',
+    'jurisdictionRegion',
+    'jurisdiction region',
+    'region',
+    'state',
+    'state/province',
+    'facilityProvince',
+    'facility province',
+  ]);
+  const facilityIndex = findColumnIndex(headers, ['facility', 'facilityName', 'facility name']);
+  const sourceReferenceIndex = findColumnIndex(headers, ['sourceReference', 'source reference', 'reference']);
+  const notesIndex = findColumnIndex(headers, ['notes', 'note']);
 
   if (activityTypeIndex === -1 || quantityIndex === -1) {
     alert('CSV must include at least activity type and quantity columns.');
@@ -344,7 +410,7 @@ function parseCSVText(text: string) {
 
   const importedRows = lines.slice(1).map((line) => {
     const cols = line.split(',').map((v) => v.trim());
-    const activityType = cols[activityTypeIndex] || '';
+    const activityType = normalizeActivityType(cols[activityTypeIndex] || '');
 
     return {
       id: Math.random().toString(),
@@ -358,8 +424,11 @@ function parseCSVText(text: string) {
         unitIndex >= 0
           ? cols[unitIndex]
           : getDefaultUnit(activityType),
-      jurisdictionCountry: 'Canada',
-      jurisdictionRegion: '',
+      jurisdictionCountry: normalizeCountry(countryIndex >= 0 ? cols[countryIndex] : 'Canada'),
+      jurisdictionRegion: normalizeProvince(provinceIndex >= 0 ? cols[provinceIndex] : ''),
+      facilityName: facilityIndex >= 0 ? cols[facilityIndex] : '',
+      sourceReference: sourceReferenceIndex >= 0 ? cols[sourceReferenceIndex] : '',
+      notes: notesIndex >= 0 ? cols[notesIndex] : '',
     };
   });
 
@@ -408,10 +477,15 @@ function buildActivityPayload(row: Row) {
     unit: row.unit,
     jurisdictionCountry: normalizeOptional(row.jurisdictionCountry) ?? 'Canada',
     jurisdictionRegion: normalizeOptional(row.jurisdictionRegion),
+    facilityId: normalizeOptional(row.facilityId),
     recordYear: row.recordDate ? new Date(row.recordDate).getUTCFullYear() : undefined,
     sourceType: entrySourceType,
-    sourceReference: entrySourceType.toLowerCase(),
-    notes: `Created from ${entrySourceType}. Calculation status: ${getCalculationStatusLabel(row)}. ${row.calculationMessage ?? ''} Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
+    sourceReference: normalizeOptional(row.sourceReference) ?? entrySourceType.toLowerCase(),
+    notes: [
+      row.notes,
+      row.facilityName ? `Facility: ${row.facilityName}` : '',
+      `Created from ${entrySourceType}. Calculation status: ${getCalculationStatusLabel(row)}. ${row.calculationMessage ?? ''} Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
+    ].filter(Boolean).join(' '),
   };
 }
 
@@ -441,6 +515,8 @@ function createEmptyRow(): Row {
     recordDate: new Date().toISOString().slice(0, 10),
     jurisdictionCountry: 'Canada',
     jurisdictionRegion: '',
+    facilityId: '',
+    facilityName: '',
     status: 'draft',
   };
 }
@@ -467,6 +543,8 @@ function getCalculationStatusLabel(row: Row) {
       return 'Invalid Unit';
     case 'missingFactor':
       return 'Missing Factor';
+    case 'missingJurisdiction':
+      return 'Missing Province';
     case 'needsReview':
       return 'Needs Review';
     default:
@@ -477,7 +555,7 @@ function getCalculationStatusLabel(row: Row) {
 function getStatusTone(row: Row): StatusTone {
   if (row.calculationStatus === 'calculated') return 'success';
   if (row.calculationStatus === 'trackedMetric') return 'info';
-  if (row.calculationStatus === 'invalidUnit' || row.calculationStatus === 'missingFactor') return 'warning';
+  if (row.calculationStatus === 'invalidUnit' || row.calculationStatus === 'missingFactor' || row.calculationStatus === 'missingJurisdiction') return 'warning';
   return 'neutral';
 }
 
@@ -497,6 +575,7 @@ function buildImportReviewSummary(rows: Row[]) {
       if (errors.some((error) => error.toLowerCase().includes('quantity'))) summary.missingQuantity += 1;
       if (row.calculationStatus === 'trackedMetric') summary.tracked += 1;
       if (row.calculationStatus === 'invalidUnit') summary.invalidUnit += 1;
+      if (row.calculationStatus === 'missingJurisdiction') summary.missingProvince += 1;
 
       if (errors.length === 0 && row.calculationStatus === 'calculated') {
         summary.ready += 1;
@@ -514,6 +593,7 @@ function buildImportReviewSummary(rows: Row[]) {
       missingDate: 0,
       missingQuantity: 0,
       invalidUnit: 0,
+      missingProvince: 0,
     },
   );
 }
@@ -619,6 +699,22 @@ function renderFactorCell(row: Row) {
     );
   }
 
+  if (row.calculationStatus === 'missingJurisdiction') {
+    return (
+      <div style={{ color: '#b45309', fontSize: 12, lineHeight: 1.45 }}>
+        <strong>Missing Province</strong>
+        <br />
+        Electricity emissions require province-specific factor matching.
+        {row.calculationMessage ? (
+          <>
+            <br />
+            {row.calculationMessage}
+          </>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div style={{ color: '#be123c', fontSize: 12, lineHeight: 1.45 }}>
       <strong>No valid factor match</strong>
@@ -689,6 +785,35 @@ function findColumnIndex(headers: string[], candidates: string[]) {
     candidates.map(normalizeHeader).includes(header),
   );
 }
+
+function readAliasedField(row: Record<string, unknown>, aliases: string[]) {
+  const normalizedAliases = aliases.map(normalizeHeader);
+  const key = Object.keys(row).find((candidate) =>
+    normalizedAliases.includes(normalizeHeader(candidate)),
+  );
+  const value = key ? row[key] : undefined;
+  return String(value ?? '').trim();
+}
+
+function normalizeProvince(value?: string | null) {
+  return normalizeJurisdictionRegion(value) ?? '';
+}
+
+function normalizeCountry(value?: string | null) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'Canada';
+  if (['ca', 'can', 'canada'].includes(raw.toLowerCase())) return 'Canada';
+  return raw;
+}
+
+function findFacilityByName(name: string | undefined, facilities: FacilityItem[]) {
+  const normalizedName = String(name ?? '').trim().toLowerCase();
+  if (!normalizedName) return undefined;
+
+  return facilities.find((facility) =>
+    facility.name.trim().toLowerCase() === normalizedName,
+  );
+}
 function handlePasteRows(event: React.ClipboardEvent<HTMLTableElement>) {
   const text = event.clipboardData.getData('text');
 
@@ -702,8 +827,8 @@ function handlePasteRows(event: React.ClipboardEvent<HTMLTableElement>) {
     .trim()
     .split(/\r?\n/)
     .map((line) => line.split('\t').map((cell) => cell.trim()))
-    .map(([activityType, recordDate, quantity, unit]) => {
-      const type = activityType || '';
+    .map(([activityType, recordDate, quantity, unit, country, province, facilityName]) => {
+      const type = normalizeActivityType(activityType || '');
 
       return {
         id: Math.random().toString(),
@@ -711,8 +836,9 @@ function handlePasteRows(event: React.ClipboardEvent<HTMLTableElement>) {
         recordDate: recordDate || new Date().toISOString().slice(0, 10),
         quantity: quantity || '',
         unit: unit || getDefaultUnit(type),
-        jurisdictionCountry: 'Canada',
-        jurisdictionRegion: '',
+        jurisdictionCountry: normalizeCountry(country || 'Canada'),
+        jurisdictionRegion: normalizeProvince(province || ''),
+        facilityName: facilityName || '',
       };
     });
 
@@ -871,6 +997,41 @@ const importReviewSummary = buildImportReviewSummary(rows);
           <span>{importReviewSummary.missingDate} missing date</span>
           <span>{importReviewSummary.missingQuantity} missing quantity</span>
           <span>{importReviewSummary.invalidUnit} invalid unit</span>
+          <span>{importReviewSummary.missingProvince} missing province</span>
+        </div>
+      ) : null}
+      {rows.some((row) => row.calculationStatus === 'missingJurisdiction') ? (
+        <div style={bulkProvinceStyle}>
+          <label style={{ fontWeight: 800 }}>
+            Set province for electricity rows needing province
+          </label>
+          <select
+            value={bulkProvince}
+            onChange={(event) => setBulkProvince(event.target.value)}
+            style={inputStyle}
+          >
+            <option value="">Select province</option>
+            <option value="British Columbia">British Columbia</option>
+            <option value="Alberta">Alberta</option>
+            <option value="Ontario">Ontario</option>
+          </select>
+          <button
+            type="button"
+            disabled={!bulkProvince}
+            onClick={() => {
+              setRows((prev) =>
+                prev.map((row) =>
+                  row.calculationStatus === 'missingJurisdiction'
+                    ? applyFactorToRow({ ...row, jurisdictionRegion: bulkProvince, status: 'draft', errors: undefined })
+                    : row,
+                ),
+              );
+              setBulkProvince('');
+            }}
+            style={secondaryButtonStyle}
+          >
+            Apply
+          </button>
         </div>
       ) : null}
     </div>
@@ -892,6 +1053,7 @@ const importReviewSummary = buildImportReviewSummary(rows);
           <th style={thStyle}>Date</th>
           <th style={thStyle}>Country</th>
           <th style={thStyle}>Province</th>
+          <th style={thStyle}>Facility</th>
           <th style={thStyle}>Status</th>
           <th style={thStyle}>Factor</th>
           <th style={thStyle}>Actions</th>
@@ -980,6 +1142,14 @@ const importReviewSummary = buildImportReviewSummary(rows);
                   Electricity factors are province-specific. Please provide the province or facility location.
                 </div>
               ) : null}
+            </td>
+            <td style={tdStyle}>
+              <input
+                value={row.facilityName ?? ''}
+                onChange={(e) => updateRow(row.id, 'facilityName', e.target.value)}
+                placeholder="Facility"
+                style={inputStyle}
+              />
             </td>
             <td style={tdStyle}>
   {renderStatusCell(row)}
@@ -1211,6 +1381,19 @@ const footerActionsStyle: React.CSSProperties = {
   marginTop: 16,
   flexWrap: 'wrap',
   alignItems: 'center',
+};
+
+const bulkProvinceStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  padding: 12,
+  marginTop: 12,
+  borderRadius: 10,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
 };
 
 type StatusTone = 'success' | 'info' | 'warning' | 'neutral';

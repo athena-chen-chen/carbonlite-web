@@ -1,5 +1,7 @@
 import {
+  buildHotspotAnalysis,
   buildMetricsSummaryTableRows,
+  type HotspotAnalysis,
   type MetricsCountSummary,
 } from './MetricsSummarySection';
 import {
@@ -16,18 +18,18 @@ import {
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
+import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 export { formatFuelUsageBreakdown };
 
 export const FORMAL_REPORT_DISCLAIMER =
-  'Estimated emissions are calculated by multiplying activity quantities by applicable conversion factors. Conversion factors may include CarbonLite system defaults and organization-specific custom factors. Users should review factor sources and methodology before using reports for regulatory or client-facing submissions.';
+  'CarbonLite does not certify emissions, guarantee compliance, or determine carbon credit eligibility. Users should review source documents, conversion factor traceability, and applicable reporting requirements before relying on this report.';
 
 export const FORMAL_REPORT_METHODOLOGY = [
-  'Estimated emissions are calculated by multiplying activity quantities by applicable conversion factors. CarbonLite applies factor matching based on activity type, unit, jurisdiction, and reporting year. Records without a matching factor are excluded from emissions totals and listed in the quality summary for user review.',
+  'Emissions are calculated from imported or manually entered activity data and configured conversion factors. CarbonLite applies factor matching based on activity type, unit, jurisdiction, and reporting year.',
+  'Records without valid factors, units, quantities, dates, or required jurisdiction are excluded from emissions totals and listed as records requiring review. Tracked-only metrics are not included in calculated emissions totals.',
+  'Source documents, source references, and factor metadata should be reviewed before using report outputs for internal, consultant, or external reporting workflows.',
   FORMAL_REPORT_DISCLAIMER,
-  'Activity data may come from uploaded documents, spreadsheets, or manual entry. Extracted and imported records should be reviewed for accuracy and completeness.',
-  'Records without matching conversion factors are excluded from estimated emissions totals and are identified as skipped or missing-factor records.',
-  'Users should review source documents, conversion factor traceability, and applicable reporting requirements before relying on this report.',
 ];
 
 export type FormalActivityEmission = {
@@ -77,6 +79,101 @@ export type ReportExecutiveSummary = {
   dataQualityCoverage: string;
 };
 
+export type ReportSkippedReasonSummary = {
+  missingFactor: number;
+  missingJurisdiction: number;
+  invalidUnit: number;
+  trackedOnly: number;
+  missingData: number;
+  invalidQuantity: number;
+  outsideDateRange: number;
+  outsideScope: number;
+};
+
+export function buildPrimarySkippedReasonSummary(
+  calculationDetails: CalculationAuditDetail[] = [],
+  fallback?: MetricsCountSummary,
+): ReportSkippedReasonSummary {
+  const reasons: ReportSkippedReasonSummary = {
+    missingFactor: 0,
+    missingJurisdiction: 0,
+    invalidUnit: 0,
+    trackedOnly: 0,
+    missingData: 0,
+    invalidQuantity: 0,
+    outsideDateRange: fallback?.skippedReasons?.outsideDateRange ?? 0,
+    outsideScope: 0,
+  };
+
+  calculationDetails.forEach((detail) => {
+    switch (detail.status) {
+      case 'MISSING_FACTOR':
+        reasons.missingFactor += 1;
+        break;
+      case 'MISSING_JURISDICTION':
+        reasons.missingJurisdiction += 1;
+        break;
+      case 'INVALID_UNIT':
+        reasons.invalidUnit += 1;
+        break;
+      case 'TRACKED_ONLY':
+        reasons.trackedOnly += 1;
+        break;
+      case 'MISSING_DATA':
+        reasons.missingData += 1;
+        break;
+      case 'INVALID_QUANTITY':
+        reasons.invalidQuantity += 1;
+        break;
+      case 'OUTSIDE_SCOPE':
+        reasons.outsideScope += 1;
+        break;
+      default:
+        break;
+    }
+  });
+
+  if (calculationDetails.length === 0 && fallback) {
+    reasons.missingFactor = fallback.skippedReasons?.missingFactor ?? fallback.missingFactorRecords ?? 0;
+    reasons.outsideScope = fallback.skippedReasons?.outsideScope ?? 0;
+    reasons.outsideDateRange = fallback.skippedReasons?.outsideDateRange ?? 0;
+    reasons.missingData = fallback.skippedReasons?.invalidData ?? 0;
+  }
+
+  return reasons;
+}
+
+export function buildReportCountSummary(
+  countSummary: MetricsCountSummary,
+  calculationDetails: CalculationAuditDetail[] = [],
+): MetricsCountSummary {
+  if (calculationDetails.length === 0) return countSummary;
+
+  const primaryReasons = buildPrimarySkippedReasonSummary(calculationDetails, countSummary);
+  const processedRecords = calculationDetails.filter((detail) => detail.status === 'CALCULATED').length;
+  const skippedRecords = calculationDetails.filter(
+    (detail) => detail.status !== 'CALCULATED' && detail.status !== 'OUTSIDE_SCOPE',
+  ).length;
+
+  return {
+    ...countSummary,
+    totalRecordsFound: calculationDetails.length,
+    processedRecords,
+    skippedRecords,
+    missingFactorRecords: primaryReasons.missingFactor,
+    skippedReasons: {
+      missingFactor: primaryReasons.missingFactor,
+      outsideDateRange: primaryReasons.outsideDateRange,
+      outsideScope: primaryReasons.outsideScope,
+      invalidData:
+        primaryReasons.invalidUnit +
+        primaryReasons.missingData +
+        primaryReasons.invalidQuantity +
+        primaryReasons.missingJurisdiction,
+    },
+  };
+}
+
 export function buildReportExecutiveSummary({
   totalEstimatedEmissionsKgCO2e,
   countSummary,
@@ -118,7 +215,7 @@ export function buildConversionFactorTraceabilityRows(
     formatDisplayNumber(factor.factorValue),
     factor.inputUnit || 'Not specified',
     factor.resultUnit || 'kgCO2e',
-    factor.jurisdiction || 'Not specified',
+    formatReportJurisdiction(factor.jurisdiction),
     factor.sourceAuthority || 'Source not specified',
     factor.sourceYear || 'Source not specified',
     factor.verified
@@ -145,6 +242,7 @@ export type SourceEvidenceRow = {
 
 export function buildSourceEvidenceRows(
   activities: Array<{
+    id?: string | null;
     activityType?: string | null;
     quantity?: string | number | null;
     unit?: string | null;
@@ -156,8 +254,14 @@ export function buildSourceEvidenceRows(
     sourceTextSnippet?: string | null;
     notes?: string | null;
   }>,
+  calculationDetails: CalculationAuditDetail[] = [],
 ) {
+  const detailsByActivityId = new Map(
+    calculationDetails.map((detail) => [detail.activityDataId, detail]),
+  );
+
   return activities.map((activity) => {
+    const detail = activity.id ? detailsByActivityId.get(activity.id) : undefined;
     const sourceType = formatSourceType(activity.sourceType);
     const isManual = sourceType === 'Manual entry';
     const sourceReferenceParts = [
@@ -172,7 +276,7 @@ export function buildSourceEvidenceRows(
         activity.quantity === null || activity.quantity === undefined
           ? '-'
           : formatDisplayNumber(activity.quantity),
-      unit: activity.unit || '-',
+      unit: formatSourceEvidenceUnit(detail?.activityUnit ?? activity.unit, detail),
       sourceFile:
         activity.sourceFileName?.trim() ||
         (isManual ? 'Manual entry' : 'Source not specified'),
@@ -186,6 +290,41 @@ export function buildSourceEvidenceRows(
         '',
     };
   });
+}
+
+export function formatReportUnit(
+  unit?: string | number | null,
+  detail?: Pick<CalculationAuditDetail, 'status'> | null,
+) {
+  if (detail?.status === 'INVALID_UNIT') return 'Invalid unit';
+  const normalized = normalizeUnitForDisplay(unit);
+  return normalized.value;
+}
+
+function formatSourceEvidenceUnit(
+  unit?: string | number | null,
+  detail?: Pick<CalculationAuditDetail, 'status'> | null,
+) {
+  if (detail?.status === 'INVALID_UNIT') return 'Invalid unit';
+  const normalized = normalizeUnitForDisplay(unit);
+  if (normalized.status !== 'valid') return normalized.value;
+  return String(unit ?? '').trim();
+}
+
+export function formatReportJurisdiction(
+  jurisdiction?: string | null,
+  country?: string | null,
+) {
+  const cleanRegion = String(jurisdiction ?? '').trim();
+  const cleanCountry = String(country ?? '').trim();
+
+  if (!cleanRegion && !cleanCountry) return 'Not specified';
+  if (!cleanRegion) return cleanCountry;
+  if (!cleanCountry) return cleanRegion;
+  if (cleanRegion === cleanCountry) return cleanRegion;
+  if (cleanRegion.toLowerCase().includes(cleanCountry.toLowerCase())) return cleanRegion;
+
+  return `${cleanRegion}, ${cleanCountry}`;
 }
 
 export function formatSourceType(sourceType?: string | null) {
@@ -227,16 +366,19 @@ export function FormalReportPreview({
   sourceEvidenceRows: SourceEvidenceRow[];
   calculationDetails: CalculationAuditDetail[];
 }) {
+  const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails);
+  const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
-    recordsIncluded: countSummary.processedRecords,
+    recordsIncluded: reportCountSummary.processedRecords,
   });
   const executiveSummary = buildReportExecutiveSummary({
     totalEstimatedEmissionsKgCO2e,
-    countSummary,
+    countSummary: reportCountSummary,
     matchedActivityEmissions,
   });
+  const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   return (
     <section style={reportShellStyle}>
       <div style={coverPageStyle}>
@@ -267,7 +409,7 @@ export function FormalReportPreview({
           <Fact label="Organization" value={organizationName} />
           <Fact label="Report Period" value={reportPeriod} />
           <Fact label="Scope Mode" value={scopeLabel} />
-          <Fact label="Records Included" value={String(countSummary.processedRecords)} />
+          <Fact label="Records Included" value={String(reportCountSummary.processedRecords)} />
           <Fact label="Generated Date" value={generatedAt} />
         </div>
       </ReportSection>
@@ -283,29 +425,32 @@ export function FormalReportPreview({
         </div>
       </ReportSection>
 
-      <ReportSection title="C. Calculation Quality Summary">
+      <ReportSection title="C. Emissions Hotspots">
+        <ReportHotspots analysis={hotspotAnalysis} />
+      </ReportSection>
+
+      <ReportSection title="D. Calculation Quality Summary">
         <div style={summaryGridStyle}>
-          <Fact label="Total Records Found" value={String(countSummary.totalRecordsFound)} />
-          <Fact label="Records Calculated" value={String(countSummary.processedRecords)} />
-          <Fact label="Records Skipped" value={String(countSummary.skippedRecords)} />
-          <Fact label="Missing Factors" value={String(countSummary.missingFactorRecords)} />
-          <Fact
-            label="Invalid Records"
-            value={String(countSummary.skippedReasons?.invalidData ?? 0)}
-          />
+          <Fact label="Total Records Found" value={String(reportCountSummary.totalRecordsFound)} />
+          <Fact label="Records Calculated" value={String(reportCountSummary.processedRecords)} />
+          <Fact label="Records Skipped" value={String(reportCountSummary.skippedRecords)} />
+          <Fact label="Missing Factors" value={String(primarySkippedReasons.missingFactor)} />
+          <Fact label="Missing Jurisdiction" value={String(primarySkippedReasons.missingJurisdiction)} />
+          <Fact label="Invalid Unit" value={String(primarySkippedReasons.invalidUnit)} />
+          <Fact label="Tracked Metrics" value={String(primarySkippedReasons.trackedOnly)} />
           <Fact label="Data Quality Coverage" value={executiveSummary.dataQualityCoverage} />
         </div>
-        {countSummary.skippedRecords > 0 ? (
+        {reportCountSummary.skippedRecords > 0 ? (
           <div style={qualityReasonStyle}>
             <strong>Skipped reasons:</strong>{' '}
-            {formatSkippedReasons(countSummary)}
+            {formatSkippedReasons(primarySkippedReasons)}
           </div>
         ) : (
           <div style={qualitySuccessStyle}>All in-scope records were calculated.</div>
         )}
       </ReportSection>
 
-      <ReportSection title="D. Calculation Summary">
+      <ReportSection title="E. Emissions Breakdown">
         <SimpleTable
           headers={['Category', 'Metric Type', 'Unit', 'Total']}
           emptyMessage="No metrics available for this report scope."
@@ -318,7 +463,7 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="E. Activity Breakdown">
+      <ReportSection title="F. Activity Breakdown">
         <SimpleTable
           headers={[
             'Activity Type',
@@ -338,7 +483,7 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="F. Emission Factors Used">
+      <ReportSection title="G. Emission Factors Used">
         <SimpleTable
           headers={[
             'Factor',
@@ -358,7 +503,7 @@ export function FormalReportPreview({
             factor.factorVersionId || 'Legacy factor',
             formatDisplayNumber(factor.factorValue),
             `${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
-            factor.jurisdiction || 'Not specified',
+            formatReportJurisdiction(factor.jurisdiction),
             factor.factorYear || factor.sourceYear || 'Not specified',
             factor.sourceAuthority || 'Source not specified',
             factor.sourceDocument || 'Source not specified',
@@ -372,7 +517,7 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="G. Calculation Traceability">
+      <ReportSection title="H. Calculation Traceability">
         <p style={sectionHelperStyle}>
           Each calculated row shows the activity quantity, matched conversion factor, source, formula, and emissions result.
         </p>
@@ -394,7 +539,7 @@ export function FormalReportPreview({
               emptyMessage="No calculation details available."
               rows={calculationDetails.map((item) => [
                 item.activityType,
-                `${formatDisplayNumber(item.activityQuantity)} ${item.activityUnit}`,
+                `${formatDisplayNumber(item.activityQuantity)} ${formatReportUnit(item.activityUnit, item)}`,
                 formatTraceableFactor(item),
                 formatTraceabilitySource(item),
                 formatMatchingMethod(item),
@@ -406,7 +551,7 @@ export function FormalReportPreview({
         </details>
       </ReportSection>
 
-      <ReportSection title="H. Source Evidence">
+      <ReportSection title="I. Source Evidence">
         <SimpleTable
           headers={['Activity Type', 'Quantity', 'Unit', 'Source File', 'Source Reference', 'Source Type', 'Notes']}
           emptyMessage="No source evidence available."
@@ -422,7 +567,7 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="I. Records Requiring Review">
+      <ReportSection title="J. Records Requiring Review">
         <SimpleTable
           headers={['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']}
           emptyMessage="No records require review for this report scope."
@@ -431,7 +576,7 @@ export function FormalReportPreview({
             .map((item) => [
               item.activityType,
               formatDisplayNumber(item.activityQuantity),
-              item.activityUnit || 'Missing unit',
+              formatReportUnit(item.activityUnit, item),
               formatCalculationStatus(item.status),
               item.matchingMessage || item.reason || 'Review this record before calculation.',
               formatRecordSource(item),
@@ -440,7 +585,7 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="J. Methodology and Disclaimer">
+      <ReportSection title="K. Methodology and Disclaimer">
         <div style={{ display: 'grid', gap: 10 }}>
           {FORMAL_REPORT_METHODOLOGY.map((paragraph) => (
             <p key={paragraph} style={{ margin: 0, lineHeight: 1.7, color: '#475569' }}>
@@ -453,18 +598,96 @@ export function FormalReportPreview({
   );
 }
 
-function formatSkippedReasons(countSummary: MetricsCountSummary) {
-  const reasons = countSummary.skippedReasons;
-  if (!reasons) return 'Not specified';
+function ReportHotspots({ analysis }: { analysis: HotspotAnalysis }) {
+  if (analysis.totalRecordCount <= 0) {
+    return (
+      <p style={sectionHelperStyle}>
+        Emissions hotspots are not available because no activity records were found.
+      </p>
+    );
+  }
+
+  if (!analysis.categoryHotspots.length || analysis.totalCalculatedEmissions <= 0) {
+    return (
+      <div style={{ display: 'grid', gap: 12 }}>
+        <p style={sectionHelperStyle}>
+          Emissions hotspots are not available yet because no records could be calculated. Resolve calculation issues before using hotspot analysis.
+        </p>
+        {analysis.excludedRecordCount > 0 ? (
+          <div style={qualityReasonStyle}>
+            Some records were excluded from hotspot analysis because they require review or are tracked-only.
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  const top = analysis.categoryHotspots[0];
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <p style={sectionHelperStyle}>
+        This section highlights the activity categories contributing the largest share of calculated emissions. Hotspot analysis only includes successfully calculated records.
+      </p>
+      <div style={hotspotHighlightStyle}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: '#047857' }}>Top emissions hotspot</div>
+        <div style={{ marginTop: 4, fontSize: 20, fontWeight: 900, color: '#064e3b' }}>{top.displayName}</div>
+        <div style={{ marginTop: 4, color: '#475569' }}>
+          {top.displayName} contributes {formatDisplayNumber(top.percentageOfTotal)}% of calculated emissions.
+        </div>
+      </div>
+      <SimpleTable
+        headers={['Rank', 'Category', 'Calculated Emissions', 'Share of Total', 'Records', 'Hotspot Level', 'Focus Message']}
+        emptyMessage="No hotspot categories available."
+        rows={analysis.categoryHotspots.map((row) => [
+          row.rank,
+          row.displayName,
+          `${formatEmissionsValue(row.emissions)} kgCO2e`,
+          `${formatDisplayNumber(row.percentageOfTotal)}%`,
+          row.calculatedRecordCount,
+          formatHotspotLevel(row.hotspotLevel),
+          row.focusMessage,
+        ])}
+      />
+      {analysis.focusRecommendations.length > 0 ? (
+        <div style={recommendationGridStyle}>
+          {analysis.focusRecommendations.slice(0, 3).map((item) => (
+            <div key={`${item.priority}-${item.title}`} style={recommendationCardStyle}>
+              <div style={{ fontWeight: 900, color: '#0f172a' }}>{item.title}</div>
+              <div style={{ marginTop: 5, color: '#475569', lineHeight: 1.5 }}>{item.message}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {analysis.excludedRecordCount > 0 ? (
+        <div style={qualityReasonStyle}>
+          {analysis.excludedRecordCount} records were excluded from hotspot totals. See Records Requiring Review for details.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatHotspotLevel(level: HotspotAnalysis['categoryHotspots'][number]['hotspotLevel']) {
+  if (level === 'HIGH') return 'High';
+  if (level === 'MEDIUM') return 'Medium';
+  return 'Low';
+}
+
+export function formatSkippedReasons(reasons: ReportSkippedReasonSummary) {
   return [
     ['Missing factor', reasons.missingFactor],
-    ['Invalid data', reasons.invalidData],
+    ['Missing jurisdiction', reasons.missingJurisdiction],
+    ['Invalid unit', reasons.invalidUnit],
+    ['Tracked metric', reasons.trackedOnly],
+    ['Missing data', reasons.missingData],
+    ['Invalid quantity', reasons.invalidQuantity],
     ['Outside date range', reasons.outsideDateRange],
     ['Outside scope', reasons.outsideScope],
   ]
     .filter(([, count]) => Number(count) > 0)
     .map(([label, count]) => `${label}: ${count}`)
-    .join('; ');
+    .join('; ') || 'Not specified';
 }
 
 function ReportSection({
@@ -659,6 +882,26 @@ const qualitySuccessStyle: React.CSSProperties = {
   marginTop: 14,
   color: '#047857',
   fontWeight: 700,
+};
+
+const hotspotHighlightStyle: React.CSSProperties = {
+  padding: 14,
+  borderRadius: 10,
+  border: '1px solid #bbf7d0',
+  background: '#ecfdf5',
+};
+
+const recommendationGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+  gap: 10,
+};
+
+const recommendationCardStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
 };
 
 const sectionHelperStyle: React.CSSProperties = {

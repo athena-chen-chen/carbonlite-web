@@ -11,6 +11,30 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
     return detail.calculationFormula;
   }
 
+  if (detail.status === 'MISSING_JURISDICTION') {
+    return 'Not calculated because province is missing.';
+  }
+
+  if (detail.status === 'MISSING_FACTOR') {
+    return 'No matching conversion factor was found.';
+  }
+
+  if (detail.status === 'INVALID_UNIT') {
+    return 'Not calculated because the unit could not be normalized or matched.';
+  }
+
+  if (detail.status === 'TRACKED_ONLY') {
+    return 'Tracked only. Not included in emissions total.';
+  }
+
+  if (detail.status === 'INVALID_QUANTITY') {
+    return 'Not calculated because quantity is missing or invalid.';
+  }
+
+  if (detail.status === 'MISSING_DATA') {
+    return 'Not calculated because required data is missing.';
+  }
+
   if (
     detail.status !== 'CALCULATED' ||
     detail.factorValue === null ||
@@ -25,6 +49,18 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
 }
 
 export function buildFormulaInputs(detail: CalculationAuditDetail) {
+  if (detail.status === 'MISSING_JURISDICTION') {
+    return 'Not calculated because province is missing.';
+  }
+
+  if (detail.status === 'INVALID_UNIT') {
+    return 'Not calculated because the unit could not be normalized or matched.';
+  }
+
+  if (detail.status === 'TRACKED_ONLY') {
+    return 'Tracked only. Not included in emissions total.';
+  }
+
   if (
     detail.status !== 'CALCULATED' ||
     detail.factorValue === null ||
@@ -37,6 +73,10 @@ export function buildFormulaInputs(detail: CalculationAuditDetail) {
 }
 
 export function formatTraceableFactor(detail: CalculationAuditDetail) {
+  if (detail.status === 'MISSING_JURISDICTION') {
+    return 'Not selected';
+  }
+
   if (detail.factorValue === null || detail.factorValue === undefined) {
     return 'No factor available';
   }
@@ -57,7 +97,7 @@ export function formatTraceabilitySource(detail: CalculationAuditDetail) {
 
 export function buildCalculatedFromLine(detail?: CalculationAuditDetail) {
   if (!detail) return '';
-  if (detail.status !== 'CALCULATED') return 'No factor available for this activity.';
+  if (detail.status !== 'CALCULATED') return buildCalculatedFormula(detail);
 
   return `${formatNumber(detail.activityQuantity)} ${detail.activityUnit} ${formatActivityTypeLabel(detail.activityType).toLowerCase()} × ${formatTraceableFactor(detail)}`;
 }
