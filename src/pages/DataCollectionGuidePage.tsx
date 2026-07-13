@@ -138,7 +138,7 @@ export default function DataCollectionGuidePage() {
           <button type="button" onClick={downloadTemplate} style={primaryButtonStyle}>
             Download SME Data Template
           </button>
-          <Link to="/upload" style={secondaryLinkStyle}>Go to Upload</Link>
+          <Link to="/input-data" style={secondaryLinkStyle}>Go to Input Data</Link>
           <Link to="/metrics-summary" style={secondaryLinkStyle}>View Data Readiness</Link>
         </div>
       </section>

@@ -1,5 +1,6 @@
 
 import { createActivityData, updateActivityData } from '../services/activityData';
+import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { getConversionFactors } from '../services/conversionFactors';
 import {
@@ -15,7 +16,22 @@ import {
 } from '../utils/conversionFactorMatching';
 import { getCurrentUser, getOrganizationId } from '../services/auth';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import {
+  formatScopeClassification,
+  inferDefaultScope,
+} from '../utils/scopeClassification';
+import {
+  ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
+  getProvinceOptionsForActivity,
+  normalizeProvince as normalizeCanadianProvince,
+} from '../utils/province';
 import { getFacilities, type FacilityItem } from '../services/facilities';
+import {
+  ManualEntryForm,
+  type ManualEntryField,
+} from './manual-entry/ManualEntryForm';
+import { StatusBadge } from './shared/StatusBadge';
+import { BulkProvinceToolbar } from './shared/BulkProvinceToolbar';
 
 type Row = {
   id: string;
@@ -50,6 +66,7 @@ export function ExcelInputTable({ onSuccess }: { onSuccess: () => void }) {
   const dragDepthRef = useRef(0);
   const [entrySourceType, setEntrySourceType] = useState<'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE'>('MANUAL');
   const [bulkProvince, setBulkProvince] = useState('');
+  const [bulkProvinceMessage, setBulkProvinceMessage] = useState('');
   const [facilities, setFacilities] = useState<FacilityItem[]>([]);
   useEffect(() => {
   async function loadReferenceData() {
@@ -178,7 +195,7 @@ function getSupportedUnitsForActivityType(activityType: string) {
 }
 
 function isTrackedMetricActivity(activityType: string) {
-  return ['WATER', 'WASTE', 'WASTE_VOLUME'].includes(String(activityType).toUpperCase());
+  return ['WATER', 'WATER_USAGE'].includes(String(activityType).toUpperCase());
 }
 
 function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'jurisdictionRegion'>) {
@@ -205,7 +222,7 @@ function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'juris
     return {
       calculationStatus: 'trackedMetric' as const,
       calculationMessage:
-        'Water usage is tracked for operational insight. Emissions are optional and require a reviewed water emissions factor.',
+        'Water usage is tracked as an operational metric and excluded from GHG emissions totals.',
       supportedUnits,
     };
   }
@@ -460,7 +477,7 @@ function isRowReadyToSave(row: Row) {
 }
 
 function isRowSaveDisabled(row: Row) {
-  return row.status === 'saved' || row.status === 'saving' || !isRowReadyToSave(row);
+  return row.status === 'saved' || row.status === 'saving' || isRowCompletelyEmpty(row);
 }
 
 function getRowSaveLabel(row: Row) {
@@ -470,6 +487,9 @@ function getRowSaveLabel(row: Row) {
 }
 
 function buildActivityPayload(row: Row) {
+  const isMissingElectricityProvince =
+    row.activityType === 'ELECTRICITY' && row.calculationStatus === 'missingJurisdiction';
+
   return {
     activityType: row.activityType,
     recordDate: row.recordDate,
@@ -484,6 +504,9 @@ function buildActivityPayload(row: Row) {
     notes: [
       row.notes,
       row.facilityName ? `Facility: ${row.facilityName}` : '',
+      isMissingElectricityProvince
+        ? 'Requires Review. Status: MISSING_PROVINCE. excludedFromTotals=true. Province is required before this electricity record can be calculated.'
+        : '',
       `Created from ${entrySourceType}. Calculation status: ${getCalculationStatusLabel(row)}. ${row.calculationMessage ?? ''} Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
     ].filter(Boolean).join(' '),
   };
@@ -536,11 +559,11 @@ function canRemoveRow(row: Row) {
 function getCalculationStatusLabel(row: Row) {
   switch (row.calculationStatus) {
     case 'calculated':
-      return 'Calculated';
+      return 'Matched';
     case 'trackedMetric':
-      return 'Tracked Metric';
+      return 'Not Emissions Factor Required';
     case 'invalidUnit':
-      return 'Invalid Unit';
+      return 'Unit Mismatch';
     case 'missingFactor':
       return 'Missing Factor';
     case 'missingJurisdiction':
@@ -552,16 +575,10 @@ function getCalculationStatusLabel(row: Row) {
   }
 }
 
-function getStatusTone(row: Row): StatusTone {
-  if (row.calculationStatus === 'calculated') return 'success';
-  if (row.calculationStatus === 'trackedMetric') return 'info';
-  if (row.calculationStatus === 'invalidUnit' || row.calculationStatus === 'missingFactor' || row.calculationStatus === 'missingJurisdiction') return 'warning';
-  return 'neutral';
-}
-
 function getSavedReviewLabel(row: Row) {
+  if (row.calculationStatus === 'missingJurisdiction') return 'Requires Review';
   const status = getCalculationStatusLabel(row);
-  return status === 'Calculated' ? 'Saved · Calculated' : `Saved · ${status}`;
+  return status === 'Matched' ? 'Saved · Matched' : `Saved · ${status}`;
 }
 
 function buildImportReviewSummary(rows: Row[]) {
@@ -599,12 +616,17 @@ function buildImportReviewSummary(rows: Row[]) {
 }
 
 function renderStatusCell(row: Row) {
+  const summary = getRowStatusSummary(row);
+
   if (row.status === 'saved') {
     return (
       <div style={{ display: 'grid', gap: 4 }}>
-        <span style={statusBadgeStyle(getStatusTone(row))}>{getSavedReviewLabel(row)}</span>
-        {row.calculationStatus !== 'calculated' && row.calculationMessage ? (
-          <span style={statusMessageStyle}>{row.calculationMessage}</span>
+        <StatusBadge
+          status={row.calculationStatus ?? row.status}
+          label={getSavedReviewLabel(row)}
+        />
+        {row.calculationStatus !== 'calculated' ? (
+          <span style={statusMessageStyle}>{summary.detail}</span>
         ) : null}
       </div>
     );
@@ -630,14 +652,8 @@ function renderStatusCell(row: Row) {
 
   return (
     <div style={{ display: 'grid', gap: 4 }}>
-      <span style={draftBadgeStyle(getStatusTone(row))}>
-        {row.calculationStatus && row.calculationStatus !== 'calculated'
-          ? `Draft · ${getCalculationStatusLabel(row)}`
-          : 'Draft'}
-      </span>
-      {row.calculationStatus && row.calculationStatus !== 'calculated' && row.calculationMessage ? (
-        <span style={statusMessageStyle}>{row.calculationMessage}</span>
-      ) : null}
+      <StatusBadge status={summary.badge} label={summary.badge} />
+      <span style={statusMessageStyle}>{summary.detail}</span>
     </div>
   );
 }
@@ -648,25 +664,18 @@ function renderFactorCell(row: Row) {
   }
 
   if (row.factorStatus === 'matched') {
+    const normalizedUnit = normalizeUnitForDisplay(row.unit).value || row.unit;
+    const factorTitle =
+      row.activityType === 'ELECTRICITY' && row.jurisdictionRegion
+        ? `Electricity - ${row.jurisdictionRegion}`
+        : row.factorName ?? 'Matched factor';
+
     return (
-      <div style={{ color: '#047857', fontSize: 12 }}>
-        Matched: {row.factorName}
-        <br />
-        Factor: {row.factorValue}
-        <br />
-        Source: {row.factorSourceLabel}
-        {row.factorSourceAuthority ? (
-          <>
-            <br />
-            Authority: {row.factorSourceAuthority}
-          </>
-        ) : null}
-        {row.factorSourceYear ? (
-          <>
-            <br />
-            Year: {row.factorSourceYear}
-          </>
-        ) : null}
+      <div style={factorCellTextStyle}>
+        <strong>{factorTitle}</strong>
+        <span>
+          kgCO2e/{normalizedUnit} {row.factorSourceYear ? `· ${row.factorSourceYear}` : ''}
+        </span>
       </div>
     );
   }
@@ -674,9 +683,9 @@ function renderFactorCell(row: Row) {
   if (row.calculationStatus === 'trackedMetric') {
     return (
       <div style={{ color: '#0369a1', fontSize: 12, lineHeight: 1.45 }}>
-        <strong>Tracked metric</strong>
+        <strong>Not Emissions Factor Required</strong>
         <br />
-        No emissions factor required by default.
+        Tracked only.
         <br />
         {row.calculationMessage}
       </div>
@@ -686,9 +695,9 @@ function renderFactorCell(row: Row) {
   if (row.calculationStatus === 'invalidUnit') {
     return (
       <div style={{ color: '#b45309', fontSize: 12, lineHeight: 1.45 }}>
-        <strong>No valid factor match</strong>
+        <strong>Unit Mismatch</strong>
         <br />
-        Reason: Invalid unit
+        Submitted unit does not match available factor units.
         {row.supportedUnits?.length ? (
           <>
             <br />
@@ -701,16 +710,20 @@ function renderFactorCell(row: Row) {
 
   if (row.calculationStatus === 'missingJurisdiction') {
     return (
-      <div style={{ color: '#b45309', fontSize: 12, lineHeight: 1.45 }}>
-        <strong>Missing Province</strong>
-        <br />
-        Electricity emissions require province-specific factor matching.
-        {row.calculationMessage ? (
-          <>
-            <br />
-            {row.calculationMessage}
-          </>
-        ) : null}
+      <div style={factorCellTextStyle}>
+        <strong>Not selected</strong>
+        <span>Province required</span>
+      </div>
+    );
+  }
+
+  if (row.activityType === 'ELECTRICITY' && normalizeProvince(row.jurisdictionRegion)) {
+    return (
+      <div style={factorCellTextStyle}>
+        <strong>No factor found</strong>
+        <span>
+          {normalizeProvince(row.jurisdictionRegion)} · {normalizeUnitForDisplay(row.unit).value || row.unit}
+        </span>
       </div>
     );
   }
@@ -730,17 +743,159 @@ function renderFactorCell(row: Row) {
   );
 }
 
+function getRowStatusSummary(row: Row): { badge: string; detail: string } {
+  if (row.activityType === 'ELECTRICITY') {
+    if (row.calculationStatus === 'missingJurisdiction') {
+      return {
+        badge: 'Missing Province',
+        detail: row.status === 'saved'
+          ? 'Province is required before this electricity record can be calculated.'
+          : 'Select province to calculate.',
+      };
+    }
+
+    if (row.calculationStatus === 'missingFactor') {
+      return {
+        badge: 'Missing Factor',
+        detail: 'No factor for selected province/year.',
+      };
+    }
+
+    if (row.calculationStatus === 'calculated') {
+      const province = normalizeProvince(row.jurisdictionRegion);
+      return {
+        badge: 'Matched',
+        detail: `${province || 'Province'} electricity factor matched.`,
+      };
+    }
+  }
+
+  switch (row.calculationStatus) {
+    case 'calculated':
+      return { badge: 'Matched', detail: 'Factor matched.' };
+    case 'trackedMetric':
+      return { badge: 'Not Emissions Factor Required', detail: 'Tracked only, excluded from GHG totals.' };
+    case 'invalidUnit':
+      return { badge: 'Unit Mismatch', detail: 'Review unit before calculation.' };
+    case 'missingFactor':
+      return { badge: 'Missing Factor', detail: 'No matching factor found.' };
+    case 'needsReview':
+      return { badge: 'Requires Review', detail: 'Review before calculation.' };
+    default:
+      return { badge: 'Draft', detail: 'Complete row details.' };
+  }
+}
+
+function getReportTreatment(row: Row) {
+  if (row.calculationStatus === 'calculated') {
+    return {
+      label: 'Included',
+      detail: 'Included in GHG total.',
+    };
+  }
+
+  if (row.calculationStatus === 'trackedMetric') {
+    return {
+      label: 'Tracked Only',
+      detail: 'Operational metric, excluded from GHG total.',
+    };
+  }
+
+  if (row.calculationStatus === 'missingJurisdiction') {
+    return {
+      label: 'Excluded',
+      detail: 'Province required before calculation.',
+    };
+  }
+
+  if (row.calculationStatus === 'invalidUnit') {
+    return {
+      label: 'Excluded',
+      detail: 'Unit mismatch must be reviewed.',
+    };
+  }
+
+  if (row.calculationStatus === 'missingFactor') {
+    return {
+      label: 'Excluded',
+      detail: 'No matching factor found.',
+    };
+  }
+
+  return {
+    label: 'Excluded',
+    detail: 'Excluded until this record is ready.',
+  };
+}
+
+function renderEmptyPreviewValue(helpText: string) {
+  return (
+    <div style={factorCellTextStyle}>
+      <span style={previewEmptyValueStyle}>-</span>
+      <span style={previewHelpTextStyle}>{helpText}</span>
+    </div>
+  );
+}
+
+function renderScopeCell(row: Row) {
+  if (!hasRowStarted(row)) {
+    return renderEmptyPreviewValue('Default scope appears after you select an activity type.');
+  }
+
+  const scope = inferDefaultScope(row.activityType);
+
+  return (
+    <div style={factorCellTextStyle}>
+      <strong>{formatScopeClassification(scope)}</strong>
+      <span>{scope === 'TRACKED_METRIC' ? 'Operational metric' : 'Default activity mapping'}</span>
+    </div>
+  );
+}
+
+function renderTreatmentCell(row: Row) {
+  if (!hasRowStarted(row)) {
+    return renderEmptyPreviewValue('Shows whether this row will be included, excluded, or tracked only.');
+  }
+
+  const treatment = getReportTreatment(row);
+
+  return (
+    <div style={factorCellTextStyle}>
+      <StatusBadge status={treatment.label} label={treatment.label} />
+      <span>{treatment.detail}</span>
+    </div>
+  );
+}
+
+function renderPreviewPanel(title: string, helpText: string, children: ReactNode) {
+  return (
+    <div style={draftReviewPanelStyle}>
+      <div style={previewPanelHeaderStyle}>
+        <span style={reviewPanelLabelStyle}>{title}</span>
+        <span style={previewHelpTextStyle}>{helpText}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function getDefaultUnit(activityType: string) {
   return activityTypeDefaultUnits[activityType] ?? '';
 }
- function updateRow(id: string, key: keyof Row, value: string) {
+function updateRow(id: string, key: keyof Row, value: string) {
   setRows((prev) =>
     prev.map((row) => {
       if (row.id !== id) return row;
+      const normalizedValue =
+        key === 'jurisdictionRegion'
+          ? normalizeProvince(value)
+          : key === 'jurisdictionCountry'
+          ? normalizeCountry(value)
+          : value;
 
       const updated = {
         ...row,
-        [key]: value,
+        [key]: normalizedValue,
         status: 'draft' as const,
         errors: undefined,
       };
@@ -796,7 +951,11 @@ function readAliasedField(row: Record<string, unknown>, aliases: string[]) {
 }
 
 function normalizeProvince(value?: string | null) {
-  return normalizeJurisdictionRegion(value) ?? '';
+  return normalizeCanadianProvince(value) ?? '';
+}
+
+function getProvinceOptions(currentProvince?: string | null) {
+  return getProvinceOptionsForActivity(undefined, currentProvince);
 }
 
 function normalizeCountry(value?: string | null) {
@@ -964,6 +1123,12 @@ const rowsToSave = rows.filter(
 const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
 const hasSavedRows = rows.some((row) => row.status === 'saved');
 const importReviewSummary = buildImportReviewSummary(rows);
+const hasMissingElectricityProvince = rows.some(
+  (row) => row.calculationStatus === 'missingJurisdiction',
+);
+const missingElectricityProvinceCount = rows.filter(
+  (row) => row.calculationStatus === 'missingJurisdiction',
+).length;
 
   return (
 
@@ -987,6 +1152,11 @@ const importReviewSummary = buildImportReviewSummary(rows);
           Saved rows remain here so you can review, edit, or remove them before viewing metrics.
         </p>
       ) : null}
+      {bulkProvinceMessage ? (
+        <div role="status" style={bulkProvinceSuccessStyle}>
+          {bulkProvinceMessage}
+        </div>
+      ) : null}
       {importReviewSummary.total > 0 ? (
         <div style={importReviewSummaryStyle}>
           <strong>Import Review Summary</strong>
@@ -1000,250 +1170,176 @@ const importReviewSummary = buildImportReviewSummary(rows);
           <span>{importReviewSummary.missingProvince} missing province</span>
         </div>
       ) : null}
-      {rows.some((row) => row.calculationStatus === 'missingJurisdiction') ? (
-        <div style={bulkProvinceStyle}>
-          <label style={{ fontWeight: 800 }}>
-            Set province for electricity rows needing province
-          </label>
-          <select
-            value={bulkProvince}
-            onChange={(event) => setBulkProvince(event.target.value)}
-            style={inputStyle}
-          >
-            <option value="">Select province</option>
-            <option value="British Columbia">British Columbia</option>
-            <option value="Alberta">Alberta</option>
-            <option value="Ontario">Ontario</option>
-          </select>
-          <button
-            type="button"
-            disabled={!bulkProvince}
-            onClick={() => {
+    </div>
+  </div>
+
+  <div style={manualEntryToolbarStyle} aria-label="Manual entry toolbar">
+    <div style={manualEntryToolbarRowStyle}>
+      <div style={manualEntryToolbarGroupStyle}>
+        <button type="button" onClick={addRow} style={secondaryButtonStyle}>
+          + Add Row
+        </button>
+      </div>
+    </div>
+
+    <div style={manualEntryToolbarRowStyle}>
+      <div style={manualEntryToolbarGroupStyle}>
+        {hasMissingElectricityProvince ? (
+          <BulkProvinceToolbar
+            selectedCount={missingElectricityProvinceCount}
+            eligibleCount={missingElectricityProvinceCount}
+            selectedProvince={bulkProvince}
+            onProvinceChange={setBulkProvince}
+            provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
+            onApply={() => {
+              const normalizedBulkProvince = normalizeProvince(bulkProvince);
               setRows((prev) =>
                 prev.map((row) =>
                   row.calculationStatus === 'missingJurisdiction'
-                    ? applyFactorToRow({ ...row, jurisdictionRegion: bulkProvince, status: 'draft', errors: undefined })
+                    ? applyFactorToRow({
+                        ...row,
+                        jurisdictionRegion: normalizedBulkProvince,
+                        status: 'draft',
+                        errors: undefined,
+                      })
                     : row,
                 ),
               );
               setBulkProvince('');
+              setBulkProvinceMessage('Province applied to electricity rows.');
             }}
-            style={secondaryButtonStyle}
-          >
-            Apply
-          </button>
-        </div>
-      ) : null}
+          />
+        ) : null}
+      </div>
+
+      <div style={manualEntryToolbarGroupStyle}>
+        <button
+          type="button"
+          onClick={saveAll}
+          disabled={!hasValidRows}
+          style={primaryButtonStyle(!hasValidRows)}
+        >
+          Save All
+        </button>
+        {hasSavedRows ? (
+          <>
+            <button type="button" onClick={clearSavedRowsFromForm} style={secondaryButtonStyle}>
+              Clear Saved Rows
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = '/metrics-summary';
+              }}
+              style={secondaryButtonStyle}
+            >
+              View Metrics
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = '/activity-records';
+              }}
+              style={secondaryButtonStyle}
+            >
+              View Records
+            </button>
+          </>
+        ) : null}
+      </div>
     </div>
   </div>
 
-  <div style={{ overflowX: 'auto' }}>
+  <div style={manualEntryFormListStyle} onPaste={handlePasteRows} onKeyDown={handleQuickEntryKeyDown}>
     {rows.length === 0 ? (
-      <div style={quickEntryEmptyStyle}>
-        <strong>No activity rows.</strong>
-        <span>Click "+ Add Row" to begin.</span>
-      </div>
+      <>
+        <div style={manualEntryFormTitleStyle}>
+          <strong>Add activity record</strong>
+          <span>
+            Enter one activity record manually. Electricity records require province before emissions can be calculated.
+          </span>
+        </div>
+        <div style={quickEntryEmptyStyle}>
+          <strong>No activity rows.</strong>
+          <span>Click "+ Add Row" to begin.</span>
+        </div>
+      </>
     ) : (
-    <table style={tableStyle} onPaste={handlePasteRows} onKeyDown={handleQuickEntryKeyDown}>
-      <thead>
-        <tr>
-          <th style={thStyle}>Type</th>
-          <th style={thStyle}>Quantity</th>
-          <th style={thStyle}>Unit</th>
-          <th style={thStyle}>Date</th>
-          <th style={thStyle}>Country</th>
-          <th style={thStyle}>Province</th>
-          <th style={thStyle}>Facility</th>
-          <th style={thStyle}>Status</th>
-          <th style={thStyle}>Factor</th>
-          <th style={thStyle}>Actions</th>
-        </tr>
-      </thead>
-
-      <tbody>
+      <div style={draftRecordListStyle}>
         {rows.map((row, index) => (
-          <tr key={row.id} style={{
-    background: row.errors?.length ? '#fff1f2' : '#fff',
-  }}>
-            <td style={tdStyle}>
-              <select
-                value={row.activityType}
-                onChange={(e) => {
-                  const activityType = e.target.value;
-                  setRows((prev) =>
-                    prev.map((r) =>
-                      r.id === row.id
-                        ? applyFactorToRow({
-                            ...r,
-                            activityType,
-                            unit: getDefaultUnit(activityType),
-                            status: 'draft',
-                            errors: undefined,
-                          })
-                        : r,
-                    ),
-                  );
-                }}
-                style={inputStyle}
-              >
-                <option value="">Select type</option>
-                {activityTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </td>
+          <ManualEntryForm
+            key={row.id}
+            values={row}
+            rowNumber={index + 1}
+            title={index === 0 ? 'Add activity record' : undefined}
+            description={
+              index === 0
+                ? 'Enter one activity record manually. Electricity records require province before emissions can be calculated.'
+                : undefined
+            }
+            activityTypes={activityTypes}
+            provinceOptions={getProvinceOptions(row.jurisdictionRegion)}
+            hasErrors={Boolean(row.errors?.length)}
+            onChange={(field: ManualEntryField, value) => {
+              if (field === 'activityType') {
+                setRows((prev) =>
+                  prev.map((currentRow) =>
+                    currentRow.id === row.id
+                      ? applyFactorToRow({
+                          ...currentRow,
+                          activityType: value,
+                          unit: getDefaultUnit(value),
+                          status: 'draft',
+                          errors: undefined,
+                        })
+                      : currentRow,
+                  ),
+                );
+                return;
+              }
 
-            <td style={tdStyle}>
-              <input
-                type="number"
-                value={row.quantity}
-                onChange={(e) => updateRow(row.id, 'quantity', e.target.value)}
-                placeholder="Quantity"
-                style={inputStyle}
-              />
-            </td>
-
-            <td style={tdStyle}>
-              <input
-                value={row.unit}
-                onChange={(e) => updateRow(row.id, 'unit', e.target.value)}
-                placeholder="Auto-filled after type"
-                style={inputStyle}
-              />
-            </td>
-
-            <td style={tdStyle}>
-              <input
-                type="date"
-                value={row.recordDate}
-                onChange={(e) => updateRow(row.id, 'recordDate', e.target.value)}
-                style={inputStyle}
-              />
-            </td>
-            <td style={tdStyle}>
-              <input
-                value={row.jurisdictionCountry}
-                onChange={(e) => updateRow(row.id, 'jurisdictionCountry', e.target.value)}
-                placeholder="Canada"
-                style={inputStyle}
-              />
-            </td>
-            <td style={tdStyle}>
-              <input
-                value={row.jurisdictionRegion}
-                onChange={(e) => updateRow(row.id, 'jurisdictionRegion', e.target.value)}
-                placeholder="Province"
-                style={inputStyle}
-              />
-              {row.activityType === 'ELECTRICITY' ? (
-                <div style={fieldHelperStyle}>
-                  Electricity factors are province-specific. Please provide the province or facility location.
-                </div>
-              ) : null}
-            </td>
-            <td style={tdStyle}>
-              <input
-                value={row.facilityName ?? ''}
-                onChange={(e) => updateRow(row.id, 'facilityName', e.target.value)}
-                placeholder="Facility"
-                style={inputStyle}
-              />
-            </td>
-            <td style={tdStyle}>
-  {renderStatusCell(row)}
-</td>
-<td style={tdStyle}>
-  {renderFactorCell(row)}
-</td>
-<td style={tdStyle}>
-  <div style={rowActionStyle}>
-    <button
-      type="button"
-      onClick={() => saveRow(row)}
-      disabled={isRowSaveDisabled(row)}
-      aria-label={`Save row ${index + 1}`}
-      style={rowSaveButtonStyle(isRowSaveDisabled(row), row.status === 'saved')}
-    >
-      {getRowSaveLabel(row)}
-    </button>
-    {canRemoveRow(row) ? (
-      <button
-        type="button"
-        onClick={() => removeRow(row.id)}
-        aria-label={`Remove row ${index + 1}`}
-        style={removeButtonStyle}
-      >
-        Remove
-      </button>
-    ) : null}
-  </div>
-</td>
-          </tr>
+              updateRow(row.id, field as keyof Row, value);
+            }}
+            review={
+              <div style={draftReviewRowStyle}>
+                {renderPreviewPanel(
+                  'Scope',
+                  'GHG Protocol category inferred from activity type.',
+                  renderScopeCell(row),
+                )}
+                {renderPreviewPanel(
+                  'Factor Status',
+                  'Whether this record is ready for emissions calculation.',
+                  renderStatusCell(row),
+                )}
+                {renderPreviewPanel(
+                  'Matched Factor',
+                  'Conversion factor matched by type, unit, province, and year.',
+                  renderFactorCell(row),
+                )}
+                {renderPreviewPanel(
+                  'Report Treatment',
+                  'How this row will affect totals after saving.',
+                  renderTreatmentCell(row),
+                )}
+              </div>
+            }
+            onSave={() => saveRow(row)}
+            saveDisabled={isRowSaveDisabled(row)}
+            saveLabel={getRowSaveLabel(row)}
+            canRemove={canRemoveRow(row)}
+            onRemove={() => removeRow(row.id)}
+          />
         ))}
-      </tbody>
-    </table>
+      </div>
     )}
   </div>
+  {hasMissingElectricityProvince ? (
+    <div style={validationSummaryStyle}>
+      Electricity emissions require a province-specific factor. Please select the province where the electricity was used.
+    </div>
+  ) : null}
 
-  <div style={footerActionsStyle}>
-    <button type="button" onClick={addRow} style={secondaryButtonStyle}>
-      + Add Row
-    </button>
-
-    <button
-      type="button"
-      onClick={saveAll}
-      disabled={!hasValidRows}
-      style={primaryButtonStyle(!hasValidRows)}
-    >
-      Save All
-    </button>
-    {hasSavedRows ? (
-      <>
-        <button type="button" onClick={clearSavedRowsFromForm} style={secondaryButtonStyle}>
-          Clear Saved Rows from Form
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = '/metrics-summary';
-          }}
-          style={secondaryButtonStyle}
-        >
-          View Metrics Summary
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = '/activity-records';
-          }}
-          style={secondaryButtonStyle}
-        >
-          View Activity Records
-        </button>
-      </>
-    ) : null}
-    {/* <label style={secondaryButtonStyle}>
-  Import CSV
-  <input
-    type="file"
-    accept=".csv"
-    onChange={handleImportCSV}
-    style={{ display: 'none' }}
-  /> */}
-{/* </label>
-<label style={secondaryButtonStyle}>
-  Import Excel
-  <input
-    type="file"
-    accept=".xlsx,.xls"
-    onChange={handleImportExcel}
-    style={{ display: 'none' }}
-  />
-</label> */}
-  </div>
 </div>
   );
 }
@@ -1293,28 +1389,22 @@ const importReviewSummaryStyle: React.CSSProperties = {
   fontSize: 13,
 };
 
-const tableStyle: React.CSSProperties = {
-  width: '100%',
-  borderCollapse: 'separate',
-  borderSpacing: 0,
-  border: '1px solid #e5e7eb',
-  borderRadius: 12,
-  overflow: 'hidden',
+const manualEntryFormListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
 };
 
-const thStyle: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '12px 14px',
-  background: '#f8fafc',
-  color: '#475569',
+const manualEntryFormTitleStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  color: '#334155',
   fontSize: 13,
-  fontWeight: 700,
-  borderBottom: '1px solid #e5e7eb',
+  lineHeight: 1.4,
 };
 
-const tdStyle: React.CSSProperties = {
-  padding: 10,
-  borderBottom: '1px solid #f1f5f9',
+const draftRecordListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
 };
 
 const inputStyle: React.CSSProperties = {
@@ -1326,14 +1416,6 @@ const inputStyle: React.CSSProperties = {
   background: '#fff',
   fontSize: 14,
   outline: 'none',
-};
-
-const fieldHelperStyle: React.CSSProperties = {
-  marginTop: 6,
-  color: '#64748b',
-  fontSize: 12,
-  lineHeight: 1.35,
-  maxWidth: 220,
 };
 
 const quickEntryEmptyStyle: React.CSSProperties = {
@@ -1368,105 +1450,104 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-const rowActionStyle: React.CSSProperties = {
+const draftReviewRowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 10,
+};
+
+const draftReviewPanelStyle: React.CSSProperties = {
+  padding: 10,
+  borderRadius: 8,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+
+const manualEntryToolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  padding: 12,
+  marginBottom: 14,
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+
+const manualEntryToolbarRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 12,
+  flexWrap: 'wrap',
+  width: '100%',
+};
+
+const manualEntryToolbarGroupStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
   flexWrap: 'wrap',
 };
 
-const footerActionsStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 12,
-  marginTop: 16,
-  flexWrap: 'wrap',
-  alignItems: 'center',
+const bulkProvinceSuccessStyle: React.CSSProperties = {
+  width: 'fit-content',
+  marginTop: 10,
+  padding: '8px 10px',
+  borderRadius: 8,
+  border: '1px solid #bbf7d0',
+  background: '#ecfdf5',
+  color: '#047857',
+  fontSize: 13,
+  fontWeight: 800,
 };
 
-const bulkProvinceStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 10,
-  alignItems: 'center',
-  flexWrap: 'wrap',
-  padding: 12,
+const validationSummaryStyle: React.CSSProperties = {
   marginTop: 12,
-  borderRadius: 10,
+  padding: '10px 12px',
+  borderRadius: 8,
   border: '1px solid #fed7aa',
   background: '#fff7ed',
   color: '#9a3412',
+  fontSize: 13,
+  lineHeight: 1.45,
 };
-
-type StatusTone = 'success' | 'info' | 'warning' | 'neutral';
-
-function statusBadgeStyle(tone: StatusTone): React.CSSProperties {
-  const styles: Record<StatusTone, React.CSSProperties> = {
-    success: {
-      color: '#047857',
-      background: '#ecfdf5',
-      border: '1px solid #bbf7d0',
-    },
-    info: {
-      color: '#0369a1',
-      background: '#eff6ff',
-      border: '1px solid #bfdbfe',
-    },
-    warning: {
-      color: '#92400e',
-      background: '#fffbeb',
-      border: '1px solid #fde68a',
-    },
-    neutral: {
-      color: '#475569',
-      background: '#f8fafc',
-      border: '1px solid #e2e8f0',
-    },
-  };
-
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    width: 'fit-content',
-    borderRadius: 999,
-    padding: '3px 8px',
-    fontSize: 12,
-    fontWeight: 800,
-    whiteSpace: 'nowrap',
-    ...styles[tone],
-  };
-}
-
-function draftBadgeStyle(tone: StatusTone): React.CSSProperties {
-  return {
-    ...statusBadgeStyle(tone),
-    opacity: 0.9,
-  };
-}
 
 const statusMessageStyle: React.CSSProperties = {
   color: '#64748b',
   fontSize: 12,
   lineHeight: 1.35,
-  maxWidth: 260,
+  maxWidth: 170,
 };
 
-function rowSaveButtonStyle(disabled: boolean, saved: boolean): React.CSSProperties {
-  return {
-    padding: '8px 12px',
-    borderRadius: 8,
-    border: saved ? '1px solid #bbf7d0' : '1px solid #10b981',
-    background: saved ? '#ecfdf5' : disabled ? '#f3f4f6' : '#10b981',
-    color: saved ? '#047857' : disabled ? '#6b7280' : '#fff',
-    fontWeight: 700,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-  };
-}
+const factorCellTextStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  color: '#334155',
+  fontSize: 12,
+  lineHeight: 1.35,
+};
 
-const removeButtonStyle: React.CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: '1px solid #fecaca',
-  background: '#fff',
-  color: '#b91c1c',
+const previewPanelHeaderStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 3,
+};
+
+const reviewPanelLabelStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: 'uppercase',
+};
+
+const previewHelpTextStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 11,
+  lineHeight: 1.35,
+};
+
+const previewEmptyValueStyle: React.CSSProperties = {
+  color: '#94a3b8',
+  fontSize: 12,
   fontWeight: 700,
-  cursor: 'pointer',
 };

@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import {
   bulkDeleteActivityData,
   deleteActivityData,
@@ -113,10 +113,32 @@ describe('ActivityDataPage delete flows', () => {
     );
   }
 
+  function InputDataRouteProbe() {
+    const location = useLocation();
+    const routeState = location.state as { focusInputMethod?: string } | null;
+
+    return <div>Input Data focus: {routeState?.focusInputMethod ?? 'none'}</div>;
+  }
+
   async function clickFirstRowDeleteAction() {
     await userEvent.click(screen.getAllByLabelText(/More actions for/i)[0]);
     await userEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));
   }
+
+  it('navigates Add data to Input Data with manual entry focused', async () => {
+    render(
+      <MemoryRouter initialEntries={['/data-records']}>
+        <Routes>
+          <Route path="/data-records" element={<ActivityDataPage />} />
+          <Route path="/input-data" element={<InputDataRouteProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /^Add data$/i }));
+
+    expect(screen.getByText('Input Data focus: manual')).toBeInTheDocument();
+  });
 
   it('shows an initial loading state inside the records table card', async () => {
     let resolveRecords: (value: typeof records) => void = () => {};
@@ -293,7 +315,7 @@ describe('ActivityDataPage delete flows', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows horizontal scroll hint only when the records table overflows', async () => {
+  it('shows horizontal scroll hint as text above the records table', async () => {
     renderPage();
 
     expect(await screen.findByText('Scroll horizontally →')).toBeInTheDocument();
@@ -363,6 +385,26 @@ describe('ActivityDataPage delete flows', () => {
     expect(screen.queryByRole('menuitem', { name: /^Edit$/i })).not.toBeInTheDocument();
   });
 
+  it('limits electricity edit province options to provinces with factor coverage', async () => {
+    renderPage();
+
+    await screen.findByText('DIESEL');
+    await userEvent.click(screen.getAllByLabelText(/More actions for/i)[1]);
+    await userEvent.click(screen.getByRole('menuitem', { name: /^Edit$/i }));
+
+    const provinceSelect = screen.getByRole('combobox', {
+      name: /Province required for electricity records/i,
+    });
+
+    expect(within(provinceSelect).getByRole('option', { name: 'Alberta' })).toBeInTheDocument();
+    expect(
+      within(provinceSelect).getByRole('option', { name: 'British Columbia' }),
+    ).toBeInTheDocument();
+    expect(within(provinceSelect).getByRole('option', { name: 'Ontario' })).toBeInTheDocument();
+    expect(within(provinceSelect).queryByRole('option', { name: 'Quebec' })).not.toBeInTheDocument();
+    expect(within(provinceSelect).queryByRole('option', { name: 'Nunavut' })).not.toBeInTheDocument();
+  });
+
   it('filters records by document id from the URL and clears the filter', async () => {
     renderPage({
       pathname: '/activity-records',
@@ -425,7 +467,7 @@ describe('ActivityDataPage delete flows', () => {
     ).toBeInTheDocument();
   });
 
-  it('marks existing records with missing required fields as incomplete and disables calculation', async () => {
+  it('marks existing records with missing required fields as incomplete and still allows viewing details', async () => {
     mockActivityRecords([
       {
         id: 'activity-incomplete',
@@ -451,9 +493,17 @@ describe('ActivityDataPage delete flows', () => {
       'title',
       'This record requires required fields before calculations can be performed.',
     );
-    expect(within(row).getByRole('button', { name: 'View' })).toBeDisabled();
+    await userEvent.click(within(row).getByRole('button', { name: 'View' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
+    expect(within(dialog).getByText('Requires Review')).toBeInTheDocument();
+    expect(within(dialog).getByText('NATURAL_GAS')).toBeInTheDocument();
+    expect(within(dialog).getByText('Missing unit')).toBeInTheDocument();
     expect(
       within(row).getByText('37_mixed_utility_report_missing_units.pdf'),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('37_mixed_utility_report_missing_units.pdf'),
     ).toBeInTheDocument();
   });
 
@@ -478,5 +528,24 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(row).getByText('Missing Source')).toBeInTheDocument();
     expect(within(row).getByText('Source unavailable')).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
+  });
+
+  it('opens record details on the same page when View is clicked', async () => {
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-1');
+    await userEvent.click(within(row).getByRole('button', { name: 'View' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
+    expect(within(dialog).getByText('Activity Record Details')).toBeInTheDocument();
+    expect(within(dialog).getByText('DIESEL')).toBeInTheDocument();
+    expect(within(dialog).getByText('2026-05-14')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('Manual Entry').length).toBeGreaterThan(0);
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Close activity record details' }),
+    );
+
+    expect(screen.queryByRole('dialog', { name: 'Activity Record Details' })).not.toBeInTheDocument();
   });
 });

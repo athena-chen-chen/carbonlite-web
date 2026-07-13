@@ -1,7 +1,7 @@
+import { useState } from 'react';
 import {
   buildHotspotAnalysis,
   buildMetricsSummaryTableRows,
-  type HotspotAnalysis,
   type MetricsCountSummary,
 } from './MetricsSummarySection';
 import {
@@ -9,16 +9,24 @@ import {
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 import type { CalculationAuditDetail } from '../services/metrics';
-import {
-  buildCalculatedFormula,
-  formatCalculationStatus,
-  formatMatchingMethod,
-  formatRecordSource,
-  formatTraceabilitySource,
-  formatTraceableFactor,
-} from '../utils/calculationTraceability';
+import { formatCalculationStatus } from '../utils/calculationTraceability';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import {
+  formatScopeClassification,
+  formatScopeSource,
+  resolveScopeClassification,
+} from '../utils/scopeClassification';
+import { ActivityBreakdownSection } from './reports/sections/ActivityBreakdownSection';
+import { CalculationQualitySection } from './reports/sections/CalculationQualitySection';
+import { CalculationTraceabilitySection } from './reports/sections/CalculationTraceabilitySection';
+import { EmissionFactorsUsedSection } from './reports/sections/EmissionFactorsUsedSection';
+import { EmissionsHotspotsSection } from './reports/sections/EmissionsHotspotsSection';
+import { ExecutiveSummarySection } from './reports/sections/ExecutiveSummarySection';
+import { MethodologyDisclaimerSection } from './reports/sections/MethodologyDisclaimerSection';
+import { RecordsRequiringReviewSection } from './reports/sections/RecordsRequiringReviewSection';
+import { ScopeBreakdownSection } from './reports/sections/ScopeBreakdownSection';
+import { SourceEvidenceSection } from './reports/sections/SourceEvidenceSection';
 
 export { formatFuelUsageBreakdown };
 
@@ -30,6 +38,28 @@ export const FORMAL_REPORT_METHODOLOGY = [
   'Records without valid factors, units, quantities, dates, or required jurisdiction are excluded from emissions totals and listed as records requiring review. Tracked-only metrics are not included in calculated emissions totals.',
   'Source documents, source references, and factor metadata should be reviewed before using report outputs for internal, consultant, or external reporting workflows.',
   FORMAL_REPORT_DISCLAIMER,
+];
+
+const DEFAULT_EXPANDED_REPORT_SECTIONS = new Set([
+  'executive-summary',
+  'emissions-hotspots',
+  'scope-breakdown',
+  'calculation-quality',
+]);
+
+const REPORT_SECTION_IDS = [
+  'report-scope',
+  'executive-summary',
+  'emissions-hotspots',
+  'scope-breakdown',
+  'calculation-quality',
+  'emissions-breakdown',
+  'activity-breakdown',
+  'emission-factors',
+  'calculation-traceability',
+  'source-evidence',
+  'records-review',
+  'methodology',
 ];
 
 export type FormalActivityEmission = {
@@ -366,6 +396,11 @@ export function FormalReportPreview({
   sourceEvidenceRows: SourceEvidenceRow[];
   calculationDetails: CalculationAuditDetail[];
 }) {
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      REPORT_SECTION_IDS.map((id) => [id, DEFAULT_EXPANDED_REPORT_SECTIONS.has(id)]),
+    ),
+  );
   const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails);
   const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
   const totalsByMetric = buildMetricsSummaryTableRows({
@@ -379,6 +414,31 @@ export function FormalReportPreview({
     matchedActivityEmissions,
   });
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
+  const scopeSummary = buildFormalScopeSummary(calculationDetails);
+  const scopeSummaryLine = `Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`;
+  const electricityRecordCount = calculationDetails.filter((item) => item.activityType === 'ELECTRICITY').length;
+  const calculatedElectricityCount = calculationDetails.filter(
+    (item) => item.activityType === 'ELECTRICITY' && item.status === 'CALCULATED',
+  ).length;
+  const unclassifiedCalculatedRecords = calculationDetails.filter(
+    (item) => item.status === 'CALCULATED' && getFormalScopeResolution(item).scope === 'UNCLASSIFIED',
+  );
+
+  function toggleSection(sectionId: string) {
+    setExpandedSections((current) => ({
+      ...current,
+      [sectionId]: !current[sectionId],
+    }));
+  }
+
+  function expandAllSections() {
+    setExpandedSections(Object.fromEntries(REPORT_SECTION_IDS.map((id) => [id, true])));
+  }
+
+  function collapseAllSections() {
+    setExpandedSections(Object.fromEntries(REPORT_SECTION_IDS.map((id) => [id, false])));
+  }
+
   return (
     <section style={reportShellStyle}>
       <div style={coverPageStyle}>
@@ -404,7 +464,22 @@ export function FormalReportPreview({
         </div>
       </div>
 
-      <ReportSection title="A. Report Scope">
+      <div style={reportSectionToolbarStyle}>
+        <button type="button" onClick={expandAllSections} style={reportSectionToolbarButtonStyle}>
+          Expand all
+        </button>
+        <button type="button" onClick={collapseAllSections} style={reportSectionToolbarButtonStyle}>
+          Collapse all
+        </button>
+      </div>
+
+      <ReportSection
+        title="A. Report Scope"
+        sectionId="report-scope"
+        expanded={expandedSections['report-scope']}
+        onToggle={toggleSection}
+        summary={`${reportPeriod} · ${scopeLabel}`}
+      >
         <div style={factsGridStyle}>
           <Fact label="Organization" value={organizationName} />
           <Fact label="Report Period" value={reportPeriod} />
@@ -414,43 +489,69 @@ export function FormalReportPreview({
         </div>
       </ReportSection>
 
-      <ReportSection title="B. Executive Summary">
-        <div style={summaryGridStyle}>
-          <Fact label="Estimated Emissions" value={executiveSummary.estimatedEmissions} />
-          <Fact label="Records Included" value={String(executiveSummary.recordsIncluded)} />
-          <Fact label="Records Skipped" value={String(executiveSummary.recordsSkipped)} />
-          <Fact label="Primary Activity Types" value={executiveSummary.primaryActivityTypes} />
-          <Fact label="Missing Factor Count" value={String(executiveSummary.missingFactorCount)} />
-          <Fact label="Data Quality Coverage" value={executiveSummary.dataQualityCoverage} />
-        </div>
+      <ReportSection
+        title="B. Executive Summary"
+        sectionId="executive-summary"
+        expanded={expandedSections['executive-summary']}
+        onToggle={toggleSection}
+        summary={`${executiveSummary.estimatedEmissions} · ${executiveSummary.recordsIncluded} included · ${executiveSummary.recordsSkipped} require review`}
+      >
+        <ExecutiveSummarySection executiveSummary={executiveSummary} />
       </ReportSection>
 
-      <ReportSection title="C. Emissions Hotspots">
-        <ReportHotspots analysis={hotspotAnalysis} />
+      <ReportSection
+        title="C. Emissions Hotspots"
+        sectionId="emissions-hotspots"
+        expanded={expandedSections['emissions-hotspots']}
+        onToggle={toggleSection}
+        summary={
+          hotspotAnalysis.topCategory
+            ? `Top hotspot: ${hotspotAnalysis.topCategory.displayName} · ${formatDisplayNumber(hotspotAnalysis.topCategory.percentageOfTotal)}%`
+            : 'No calculated hotspots yet'
+        }
+      >
+        <EmissionsHotspotsSection analysis={hotspotAnalysis} />
       </ReportSection>
 
-      <ReportSection title="D. Calculation Quality Summary">
-        <div style={summaryGridStyle}>
-          <Fact label="Total Records Found" value={String(reportCountSummary.totalRecordsFound)} />
-          <Fact label="Records Calculated" value={String(reportCountSummary.processedRecords)} />
-          <Fact label="Records Skipped" value={String(reportCountSummary.skippedRecords)} />
-          <Fact label="Missing Factors" value={String(primarySkippedReasons.missingFactor)} />
-          <Fact label="Missing Jurisdiction" value={String(primarySkippedReasons.missingJurisdiction)} />
-          <Fact label="Invalid Unit" value={String(primarySkippedReasons.invalidUnit)} />
-          <Fact label="Tracked Metrics" value={String(primarySkippedReasons.trackedOnly)} />
-          <Fact label="Data Quality Coverage" value={executiveSummary.dataQualityCoverage} />
-        </div>
-        {reportCountSummary.skippedRecords > 0 ? (
-          <div style={qualityReasonStyle}>
-            <strong>Skipped reasons:</strong>{' '}
-            {formatSkippedReasons(primarySkippedReasons)}
-          </div>
-        ) : (
-          <div style={qualitySuccessStyle}>All in-scope records were calculated.</div>
-        )}
+      <ReportSection
+        title="D. Scope Breakdown"
+        sectionId="scope-breakdown"
+        expanded={expandedSections['scope-breakdown']}
+        onToggle={toggleSection}
+        summary={scopeSummaryLine}
+      >
+        <ScopeBreakdownSection
+          scopeSummary={scopeSummary}
+          electricityRecordCount={electricityRecordCount}
+          calculatedElectricityCount={calculatedElectricityCount}
+          unclassifiedCalculatedRecords={unclassifiedCalculatedRecords}
+          formatRecordUnit={formatReportUnit}
+          formatScopeSourceLabel={(item) => formatScopeSource(getFormalScopeResolution(item).source)}
+        />
       </ReportSection>
 
-      <ReportSection title="E. Emissions Breakdown">
+      <ReportSection
+        title="E. Calculation Quality Summary"
+        sectionId="calculation-quality"
+        expanded={expandedSections['calculation-quality']}
+        onToggle={toggleSection}
+        summary={`${reportCountSummary.processedRecords} calculated · ${reportCountSummary.skippedRecords} skipped`}
+      >
+        <CalculationQualitySection
+          reportCountSummary={reportCountSummary}
+          primarySkippedReasons={primarySkippedReasons}
+          dataQualityCoverage={executiveSummary.dataQualityCoverage}
+          skippedReasonsLabel={formatSkippedReasons(primarySkippedReasons)}
+        />
+      </ReportSection>
+
+      <ReportSection
+        title="F. Emissions Breakdown"
+        sectionId="emissions-breakdown"
+        expanded={expandedSections['emissions-breakdown']}
+        onToggle={toggleSection}
+        summary={`${totalsByMetric.length} metric rows`}
+      >
         <SimpleTable
           headers={['Category', 'Metric Type', 'Unit', 'Total']}
           emptyMessage="No metrics available for this report scope."
@@ -463,215 +564,114 @@ export function FormalReportPreview({
         />
       </ReportSection>
 
-      <ReportSection title="F. Activity Breakdown">
-        <SimpleTable
-          headers={[
-            'Activity Type',
-            'Quantity',
-            'Unit',
-            'Estimated Emissions',
-            'Source Reference',
-          ]}
-          emptyMessage="No activity records with matching conversion factors."
-          rows={matchedActivityEmissions.map((item) => [
-            item.activityType,
-            formatDisplayNumber(item.quantity),
-            item.unit,
-            `${formatEmissionsValue(item.estimatedEmissionsKgCO2e)} kgCO2e`,
-            item.sourceReference || '-',
-          ])}
+      <ReportSection
+        title="G. Activity Breakdown"
+        sectionId="activity-breakdown"
+        expanded={expandedSections['activity-breakdown']}
+        onToggle={toggleSection}
+        summary={`${matchedActivityEmissions.length} calculated activity records`}
+      >
+        <ActivityBreakdownSection matchedActivityEmissions={matchedActivityEmissions} />
+      </ReportSection>
+
+      <ReportSection
+        title="H. Emission Factors Used"
+        sectionId="emission-factors"
+        expanded={expandedSections['emission-factors']}
+        onToggle={toggleSection}
+        summary={`${conversionFactorsUsed.length} factors used`}
+      >
+        <EmissionFactorsUsedSection
+          conversionFactorsUsed={conversionFactorsUsed}
+          formatJurisdiction={formatReportJurisdiction}
         />
       </ReportSection>
 
-      <ReportSection title="G. Emission Factors Used">
-        <SimpleTable
-          headers={[
-            'Factor',
-            'Version',
-            'Value',
-            'Unit',
-            'Jurisdiction',
-            'Year',
-            'Source Authority',
-            'Source Document',
-            'Verified / Status',
-            'Used Records',
-          ]}
-          emptyMessage="No conversion factors found for this report scope."
-          rows={conversionFactorsUsed.map((factor) => [
-            factor.factorName || factor.activityType || 'Factor not specified',
-            factor.factorVersionId || 'Legacy factor',
-            formatDisplayNumber(factor.factorValue),
-            `${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
-            formatReportJurisdiction(factor.jurisdiction),
-            factor.factorYear || factor.sourceYear || 'Not specified',
-            factor.sourceAuthority || 'Source not specified',
-            factor.sourceDocument || 'Source not specified',
-            factor.verified
-              ? 'Verified'
-              : factor.factorStatus
-              ? formatCalculationStatus(factor.factorStatus)
-              : 'Unverified / user review required',
-            factor.usedRecordsCount ?? 1,
-          ])}
+      <ReportSection
+        title="I. Calculation Traceability"
+        sectionId="calculation-traceability"
+        expanded={expandedSections['calculation-traceability']}
+        onToggle={toggleSection}
+        summary={`${calculationDetails.length} audit records`}
+      >
+        <CalculationTraceabilitySection
+          calculationDetails={calculationDetails}
+          formatRecordUnit={formatReportUnit}
+          formatScopeLabel={(item) => formatScopeClassification(getFormalScopeResolution(item).scope)}
+          formatScopeSourceLabel={(item) => formatScopeSource(getFormalScopeResolution(item).source)}
         />
       </ReportSection>
 
-      <ReportSection title="H. Calculation Traceability">
-        <p style={sectionHelperStyle}>
-          Each calculated row shows the activity quantity, matched conversion factor, source, formula, and emissions result.
-        </p>
-        <details>
-          <summary style={detailsSummaryStyle}>
-            Show calculation audit ({calculationDetails.length} records)
-          </summary>
-          <div style={{ marginTop: 14 }}>
-            <SimpleTable
-              headers={[
-                'Activity',
-                'Quantity',
-                'Factor Used',
-                'Source',
-                'Match',
-                'Calculation',
-                'Status',
-              ]}
-              emptyMessage="No calculation details available."
-              rows={calculationDetails.map((item) => [
-                item.activityType,
-                `${formatDisplayNumber(item.activityQuantity)} ${formatReportUnit(item.activityUnit, item)}`,
-                formatTraceableFactor(item),
-                formatTraceabilitySource(item),
-                formatMatchingMethod(item),
-                buildCalculatedFormula(item),
-                formatCalculationStatus(item.status),
-              ])}
-            />
-          </div>
-        </details>
+      <ReportSection
+        title="J. Source Evidence"
+        sectionId="source-evidence"
+        expanded={expandedSections['source-evidence']}
+        onToggle={toggleSection}
+        summary={`${sourceEvidenceRows.length} source rows`}
+      >
+        <SourceEvidenceSection sourceEvidenceRows={sourceEvidenceRows} />
       </ReportSection>
 
-      <ReportSection title="I. Source Evidence">
-        <SimpleTable
-          headers={['Activity Type', 'Quantity', 'Unit', 'Source File', 'Source Reference', 'Source Type', 'Notes']}
-          emptyMessage="No source evidence available."
-          rows={sourceEvidenceRows.map((item) => [
-            item.activityType,
-            item.quantity,
-            item.unit,
-            item.sourceFile,
-            item.sourceReference,
-            item.sourceType,
-            item.notes || '-',
-          ])}
+      <ReportSection
+        title="K. Records Requiring Review"
+        sectionId="records-review"
+        expanded={expandedSections['records-review']}
+        onToggle={toggleSection}
+        summary={`${reportCountSummary.skippedRecords} records require review`}
+      >
+        <RecordsRequiringReviewSection
+          calculationDetails={calculationDetails}
+          formatRecordUnit={formatReportUnit}
         />
       </ReportSection>
 
-      <ReportSection title="J. Records Requiring Review">
-        <SimpleTable
-          headers={['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']}
-          emptyMessage="No records require review for this report scope."
-          rows={calculationDetails
-            .filter((item) => item.status !== 'CALCULATED' && item.status !== 'OUTSIDE_SCOPE')
-            .map((item) => [
-              item.activityType,
-              formatDisplayNumber(item.activityQuantity),
-              formatReportUnit(item.activityUnit, item),
-              formatCalculationStatus(item.status),
-              item.matchingMessage || item.reason || 'Review this record before calculation.',
-              formatRecordSource(item),
-              item.status === 'MISSING_FACTOR' ? 'Create factor' : 'Fix record',
-            ])}
-        />
-      </ReportSection>
-
-      <ReportSection title="K. Methodology and Disclaimer">
-        <div style={{ display: 'grid', gap: 10 }}>
-          {FORMAL_REPORT_METHODOLOGY.map((paragraph) => (
-            <p key={paragraph} style={{ margin: 0, lineHeight: 1.7, color: '#475569' }}>
-              {paragraph}
-            </p>
-          ))}
-        </div>
+      <ReportSection
+        title="L. Methodology and Disclaimer"
+        sectionId="methodology"
+        expanded={expandedSections.methodology}
+        onToggle={toggleSection}
+        summary="Calculation approach and use disclaimer"
+      >
+        <MethodologyDisclaimerSection methodology={FORMAL_REPORT_METHODOLOGY} />
       </ReportSection>
     </section>
   );
 }
 
-function ReportHotspots({ analysis }: { analysis: HotspotAnalysis }) {
-  if (analysis.totalRecordCount <= 0) {
-    return (
-      <p style={sectionHelperStyle}>
-        Emissions hotspots are not available because no activity records were found.
-      </p>
-    );
-  }
-
-  if (!analysis.categoryHotspots.length || analysis.totalCalculatedEmissions <= 0) {
-    return (
-      <div style={{ display: 'grid', gap: 12 }}>
-        <p style={sectionHelperStyle}>
-          Emissions hotspots are not available yet because no records could be calculated. Resolve calculation issues before using hotspot analysis.
-        </p>
-        {analysis.excludedRecordCount > 0 ? (
-          <div style={qualityReasonStyle}>
-            Some records were excluded from hotspot analysis because they require review or are tracked-only.
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  const top = analysis.categoryHotspots[0];
-
-  return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <p style={sectionHelperStyle}>
-        This section highlights the activity categories contributing the largest share of calculated emissions. Hotspot analysis only includes successfully calculated records.
-      </p>
-      <div style={hotspotHighlightStyle}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: '#047857' }}>Top emissions hotspot</div>
-        <div style={{ marginTop: 4, fontSize: 20, fontWeight: 900, color: '#064e3b' }}>{top.displayName}</div>
-        <div style={{ marginTop: 4, color: '#475569' }}>
-          {top.displayName} contributes {formatDisplayNumber(top.percentageOfTotal)}% of calculated emissions.
-        </div>
-      </div>
-      <SimpleTable
-        headers={['Rank', 'Category', 'Calculated Emissions', 'Share of Total', 'Records', 'Hotspot Level', 'Focus Message']}
-        emptyMessage="No hotspot categories available."
-        rows={analysis.categoryHotspots.map((row) => [
-          row.rank,
-          row.displayName,
-          `${formatEmissionsValue(row.emissions)} kgCO2e`,
-          `${formatDisplayNumber(row.percentageOfTotal)}%`,
-          row.calculatedRecordCount,
-          formatHotspotLevel(row.hotspotLevel),
-          row.focusMessage,
-        ])}
-      />
-      {analysis.focusRecommendations.length > 0 ? (
-        <div style={recommendationGridStyle}>
-          {analysis.focusRecommendations.slice(0, 3).map((item) => (
-            <div key={`${item.priority}-${item.title}`} style={recommendationCardStyle}>
-              <div style={{ fontWeight: 900, color: '#0f172a' }}>{item.title}</div>
-              <div style={{ marginTop: 5, color: '#475569', lineHeight: 1.5 }}>{item.message}</div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {analysis.excludedRecordCount > 0 ? (
-        <div style={qualityReasonStyle}>
-          {analysis.excludedRecordCount} records were excluded from hotspot totals. See Records Requiring Review for details.
-        </div>
-      ) : null}
-    </div>
-  );
+function getFormalScopeResolution(detail: CalculationAuditDetail) {
+  return resolveScopeClassification({
+    activityType: detail.activityType,
+    scopeOverride: detail.scopeOverride,
+    factorDefaultScope: detail.factorDefaultScope,
+    factorScope: detail.factorScope,
+  });
 }
 
-function formatHotspotLevel(level: HotspotAnalysis['categoryHotspots'][number]['hotspotLevel']) {
-  if (level === 'HIGH') return 'High';
-  if (level === 'MEDIUM') return 'Medium';
-  return 'Low';
+function buildFormalScopeSummary(calculationDetails: CalculationAuditDetail[]) {
+  const summary = {
+    SCOPE_1: 0,
+    SCOPE_2: 0,
+    SCOPE_3: 0,
+    UNCLASSIFIED: 0,
+  };
+
+  calculationDetails.forEach((detail) => {
+    if (detail.status !== 'CALCULATED') return;
+
+    const emissions = Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0);
+    if (!Number.isFinite(emissions)) return;
+
+    const scope = getFormalScopeResolution(detail).scope;
+    if (scope === 'TRACKED_METRIC') return;
+    if (scope === 'UNCLASSIFIED') {
+      summary.UNCLASSIFIED += emissions;
+      return;
+    }
+
+    summary[scope] += emissions;
+  });
+
+  return summary;
 }
 
 export function formatSkippedReasons(reasons: ReportSkippedReasonSummary) {
@@ -692,15 +692,41 @@ export function formatSkippedReasons(reasons: ReportSkippedReasonSummary) {
 
 function ReportSection({
   title,
+  sectionId,
+  expanded,
+  onToggle,
+  summary,
   children,
 }: {
   title: string;
+  sectionId: string;
+  expanded: boolean;
+  onToggle: (sectionId: string) => void;
+  summary?: string;
   children: React.ReactNode;
 }) {
+  const contentId = `report-section-${sectionId}`;
+
   return (
     <div style={reportSectionStyle}>
-      <h3 style={{ margin: '0 0 14px', fontSize: 18 }}>{title}</h3>
-      {children}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={() => onToggle(sectionId)}
+        style={reportSectionHeaderButtonStyle}
+      >
+        <span aria-hidden="true" style={reportSectionChevronStyle}>
+          {expanded ? '▾' : '▸'}
+        </span>
+        <span style={reportSectionTitleStyle}>{title}</span>
+      </button>
+      {summary ? <div style={reportSectionSummaryStyle}>{summary}</div> : null}
+      {expanded ? (
+        <div id={contentId} style={reportSectionContentStyle}>
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -869,6 +895,60 @@ const reportSectionStyle: React.CSSProperties = {
   background: '#fff',
 };
 
+const reportSectionToolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: 10,
+  marginTop: 16,
+  flexWrap: 'wrap',
+};
+
+const reportSectionToolbarButtonStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#0f172a',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const reportSectionHeaderButtonStyle: React.CSSProperties = {
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: 0,
+  border: 0,
+  background: 'transparent',
+  color: '#0f172a',
+  textAlign: 'left',
+  cursor: 'pointer',
+};
+
+const reportSectionChevronStyle: React.CSSProperties = {
+  width: 18,
+  color: '#047857',
+  fontSize: 16,
+  fontWeight: 900,
+};
+
+const reportSectionTitleStyle: React.CSSProperties = {
+  fontSize: 18,
+  fontWeight: 900,
+};
+
+const reportSectionSummaryStyle: React.CSSProperties = {
+  margin: '6px 0 0 26px',
+  color: '#64748b',
+  fontSize: 13,
+  lineHeight: 1.4,
+};
+
+const reportSectionContentStyle: React.CSSProperties = {
+  marginTop: 14,
+};
+
 const qualityReasonStyle: React.CSSProperties = {
   marginTop: 14,
   padding: 12,
@@ -876,44 +956,6 @@ const qualityReasonStyle: React.CSSProperties = {
   borderRadius: 8,
   background: '#fff7ed',
   color: '#9a3412',
-};
-
-const qualitySuccessStyle: React.CSSProperties = {
-  marginTop: 14,
-  color: '#047857',
-  fontWeight: 700,
-};
-
-const hotspotHighlightStyle: React.CSSProperties = {
-  padding: 14,
-  borderRadius: 10,
-  border: '1px solid #bbf7d0',
-  background: '#ecfdf5',
-};
-
-const recommendationGridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-  gap: 10,
-};
-
-const recommendationCardStyle: React.CSSProperties = {
-  padding: 12,
-  borderRadius: 10,
-  border: '1px solid #e2e8f0',
-  background: '#f8fafc',
-};
-
-const sectionHelperStyle: React.CSSProperties = {
-  margin: '0 0 12px',
-  color: '#475569',
-  lineHeight: 1.55,
-};
-
-const detailsSummaryStyle: React.CSSProperties = {
-  cursor: 'pointer',
-  color: '#0f766e',
-  fontWeight: 800,
 };
 
 const factsGridStyle: React.CSSProperties = {

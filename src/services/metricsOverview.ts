@@ -22,10 +22,10 @@ import {
   getFactorResultUnit,
   getFactorSourceAuthority,
   getFactorValue,
-  normalizeActivityType,
   type MatchableConversionFactor,
 } from '../utils/conversionFactorMatching';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import { normalizeActivityType } from '../utils/activityType';
 
 export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
   fuel: 0,
@@ -129,6 +129,14 @@ type SupplementalCalculation = {
   factor: MatchableConversionFactor;
 };
 
+type MatchedActivityEmission = NonNullable<
+  MetricsSummaryResponse['matchedActivityEmissions']
+>[number];
+type UsedConversionFactor = NonNullable<
+  MetricsSummaryResponse['conversionFactorsUsed']
+>[number];
+type CalculationExplanationRecord = NonNullable<MetricsSummaryResponse['records']>[number];
+
 function firstFiniteNumber(...values: unknown[]) {
   for (const value of values) {
     const numberValue = Number(value);
@@ -162,7 +170,23 @@ export async function loadMetricsOverview(options?: {
     selectedDocumentIds,
   });
   const activities = (summary.activities ?? []) as ActivityDataItem[];
-  const calculatedDetailCount = (summary.calculationDetails ?? []).filter(
+  const normalizedApiDetails = normalizeApiCalculationDetails(summary.calculationDetails ?? []);
+  const recordCalculationDetails = mergeCalculationRecordsIntoDetails(
+    normalizedApiDetails,
+    summary.records ?? [],
+    activities,
+  );
+  const apiCalculationDetails = mergeMatchedEmissionsIntoCalculationDetails(
+    recordCalculationDetails,
+    summary.matchedActivityEmissions ?? [],
+    activities,
+    summary.conversionFactorsUsed ?? [],
+  );
+  const calculationSummaryForMatching = {
+    ...summary,
+    calculationDetails: apiCalculationDetails,
+  };
+  const calculatedDetailCount = apiCalculationDetails.filter(
     (detail) => detail.status === 'CALCULATED',
   ).length;
   const processedRecords = firstFiniteNumber(
@@ -204,7 +228,7 @@ export async function loadMetricsOverview(options?: {
   );
   const supplementalCalculations = await buildSupplementalCalculations({
     activities,
-    summary,
+    summary: calculationSummaryForMatching,
     processedRecords,
   });
   const supplementalActivityIds = new Set(
@@ -231,7 +255,7 @@ export async function loadMetricsOverview(options?: {
     ),
   };
   const mergedCalculationDetails = mergeSupplementalCalculationDetails(
-    summary.calculationDetails ?? [],
+    apiCalculationDetails,
     supplementalCalculations,
     activities,
   );
@@ -308,6 +332,292 @@ function getIssueUnitLabel(detail: CalculationAuditDetail) {
   return detail.normalizedUnit || detail.activityUnit || 'Missing unit';
 }
 
+function normalizeApiCalculationDetails(
+  calculationDetails: CalculationAuditDetail[],
+): CalculationAuditDetail[] {
+  return calculationDetails.map((detail) => {
+    const activityType = normalizeActivityType(detail.activityType) ?? detail.activityType;
+    const calculatedEmissionsKgCO2e = firstFiniteNullable(
+      detail.calculatedEmissionsKgCO2e,
+      detail.calculatedEmission,
+    );
+    const status = normalizeCalculationDetailStatus(detail, calculatedEmissionsKgCO2e);
+
+    return {
+      ...detail,
+      activityType,
+      status,
+      scopeOverride: detail.scopeOverride ?? detail.scopeClassification ?? null,
+      calculatedEmissionsKgCO2e,
+      calculatedEmission: firstFiniteNullable(detail.calculatedEmission, calculatedEmissionsKgCO2e),
+    };
+  });
+}
+
+function firstFiniteNullable(...values: unknown[]) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue)) return numberValue;
+  }
+
+  return null;
+}
+
+function normalizeCalculationDetailStatus(
+  detail: CalculationAuditDetail,
+  calculatedEmissionsKgCO2e: number | null,
+): CalculationAuditDetail['status'] {
+  const currentStatus = String(detail.status ?? '').trim().toUpperCase();
+  const fallbackStatus = String(
+    detail.calculationStatus ?? detail.explanationStatus ?? detail.matchingStatus ?? '',
+  )
+    .trim()
+    .toUpperCase();
+
+  const status = currentStatus || fallbackStatus;
+
+  if (status === 'CALCULATED' || (status === 'MATCHED' && calculatedEmissionsKgCO2e !== null)) {
+    return 'CALCULATED';
+  }
+  if (['MISSING_FACTOR', 'NO_FACTOR'].includes(status)) return 'MISSING_FACTOR';
+  if (['INVALID_QUANTITY', 'INVALID_AMOUNT'].includes(status)) return 'INVALID_QUANTITY';
+  if (['INVALID_UNIT', 'UNIT_MISMATCH'].includes(status)) return 'INVALID_UNIT';
+  if (['MISSING_JURISDICTION', 'MISSING_PROVINCE', 'MISSING_REGION'].includes(status)) {
+    return 'MISSING_JURISDICTION';
+  }
+  if (['TRACKED_ONLY', 'TRACKED_METRIC'].includes(status)) return 'TRACKED_ONLY';
+  if (status === 'OUTSIDE_SCOPE') return 'OUTSIDE_SCOPE';
+  if (calculatedEmissionsKgCO2e !== null) return 'CALCULATED';
+
+  return 'MISSING_DATA';
+}
+
+function mergeCalculationRecordsIntoDetails(
+  existingDetails: CalculationAuditDetail[],
+  records: CalculationExplanationRecord[],
+  activities: ActivityDataItem[],
+) {
+  if (records.length === 0) return existingDetails;
+
+  const merged = [...existingDetails];
+  const existingById = new Map(existingDetails.map((detail) => [detail.activityDataId, detail]));
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+
+  records.forEach((record) => {
+    const activityDataId = String(record.activityRecordId ?? '').trim();
+    if (!activityDataId) return;
+
+    const existingDetail = existingById.get(activityDataId);
+    if (isCompleteCalculatedDetail(existingDetail)) return;
+
+    const emissions = firstFiniteNullable(record.calculatedEmissions);
+    const status = normalizeRecordCalculationStatus(record, emissions);
+    if (status !== 'CALCULATED' && existingDetail) return;
+
+    const activity = activityById.get(activityDataId);
+    const activityType =
+      normalizeActivityType(record.activityType ?? activity?.activityType) ??
+      String(record.activityType ?? activity?.activityType ?? '');
+    const quantity = firstFiniteNumber(record.normalizedQuantity, record.quantity, activity?.quantity);
+    const unit = String(record.normalizedUnit ?? record.unit ?? activity?.unit ?? '');
+    const recordDate = record.recordDate ?? activity?.recordDate ?? '';
+    const parsedRecordYear = Number(String(recordDate).slice(0, 4));
+    const recordYear = record.recordYear ?? (Number.isFinite(parsedRecordYear) ? parsedRecordYear : null);
+
+    const detail: CalculationAuditDetail = {
+      ...existingDetail,
+      activityDataId,
+      activityType,
+      recordDate,
+      dateEstimated: Boolean(activity?.dateEstimated),
+      reportingYear: recordYear ?? new Date().getFullYear(),
+      recordYear,
+      jurisdiction: record.jurisdiction ?? formatJurisdiction(activity),
+      jurisdictionCountry: record.jurisdictionCountry ?? activity?.jurisdictionCountry ?? null,
+      jurisdictionRegion: record.jurisdictionRegion ?? activity?.jurisdictionRegion ?? null,
+      jurisdictionSource: record.jurisdictionSource ?? null,
+      jurisdictionAssumed: record.jurisdictionAssumed ?? null,
+      facilityName: record.facilityName ?? null,
+      activityQuantity: quantity,
+      activityUnit: unit,
+      quantityUnit: String(record.unit ?? activity?.unit ?? unit),
+      normalizedUnit: unit,
+      factorId: record.factor?.factorId ?? null,
+      factorVersionId: record.factor?.factorVersionId ?? null,
+      factorName: record.factor?.activityType ?? null,
+      factorValue: record.factor?.factorValue ?? null,
+      factorInputUnit: record.factor?.inputUnit ?? null,
+      factorResultUnit: record.factor?.resultUnit ?? record.resultUnit ?? null,
+      factorYear: record.factor?.factorYear ?? record.factor?.sourceYear ?? null,
+      factorJurisdictionRegion: record.factor?.jurisdiction ?? null,
+      factorSource: record.factor?.sourceAuthority ?? 'Source not specified',
+      sourceAuthority: record.factor?.sourceAuthority ?? null,
+      sourceDocument: record.factor?.sourceDocument ?? null,
+      sourceUrl: record.factor?.sourceUrl ?? null,
+      sourceYear: record.factor?.sourceYear ?? null,
+      factorVerified: Boolean(record.factor?.verified ?? record.factor?.isOfficial),
+      factorConfidenceLevel: record.factor?.confidenceLevel ?? null,
+      factorVerificationStatus: record.factor?.verificationStatus ?? null,
+      factorType: record.factor?.isSystem || record.factor?.isOfficial ? 'System' : null,
+      calculatedEmission: emissions,
+      calculatedEmissionsKgCO2e: emissions,
+      calculationStatus: record.calculationStatus,
+      matchingStatus: record.matching?.matched ? 'MATCHED' : null,
+      matchedBy: record.matching?.matchedBy ?? null,
+      matchingMethod: record.matching?.matchedBy ?? null,
+      matchingMessage: record.matching?.message ?? null,
+      status,
+      reason: record.warning ?? null,
+      sourceType: activity?.sourceType ?? 'UNKNOWN',
+      sourceReference: activity?.sourceReference ?? null,
+      sourceFileName: activity?.sourceFileName ?? null,
+      sourcePage: activity?.sourcePage ?? null,
+      sourceRow: activity?.sourceRow ?? null,
+      sourceTextSnippet: activity?.sourceTextSnippet ?? null,
+      sourceDocumentId: activity?.sourceDocumentId ?? null,
+      notes: activity?.notes ?? null,
+    };
+
+    if (existingDetail) {
+      const index = merged.findIndex((item) => item.activityDataId === activityDataId);
+      merged[index] = detail;
+    } else {
+      merged.push(detail);
+    }
+    existingById.set(activityDataId, detail);
+  });
+
+  return merged;
+}
+
+function normalizeRecordCalculationStatus(
+  record: CalculationExplanationRecord,
+  emissions: number | null,
+): CalculationAuditDetail['status'] {
+  return normalizeCalculationDetailStatus(
+    {
+      status: record.calculationStatus as CalculationAuditDetail['status'],
+      calculationStatus: record.calculationStatus,
+      matchingStatus: record.matching?.matchedBy,
+    } as CalculationAuditDetail,
+    emissions,
+  );
+}
+
+function mergeMatchedEmissionsIntoCalculationDetails(
+  existingDetails: CalculationAuditDetail[],
+  matchedEmissions: MatchedActivityEmission[],
+  activities: ActivityDataItem[],
+  conversionFactorsUsed: UsedConversionFactor[],
+) {
+  if (matchedEmissions.length === 0) return existingDetails;
+
+  const existingById = new Map(existingDetails.map((detail) => [detail.activityDataId, detail]));
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+  const factorById = new Map(
+    conversionFactorsUsed
+      .filter((factor) => factor.factorId)
+      .map((factor) => [String(factor.factorId), factor]),
+  );
+  const merged = [...existingDetails];
+
+  matchedEmissions.forEach((emission) => {
+    const activityDataId = String(emission.activityDataId ?? '').trim();
+    if (!activityDataId) return;
+    const existingDetail = existingById.get(activityDataId);
+    if (isCompleteCalculatedDetail(existingDetail)) return;
+
+    const emissions = Number(emission.estimatedEmissionsKgCO2e);
+    if (!Number.isFinite(emissions)) return;
+
+    const activity = activityById.get(activityDataId);
+    const factor = emission.factorId ? factorById.get(String(emission.factorId)) : undefined;
+    const activityType =
+      normalizeActivityType(emission.activityType ?? activity?.activityType) ??
+      String(emission.activityType ?? activity?.activityType ?? '');
+    const quantity = firstFiniteNumber(emission.quantity, activity?.quantity);
+    const unit = String(emission.unit ?? activity?.unit ?? '');
+    const recordDate = activity?.recordDate ?? '';
+    const recordYear = Number(recordDate.slice(0, 4)) || null;
+    const factorValue = Number(factor?.factorValue);
+
+    const synthesizedDetail: CalculationAuditDetail = {
+      ...existingDetail,
+      activityDataId,
+      activityType,
+      recordDate,
+      dateEstimated: Boolean(activity?.dateEstimated),
+      reportingYear: recordYear ?? new Date().getFullYear(),
+      recordYear,
+      jurisdiction: formatJurisdiction(activity),
+      jurisdictionCountry: activity?.jurisdictionCountry ?? null,
+      jurisdictionRegion: activity?.jurisdictionRegion ?? null,
+      activityQuantity: quantity,
+      activityUnit: unit,
+      quantityUnit: unit,
+      normalizedUnit: unit,
+      factorId: emission.factorId ?? null,
+      factorVersionId: emission.factorVersionId ?? factor?.factorVersionId ?? null,
+      factorName: factor?.factorName ?? null,
+      factorValue: Number.isFinite(factorValue) ? factorValue : null,
+      factorInputUnit: factor?.inputUnit ?? null,
+      factorResultUnit: factor?.resultUnit ?? null,
+      factorYear: factor?.sourceYear ?? factor?.reportingYear ?? null,
+      factorStatus: factor?.factorStatus ?? null,
+      factorPriority: factor?.priority ?? null,
+      factorSource: factor?.sourceAuthority ?? 'Source not specified',
+      sourceAuthority: factor?.sourceAuthority ?? null,
+      sourceDocument: factor?.sourceDocument ?? null,
+      sourceUrl: factor?.sourceUrl ?? null,
+      sourceYear: factor?.sourceYear ?? null,
+      factorVerified: Boolean(factor?.verified),
+      factorType: factor?.factorType ?? null,
+      calculatedEmission: emissions,
+      calculatedEmissionsKgCO2e: emissions,
+      calculationStatus: 'CALCULATED',
+      matchingStatus: 'MATCHED',
+      matchedBy: 'matched activity emissions',
+      matchingMethod: 'matched activity emissions',
+      matchingMessage:
+        'Calculated from matched activity emissions returned by the metrics summary API.',
+      status: 'CALCULATED',
+      sourceType: emission.sourceType ?? activity?.sourceType ?? 'UNKNOWN',
+      sourceReference: emission.sourceReference ?? activity?.sourceReference ?? null,
+      sourceFileName: emission.sourceFileName ?? activity?.sourceFileName ?? null,
+      sourcePage: emission.sourcePage ?? activity?.sourcePage ?? null,
+      sourceRow: emission.sourceRow ?? activity?.sourceRow ?? null,
+      sourceTextSnippet: emission.sourceTextSnippet ?? activity?.sourceTextSnippet ?? null,
+      sourceDocumentId: emission.sourceDocumentId ?? activity?.sourceDocumentId ?? null,
+      notes: emission.notes ?? activity?.notes ?? null,
+    };
+
+    if (existingDetail) {
+      const index = merged.findIndex((detail) => detail.activityDataId === activityDataId);
+      merged[index] = synthesizedDetail;
+    } else {
+      merged.push(synthesizedDetail);
+    }
+    existingById.set(activityDataId, synthesizedDetail);
+  });
+
+  return merged;
+}
+
+function formatJurisdiction(activity?: ActivityDataItem) {
+  return [activity?.jurisdictionRegion, activity?.jurisdictionCountry]
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+function isCompleteCalculatedDetail(detail?: CalculationAuditDetail) {
+  return (
+    detail?.status === 'CALCULATED' &&
+    firstFiniteNullable(detail.calculatedEmissionsKgCO2e, detail.calculatedEmission) !== null
+  );
+}
+
 async function buildSupplementalCalculations(input: {
   activities: ActivityDataItem[];
   summary: MetricsSummaryResponse;
@@ -374,7 +684,15 @@ async function buildSupplementalCalculations(input: {
 }
 
 function isTrackedOnlyActivity(activityType: string) {
-  return ['WATER', 'WASTE', 'WASTE_VOLUME'].includes(activityType);
+  return ['WATER'].includes(activityType);
+}
+
+function getFactorDefaultScope(factor: MatchableConversionFactor) {
+  return factor.currentActiveVersion?.defaultScope ?? factor.version?.defaultScope ?? factor.defaultScope ?? null;
+}
+
+function getFactorScope(factor: MatchableConversionFactor) {
+  return factor.currentActiveVersion?.scope ?? factor.version?.scope ?? factor.scope ?? null;
 }
 
 function mergeSupplementalCalculationDetails(
@@ -443,6 +761,8 @@ function buildSupplementalCalculationDetail(
     sourceYear: item.factor.sourceYear ?? null,
     factorVerified: Boolean(item.factor.verified),
     factorType: item.factor.organizationId ? 'Custom' : 'System',
+    factorDefaultScope: getFactorDefaultScope(item.factor),
+    factorScope: getFactorScope(item.factor),
     calculatedEmission: item.emissions,
     calculatedEmissionsKgCO2e: item.emissions,
     calculationFormula: `${item.quantity} × ${factorValue} = ${item.emissions}`,

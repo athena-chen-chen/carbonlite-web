@@ -123,6 +123,17 @@ export default function App() {
         />
 
         <Route
+          path="/input-data"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <UploadPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/upload"
           element={
             <ProtectedRoute>

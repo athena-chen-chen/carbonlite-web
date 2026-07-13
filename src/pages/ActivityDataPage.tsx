@@ -9,10 +9,17 @@ import {
   bulkDeleteActivityData,
   type DeleteActivityDataResponse,
 } from '../services/activityData';
-import{ExcelInputTable} from '../components/ExcelInputTable';
+import { EditRecordPanel } from '../components/data-records/EditRecordPanel';
+import { StatusBadge } from '../components/shared/StatusBadge';
+import { BulkProvinceToolbar } from '../components/shared/BulkProvinceToolbar';
 import {
   activityTypes,
 } from '../constants/activityTypes';
+import {
+  CANADIAN_PROVINCE_OPTIONS,
+  ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
+  normalizeProvince as normalizeCanadianProvince,
+} from '../utils/province';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 const PAGE_SIZE = 15;
@@ -23,6 +30,9 @@ const ACTIVITY_TABLE_COLUMNS = [
   { key: 'type', label: 'Type' },
   { key: 'quantity', label: 'Quantity' },
   { key: 'unit', label: 'Unit' },
+  { key: 'country', label: 'Country' },
+  { key: 'province', label: 'Province' },
+  { key: 'facility', label: 'Facility' },
   { key: 'source', label: 'Source' },
   { key: 'sourceReference', label: 'Source Reference' },
 ] as const;
@@ -37,6 +47,7 @@ type ActivityDataItem = {
   unit?: string | null;
   jurisdictionCountry?: string | null;
   jurisdictionRegion?: string | null;
+  facilityId?: string | null;
   recordYear?: number | null;
   documentId?: string | null;
   sourceDocumentId?: string | null;
@@ -63,23 +74,27 @@ const [editRow, setEditRow] = useState<any>({});
 const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 const [lastDeleted, setLastDeleted] = useState<ActivityDataItem | null>(null);
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
-const [reloadKey, setReloadKey] = useState(0);
 const [currentPage, setCurrentPage] = useState(1);
 const [bulkDeleting, setBulkDeleting] = useState(false);
+const [bulkProvince, setBulkProvince] = useState('');
+const [bulkApplyingProvince, setBulkApplyingProvince] = useState(false);
 const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
 const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
 const [qualityFilter, setQualityFilter] = useState('all');
+const [viewedRecord, setViewedRecord] = useState<ActivityDataItem | null>(null);
 const [visibleColumns, setVisibleColumns] = useState<Record<ActivityTableColumnKey, boolean>>({
   status: true,
   date: true,
   type: true,
   quantity: true,
   unit: true,
+  country: true,
+  province: true,
+  facility: true,
   source: true,
   sourceReference: true,
 });
-const [tableHasOverflow, setTableHasOverflow] = useState(false);
 const tableScrollRef = useRef<HTMLDivElement | null>(null);
 const columnMenuRef = useRef<HTMLDivElement | null>(null);
 const actionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -103,6 +118,12 @@ const documentFilterName =
   sourceDocumentNameFromState ??
   scopeFilteredItems.find((item) => item.sourceFileName)?.sourceFileName ??
   documentFilterId;
+const selectedMissingProvinceElectricityRows = items.filter(
+  (item) =>
+    selectedIds.includes(item.id) &&
+    String(item.activityType ?? '').toUpperCase() === 'ELECTRICITY' &&
+    isMissingRecordValue(item.jurisdictionRegion),
+);
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
@@ -190,26 +211,6 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
   }, [documentFilterId, recordFilterId]);
 
   useEffect(() => {
-    const container = tableScrollRef.current;
-    if (!container) return;
-
-    function updateOverflowState() {
-      setTableHasOverflow(container.scrollWidth > container.clientWidth + 1);
-    }
-
-    updateOverflowState();
-
-    if (typeof ResizeObserver !== 'undefined') {
-      const resizeObserver = new ResizeObserver(updateOverflowState);
-      resizeObserver.observe(container);
-      return () => resizeObserver.disconnect();
-    }
-
-    window.addEventListener('resize', updateOverflowState);
-    return () => window.removeEventListener('resize', updateOverflowState);
-  }, [filteredItems.length, currentPage, editingId]);
-
-  useEffect(() => {
     if (!recordFilterId || filteredItems.length === 0) return;
 
     const scrollTimer = window.setTimeout(() => {
@@ -229,6 +230,19 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
       window.clearTimeout(highlightTimer);
     };
   }, [recordFilterId, filteredItems.length]);
+
+  useEffect(() => {
+    if (!viewedRecord) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setViewedRecord(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewedRecord]);
 
   useEffect(() => {
     if (!isColumnMenuOpen) return;
@@ -337,6 +351,15 @@ function handleGenerateReportFromSelection() {
   });
 }
 
+function normalizeProvinceValue(value?: string | null) {
+  return normalizeCanadianProvince(value) ?? '';
+}
+
+function getProvinceOptions(value?: string | null) {
+  const normalized = normalizeProvinceValue(value);
+  return Array.from(new Set([normalized, ...CANADIAN_PROVINCE_OPTIONS].filter(Boolean)));
+}
+
 function toggleColumn(columnKey: ActivityTableColumnKey) {
   setVisibleColumns((current) => ({
     ...current,
@@ -394,7 +417,7 @@ function renderActionMenuPortal() {
         top: actionMenuPosition.top,
         left: actionMenuPosition.left,
         right: 'auto',
-        zIndex: 9999,
+        zIndex: 900,
       }}
     >
       <button
@@ -424,14 +447,8 @@ function renderActionMenuPortal() {
   );
 }
 
-function handleViewCalculation(rowId: string) {
-  navigate('/reports', {
-    state: {
-      reportScope: 'selectedRecords',
-      selectedActivityRecordIds: [rowId],
-      selectedRecordIds: [rowId],
-    },
-  });
+function handleViewRecord(row: ActivityDataItem) {
+  setViewedRecord(row);
 }
 
 function isMissingRecordValue(value: unknown) {
@@ -472,10 +489,10 @@ function getActivityRecordQuality(row: ActivityDataItem) {
 
   if (activityType === 'ELECTRICITY' && isMissingRecordValue(row.jurisdictionRegion)) {
     return {
-      label: 'Province required',
+      label: 'Missing Province',
       filterKey: 'missing-jurisdiction',
       tone: 'warning' as const,
-      title: 'Electricity emissions require a province-specific factor. Add province or facility location.',
+      title: 'Electricity emissions require a province-specific factor. Please select the province where the electricity was used.',
     };
   }
 
@@ -497,7 +514,7 @@ function getActivityRecordQuality(row: ActivityDataItem) {
     };
   }
 
-  if (['WATER', 'WASTE', 'WASTE_VOLUME'].includes(activityType) || notes.includes('tracked metric')) {
+  if (activityType === 'WATER' || notes.includes('tracked metric')) {
     return {
       label: 'Tracked Metric',
       filterKey: 'tracked-metric',
@@ -569,6 +586,10 @@ function formatActivitySourceReference(row: ActivityDataItem) {
 
   return parts.length ? parts.join(' · ') : 'Source unavailable';
 }
+
+function formatOptionalRecordValue(value: unknown) {
+  return isMissingRecordValue(value) ? '-' : String(value);
+}
   async function handleBulkDelete() {
   if (!selectedIds.length) return;
 
@@ -607,6 +628,58 @@ function formatActivitySourceReference(row: ActivityDataItem) {
     setBulkDeleting(false);
   }
 }
+
+async function handleBulkApplyProvince() {
+  const normalizedProvince = normalizeProvinceValue(bulkProvince);
+  const rowsToUpdate = selectedMissingProvinceElectricityRows;
+
+  if (!normalizedProvince || rowsToUpdate.length === 0) return;
+
+  setBulkApplyingProvince(true);
+  setError(null);
+  setSuccessMessage(null);
+
+  try {
+    await Promise.all(
+      rowsToUpdate.map((row) => {
+        const quantity = Number(row.quantity);
+
+        return updateActivityData(row.id, {
+          activityType: row.activityType ?? 'ELECTRICITY',
+          recordDate: row.recordDate?.slice(0, 10) ?? null,
+          quantity: Number.isFinite(quantity) ? quantity : 0,
+          unit: row.unit ?? '',
+          jurisdictionCountry: row.jurisdictionCountry || 'Canada',
+          jurisdictionRegion: normalizedProvince,
+          recordYear: row.recordYear ?? undefined,
+          sourceType: row.sourceType || 'MANUAL',
+          sourceReference: row.sourceReference ?? '',
+          notes: row.notes ?? '',
+          facilityId: row.facilityId ?? '',
+          documentId: row.documentId ?? '',
+          sourceDocumentId: row.sourceDocumentId ?? '',
+          sourceFileName: row.sourceFileName ?? '',
+          sourcePage: row.sourcePage ?? undefined,
+          sourceRow: row.sourceRow ?? undefined,
+        });
+      }),
+    );
+
+    await loadItems();
+    setSuccessMessage('Province applied to selected electricity records.');
+    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Unable to apply province to selected electricity records.',
+    );
+  } finally {
+    setBulkApplyingProvince(false);
+  }
+}
+
 function startEdit(row: any) {
   setOpenActionMenuId(null);
   setEditingId(row.id);
@@ -739,24 +812,18 @@ async function handleUndoDelete() {
   }
 }
 
-function getEditInputStyle(field: string): React.CSSProperties {
-  return {
-    width: '100%',
-    padding: '8px 10px',
-    borderRadius: 8,
-    border: editErrors[field] ? '1px solid #dc2626' : '1px solid #cbd5e1',
-    background: editErrors[field] ? '#fff1f2' : '#fff',
-  };
-}
 function renderNormalRow(row){
-  const isIncomplete = isActivityRecordIncomplete(row);
   const quality = getActivityRecordQuality(row);
 
   return (
     <tr
       key={row.id}
       data-testid={`activity-row-${row.id}`}
-      style={highlightedRecordId === row.id ? highlightedRecordRowStyle : undefined}
+      style={
+        editingId === row.id || highlightedRecordId === row.id
+          ? highlightedRecordRowStyle
+          : undefined
+      }
     >
       <td style={tdStyle}>
   <input
@@ -767,18 +834,28 @@ function renderNormalRow(row){
 </td>
       {visibleColumns.status ? (
       <td style={tdStyle}>
-        <span
-          style={recordStatusBadgeStyle(quality.tone)}
+        <StatusBadge
+          status={quality.label}
+          label={quality.label}
           title={quality.title}
-        >
-          {quality.label}
-        </span>
+        />
       </td>
       ) : null}
       {visibleColumns.date ? <td style={dateCellStyle}>{formatRequiredRecordValue(row.recordDate?.slice(0, 10))}</td> : null}
       {visibleColumns.type ? <td style={tdStyle}>{formatRequiredRecordValue(row.activityType)}</td> : null}
       {visibleColumns.quantity ? <td style={tdStyle}>{formatRequiredRecordValue(row.quantity)}</td> : null}
       {visibleColumns.unit ? <td style={unitCellStyle}>{formatRecordUnit(row.unit)}</td> : null}
+      {visibleColumns.country ? <td style={tdStyle}>{formatOptionalRecordValue(row.jurisdictionCountry)}</td> : null}
+      {visibleColumns.province ? (
+      <td style={tdStyle}>
+        {formatOptionalRecordValue(normalizeProvinceValue(row.jurisdictionRegion))}
+        {String(row.activityType ?? '').toUpperCase() === 'ELECTRICITY' &&
+        isMissingRecordValue(row.jurisdictionRegion) ? (
+          <div style={helperTextStyle}>Set province</div>
+        ) : null}
+      </td>
+      ) : null}
+      {visibleColumns.facility ? <td style={tdStyle}>{formatOptionalRecordValue(row.facilityId)}</td> : null}
       {visibleColumns.source ? <td style={tdStyle}>{formatActivitySourceType(row.sourceType)}</td> : null}
       {visibleColumns.sourceReference ? (
       <td style={sourceReferenceCellStyle} title={formatActivitySourceReference(row)}>
@@ -788,14 +865,8 @@ function renderNormalRow(row){
       <td style={actionsCellStyle}>
         <div style={rowActionStyle}>
           <button
-            onClick={() => handleViewCalculation(row.id)}
-            disabled={isIncomplete}
-            title={
-              isIncomplete
-                ? 'This record requires additional information before calculations can be performed.'
-                : undefined
-            }
-            style={secondaryActionBtnStyle(isIncomplete)}
+            onClick={() => handleViewRecord(row)}
+            style={secondaryActionBtnStyle(false)}
           >
             View
           </button>
@@ -820,122 +891,95 @@ function renderNormalRow(row){
     </tr>
   )
 }
+
+function getEditRowColSpan() {
+  return Object.values(visibleColumns).filter(Boolean).length + 2;
+}
+
 function renderEditRow(row){
   return (
-    <tr key={row.id}>
-      <td style={tdStyle}>
-        <input
-          type="checkbox"
-          checked={selectedIds.includes(row.id)}
-          onChange={(e) => toggleSelect(row.id, e.target.checked)}
+    <tr key={`${row.id}-edit`}>
+      <td colSpan={getEditRowColSpan()} style={expandedEditCellStyle}>
+        <EditRecordPanel
+          record={row}
+          draftValues={editRow}
+          activityTypes={activityTypes}
+          provinceOptions={getProvinceOptions(editRow.jurisdictionRegion)}
+          validationMessages={editErrors}
+          selected={selectedIds.includes(row.id)}
+          onSelectedChange={(checked) => toggleSelect(row.id, checked)}
+          onChange={updateEditField}
+          onSave={saveEdit}
+          onCancel={cancelEdit}
+          onDelete={() => void handleDelete(row)}
+          normalizeProvince={normalizeProvinceValue}
         />
-      </td>
-
-      {visibleColumns.status ? (
-      <td style={tdStyle}>
-        <span style={recordStatusBadgeStyle('info')}>Editing</span>
-      </td>
-      ) : null}
-
-      {visibleColumns.date ? (
-      <td style={tdStyle}>
-        <input
-          type="date"
-          value={editRow.recordDate ?? ''}
-          onChange={(e) => updateEditField('recordDate', e.target.value)}
-          style={getEditInputStyle('recordDate')}
-        />
-        {editErrors.recordDate && (
-          <div style={errorTextStyle}>{editErrors.recordDate}</div>
-        )}
-      </td>
-      ) : null}
-
-      {visibleColumns.type ? (
-      <td style={tdStyle}>
-        <select
-          value={editRow.activityType ?? ''}
-          onChange={(e) => updateEditField('activityType', e.target.value)}
-          style={getEditInputStyle('activityType')}
-        >
-          {activityTypes.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-        {editErrors.activityType && (
-          <div style={errorTextStyle}>{editErrors.activityType}</div>
-        )}
-      </td>
-      ) : null}
-
-      {visibleColumns.quantity ? (
-      <td style={tdStyle}>
-        <input
-          type="number"
-          value={editRow.quantity ?? ''}
-          onChange={(e) => updateEditField('quantity', e.target.value)}
-          style={getEditInputStyle('quantity')}
-        />
-        {editErrors.quantity && (
-          <div style={errorTextStyle}>{editErrors.quantity}</div>
-        )}
-      </td>
-      ) : null}
-
-      {visibleColumns.unit ? (
-      <td style={tdStyle}>
-        <input
-          value={editRow.unit ?? ''}
-          onChange={(e) => updateEditField('unit', e.target.value)}
-          style={getEditInputStyle('unit')}
-        />
-        {editErrors.unit && (
-          <div style={errorTextStyle}>{editErrors.unit}</div>
-        )}
-      </td>
-      ) : null}
-
-      {visibleColumns.source ? (
-      <td style={tdStyle}>
-        <select
-          value={editRow.sourceType ?? 'MANUAL'}
-          onChange={(e) => updateEditField('sourceType', e.target.value)}
-          style={getEditInputStyle('sourceType')}
-        >
-          <option value="MANUAL">Manual</option>
-          <option value="IMPORT">Import</option>
-          <option value="DOCUMENT_AI">AI</option>
-          <option value="AI_EXTRACTION">AI Extraction</option>
-        </select>
-      </td>
-      ) : null}
-
-      {visibleColumns.sourceReference ? (
-      <td style={tdStyle}>
-        <input
-          value={editRow.sourceReference ?? ''}
-          onChange={(e) => updateEditField('sourceReference', e.target.value)}
-          style={getEditInputStyle('sourceReference')}
-          placeholder="Source reference"
-        />
-      </td>
-      ) : null}
-
-      <td style={tdStyle}>
-        <div style={editRowActionStyle}>
-          <button onClick={saveEdit} style={primaryActionBtn}>
-            Save
-          </button>
-          <button onClick={cancelEdit} style={secondaryActionBtn}>
-            Cancel
-          </button>
-        </div>
       </td>
     </tr>
   )
 }
+
+function renderViewedRecordModal() {
+  if (!viewedRecord) return null;
+
+  const quality = getActivityRecordQuality(viewedRecord);
+
+  return createPortal(
+    <div style={detailsModalBackdropStyle} onClick={() => setViewedRecord(null)}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="activity-record-details-title"
+        style={detailsModalStyle}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div style={detailsModalHeaderStyle}>
+          <div>
+            <h2 id="activity-record-details-title" style={detailsModalTitleStyle}>
+              Activity Record Details
+            </h2>
+            <p style={detailsModalSubtitleStyle}>
+              {formatOptionalRecordValue(viewedRecord.activityType)} ·{' '}
+              {formatOptionalRecordValue(viewedRecord.recordDate?.slice(0, 10))}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewedRecord(null)}
+            aria-label="Close activity record details"
+            style={detailsModalCloseButtonStyle}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={detailsModalGridStyle}>
+          <DetailsField label="Status" value={quality.label} />
+          <DetailsField label="Activity Type" value={formatRequiredRecordValue(viewedRecord.activityType)} />
+          <DetailsField label="Quantity" value={formatRequiredRecordValue(viewedRecord.quantity)} />
+          <DetailsField label="Unit" value={formatRecordUnit(viewedRecord.unit)} />
+          <DetailsField label="Date" value={formatRequiredRecordValue(viewedRecord.recordDate?.slice(0, 10))} />
+          <DetailsField label="Country" value={formatOptionalRecordValue(viewedRecord.jurisdictionCountry)} />
+          <DetailsField
+            label="Province"
+            value={formatOptionalRecordValue(normalizeProvinceValue(viewedRecord.jurisdictionRegion))}
+          />
+          <DetailsField label="Facility" value={formatOptionalRecordValue(viewedRecord.facilityId)} />
+          <DetailsField label="Source" value={formatActivitySourceType(viewedRecord.sourceType)} />
+          <DetailsField
+            label="Source Reference"
+            value={formatActivitySourceReference(viewedRecord)}
+            fullWidth
+          />
+          <DetailsField label="Notes" value={formatOptionalRecordValue(viewedRecord.notes)} fullWidth />
+          <DetailsField label="Record ID" value={viewedRecord.id} fullWidth />
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function cancelEdit() {
   setEditingId(null);
   setEditRow({});
@@ -946,19 +990,21 @@ function handleRetryLoad() {
   setRecordLoadError(null);
   void loadItems();
 }
-const errorTextStyle: React.CSSProperties = {
-  marginTop: 4,
-  color: '#dc2626',
-  fontSize: 12,
-};
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       {/* ⭐ 标题区 */}
-      <h1 style={{ marginBottom: 8 }}>Activity Data</h1>
+      <h1 style={{ marginBottom: 8 }}>Data Records</h1>
 
       <p style={{ color: '#666', marginBottom: 24 }}>
-        Manage and review extracted or manually entered activity records.
+        Data Records shows saved activity records. To add new data, go to Input Data.
       </p>
+      <button
+        type="button"
+        onClick={() => navigate('/input-data', { state: { focusInputMethod: 'manual' } })}
+        style={{ ...primaryActionBtn, marginBottom: 20 }}
+      >
+        Add data
+      </button>
       {/* ⭐ Summary 卡片 */}
       <div
         style={{
@@ -976,24 +1022,6 @@ const errorTextStyle: React.CSSProperties = {
       {/* 状态 */}
       {error && <div style={warningStyle}>{error}</div>}
       {successMessage && <div style={successStyle}>{successMessage}</div>}
-      <div style={quickEntryIntroStyle}>
-        <div>
-          <h2 style={{ margin: 0 }}>Quick Entry</h2>
-          <p style={{ margin: '6px 0 0', color: '#64748b' }}>
-            Enter manually, paste from Excel, or import CSV/XLSX files.
-          </p>
-        </div>
-      </div>
-          <ExcelInputTable
-  onSuccess={() => {
-    setReloadKey((k) => k + 1);
-       //loadDocuments();
-       loadItems();
-    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
-    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
-    setSuccessMessage('Activity data saved. You can now review Metrics or Reports.');
-  }}
-/>
 {lastDeleted && (
   <div style={undoBarStyle}>
     <span>
@@ -1016,90 +1044,112 @@ const errorTextStyle: React.CSSProperties = {
 )}
       {/* ⭐ Table */}
       <div style={tableCard}>
-       <div style={tableHeaderRowStyle}>
-  <h2 style={{ margin: 0 }}>Activity Records</h2>
-
-  <div style={tableToolbarStyle}>
-    <label style={qualityFilterLabelStyle}>
-      <span>Show</span>
-      <select
-        value={qualityFilter}
-        onChange={(event) => setQualityFilter(event.target.value)}
-        style={qualityFilterSelectStyle}
-      >
-        <option value="all">All records</option>
-        <option value="ready">Ready records</option>
-        <option value="requires-review">Records requiring review</option>
-        <option value="tracked-metric">Tracked metrics</option>
-        <option value="missing-factor">Missing factor records</option>
-        <option value="missing-jurisdiction">Missing province records</option>
-        <option value="invalid-unit">Invalid unit records</option>
-        <option value="missing-source">Missing source records</option>
-      </select>
-    </label>
-
-    <div ref={columnMenuRef} style={columnMenuWrapperStyle}>
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={isColumnMenuOpen}
-        aria-controls="activity-column-menu"
-        onClick={() => {
-          setIsColumnMenuOpen((current) => !current);
-        }}
-        style={secondaryActionBtn}
-      >
-        Columns
-      </button>
-      {isColumnMenuOpen ? (
-        <div
-          id="activity-column-menu"
-          role="menu"
-          aria-label="Activity table columns"
-          style={columnMenuStyle}
-        >
-          {ACTIVITY_TABLE_COLUMNS.map((column) => (
-            <label
-              key={column.key}
-              role="menuitemcheckbox"
-              aria-checked={visibleColumns[column.key]}
-              style={columnMenuItemStyle}
-            >
-              <input
-                type="checkbox"
-                checked={visibleColumns[column.key]}
-                onChange={() => toggleColumn(column.key)}
-              />
-              <span>{column.label}</span>
-            </label>
-          ))}
+        <div style={tableHeaderRowStyle}>
+          <h2 style={{ margin: 0 }}>Activity Records</h2>
         </div>
-      ) : null}
-    </div>
 
-    <button
-      type="button"
-      onClick={handleGenerateReportFromSelection}
-      disabled={!selectedIds.length}
-      style={generateReportButtonStyle(selectedIds.length)}
-    >
-      Generate Report from Selected Records
-    </button>
+        <div style={tableToolbarStyle} aria-label="Activity records toolbar">
+          <div style={toolbarRowStyle}>
+            <div style={toolbarGroupStyle}>
+              <label style={qualityFilterLabelStyle}>
+                <span>Show</span>
+                <select
+                  value={qualityFilter}
+                  onChange={(event) => setQualityFilter(event.target.value)}
+                  style={qualityFilterSelectStyle}
+                >
+                  <option value="all">All records</option>
+                  <option value="ready">Ready records</option>
+                  <option value="requires-review">Records requiring review</option>
+                  <option value="tracked-metric">Tracked metrics</option>
+                  <option value="missing-factor">Missing factor records</option>
+                  <option value="missing-jurisdiction">Missing province records</option>
+                  <option value="invalid-unit">Invalid unit records</option>
+                  <option value="missing-source">Missing source records</option>
+                </select>
+              </label>
 
-    <button
-      type="button"
-      onClick={handleBulkDelete}
-      disabled={!selectedIds.length || bulkDeleting}
-      style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
-    >
-      {bulkDeleting
-        ? 'Deleting...'
-        : selectedIds.length
-        ? `Delete Selected (${selectedIds.length})`
-        : 'Delete Selected'}
-    </button>
-  </div>
-</div>
+              <div ref={columnMenuRef} style={columnMenuWrapperStyle}>
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={isColumnMenuOpen}
+                  aria-controls="activity-column-menu"
+                  onClick={() => {
+                    setIsColumnMenuOpen((current) => !current);
+                  }}
+                  style={secondaryActionBtn}
+                >
+                  Columns
+                </button>
+                {isColumnMenuOpen ? (
+                  <div
+                    id="activity-column-menu"
+                    role="menu"
+                    aria-label="Activity table columns"
+                    style={columnMenuStyle}
+                  >
+                    {ACTIVITY_TABLE_COLUMNS.map((column) => (
+                      <label
+                        key={column.key}
+                        role="menuitemcheckbox"
+                        aria-checked={visibleColumns[column.key]}
+                        style={columnMenuItemStyle}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={visibleColumns[column.key]}
+                          onChange={() => toggleColumn(column.key)}
+                        />
+                        <span>{column.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div style={toolbarRowStyle}>
+            <div style={toolbarGroupStyle}>
+              <BulkProvinceToolbar
+                selectedCount={selectedIds.length}
+                eligibleCount={selectedMissingProvinceElectricityRows.length}
+                selectedProvince={bulkProvince}
+                onProvinceChange={(value) => setBulkProvince(normalizeProvinceValue(value))}
+                provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
+                onApply={handleBulkApplyProvince}
+                isApplying={bulkApplyingProvince}
+                applyLabel="Set province"
+              />
+            </div>
+
+            <div style={toolbarGroupStyle}>
+              <button
+                type="button"
+                onClick={handleGenerateReportFromSelection}
+                disabled={!selectedIds.length}
+                aria-label="Generate report from selected records"
+                style={generateReportButtonStyle(selectedIds.length)}
+              >
+                Generate Report
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={!selectedIds.length || bulkDeleting}
+                style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
+              >
+                {bulkDeleting
+                  ? 'Deleting...'
+                  : selectedIds.length
+                  ? `Delete Selected (${selectedIds.length})`
+                  : 'Delete Selected'}
+              </button>
+            </div>
+          </div>
+        </div>
 
         {recordFilterId || documentFilterId ? (
           <div style={documentFilterBannerStyle}>
@@ -1146,13 +1196,11 @@ const errorTextStyle: React.CSSProperties = {
               ? 'The requested record could not be found.'
               : documentFilterId
               ? 'No records have been imported from this document.'
-              : 'No activity records yet. Import extracted rows from Upload or load sample data to review an example workflow.'}
+              : 'No saved activity records yet. Add data from Input Data to create records for review.'}
           </div>
         ) : (
           <>
-            {tableHasOverflow ? (
-              <div style={scrollHintStyle}>Scroll horizontally →</div>
-            ) : null}
+            <div style={scrollHintStyle}>Scroll horizontally →</div>
             <div ref={tableScrollRef} style={tableScrollContainerStyle}>
             <table style={activityRecordsTableStyle}>
               <thead>
@@ -1172,18 +1220,22 @@ const errorTextStyle: React.CSSProperties = {
                   {visibleColumns.type ? <th style={typeThStyle}>Type</th> : null}
                   {visibleColumns.quantity ? <th style={quantityThStyle}>Quantity</th> : null}
                   {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
+                  {visibleColumns.country ? <th style={countryThStyle}>Country</th> : null}
+                  {visibleColumns.province ? <th style={provinceThStyle}>Province</th> : null}
+                  {visibleColumns.facility ? <th style={facilityThStyle}>Facility</th> : null}
                   {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
                   {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
                   <th style={actionsThStyle}></th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedItems.map((row) => (
-                  editingId === row.id ? renderEditRow(row) : renderNormalRow(row)
-                ))}
+                {paginatedItems.flatMap((row) =>
+                  editingId === row.id
+                    ? [renderNormalRow(row), renderEditRow(row)]
+                    : [renderNormalRow(row)],
+                )}
               </tbody>
             </table>
-            {/* {tableHasOverflow ? <div aria-hidden="true" style={tableFadeStyle} /> : null} */}
             </div>
 
             <div style={paginationStyle}>
@@ -1217,6 +1269,24 @@ const errorTextStyle: React.CSSProperties = {
         )}
       </div>
       {renderActionMenuPortal()}
+      {renderViewedRecordModal()}
+    </div>
+  );
+}
+
+function DetailsField({
+  label,
+  value,
+  fullWidth = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div style={fullWidth ? detailsFieldFullStyle : detailsFieldStyle}>
+      <span style={detailsFieldLabelStyle}>{label}</span>
+      <span style={detailsFieldValueStyle}>{value}</span>
     </div>
   );
 }
@@ -1254,6 +1324,9 @@ function ActivityRecordsLoadingState({
               {visibleColumns.type ? <th style={typeThStyle}>Type</th> : null}
               {visibleColumns.quantity ? <th style={quantityThStyle}>Quantity</th> : null}
               {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
+              {visibleColumns.country ? <th style={countryThStyle}>Country</th> : null}
+              {visibleColumns.province ? <th style={provinceThStyle}>Province</th> : null}
+              {visibleColumns.facility ? <th style={facilityThStyle}>Facility</th> : null}
               {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
               {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
               <th style={actionsThStyle} />
@@ -1268,6 +1341,9 @@ function ActivityRecordsLoadingState({
                 {visibleColumns.type ? <td style={tdStyle}><span style={skeletonLineWideStyle} /></td> : null}
                 {visibleColumns.quantity ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
                 {visibleColumns.unit ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
+                {visibleColumns.country ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
+                {visibleColumns.province ? <td style={tdStyle}><span style={skeletonLineWideStyle} /></td> : null}
+                {visibleColumns.facility ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
                 {visibleColumns.source ? <td style={tdStyle}><span style={skeletonLineStyle} /></td> : null}
                 {visibleColumns.sourceReference ? <td style={tdStyle}><span style={skeletonLineFullStyle} /></td> : null}
                 <td style={actionsCellStyle}><span style={skeletonButtonStyle} /></td>
@@ -1308,15 +1384,6 @@ const tableHeaderRowStyle: React.CSSProperties = {
   marginBottom: 4,
 };
 
-const quickEntryIntroStyle: React.CSSProperties = {
-  marginBottom: 12,
-  padding: '16px 18px',
-  borderRadius: 12,
-  border: '1px solid #bbf7d0',
-  background: '#f0fdf4',
-  color: '#0f172a',
-};
-
 const rowActionStyle = {
   display: 'flex',
   gap: 8,
@@ -1325,23 +1392,35 @@ const rowActionStyle = {
   whiteSpace: 'nowrap' as const,
 };
 
-const editRowActionStyle = {
-  display: 'flex',
-  gap: 8,
-  alignItems: 'center',
-  flexWrap: 'nowrap' as const,
-  minWidth: 150,
+const expandedEditCellStyle: React.CSSProperties = {
+  padding: 12,
+  borderBottom: '1px solid #e2e8f0',
+  background: '#f8fafc',
 };
 
 const tableToolbarStyle: React.CSSProperties = {
   position: 'relative',
   zIndex: 20,
   display: 'flex',
-  gap: 10,
+  flexDirection: 'column',
+  gap: 12,
+  marginTop: 14,
+};
+
+const toolbarRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
   alignItems: 'center',
+  gap: 12,
   flexWrap: 'wrap',
-  justifyContent: 'flex-end',
-  marginLeft: 'auto',
+  width: '100%',
+};
+
+const toolbarGroupStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
 };
 
 const qualityFilterLabelStyle: React.CSSProperties = {
@@ -1366,14 +1445,14 @@ const qualityFilterSelectStyle: React.CSSProperties = {
 const columnMenuWrapperStyle: React.CSSProperties = {
   position: 'relative',
   display: 'inline-flex',
-  zIndex: 40,
+  zIndex: 30,
 };
 
 const columnMenuStyle: React.CSSProperties = {
   position: 'absolute',
   top: 'calc(100% + 8px)',
   right: 0,
-  zIndex: 1000,
+  zIndex: 900,
   minWidth: 210,
   padding: 8,
   borderRadius: 12,
@@ -1406,7 +1485,7 @@ const tableScrollContainerStyle: React.CSSProperties = {
 
 const activityRecordsTableStyle: React.CSSProperties = {
   width: '100%',
-  minWidth: 1040,
+  minWidth: 1380,
   borderCollapse: 'collapse',
   tableLayout: 'fixed',
 };
@@ -1419,6 +1498,96 @@ const scrollHintStyle: React.CSSProperties = {
   textAlign: 'right',
   cursor: 'default',
   userSelect: 'none',
+};
+
+const detailsModalBackdropStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 1000,
+  display: 'grid',
+  placeItems: 'center',
+  padding: 20,
+  background: 'rgba(15, 23, 42, 0.38)',
+};
+
+const detailsModalStyle: React.CSSProperties = {
+  width: 'min(760px, 100%)',
+  maxHeight: 'min(720px, calc(100vh - 40px))',
+  overflow: 'auto',
+  borderRadius: 14,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  boxShadow: '0 24px 70px rgba(15, 23, 42, 0.22)',
+};
+
+const detailsModalHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  gap: 16,
+  padding: '18px 20px 14px',
+  borderBottom: '1px solid #e2e8f0',
+};
+
+const detailsModalTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#0f172a',
+  fontSize: 20,
+};
+
+const detailsModalSubtitleStyle: React.CSSProperties = {
+  margin: '4px 0 0',
+  color: '#64748b',
+  fontSize: 14,
+  lineHeight: 1.4,
+};
+
+const detailsModalCloseButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 34,
+  height: 34,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#334155',
+  fontSize: 22,
+  lineHeight: 1,
+  cursor: 'pointer',
+};
+
+const detailsModalGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 12,
+  padding: 20,
+};
+
+const detailsFieldStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  alignContent: 'start',
+  minWidth: 0,
+};
+
+const detailsFieldFullStyle: React.CSSProperties = {
+  ...detailsFieldStyle,
+  gridColumn: '1 / -1',
+};
+
+const detailsFieldLabelStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: 'uppercase',
+};
+
+const detailsFieldValueStyle: React.CSSProperties = {
+  color: '#0f172a',
+  fontSize: 14,
+  lineHeight: 1.5,
+  overflowWrap: 'anywhere',
 };
 
 const tableFadeStyle: React.CSSProperties = {
@@ -1567,6 +1736,21 @@ const unitThStyle: React.CSSProperties = {
   width: 120,
 };
 
+const countryThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 112,
+};
+
+const provinceThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 176,
+};
+
+const facilityThStyle: React.CSSProperties = {
+  ...thStyle,
+  width: 140,
+};
+
 const sourceThStyle: React.CSSProperties = {
   ...thStyle,
   width: 120,
@@ -1605,6 +1789,13 @@ const unitCellStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+const helperTextStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: '#64748b',
+  fontSize: 11,
+  lineHeight: 1.25,
+};
+
 const sourceReferenceCellStyle: React.CSSProperties = {
   ...tdStyle,
   maxWidth: 260,
@@ -1619,27 +1810,6 @@ const highlightedRecordRowStyle: React.CSSProperties = {
   boxShadow: 'inset 4px 0 0 #10b981',
   transition: 'background 0.2s ease, box-shadow 0.2s ease',
 };
-
-function recordStatusBadgeStyle(tone: 'success' | 'warning' | 'info' | 'neutral'): React.CSSProperties {
-  const colors = {
-    success: { color: '#047857', background: '#d1fae5' },
-    warning: { color: '#b45309', background: '#fef3c7' },
-    info: { color: '#0369a1', background: '#dbeafe' },
-    neutral: { color: '#475569', background: '#f1f5f9' },
-  }[tone];
-
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    borderRadius: 999,
-    padding: '3px 8px',
-    fontSize: 12,
-    fontWeight: 700,
-    color: colors.color,
-    background: colors.background,
-    whiteSpace: 'nowrap',
-  };
-}
 
 const actionsCellStyle: React.CSSProperties = {
   ...tdStyle,

@@ -1,10 +1,14 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { UploadPage } from './UploadPage';
 import { getDocuments } from '../services/documents';
 import { ApiError } from '../services/api';
 import { extractDocument, getDocumentExtraction } from '../services/documentExtraction';
+
+vi.mock('../components/ExcelInputTable', () => ({
+  ExcelInputTable: () => <div>Activity Rows</div>,
+}));
 
 vi.mock('../services/documents', () => ({
   deleteDocument: vi.fn(),
@@ -44,6 +48,10 @@ describe('UploadPage sample workflow', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    });
     vi.mocked(getDocuments).mockReset();
     vi.mocked(extractDocument).mockReset();
     vi.mocked(getDocumentExtraction).mockReset();
@@ -54,6 +62,25 @@ describe('UploadPage sample workflow', () => {
       total: 0,
       totalPages: 1,
     });
+  });
+
+  it('opens Manual Entry when route state requests manual input focus', async () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/input-data',
+            state: { focusInputMethod: 'manual' },
+          },
+        ]}
+      >
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: /^Manual Entry$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Manual Entry/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('heading', { name: /^Upload Documents$/i })).not.toBeInTheDocument();
   });
 
   it('loads sample files without enabling a hidden demo mode', async () => {
@@ -76,6 +103,20 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText('NorthGrid utility bill - March 2026.pdf')).toBeInTheDocument();
     expect(screen.queryByText(/Demo Mode/i)).not.toBeInTheDocument();
     expect(localStorage.getItem('carbonliteDemoMode')).toBeNull();
+  });
+
+  it('lets users load a sample JSON file for extraction', async () => {
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Use Sample JSON/i }));
+
+    expect(screen.getByText('Sample JSON loaded. Click Extract Data.')).toBeInTheDocument();
+    expect(screen.getByText(/carbonlite-sample-activity-records\.json/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Extract Data/i })).toBeEnabled();
   });
 
   it('shows loading state while retry extraction is running', async () => {
@@ -124,6 +165,141 @@ describe('UploadPage sample workflow', () => {
     expect(
       await screen.findByText(/Extraction completed. Review the preview below/i),
     ).toBeInTheDocument();
+  });
+
+  it('normalizes JSON preview rows and marks electricity without province for review', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'json-doc',
+          fileName: 'activity-records.json',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'json-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'electricity',
+          amount: '12500',
+          unit: 'kWh',
+          country: 'CAN',
+          province: '',
+          startDate: '2026-01-01',
+          endDate: '2026-01-31',
+          facilityName: 'Calgary Main Office',
+          serviceLocation: 'Calgary, AB',
+          notes: 'Optional note',
+        },
+        {
+          activityType: 'Natural Gas',
+          amount: '100',
+          unit: 'm3',
+          country: 'canada',
+          province: 'AB',
+          date: '2026-02-01',
+        },
+      ],
+      sourceRowCount: 2,
+      extractedRowCount: 2,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    expect(await screen.findByText('Missing Province')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Electricity')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Natural Gas')).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue('Canada').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('2026-01-01 to 2026-01-31')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Optional note')).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        'Missing Province: Electricity records require province before factor matching.',
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const electricityRow = screen.getByDisplayValue('Electricity').closest('tr');
+    expect(electricityRow).toBeTruthy();
+    expect(within(electricityRow!).getByRole('checkbox')).not.toBeChecked();
+    expect(within(electricityRow!).getByRole('checkbox')).toBeDisabled();
+    expect(within(electricityRow!).queryByText('-')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Select All/i }));
+    expect(within(electricityRow!).getByRole('checkbox')).not.toBeChecked();
+  });
+
+  it('clears preview row selection when an edit makes the row invalid', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'json-doc',
+          fileName: 'activity-records.json',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'json-doc',
+      status: 'PROCESSED',
+      parsedActivities: [
+        {
+          activityType: 'Electricity',
+          amount: 12500,
+          unit: 'kWh',
+          country: 'Canada',
+          province: 'AB',
+          startDate: '2026-01-01',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    const row = screen.getByDisplayValue('Electricity').closest('tr');
+    expect(row).toBeTruthy();
+    expect(within(row!).getByRole('checkbox')).toBeChecked();
+    expect(within(row!).getByText('Ready')).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByDisplayValue('Alberta'));
+
+    expect(await within(row!).findByText('Missing Province')).toBeInTheDocument();
+    expect(
+      within(row!).getAllByText(
+        'Missing Province: Electricity records require province before factor matching.',
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(within(row!).getByRole('checkbox')).not.toBeChecked();
+    expect(within(row!).getByRole('checkbox')).toBeDisabled();
   });
 
   it('shows a friendly error when retry extraction returns 500', async () => {

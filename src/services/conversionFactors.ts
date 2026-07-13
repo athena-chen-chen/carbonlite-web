@@ -56,6 +56,8 @@ export type ConversionFactorItem = {
   effectiveTo?: string | null;
   isDefault: boolean;
   isSystemDefault: boolean;
+  defaultScope?: string | null;
+  scope?: string | null;
   createdAt: string;
   updatedAt: string;
 };

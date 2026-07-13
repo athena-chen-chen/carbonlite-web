@@ -182,11 +182,14 @@ export type MetricsSummaryResponse = {
     sourcePage?: string | number | null;
     sourceRow?: string | number | null;
     sourceTextSnippet?: string | null;
+    sourceDocumentId?: string | null;
     notes?: string | null;
     factorId: string;
+    factorVersionId?: string | null;
   }>;
   conversionFactorsUsed?: Array<{
     factorId: string;
+    factorVersionId?: string | null;
     activityType?: string | null;
     factorName: string;
     factorValue: string | number;
@@ -198,6 +201,7 @@ export type MetricsSummaryResponse = {
     sourceDocument?: string | null;
     sourceUrl?: string | null;
     sourceYear?: number | null;
+    factorStatus?: string | null;
     factorType: 'System' | 'Custom';
     verified: boolean;
     priority?: string | null;
@@ -260,6 +264,11 @@ export type CalculationAuditDetail = {
   factorConfidenceLevel?: string | null;
   factorVerificationStatus?: string | null;
   factorType?: 'System' | 'Custom' | null;
+  factorDefaultScope?: string | null;
+  factorScope?: string | null;
+  scopeClassification?: string | null;
+  scopeOverride?: string | null;
+  scopeOverrideReason?: string | null;
   calculatedEmission?: number | null;
   calculatedEmissionsKgCO2e?: number | null;
   calculationFormula?: string | null;

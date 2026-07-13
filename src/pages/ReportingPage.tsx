@@ -31,6 +31,8 @@ import {
   type FormalActivityEmission,
   type FormalConversionFactorUsed,
 } from '../components/FormalReportPreview';
+import { CollapsibleReportSection } from '../components/reports/CollapsibleReportSection';
+import { ReportScopeSection } from '../components/reports/sections/ReportScopeSection';
 import { getCurrentUser, getOrganizationName } from '../services/auth';
 import { createClientAuditLog } from '../services/auditLogs';
 import { trackActivityEvent } from '../services/activityEvents';
@@ -46,6 +48,11 @@ import {
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
+import {
+  formatScopeClassification,
+  formatScopeSource,
+  resolveScopeClassification,
+} from '../utils/scopeClassification';
 
 type ActivityItem = {
   id: string;
@@ -62,23 +69,6 @@ type ActivityItem = {
   sourceTextSnippet?: string | null;
   notes?: string | null;
 };
-const SCOPE_MAP: Record<string, 'Scope 1' | 'Scope 2' | 'Scope 3'> = {
-  // Scope 1（直接排放）
-  DIESEL: 'Scope 1',
-  GASOLINE: 'Scope 1',
-  NATURAL_GAS: 'Scope 1',
-  PROPANE: 'Scope 1',
-
-  // Scope 2（电力）
-  ELECTRICITY: 'Scope 2',
-
-  // Scope 3（其他）
-  TRAVEL: 'Scope 3',
-  WASTE: 'Scope 3',
-  WATER: 'Scope 3',
-  FREIGHT: 'Scope 3',
-};
-
 const SCOPE_HELP = [
   {
     scope: 'Scope 1',
@@ -106,6 +96,26 @@ const SCOPE_HELP = [
 const scopeLabelByName = Object.fromEntries(
   SCOPE_HELP.map((item) => [item.scope, item.label]),
 ) as Record<string, string>;
+
+const REPORT_SECTION_DEFAULTS = {
+  reportScope: true,
+  executiveSummary: true,
+  emissionsHotspots: true,
+  scopeBreakdown: true,
+  calculationQuality: true,
+  calculationSummary: false,
+  activityBreakdown: false,
+  emissionFactorsUsed: false,
+  calculationTraceability: false,
+  sourceEvidence: false,
+  recordsRequiringReview: false,
+  dataQualityNotes: false,
+  carbonCreditReadiness: false,
+  methodologyDisclaimer: false,
+  activityRecords: false,
+} as const;
+
+type ReportSectionId = keyof typeof REPORT_SECTION_DEFAULTS;
 
 export default function ReportingPage() {
   const location = useLocation();
@@ -164,6 +174,8 @@ const [selectedRecordIds] = useState<string[]>(
 const [selectedDocumentIds] = useState<string[]>(
   initialSelectedDocumentIds,
 );
+const [expandedSections, setExpandedSections] =
+  useState<Record<ReportSectionId, boolean>>(REPORT_SECTION_DEFAULTS);
 const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 const inFlightRequestKeyRef = useRef<string | null>(null);
 const trackedReportViewRef = useRef(false);
@@ -321,17 +333,16 @@ function handleFullYear(year: string) {
 }
 
 function classifyScope(activityType?: string) {
-  const type = String(activityType ?? '').toUpperCase();
+  return formatScopeClassification(resolveScopeClassification({ activityType }).scope);
+}
 
-  if (['DIESEL', 'GASOLINE', 'NATURAL_GAS', 'PROPANE'].includes(type)) {
-    return 'Scope 1';
-  }
-
-  if (type === 'ELECTRICITY') {
-    return 'Scope 2';
-  }
-
-  return 'Scope 3';
+function getCalculationScopeResolution(item: CalculationAuditDetail) {
+  return resolveScopeClassification({
+    activityType: item.activityType,
+    scopeOverride: item.scopeOverride,
+    factorDefaultScope: item.factorDefaultScope,
+    factorScope: item.factorScope,
+  });
 }
 
 const scopeRows = useMemo(() => {
@@ -350,18 +361,36 @@ const scopeRows = useMemo(() => {
     'Scope 1': 0,
     'Scope 2': 0,
     'Scope 3': 0,
+    Unclassified: 0,
   };
 
   calculationDetails.forEach((item) => {
     if (item.status !== 'CALCULATED') return;
     const emissions = Number(item.calculatedEmissionsKgCO2e ?? item.calculatedEmission ?? 0);
     if (!Number.isFinite(emissions)) return;
-    const scope = classifyScope(item.activityType);
-    summary[scope] += emissions;
+    const scope = getCalculationScopeResolution(item).scope;
+
+    if (scope === 'TRACKED_METRIC') return;
+    if (scope === 'UNCLASSIFIED') {
+      summary.Unclassified += emissions;
+      return;
+    }
+
+    summary[formatScopeClassification(scope)] += emissions;
   });
 
   return summary;
 }, [calculationDetails]);
+
+const unclassifiedCalculatedRecords = useMemo(
+  () =>
+    calculationDetails.filter(
+      (item) =>
+        item.status === 'CALCULATED' &&
+        getCalculationScopeResolution(item).scope === 'UNCLASSIFIED',
+    ),
+  [calculationDetails],
+);
 
 function handleDownloadCSV() {
   if (!hasReportOutput) return;
@@ -384,6 +413,8 @@ function handleDownloadCSV() {
         'matchingMethod',
         'calculationFormula',
         'calculatedEmission',
+        'scopeClassification',
+        'scopeSource',
         'calculationStatus',
       ],
       ...calculationDetails.map((item) => [
@@ -403,6 +434,8 @@ function handleDownloadCSV() {
         formatMatchingMethod(item),
         buildCalculatedFormula(item),
         item.calculatedEmissionsKgCO2e ?? '',
+        formatScopeClassification(getCalculationScopeResolution(item).scope),
+        formatScopeSource(getCalculationScopeResolution(item).source),
         formatCalculationStatus(item.status),
       ]),
     ];
@@ -459,7 +492,12 @@ function buildScopeNarrative(scopeSummary: Record<string, number>) {
 
   if (scope3 > 0) {
     lines.push(
-      `Scope 3 emissions are associated with other indirect activities such as freight, waste, water, travel, or third-party services.`
+      `Scope 3 emissions are associated with other indirect activities such as freight, waste, travel, hotels, shipping, or third-party services.`
+    );
+  }
+  if ((scopeSummary.Unclassified ?? 0) > 0) {
+    lines.push(
+      `Some calculated emissions are unclassified and should be reviewed before relying on the scope breakdown.`
     );
   }
 
@@ -825,7 +863,8 @@ function handleDownloadPDF() {
   autoTable(doc, {
     startY: nextY + 6,
     head: [['Scope', 'Description', 'Calculated Emissions', 'Share of Total']],
-    body: ['Scope 1', 'Scope 2', 'Scope 3'].map((scope) => {
+    body: [
+      ...(['Scope 1', 'Scope 2', 'Scope 3'] as const).map((scope) => {
       const emissions = scopeSummary[scope] ?? 0;
       const share = totalEstimatedEmissionsKgCO2e > 0 ? (emissions / totalEstimatedEmissionsKgCO2e) * 100 : 0;
       return [
@@ -834,23 +873,37 @@ function handleDownloadPDF() {
         `${formatEmissionsValue(emissions)} kgCO2e`,
         `${formatDisplayNumber(share)}%`,
       ];
-    }),
+      }),
+      ...(scopeSummary.Unclassified > 0
+        ? [[
+            'Unclassified',
+            'Calculated records requiring scope review',
+            `${formatEmissionsValue(scopeSummary.Unclassified)} kgCO2e`,
+            `${
+              totalEstimatedEmissionsKgCO2e > 0
+                ? formatDisplayNumber((scopeSummary.Unclassified / totalEstimatedEmissionsKgCO2e) * 100)
+                : '0'
+            }%`,
+          ]]
+        : []),
+    ],
   });
 
   const activityStartY = (doc as any).lastAutoTable.finalY + 14;
   drawPdfSectionTitle(doc, 'Activity Breakdown', activityStartY);
   autoTable(doc, {
     startY: activityStartY + 6,
-    head: [['Activity Type', 'Quantity', 'Unit', 'Estimated Emissions', 'Source Reference']],
+    head: [['Activity Type', 'Quantity', 'Unit', 'Estimated Emissions', 'Scope', 'Source Reference']],
     body: matchedActivityEmissions.length
       ? matchedActivityEmissions.map((item) => [
           item.activityType,
           formatDisplayNumber(item.quantity),
           item.unit,
           `${formatEmissionsValue(item.estimatedEmissionsKgCO2e)} kgCO2e`,
+          classifyScope(item.activityType),
           item.sourceReference ?? '',
         ])
-      : [['No activity records with matching conversion factors.', '', '', '', '']],
+      : [['No activity records with matching conversion factors.', '', '', '', '', '']],
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 115;
@@ -912,6 +965,8 @@ function handleDownloadPDF() {
       'Source',
       'Match',
       'Calculation',
+      'Scope',
+      'Scope Source',
       'Status',
     ]],
     body: calculationDetails.length
@@ -922,9 +977,11 @@ function handleDownloadPDF() {
           formatTraceabilitySource(item),
           formatMatchingMethod(item),
           buildCalculatedFormula(item),
+          formatScopeClassification(getCalculationScopeResolution(item).scope),
+          formatScopeSource(getCalculationScopeResolution(item).source),
           formatCalculationStatus(item.status),
         ])
-      : [['No calculation details available.', '', '', '', '', '', '']],
+      : [['No calculation details available.', '', '', '', '', '', '', '', '']],
     styles: { fontSize: 6.5, cellPadding: 1.5 },
     headStyles: { fillColor: [15, 23, 42] },
   });
@@ -1184,6 +1241,25 @@ const exportDisabledTitle = exportDisabled
   ? 'Generate a report before exporting.'
   : undefined;
 
+function toggleReportSection(sectionId: ReportSectionId) {
+  setExpandedSections((current) => ({
+    ...current,
+    [sectionId]: !current[sectionId],
+  }));
+}
+
+function setAllReportSections(expanded: boolean) {
+  setExpandedSections(
+    Object.keys(REPORT_SECTION_DEFAULTS).reduce(
+      (next, key) => ({
+        ...next,
+        [key]: expanded,
+      }),
+      {} as Record<ReportSectionId, boolean>,
+    ),
+  );
+}
+
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       <h1>Traceable Emissions Reports</h1>
@@ -1191,76 +1267,54 @@ const exportDisabledTitle = exportDisabled
       <p style={{ color: '#666', marginBottom: 20 }}>
         Reports include calculation traceability, factor sources, source evidence, data quality notes, and records requiring review so emissions results can be explained and validated.
       </p>
-<div style={filterCardStyle}>
-  <div style={{ width: '100%' }}>
-    <label style={labelStyle}>Report Scope</label>
-    <div style={scopeToggleStyle}>
-      <button
-        type="button"
-        onClick={() => setReportScope('dateRange')}
-        style={scopeButtonStyle(reportScope === 'dateRange')}
-      >
-        Date Range
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          if (selectedDocumentIds.length) setReportScope('selectedDocuments');
-        }}
-        disabled={!selectedDocumentIds.length}
-        style={scopeButtonStyle(reportScope === 'selectedDocuments', !selectedDocumentIds.length)}
-      >
-        Selected Documents
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          if (selectedRecordIds.length) setReportScope('selectedRecords');
-        }}
-        disabled={!selectedRecordIds.length}
-        style={scopeButtonStyle(reportScope === 'selectedRecords', !selectedRecordIds.length)}
-      >
-        Selected Records
-      </button>
-    </div>
-  </div>
 
-  <div>
-    <label style={labelStyle}>Start Date</label>
-    <input
-      type="date"
-      value={draftPeriodStart}
-      onChange={(e) => handleStartDateChange(e.target.value)}
-      onBlur={() => commitDateRange()}
-      style={inputStyle}
-      disabled={reportScope !== 'dateRange' || loading}
-    />
-  </div>
+      <div style={sectionControlsStyle}>
+        <button
+          type="button"
+          onClick={() => setAllReportSections(true)}
+          style={secondaryButtonStyle(false)}
+        >
+          Expand all
+        </button>
+        <button
+          type="button"
+          onClick={() => setAllReportSections(false)}
+          style={secondaryButtonStyle(false)}
+        >
+          Collapse all
+        </button>
+      </div>
 
-  <div>
-    <label style={labelStyle}>End Date</label>
-    <input
-      type="date"
-      value={draftPeriodEnd}
-      onChange={(e) => handleEndDateChange(e.target.value)}
-      onBlur={() => commitDateRange()}
-      style={inputStyle}
-      disabled={reportScope !== 'dateRange' || loading}
-    />
-  </div>
-
-  {getFullYearShortcutYears().map((year) => (
-    <button
-      key={year}
-      type="button"
-      onClick={() => handleFullYear(year)}
-      style={secondaryButtonStyle(reportScope !== 'dateRange' || loading)}
-      disabled={reportScope !== 'dateRange' || loading}
-    >
-      {year} Full Year
-    </button>
-  ))}
-</div>
+      <CollapsibleReportSection
+        id="report-scope-report-section"
+        title="Report Scope"
+        summary={reportPeriod}
+        expanded={expandedSections.reportScope}
+        onToggle={() => toggleReportSection('reportScope')}
+      >
+        <ReportScopeSection
+          reportScope={reportScope}
+          selectedDocumentCount={selectedDocumentIds.length}
+          selectedRecordCount={selectedRecordIds.length}
+          draftPeriodStart={draftPeriodStart}
+          draftPeriodEnd={draftPeriodEnd}
+          loading={loading}
+          fullYearShortcutYears={getFullYearShortcutYears()}
+          onReportScopeChange={setReportScope}
+          onStartDateChange={handleStartDateChange}
+          onEndDateChange={handleEndDateChange}
+          onCommitDateRange={commitDateRange}
+          onFullYear={handleFullYear}
+          styles={{
+            filterCard: filterCardStyle,
+            label: labelStyle,
+            scopeToggle: scopeToggleStyle,
+            input: inputStyle,
+            secondaryButton: secondaryButtonStyle,
+            scopeButton: scopeButtonStyle,
+          }}
+        />
+      </CollapsibleReportSection>
       {reportScope === 'selectedDocuments' ? (
         <div style={selectionNoticeStyle}>
           Report Scope: Selected Documents ({selectedDocumentIds.length})
@@ -1310,14 +1364,14 @@ const exportDisabledTitle = exportDisabled
         <div style={reportEmptyStateStyle}>
           <h2 style={{ margin: 0, fontSize: 22 }}>No reporting data found.</h2>
           <p style={{ margin: '10px 0 18px', color: '#475569', lineHeight: 1.6 }}>
-            Upload and import activity data to generate your first emissions report.
+            Add and import activity data to generate your first emissions report.
           </p>
           <button
             type="button"
-            onClick={() => navigate('/upload')}
+            onClick={() => navigate('/input-data')}
             style={primaryButtonStyle(false)}
           >
-            Go to Upload
+            Go to Input Data
           </button>
         </div>
       ) : null}
@@ -1381,7 +1435,13 @@ const exportDisabledTitle = exportDisabled
             calculationDetails={calculationDetails}
           />
 
-          <Section title="Activity Records">
+          <CollapsibleReportSection
+            id="activity-records-report-section"
+            title="Activity Records"
+            summary={`${activities.length} activity record${activities.length === 1 ? '' : 's'}`}
+            expanded={expandedSections.activityRecords}
+            onToggle={() => toggleReportSection('activityRecords')}
+          >
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -1414,9 +1474,15 @@ const exportDisabledTitle = exportDisabled
                 )}
               </tbody>
             </table>
-          </Section>
+          </CollapsibleReportSection>
 
-          <Section title="Data Quality Notes">
+          <CollapsibleReportSection
+            id="data-quality-notes-report-section"
+            title="Data Quality Notes"
+            summary={`${dataReadinessSummary.recordsReadyForCalculation} calculated · ${dataReadinessSummary.recordsRequiringReview} requiring review`}
+            expanded={expandedSections.dataQualityNotes}
+            onToggle={() => toggleReportSection('dataQualityNotes')}
+          >
             <div style={dataQualityNotesGridStyle}>
               <DataQualityNote label="Data Readiness" value={`${formatDisplayNumber(dataReadinessSummary.score)}% · ${dataReadinessSummary.level}`} />
               <DataQualityNote label="Calculated Records" value={dataReadinessSummary.recordsReadyForCalculation} />
@@ -1433,8 +1499,14 @@ const exportDisabledTitle = exportDisabled
             <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
               Hotspot analysis is based only on calculated records. Records requiring review are excluded until fixed.
             </p>
-          </Section>
-          <Section title="Carbon Credit Readiness Notes">
+          </CollapsibleReportSection>
+          <CollapsibleReportSection
+            id="carbon-credit-readiness-report-section"
+            title="Carbon Credit Readiness Notes"
+            summary={`${formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} · ${carbonCreditReadiness.score}/100`}
+            expanded={expandedSections.carbonCreditReadiness}
+            onToggle={() => toggleReportSection('carbonCreditReadiness')}
+          >
             <div style={dataQualityNotesGridStyle}>
               <DataQualityNote label="Readiness Level" value={formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} />
               <DataQualityNote label="Readiness Score" value={`${carbonCreditReadiness.score}/100`} />
@@ -1454,8 +1526,14 @@ const exportDisabledTitle = exportDisabled
             <p style={creditDisclaimerReportStyle}>
               {CARBON_CREDIT_READINESS_DISCLAIMER}
             </p>
-          </Section>
-          <Section title="Emissions by Scope">
+          </CollapsibleReportSection>
+          <CollapsibleReportSection
+            id="scope-breakdown-report-section"
+            title="Emissions by Scope"
+            summary={`Scope 1: ${formatDisplayNumber(scopeSummary['Scope 1'])} · Scope 2: ${formatDisplayNumber(scopeSummary['Scope 2'])} · Scope 3: ${formatDisplayNumber(scopeSummary['Scope 3'])}`}
+            expanded={expandedSections.scopeBreakdown}
+            onToggle={() => toggleReportSection('scopeBreakdown')}
+          >
             <ScopeExplanation />
             <div style={scopeCardGridStyle}>
               <Card
@@ -1476,8 +1554,21 @@ const exportDisabledTitle = exportDisabled
                 value={`${formatDisplayNumber(scopeSummary['Scope 3'])} kgCO2e`}
                 icon="🌍"
               />
+              {scopeSummary.Unclassified > 0 ? (
+                <Card
+                  title="Unclassified"
+                  subtitle="Requires scope review"
+                  value={`${formatDisplayNumber(scopeSummary.Unclassified)} kgCO2e`}
+                  icon="?"
+                />
+              ) : null}
             </div>
-          </Section>
+            {unclassifiedCalculatedRecords.length > 0 ? (
+              <div style={scopeUnclassifiedWarningStyle}>
+                {unclassifiedCalculatedRecords.length} calculated record(s) could not be assigned to Scope 1, 2, or 3 and should be reviewed.
+              </div>
+            ) : null}
+          </CollapsibleReportSection>
         </>
       ) : null}
     </div>
@@ -1555,21 +1646,6 @@ function formatCarbonCreditReadinessLevel(level: string) {
   return labels[level] ?? level;
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={sectionStyle}>
-      <h2 style={{ marginTop: 0, fontSize: 20 }}>{title}</h2>
-      {children}
-    </div>
-  );
-}
-
 const cardStyle: React.CSSProperties = {
   borderRadius: 16,
   padding: 20,
@@ -1590,6 +1666,17 @@ const scopeCardGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
   gap: 16,
+};
+
+const scopeUnclassifiedWarningStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 8,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+  fontSize: 13,
+  fontWeight: 700,
 };
 
 const scopeHelpStyle: React.CSSProperties = {
@@ -1680,13 +1767,12 @@ const creditDisclaimerReportStyle: React.CSSProperties = {
   fontWeight: 700,
 };
 
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 16,
-  padding: 20,
-  background: '#fff',
-  border: '1px solid #eee',
-  marginBottom: 20,
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+const sectionControlsStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: 8,
+  flexWrap: 'wrap',
+  marginBottom: 12,
 };
 
 const tableStyle: React.CSSProperties = {

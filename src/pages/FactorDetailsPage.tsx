@@ -10,6 +10,7 @@ import {
   getFactorVersions,
   getFactorVersionUsage,
 } from '../services/factorVersions';
+import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
 
 const statusLabels: Record<string, string> = {
   DRAFT: 'Draft',
@@ -320,18 +321,19 @@ function productionReady(version: FactorVersion) {
 }
 
 function defaultScopeForVersion(version: FactorVersion) {
-  const label = String(version.displayName ?? '').toUpperCase();
-  if (isWaterTrackedVersion(version)) return 'Tracked Metric / Not included in emissions total by default';
-  if (['DIESEL', 'GASOLINE', 'NATURAL_GAS', 'PROPANE'].some((type) => label.includes(type))) return 'Scope 1';
-  if (label.includes('ELECTRICITY')) return 'Scope 2';
-  if (
-    ['HOTEL', 'AIR TRAVEL', 'AIR_TRAVEL', 'SHIPPING', 'FREIGHT', 'WASTE'].some((type) =>
-      label.includes(type),
-    )
-  ) {
-    return 'Scope 3';
+  const resolution = resolveScopeClassification({
+    activityType: version.displayName,
+    factorDefaultScope: version.defaultScope,
+    factorScope: version.scope,
+  });
+
+  if (resolution.scope === 'TRACKED_METRIC') {
+    return 'Tracked Metric / Not included in emissions total by default';
   }
-  return 'Not specified';
+
+  return resolution.scope === 'UNCLASSIFIED'
+    ? 'Not specified'
+    : formatScopeClassification(resolution.scope);
 }
 
 export function FactorDetailsPage() {

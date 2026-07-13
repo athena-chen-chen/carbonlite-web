@@ -1,5 +1,9 @@
 import { formatDisplayNumber } from './numberFormatting';
 import { normalizeUnitForDisplay } from './unitNormalization';
+import {
+  getActivityTypeLabel,
+  normalizeActivityType,
+} from './activityType';
 
 export type ActivityUsageRecord = {
   activityType?: string | null;
@@ -31,21 +35,13 @@ const FUEL_ACTIVITY_TYPES = new Set([
   'FUEL',
 ]);
 
-function normalizeActivityType(activityType?: string | null) {
-  return String(activityType ?? '').trim().toUpperCase();
-}
-
 function toQuantity(value?: string | number | null) {
   const quantity = Number(value ?? 0);
   return Number.isFinite(quantity) ? quantity : 0;
 }
 
 export function formatActivityTypeLabel(activityType: string) {
-  return activityType
-    .toLowerCase()
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  return getActivityTypeLabel(activityType);
 }
 
 export function aggregateActivityUsage(
@@ -53,7 +49,7 @@ export function aggregateActivityUsage(
 ): ActivityUsageTotals {
   const totals = records.reduce<ActivityUsageTotals>(
     (totals, record) => {
-      const activityType = normalizeActivityType(record.activityType);
+      const activityType = normalizeActivityType(record.activityType) ?? '';
       const quantity = toQuantity(record.quantity);
       const normalizedUnit = normalizeUnitForDisplay(record.unit);
       const hasValidUnit = normalizedUnit.status === 'valid';
