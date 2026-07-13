@@ -376,6 +376,90 @@ describe('buildMetricsSummaryTableRows', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Calculation details and traceability (1 records)')).toBeInTheDocument();
     expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText('Calculation details and traceability (1 records)'));
+
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Factor Source' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Formula' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Matching Explanation' }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /View calculation details for Gasoline/i }));
+
+    const dialog = screen.getByRole('dialog', { name: /Calculation detail/i });
+    expect(within(dialog).getByText('Factor Source')).toBeInTheDocument();
+    expect(within(dialog).getByText('ECCC 2025')).toBeInTheDocument();
+    expect(within(dialog).getByText('Formula')).toBeInTheDocument();
+    expect(within(dialog).getByText('100 × 2.31 = 231 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('Matching Explanation')).toBeInTheDocument();
+    expect(within(dialog).getByText('Matched factor')).toBeInTheDocument();
+  });
+
+  it('shows calculated imported electricity emissions under Scope 2', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 0,
+            electricity: 1200,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [],
+          }}
+          totalEstimatedEmissionsKgCO2e={144}
+          countSummary={{
+            totalRecordsFound: 1,
+            processedRecords: 1,
+            skippedRecords: 0,
+            missingFactorRecords: 0,
+            skippedReasons: {
+              missingFactor: 0,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          calculationDetails={[
+            {
+              activityDataId: 'activity-electricity-1',
+              activityType: 'Electricity',
+              recordDate: '2026-01-01',
+              dateEstimated: false,
+              reportingYear: 2026,
+              jurisdiction: 'Alberta, Canada',
+              jurisdictionCountry: 'Canada',
+              jurisdictionRegion: 'Alberta',
+              activityQuantity: 1200,
+              activityUnit: 'kWh',
+              factorId: 'factor-electricity-ab',
+              factorName: 'Electricity - Alberta',
+              factorValue: 0.12,
+              factorInputUnit: 'kWh',
+              factorResultUnit: 'kgCO2e',
+              factorPriority: 'SYSTEM',
+              factorSource: 'CarbonLite system defaults',
+              sourceAuthority: 'CarbonLite system defaults',
+              sourceYear: 2025,
+              factorVerified: true,
+              factorType: 'System',
+              factorDefaultScope: 'Scope 1',
+              factorScope: 'Scope 1',
+              calculatedEmissionsKgCO2e: 144,
+              status: 'CALCULATED',
+              sourceType: 'AI_EXTRACTION',
+              sourceReference: 'activity-records.json',
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
+    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('0 kg CO2e');
+    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('144 kg CO2e');
+    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('0 kg CO2e');
   });
 
   it('renders the shared summary section with multiple records and populated calculation table', () => {

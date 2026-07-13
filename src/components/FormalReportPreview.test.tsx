@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {
   FORMAL_REPORT_DISCLAIMER,
   FORMAL_REPORT_METHODOLOGY,
@@ -26,7 +27,7 @@ const countSummary = {
 };
 
 describe('FormalReportPreview', () => {
-  it('renders consultant report sections from the shared summary model', () => {
+  it('renders consultant report sections from the shared summary model', async () => {
     render(
       <FormalReportPreview
         organizationName="KACH CANADA LTD."
@@ -120,14 +121,18 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('A. Report Scope')).toBeInTheDocument();
     expect(screen.getByText('B. Executive Summary')).toBeInTheDocument();
     expect(screen.getByText('C. Emissions Hotspots')).toBeInTheDocument();
-    expect(screen.getByText('D. Calculation Quality Summary')).toBeInTheDocument();
-    expect(screen.getByText('E. Emissions Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('F. Activity Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('G. Emission Factors Used')).toBeInTheDocument();
-    expect(screen.getByText('H. Calculation Traceability')).toBeInTheDocument();
-    expect(screen.getByText('I. Source Evidence')).toBeInTheDocument();
-    expect(screen.getByText('J. Records Requiring Review')).toBeInTheDocument();
-    expect(screen.getByText('K. Methodology and Disclaimer')).toBeInTheDocument();
+    expect(screen.getByText('D. Scope Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('E. Calculation Quality Summary')).toBeInTheDocument();
+    expect(screen.getByText('F. Emissions Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('G. Activity Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('H. Emission Factors Used')).toBeInTheDocument();
+    expect(screen.getByText('I. Calculation Traceability')).toBeInTheDocument();
+    expect(screen.getByText('J. Source Evidence')).toBeInTheDocument();
+    expect(screen.getByText('K. Records Requiring Review')).toBeInTheDocument();
+    expect(screen.getByText('L. Methodology and Disclaimer')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+
     expect(screen.getAllByText('321.60 kgCO2e').length).toBeGreaterThan(0);
     expect(screen.getAllByText('CarbonLite system defaults').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
@@ -153,7 +158,7 @@ describe('FormalReportPreview', () => {
     expect(within(emissionsBreakdownTable!).queryByText('Count')).not.toBeInTheDocument();
   });
 
-  it('shows empty states when no records or factors are available', () => {
+  it('shows empty states when no records or factors are available', async () => {
     render(
       <FormalReportPreview
         organizationName="Workspace"
@@ -180,6 +185,8 @@ describe('FormalReportPreview', () => {
         calculationDetails={[]}
       />,
     );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 
     expect(screen.getByText('No metrics available for this report scope.')).toBeInTheDocument();
     expect(screen.getByText('No activity records with matching conversion factors.')).toBeInTheDocument();

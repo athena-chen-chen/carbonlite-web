@@ -22,10 +22,10 @@ export default function NotFound() {
           </button>
           <button
             type="button"
-            onClick={() => navigate('/upload')}
+            onClick={() => navigate('/input-data')}
             style={secondaryButtonStyle}
           >
-            Open Upload
+            Open Input Data
           </button>
         </div>
       </div>

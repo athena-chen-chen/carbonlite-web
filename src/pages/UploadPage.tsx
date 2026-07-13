@@ -1,4 +1,5 @@
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   DuplicateDocumentError,
   deleteDocument,
@@ -19,6 +20,14 @@ import {
   activityTypes,
   defaultActivityType,
 } from '../constants/activityTypes';
+import {
+  getActivityTypeLabel,
+  normalizeActivityType as normalizeCanonicalActivityType,
+} from '../utils/activityType';
+import {
+  normalizeJurisdictionCountry,
+  normalizeJurisdictionRegion,
+} from '../utils/conversionFactorMatching';
 import { buildApiUrl } from '../config/api';
 import { ApiError } from '../services/api';
 import { getToken } from '../services/auth';
@@ -28,6 +37,7 @@ import {
   sampleParsedActivities,
 } from '../demo/demoData';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import { ExcelInputTable } from '../components/ExcelInputTable';
 
 
 type DocumentItem = {
@@ -53,6 +63,7 @@ type EditableParsedActivity = {
   documentId: string;
   documentFileName: string;
   dateEstimated: boolean;
+  periodEndDate?: string | null;
   activityType: EditableConfidenceField<string>;
   recordDate: EditableConfidenceField<string>;
   quantity: EditableConfidenceField<number>;
@@ -66,7 +77,12 @@ type EditableParsedActivity = {
   notes: EditableConfidenceField<string>;
 };
 
-type ImportValidationField = 'activityType' | 'quantity' | 'unit' | 'recordDate';
+type ImportValidationField =
+  | 'activityType'
+  | 'quantity'
+  | 'unit'
+  | 'recordDate'
+  | 'jurisdictionRegion';
 
 type ImportValidationIssue = {
   rowIndex: number;
@@ -75,6 +91,23 @@ type ImportValidationIssue = {
 };
 
 type RawExtractionField = string | number | null | undefined | Record<string, any>;
+type InputMethod = 'documents' | 'spreadsheet' | 'manual';
+type UploadRouteState = {
+  focusInputMethod?: InputMethod;
+  loadSampleWorkspace?: boolean;
+};
+
+const INPUT_TEMPLATE_HEADERS = [
+  'Activity Type',
+  'Quantity',
+  'Unit',
+  'Date',
+  'Country',
+  'Province',
+  'Facility',
+  'Source Reference',
+  'Notes',
+];
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
@@ -82,6 +115,17 @@ export const FILE_MISSING_EXPLANATION =
   'This file is no longer available on the server. This may happen after system updates or temporary storage cleanup. Please upload the file again if you need to extract or review it.';
 export const FILE_MISSING_TOOLTIP =
   'The original uploaded file is no longer available. Please upload it again.';
+
+function getRouteInputMethod(state: unknown): InputMethod | null {
+  const focusInputMethod = (state as UploadRouteState | null)?.focusInputMethod;
+  return (
+    focusInputMethod === 'documents' ||
+    focusInputMethod === 'spreadsheet' ||
+    focusInputMethod === 'manual'
+  )
+    ? focusInputMethod
+    : null;
+}
 
 type DocumentActionKind =
   | 'view'
@@ -119,8 +163,6 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
   const issues: ImportValidationIssue[] = [];
 
   rows.forEach((row, index) => {
-    if (!row.selected) return;
-
     if (isMissingImportValue(row.activityType.value)) {
       issues.push({
         rowIndex: index,
@@ -148,11 +190,11 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
           field: 'quantity',
           message: 'Quantity is required.',
         });
-      } else if (quantity < 0) {
+      } else if (quantity <= 0) {
         issues.push({
           rowIndex: index,
           field: 'quantity',
-          message: 'Quantity cannot be negative.',
+          message: 'Quantity must be greater than 0.',
         });
       }
     }
@@ -178,6 +220,24 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
         rowIndex: index,
         field: 'recordDate',
         message: 'Record date is required.',
+      });
+    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(row.recordDate.value))) {
+      issues.push({
+        rowIndex: index,
+        field: 'recordDate',
+        message: 'Record date must use YYYY-MM-DD.',
+      });
+    }
+
+    const normalizedActivityType = normalizeCanonicalActivityType(row.activityType.value);
+    if (
+      normalizedActivityType === 'ELECTRICITY' &&
+      !normalizePreviewProvince(row.jurisdictionRegion.value)
+    ) {
+      issues.push({
+        rowIndex: index,
+        field: 'jurisdictionRegion',
+        message: 'Missing Province: Electricity records require province before factor matching.',
       });
     }
   });
@@ -310,6 +370,30 @@ function getExtractedDocumentDate(item: ParsedActivity | any) {
   );
 }
 
+function getAliasedExtractionField(item: Record<string, any>, aliases: string[]) {
+  for (const alias of aliases) {
+    if (item[alias] !== undefined && item[alias] !== null) return item[alias];
+  }
+
+  return undefined;
+}
+
+function normalizePreviewCountry(value: RawExtractionField) {
+  return normalizeJurisdictionCountry(formatOptionalExtractionField(value)) ?? 'Canada';
+}
+
+function normalizePreviewProvince(value: RawExtractionField) {
+  return normalizeJurisdictionRegion(formatOptionalExtractionField(value)) ?? '';
+}
+
+function normalizePreviewActivityType(value: RawExtractionField) {
+  return normalizeCanonicalActivityType(formatOptionalExtractionField(value)) ?? '';
+}
+
+function getPreviewActivityTypeLabel(value?: string | null) {
+  return getActivityTypeLabel(value);
+}
+
 function getExtractionFailureState(err: unknown): {
   status: 'EXTRACTION_FAILED' | 'FILE_MISSING';
   message: string;
@@ -350,7 +434,7 @@ function getExtractionFailureState(err: unknown): {
   if (/unsupported file type/i.test(message)) {
     return {
       status: 'EXTRACTION_FAILED',
-      message: 'Unsupported file type. Please upload a PDF, CSV, XLSX, PNG, or JPG file.',
+      message: 'Unsupported file type. Please upload a PDF, CSV, XLSX, PNG, JPG, or JSON file.',
     };
   }
 
@@ -499,6 +583,10 @@ export function getDocumentActionModel(input: {
 }
 
 export function UploadPage() {
+  const location = useLocation();
+  const [activeInputMethod, setActiveInputMethod] = useState<InputMethod>(
+    () => getRouteInputMethod(location.state) ?? 'documents',
+  );
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [documentType, setDocumentType] = useState('OTHER');
   const [uploading, setUploading] = useState(false);
@@ -524,15 +612,19 @@ export function UploadPage() {
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const navigate = useNavigate();
-  const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const manualEntryRef = useRef<HTMLDivElement | null>(null);
   const validationSummaryRef = useRef<HTMLDivElement | null>(null);
   const uploadDragDepthRef = useRef(0);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
   const hasMissingFiles = documents.some((doc) => isMissingFileStatus(doc.status));
   const importValidationIssues = getImportValidationIssues(parsedActivities);
+  const selectedImportValidationIssues = importValidationIssues.filter(
+    (issue) => parsedActivities[issue.rowIndex]?.selected,
+  );
   const selectedParsedActivitiesCount = parsedActivities.filter((item) => item.selected).length;
   const hasImportValidationErrors = importValidationIssues.length > 0;
+  const hasSelectedImportValidationErrors = selectedImportValidationIssues.length > 0;
   const canAttemptConfirmImport =
     confirmingId === null &&
     !generatingMetrics &&
@@ -540,13 +632,13 @@ export function UploadPage() {
     selectedParsedActivitiesCount > 0;
   const canConfirmImport =
     canAttemptConfirmImport &&
-    !hasImportValidationErrors;
+    !hasSelectedImportValidationErrors;
   async function loadDocuments() {
     setLoading(true);
     setError(null);
 
     try {
-      if ((location.state as { loadSampleWorkspace?: boolean } | null)?.loadSampleWorkspace) {
+      if ((location.state as UploadRouteState | null)?.loadSampleWorkspace) {
         return;
       }
 
@@ -564,6 +656,20 @@ export function UploadPage() {
   }, []);
 
   useEffect(() => {
+    const routeInputMethod = getRouteInputMethod(location.state);
+    if (routeInputMethod) {
+      setActiveInputMethod(routeInputMethod);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
+    if (getRouteInputMethod(location.state) !== 'manual' || activeInputMethod !== 'manual') return;
+
+    manualEntryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    manualEntryRef.current?.focus({ preventScroll: true });
+  }, [activeInputMethod, location.state]);
+
+  useEffect(() => {
     if (!successMessage?.startsWith('Document deleted.')) return;
 
     const timeoutId = window.setTimeout(() => {
@@ -576,19 +682,20 @@ export function UploadPage() {
   }, [successMessage]);
 
   useEffect(() => {
-    if ((location.state as { loadSampleWorkspace?: boolean } | null)?.loadSampleWorkspace) {
+    if ((location.state as UploadRouteState | null)?.loadSampleWorkspace) {
       loadSampleWorkspace();
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, [location.state]);
 
   function buildSampleReviewRows() {
-    return sampleParsedActivities.map((item, index) => ({
-      selected: true,
+    return buildEditableParsedActivities(
+      sampleParsedActivities,
+      sampleDocuments[0],
+    ).map((item, index) => ({
+      ...item,
       documentId: sampleDocuments[index]?.id ?? sampleDocuments[0].id,
       documentFileName: sampleDocuments[index]?.fileName ?? sampleDocuments[0].fileName,
-      dateEstimated: false,
-      ...item,
     }));
   }
 
@@ -605,60 +712,112 @@ export function UploadPage() {
     document: { id: string; fileName: string; createdAt?: string | null },
   ): EditableParsedActivity[] {
     return extractedActivities.map((item) => {
+      const activityTypeField = getAliasedExtractionField(item, [
+        'activityType',
+        'activity_type',
+        'type',
+        'category',
+      ]);
+      const quantityField = getAliasedExtractionField(item, [
+        'quantity',
+        'amount',
+        'usage',
+        'value',
+      ]);
+      const unitField = getAliasedExtractionField(item, ['unit', 'uom', 'measurement']);
+      const startDateField = getAliasedExtractionField(item, [
+        'recordDate',
+        'date',
+        'startDate',
+        'periodStart',
+        'fromDate',
+      ]);
+      const endDateField = getAliasedExtractionField(item, [
+        'endDate',
+        'periodEnd',
+        'toDate',
+      ]);
+      const countryField = getAliasedExtractionField(item, [
+        'jurisdictionCountry',
+        'country',
+        'countryCode',
+      ]);
+      const provinceField = getAliasedExtractionField(item, [
+        'jurisdictionRegion',
+        'province',
+        'region',
+        'state',
+        'stateProvince',
+      ]);
+      const sourceReferenceField = getAliasedExtractionField(item, [
+        'sourceReference',
+        'sourceFile',
+        'source',
+        'reference',
+      ]);
       const documentUploadDate =
         document.createdAt ??
         documents.find((doc) => doc.id === document.id)?.createdAt ??
         null;
       const resolvedDate = resolveActivityRecordDate({
-        recordDate: item.recordDate,
+        recordDate: startDateField,
         extractedDocumentDate: getExtractedDocumentDate(item),
         uploadDate: documentUploadDate,
       });
 
-      const quantityValue = Number(getFieldValue(item.quantity, 0));
-
-      return {
+      const quantityValue = Number(getFieldValue(quantityField, 0));
+      const normalizedActivityType = normalizePreviewActivityType(activityTypeField);
+      const normalizedCountry = normalizePreviewCountry(countryField);
+      const normalizedProvince = normalizePreviewProvince(provinceField);
+      const periodEndDate = formatDateValue(endDateField) || null;
+      const draftRow: EditableParsedActivity = {
         selected: true,
         documentId: document.id,
         documentFileName: document.fileName,
         dateEstimated: resolvedDate.dateEstimated || Boolean(item.dateEstimated),
+        periodEndDate,
         activityType: {
-          value: String(getFieldValue(item.activityType, '')),
-          confidence: extractFieldConfidence(item.activityType),
+          value: normalizedActivityType,
+          confidence: extractFieldConfidence(activityTypeField),
         },
         recordDate: {
           value: resolvedDate.value,
           confidence: resolvedDate.dateEstimated
             ? 'low'
-            : extractFieldConfidence(item.recordDate),
+            : extractFieldConfidence(startDateField),
         },
         quantity: {
           value: Number.isFinite(quantityValue) ? quantityValue : 0,
-          confidence: extractFieldConfidence(item.quantity),
+          confidence: extractFieldConfidence(quantityField),
         },
         unit: {
-          value: String(getFieldValue(item.unit, '')),
-          confidence: extractFieldConfidence(item.unit),
+          value: String(getFieldValue(unitField, '')),
+          confidence: extractFieldConfidence(unitField),
         },
         jurisdictionCountry: {
-          value: formatOptionalExtractionField(item.jurisdictionCountry) || 'Canada',
-          confidence: item.jurisdictionCountry ? extractFieldConfidence(item.jurisdictionCountry) : 'medium',
+          value: normalizedCountry,
+          confidence: 'high',
         },
         jurisdictionRegion: {
-          value: formatOptionalExtractionField(item.jurisdictionRegion),
-          confidence: item.jurisdictionRegion ? extractFieldConfidence(item.jurisdictionRegion) : 'low',
+          value: normalizedProvince,
+          confidence: normalizedProvince ? 'high' : 'low',
         },
         sourceReference: {
-          value: formatSourceReference(item.sourceReference, document.fileName),
-          confidence: extractFieldConfidence(item.sourceReference),
+          value: formatSourceReference(sourceReferenceField, document.fileName),
+          confidence: extractFieldConfidence(sourceReferenceField),
         },
         sourcePage: getFieldValue(item.sourcePage, null) as string | number | null,
         sourceRow: getFieldValue(item.sourceRow, null) as string | number | null,
         sourceTextSnippet: formatOptionalExtractionField(item.sourceTextSnippet),
         notes: {
           value: formatOptionalExtractionField(item.notes),
-          confidence: extractFieldConfidence(item.notes),
+          confidence: 'high',
         },
+      };
+
+      return {
+        ...draftRow,
+        selected: getImportValidationIssues([draftRow]).length === 0,
       };
     });
   }
@@ -688,7 +847,7 @@ export function UploadPage() {
       return 'PDF';
     }
 
-    if (/\.(csv|xlsx)$/i.test(fileName)) {
+    if (/\.(csv|xlsx|json)$/i.test(fileName)) {
       return 'SPREADSHEET';
     }
 
@@ -696,7 +855,7 @@ export function UploadPage() {
   }
 
   function isSupportedUploadFile(file: File) {
-    return /\.(pdf|csv|xlsx|png|jpg)$/i.test(file.name);
+    return /\.(pdf|csv|xlsx|png|jpg|json)$/i.test(file.name);
   }
 
   function clearUploadInput() {
@@ -712,7 +871,7 @@ export function UploadPage() {
       setSelectedFiles([]);
       setSuccessMessage(null);
       setError(
-        `${unsupportedFile.name} is not supported. Please choose PDF, CSV, XLSX, PNG, or JPG files.`,
+        `${unsupportedFile.name} is not supported. Please choose PDF, CSV, XLSX, PNG, JPG, or JSON files.`,
       );
       clearUploadInput();
       return;
@@ -814,6 +973,81 @@ ${sampleRows.join('\n')}`,
     setDocumentType('SPREADSHEET');
     setError(null);
     setSuccessMessage('Sample CSV loaded. Click Extract Data.');
+  }
+
+  function handleUseSampleJSON() {
+    const file = new File(
+      [
+        JSON.stringify(
+          {
+            activityRecords: [
+              {
+                activityType: 'Electricity',
+                amount: 1250,
+                unit: 'kWh',
+                date: '2026-03-01',
+                province: 'AB',
+                facilityName: 'Calgary Office',
+                serviceLocation: 'Calgary, AB',
+                sourceReference: 'Sample JSON',
+              },
+              {
+                activityType: 'Natural Gas',
+                amount: 80,
+                unit: 'GJ',
+                date: '2026-03-01',
+                province: 'AB',
+                facilityName: 'Calgary Office',
+                serviceLocation: 'Calgary, AB',
+                sourceReference: 'Sample JSON',
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      ],
+      'carbonlite-sample-activity-records.json',
+      { type: 'application/json' },
+    );
+
+    setSelectedFiles([file]);
+    setDocumentType('SPREADSHEET');
+    setError(null);
+    setSuccessMessage('Sample JSON loaded. Click Extract Data.');
+  }
+
+  function downloadCsvTemplate() {
+    const csv = `${INPUT_TEMPLATE_HEADERS.join(',')}\n`;
+    downloadBlob(new Blob([csv], { type: 'text/csv' }), 'carbonlite-activity-data-template.csv');
+  }
+
+  function downloadExcelTemplate() {
+    const worksheet = XLSX.utils.aoa_to_sheet([INPUT_TEMPLATE_HEADERS]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Activity Data');
+    const output = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    downloadBlob(
+      new Blob([output], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      'carbonlite-activity-data-template.xlsx',
+    );
+  }
+
+  function downloadBlob(blob: Blob, fileName: string) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleManualOrSpreadsheetSave() {
+    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+    setSuccessMessage('Activity data saved. Review saved records in Data Records, Metrics, or Reports.');
   }
 
   async function uploadSelectedFile(options?: { extractAfterUpload?: boolean }) {
@@ -1387,7 +1621,9 @@ ${sampleRows.join('\n')}`,
     }
 
     const selectedActivities = parsedActivities.filter((item) => item.selected);
-    const validationIssues = getImportValidationIssues(parsedActivities);
+    const validationIssues = getImportValidationIssues(parsedActivities).filter(
+      (issue) => parsedActivities[issue.rowIndex]?.selected,
+    );
 
     if (selectedActivities.length === 0) {
       setError('Please select at least one activity to import.');
@@ -1548,7 +1784,30 @@ ${sampleRows.join('\n')}`,
   }
 
   function getRowStatusLabel(rowIndex: number) {
-    return getRowValidationIssues(rowIndex).length > 0 ? 'Needs Review' : 'Ready';
+    const issues = getRowValidationIssues(rowIndex);
+    if (issues.some((issue) => issue.field === 'jurisdictionRegion')) return 'Missing Province';
+    if (issues.some((issue) => issue.field === 'unit')) return 'Unit Mismatch';
+    return issues.length > 0 ? 'Needs Review' : 'Ready';
+  }
+
+  function getRowIssueText(rowIndex: number) {
+    const issues = getRowValidationIssues(rowIndex);
+    return issues.length ? issues.map((issue) => issue.message).join(' ') : '-';
+  }
+
+  function parsedActivityHasValidationIssues(item: EditableParsedActivity) {
+    return getImportValidationIssues([item]).length > 0;
+  }
+
+  function getPreviewDatePeriod(item: EditableParsedActivity) {
+    const startDate = item.recordDate.value ?? '';
+    const endDate = item.periodEndDate ?? '';
+
+    if (startDate && endDate && endDate !== startDate) {
+      return `${startDate} to ${endDate}`;
+    }
+
+    return startDate;
   }
 
   function scrollToImportValidation(firstIssue?: ImportValidationIssue) {
@@ -1592,7 +1851,7 @@ ${sampleRows.join('\n')}`,
     };
   }
 
-function updateParsedActivityField(
+  function updateParsedActivityField(
     index: number,
     field: keyof EditableParsedActivity,
     value: string,
@@ -1608,9 +1867,15 @@ function updateParsedActivityField(
             ? value.trim() === ''
               ? null
               : Number(value)
+            : field === 'activityType'
+            ? normalizePreviewActivityType(value)
+            : field === 'jurisdictionCountry'
+            ? normalizePreviewCountry(value)
+            : field === 'jurisdictionRegion'
+            ? normalizePreviewProvince(value)
             : formatOptionalExtractionField(value);
 
-        return {
+        const updatedItem = {
           ...item,
           ...(field === 'recordDate' ? { dateEstimated: false } : {}),
           [field]: {
@@ -1618,6 +1883,11 @@ function updateParsedActivityField(
             value: nextValue,
             confidence: 'medium',
           },
+        };
+
+        return {
+          ...updatedItem,
+          selected: parsedActivityHasValidationIssues(updatedItem) ? false : item.selected,
         };
       }),
     );
@@ -1666,7 +1936,7 @@ function updateParsedActivityField(
         i === index
           ? {
               ...item,
-              selected: checked,
+              selected: checked && !parsedActivityHasValidationIssues(item),
             }
           : item,
       ),
@@ -1677,7 +1947,7 @@ function updateParsedActivityField(
     setParsedActivities((prev) =>
       prev.map((item) => ({
         ...item,
-        selected: true,
+        selected: !parsedActivityHasValidationIssues(item),
       })),
     );
   }
@@ -1701,14 +1971,46 @@ function updateParsedActivityField(
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 8 }}>Upload & Extract Carbon Data</h1>
+      <h1 style={{ marginBottom: 8 }}>Input Data</h1>
 
       <p style={{ color: '#666', marginBottom: 16 }}>
-        Upload invoices, fuel receipts, utility bills, or CSV files. CarbonLite AI will extract activity data and prepare it for review.
+        Add emissions-related activity data from documents, spreadsheets, or manual entry. New records can be reviewed before they are included in emissions calculations.
       </p>
 
       <div style={stepBarStyle}>
-        Upload → Extract → Review → Import → Metrics → Reports
+        Input Data → Input Review → Save Records → Data Records → Metrics → Reports
+      </div>
+
+      <div style={methodTabsStyle} role="tablist" aria-label="Input data methods">
+        {[
+          {
+            key: 'documents' as const,
+            title: 'Upload Documents',
+            text: 'Upload utility bills, fuel invoices, water bills, travel documents, hotel invoices, or operational PDFs.',
+          },
+          {
+            key: 'spreadsheet' as const,
+            title: 'Import Spreadsheet',
+            text: 'Import CSV or Excel activity data using the CarbonLite data template.',
+          },
+          {
+            key: 'manual' as const,
+            title: 'Manual Entry',
+            text: 'Enter one activity record directly when no file is available.',
+          },
+        ].map((method) => (
+          <button
+            key={method.key}
+            type="button"
+            role="tab"
+            aria-selected={activeInputMethod === method.key}
+            onClick={() => setActiveInputMethod(method.key)}
+            style={methodTabStyle(activeInputMethod === method.key)}
+          >
+            <strong>{method.title}</strong>
+            <span>{method.text}</span>
+          </button>
+        ))}
       </div>
 
       <div style={sampleBannerStyle}>
@@ -1723,10 +2025,11 @@ function updateParsedActivityField(
         </button>
       </div>
 
+      {activeInputMethod === 'documents' ? (
       <div style={uploadCardStyle}>
-        <h2 style={{ marginTop: 0 }}>Upload your documents</h2>
+        <h2 style={{ marginTop: 0 }}>Upload Documents</h2>
         <p style={{ color: '#666' }}>
-          Select a document and click Extract Data.
+          Upload utility bills, fuel invoices, natural gas bills, water bills, hotel or travel documents, shipping records, PDFs, images, CSV, XLSX, or structured JSON files. Extracted records appear in Input Review before import.
         </p>
 
         <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
@@ -1753,7 +2056,7 @@ function updateParsedActivityField(
               {isDraggingUpload ? 'Drop to select files' : 'Drag and drop files here or browse files'}
             </strong>
             <span style={{ color: '#666' }}>
-              PDF, CSV, XLSX, PNG, or JPG files are supported. Max 10 MB.
+              PDF, CSV, XLSX, PNG, JPG, or JSON files are supported. Max 10 MB.
             </span>
           </div>
 
@@ -1783,7 +2086,7 @@ function updateParsedActivityField(
             id="document-upload-input"
             type="file"
             onChange={handleFileChange}
-            accept=".pdf,.csv,.xlsx,.png,.jpg"
+            accept=".pdf,.csv,.xlsx,.png,.jpg,.json,application/json"
             style={{ display: 'none' }}
             multiple
           />
@@ -1837,16 +2140,53 @@ function updateParsedActivityField(
               >
                 Use Sample CSV
               </button>
+              <button
+                type="button"
+                onClick={handleUseSampleJSON}
+                disabled={isProcessing}
+                style={linkButtonStyle(isProcessing)}
+              >
+                Use Sample JSON
+              </button>
             </div>
           </div>
         </div>
       </div>
+      ) : null}
+
+      {activeInputMethod === 'spreadsheet' ? (
+        <div style={uploadCardStyle}>
+          <h2 style={{ marginTop: 0 }}>Import Spreadsheet</h2>
+          <p style={{ color: '#666' }}>
+            Import CSV or Excel activity data using the CarbonLite data template. Include Province for electricity records so province-specific factors can match.
+          </p>
+          <div style={templateActionRowStyle}>
+            <button type="button" onClick={downloadCsvTemplate} style={secondaryButtonStyle}>
+              Download CSV template
+            </button>
+            <button type="button" onClick={downloadExcelTemplate} style={secondaryButtonStyle}>
+              Download Excel template
+            </button>
+          </div>
+          <ExcelInputTable onSuccess={handleManualOrSpreadsheetSave} />
+        </div>
+      ) : null}
+
+      {activeInputMethod === 'manual' ? (
+        <div ref={manualEntryRef} style={uploadCardStyle} tabIndex={-1}>
+          <h2 style={{ marginTop: 0 }}>Manual Entry</h2>
+          <p style={{ color: '#666' }}>
+            Enter activity records directly when no file is available. Electricity records require province before calculation and can be saved for review if province is missing.
+          </p>
+          <ExcelInputTable onSuccess={handleManualOrSpreadsheetSave} />
+        </div>
+      ) : null}
 
       {error ? <div style={errorStyle}>{error}</div> : null}
 
       <div style={sectionCardStyle}>
         <div style={uploadedDocumentsHeaderStyle}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Uploaded Documents</h2>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Input Review</h2>
           <button
             type="button"
             onClick={handleGenerateReportFromSelectedDocuments}
@@ -1868,7 +2208,7 @@ function updateParsedActivityField(
           <div style={emptyStateStyle}>
             <strong>No documents yet</strong>
             <p style={{ margin: '8px 0 0', color: '#64748b' }}>
-              Upload a file or load sample data to see a complete source-document workflow.
+              Add data from documents, spreadsheets, or manual entry to review draft records.
             </p>
           </div>
         ) : (
@@ -2044,9 +2384,9 @@ function updateParsedActivityField(
         <div style={{ ...sectionCardStyle, marginTop: 24 }}>
           <div style={previewHeaderStyle}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 20 }}>Review & Edit Data Before Import</h2>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Draft Records Review</h2>
               <p style={{ marginTop: 8, color: '#666' }}>
-                Review extracted activity records before importing them into CarbonLite AI.
+                Review extracted activity records before saving them as Data Records.
               </p>
               <p style={{ marginTop: 8, color: '#047857', fontWeight: 600 }}>
                 Extracted rows: {parsedActivities.length}
@@ -2077,7 +2417,7 @@ function updateParsedActivityField(
                 disabled={!canAttemptConfirmImport}
                 aria-disabled={!canConfirmImport}
                 title={
-                  hasImportValidationErrors
+                  hasSelectedImportValidationErrors
                     ? 'Please fix validation errors before importing.'
                     : selectedParsedActivitiesCount === 0
                     ? 'Please select at least one activity to import.'
@@ -2120,7 +2460,10 @@ function updateParsedActivityField(
                   <th style={thStyle}>Record Date</th>
                   <th style={thStyle}>Quantity</th>
                   <th style={thStyle}>Unit</th>
+                  <th style={thStyle}>Country</th>
+                  <th style={thStyle}>Province</th>
                   <th style={thStyle}>Source Reference</th>
+                  <th style={thStyle}>Issue</th>
                   <th style={thStyle}>Notes</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
@@ -2131,14 +2474,24 @@ function updateParsedActivityField(
                   const recordDateError = getFieldValidationMessage(index, 'recordDate');
                   const quantityError = getFieldValidationMessage(index, 'quantity');
                   const unitError = getFieldValidationMessage(index, 'unit');
+                  const provinceError = getFieldValidationMessage(index, 'jurisdictionRegion');
                   const rowStatusLabel = getRowStatusLabel(index);
+                  const rowIssueText = getRowIssueText(index);
+                  const rowHasValidationIssues = getRowValidationIssues(index).length > 0;
 
                   return (
                   <tr key={`parsed-${index}`}>
                     <td style={tdStyle}>
                       <input
                         type="checkbox"
-                        checked={item.selected}
+                        checked={item.selected && !rowHasValidationIssues}
+                        disabled={rowHasValidationIssues}
+                        aria-label={`Select preview row ${index + 1}`}
+                        title={
+                          rowHasValidationIssues
+                            ? 'Fix validation issues before selecting this row.'
+                            : undefined
+                        }
                         onChange={(e) =>
                           toggleParsedActivitySelected(index, e.target.checked)
                         }
@@ -2167,7 +2520,7 @@ function updateParsedActivityField(
                         <option value="">-- Select --</option>
                         {activityTypes.map((type) => (
                           <option key={type} value={type}>
-                            {type}
+                            {getPreviewActivityTypeLabel(type)}
                           </option>
                         ))}
                       </select>
@@ -2194,6 +2547,9 @@ function updateParsedActivityField(
                           ...(recordDateError ? validationInputOverrideStyle : {}),
                         }}
                       />
+                      {item.periodEndDate ? (
+                        <div style={datePeriodStyle}>{getPreviewDatePeriod(item)}</div>
+                      ) : null}
                       {recordDateError ? (
                         <div style={fieldErrorStyle}>{recordDateError}</div>
                       ) : null}
@@ -2272,6 +2628,47 @@ function updateParsedActivityField(
                     <td style={tdStyle}>
                       <input
                         type="text"
+                        value={item.jurisdictionCountry.value ?? ''}
+                        placeholder="Canada"
+                        onChange={(e) =>
+                          updateParsedActivityField(index, 'jurisdictionCountry', e.target.value)
+                        }
+                        style={optionalInputStyle(
+                          item.jurisdictionCountry.confidence,
+                          item.jurisdictionCountry.value,
+                          { neutralWhenPresent: true },
+                        )}
+                      />
+                    </td>
+
+                    <td style={tdStyle}>
+                      {/* TODO: Consider ProvinceSelect here after preserving extraction confidence styling. */}
+                      <input
+                        data-validation-field="jurisdictionRegion"
+                        data-validation-row={index}
+                        type="text"
+                        value={item.jurisdictionRegion.value ?? ''}
+                        placeholder="Province"
+                        onChange={(e) =>
+                          updateParsedActivityField(index, 'jurisdictionRegion', e.target.value)
+                        }
+                        style={validatedInputStyle(
+                          optionalInputStyle(
+                            item.jurisdictionRegion.confidence,
+                            item.jurisdictionRegion.value,
+                            { neutralWhenPresent: true },
+                          ),
+                          Boolean(provinceError),
+                        )}
+                      />
+                      {provinceError ? (
+                        <div style={fieldErrorStyle}>{provinceError}</div>
+                      ) : null}
+                    </td>
+
+                    <td style={tdStyle}>
+                      <input
+                        type="text"
                         value={item.sourceReference.value ?? ''}
                         placeholder={item.documentFileName}
                         onChange={(e) =>
@@ -2280,8 +2677,15 @@ function updateParsedActivityField(
                         style={optionalInputStyle(
                           item.sourceReference.confidence,
                           item.sourceReference.value,
+                          { neutralWhenPresent: true },
                         )}
                       />
+                    </td>
+
+                    <td style={tdStyle}>
+                      <span style={rowIssueText === '-' ? mutedIssueStyle : issueTextStyle}>
+                        {rowIssueText}
+                      </span>
                     </td>
 
                     <td style={tdStyle}>
@@ -2292,7 +2696,9 @@ function updateParsedActivityField(
                         onChange={(e) =>
                           updateParsedActivityField(index, 'notes', e.target.value)
                         }
-                        style={optionalInputStyle(item.notes.confidence, item.notes.value)}
+                        style={optionalInputStyle(item.notes.confidence, item.notes.value, {
+                          neutralWhenPresent: true,
+                        })}
                       />
                     </td>
 
@@ -2328,7 +2734,7 @@ function updateParsedActivityField(
               Delete this document and its imported activity records?
             </h2>
             <p style={{ color: '#475569', lineHeight: 1.6 }}>
-              This will remove <strong>{documentToDelete.fileName}</strong> from Uploaded Documents and clear any extraction preview rows for this file.
+              This will remove <strong>{documentToDelete.fileName}</strong> from Input Review and clear any extraction preview rows for this file.
             </p>
             <p style={warningTextStyle}>
               This will remove the uploaded document and all activity records created from this document.
@@ -2380,6 +2786,35 @@ const sampleBannerStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   gap: 16,
   flexWrap: 'wrap',
+};
+
+const methodTabsStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 12,
+  marginBottom: 20,
+};
+
+function methodTabStyle(active: boolean): React.CSSProperties {
+  return {
+    display: 'grid',
+    gap: 6,
+    textAlign: 'left',
+    padding: 16,
+    borderRadius: 8,
+    border: active ? '2px solid #10b981' : '1px solid #dbe3ec',
+    background: active ? '#ecfdf5' : '#fff',
+    color: '#0f172a',
+    cursor: 'pointer',
+    boxShadow: active ? '0 8px 20px rgba(16, 185, 129, 0.12)' : 'none',
+  };
+}
+
+const templateActionRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  flexWrap: 'wrap',
+  marginBottom: 16,
 };
 
 const uploadCardStyle: React.CSSProperties = {
@@ -2457,6 +2892,17 @@ const sampleCsvRowStyle: React.CSSProperties = {
   gap: 8,
   flexWrap: 'wrap',
   fontSize: 14,
+};
+
+const issueTextStyle: React.CSSProperties = {
+  color: '#92400e',
+  fontSize: 12,
+  lineHeight: 1.4,
+};
+
+const mutedIssueStyle: React.CSSProperties = {
+  color: '#94a3b8',
+  fontSize: 12,
 };
 
 function linkButtonStyle(disabled: boolean): React.CSSProperties {
@@ -2685,6 +3131,13 @@ const dateSuggestionStyle: React.CSSProperties = {
   fontSize: 12,
 };
 
+const datePeriodStyle: React.CSSProperties = {
+  marginTop: 5,
+  color: '#475569',
+  fontSize: 12,
+  fontWeight: 700,
+};
+
 const useSuggestionButtonStyle: React.CSSProperties = {
   padding: '3px 7px',
   borderRadius: 6,
@@ -2697,7 +3150,7 @@ const useSuggestionButtonStyle: React.CSSProperties = {
 };
 
 function rowStatusBadgeStyle(status: string): React.CSSProperties {
-  const isError = status === 'Needs Review';
+  const isReady = status === 'Ready';
 
   return {
     display: 'inline-flex',
@@ -2707,14 +3160,15 @@ function rowStatusBadgeStyle(status: string): React.CSSProperties {
     padding: '3px 8px',
     fontSize: 12,
     fontWeight: 700,
-    color: isError ? '#b91c1c' : '#047857',
-    background: isError ? '#fee2e2' : '#d1fae5',
+    color: isReady ? '#047857' : '#b91c1c',
+    background: isReady ? '#d1fae5' : '#fee2e2',
   };
 }
 
 function optionalInputStyle(
   confidence: string,
   value: string | null,
+  options?: { neutralWhenPresent?: boolean },
 ): React.CSSProperties {
   const isEmpty = !String(value ?? '').trim();
 
@@ -2723,6 +3177,11 @@ function optionalInputStyle(
     padding: 8,
     borderRadius: 6,
     ...(isEmpty
+      ? {
+          background: '#fff',
+          border: '1px solid #d1d5db',
+        }
+      : options?.neutralWhenPresent
       ? {
           background: '#fff',
           border: '1px solid #d1d5db',

@@ -5,9 +5,9 @@ import { getOrganizationName, getUserDisplayName } from '../services/auth';
 
 const navItems = [
   { to: '/', label: 'Home' },
-  { to: '/upload', label: 'Upload' },
+  { to: '/input-data', label: 'Input Data', activePaths: ['/upload'] },
   { to: '/data-collection-guide', label: 'Data Guide' },
-  { to: '/data-records', label: 'Records', activePaths: ['/activity-records', '/activity-data'] },
+  { to: '/data-records', label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
   { to: '/conversion-factors', label: 'Factors' },
   { to: '/metrics-summary', label: 'Metrics' },
   { to: '/reports', label: 'Reports' },
@@ -23,7 +23,8 @@ const headerStyle: React.CSSProperties = {
   borderBottom: '1px solid #e5e5e5',
   position: 'sticky',
   top: 0,
-  zIndex: 10,
+  zIndex: 2000,
+  boxShadow: '0 1px 0 rgba(15, 23, 42, 0.04)',
 };
 
 const containerStyle: React.CSSProperties = {

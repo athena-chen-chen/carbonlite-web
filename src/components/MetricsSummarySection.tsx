@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   formatFuelUsageBreakdown,
@@ -17,6 +18,12 @@ import {
 } from '../utils/calculationTraceability';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import {
+  formatScopeClassification,
+  formatScopeSource,
+  resolveScopeClassification,
+} from '../utils/scopeClassification';
+import { IssueBadge as SharedIssueBadge } from './shared/StatusBadge';
 
 export type MetricsCountSummary = {
   totalRecordsFound: number;
@@ -242,6 +249,8 @@ export function MetricsSummarySection({
   isLoading?: boolean;
 }) {
   const navigate = useNavigate();
+  const [selectedCalculationDetail, setSelectedCalculationDetail] =
+    useState<CalculationAuditDetail | null>(null);
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
@@ -284,6 +293,7 @@ export function MetricsSummarySection({
     ),
   };
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
+  const scopeSummary = buildScopeSummary(calculationDetails);
   const dataReadiness = buildDataReadinessSummary(calculationDetails);
   const carbonCreditReadiness = buildCarbonCreditReadinessAssessment(
     calculationDetails,
@@ -368,6 +378,8 @@ export function MetricsSummarySection({
       </div>
 
       <DataReadinessCard summary={dataReadiness} />
+
+      <ScopeSummaryCard summary={scopeSummary} />
 
       <HotspotAnalysisSection
         analysis={hotspotAnalysis}
@@ -577,42 +589,157 @@ export function MetricsSummarySection({
           <summary style={sourceDetailsSummaryStyle}>
             Calculation details and traceability ({calculationDetails.length} records)
           </summary>
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 12 }}>
-            <thead>
-              <tr style={{ background: '#f8fafc' }}>
-                <th style={thStyle}>Activity</th>
-                <th style={thStyle}>Quantity</th>
-                <th style={thStyle}>Activity Source</th>
-                <th style={thStyle}>Jurisdiction</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Factor Used</th>
-                <th style={thStyle}>Factor Source</th>
-                <th style={thStyle}>Formula</th>
-                <th style={thStyle}>Matching Explanation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {calculationDetails.map((detail) => (
-                <tr key={detail.activityDataId}>
-                  <td style={tdStyle}>{formatActivityTypeLabel(detail.activityType)}</td>
-                  <td style={tdStyle}>{formatDisplayNumber(detail.activityQuantity)} {detail.activityUnit}</td>
-                  <td style={tdStyle}>{formatCalculationSourceReference(detail)}</td>
-                  <td style={tdStyle}>{formatDetailJurisdiction(detail)}</td>
-                  <td style={tdStyle}>{formatCalculationStatus(detail.status)}</td>
-                  <td style={tdStyle}>
-                    {detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'Not calculated'}
-                  </td>
-                  <td style={tdStyle}>{formatTraceabilitySource(detail)}</td>
-                  <td style={tdStyle}>{buildCalculatedFormula(detail)}</td>
-                  <td style={tdStyle}>{formatMatchingMethod(detail)}</td>
+          <div style={calculationDetailsTableWrapStyle}>
+            <table style={calculationDetailsTableStyle}>
+              <thead>
+                <tr style={{ background: '#f8fafc' }}>
+                  <th style={thStyle}>Activity</th>
+                  <th style={thStyle}>Quantity</th>
+                  <th style={thStyle}>Activity Source</th>
+                  <th style={thStyle}>Jurisdiction</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={thStyle}>Scope</th>
+                  <th style={thStyle}>Factor Used</th>
+                  <th style={thStyle}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {calculationDetails.map((detail) => (
+                  <tr key={detail.activityDataId}>
+                    <td style={tdStyle}>{formatActivityTypeLabel(detail.activityType)}</td>
+                    <td style={tdStyle}>
+                      {formatDisplayNumber(detail.activityQuantity)} {detail.activityUnit}
+                    </td>
+                    <td style={tdStyle}>{formatCalculationSourceReference(detail)}</td>
+                    <td style={tdStyle}>{formatDetailJurisdiction(detail)}</td>
+                    <td style={tdStyle}>{formatCalculationStatus(detail.status)}</td>
+                    <td style={tdStyle}>{formatCalculationScopeLabel(detail)}</td>
+                    <td style={tdStyle}>
+                      {detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'Not calculated'}
+                    </td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        style={calculationDetailsButtonStyle}
+                        onClick={() => setSelectedCalculationDetail(detail)}
+                        aria-label={`View calculation details for ${formatActivityTypeLabel(detail.activityType)}`}
+                      >
+                        Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </details>
+      ) : null}
+
+      {selectedCalculationDetail ? (
+        <CalculationDetailModal
+          detail={selectedCalculationDetail}
+          onClose={() => setSelectedCalculationDetail(null)}
+        />
       ) : null}
     </>
   );
+}
+
+function CalculationDetailModal({
+  detail,
+  onClose,
+}: {
+  detail: CalculationAuditDetail;
+  onClose: () => void;
+}) {
+  return (
+    <div style={calculationDetailModalBackdropStyle} onClick={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="calculation-detail-modal-title"
+        style={calculationDetailModalStyle}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div style={calculationDetailModalHeaderStyle}>
+          <div>
+            <h2 id="calculation-detail-modal-title" style={calculationDetailModalTitleStyle}>
+              Calculation detail
+            </h2>
+            <p style={calculationDetailModalSubtitleStyle}>
+              {formatActivityTypeLabel(detail.activityType)} ·{' '}
+              {formatDisplayNumber(detail.activityQuantity)} {detail.activityUnit}
+            </p>
+          </div>
+          <button
+            type="button"
+            style={calculationDetailModalCloseStyle}
+            onClick={onClose}
+            aria-label="Close calculation detail"
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={calculationDetailGridStyle}>
+          <CalculationDetailField label="Activity" value={formatActivityTypeLabel(detail.activityType)} />
+          <CalculationDetailField
+            label="Quantity"
+            value={`${formatDisplayNumber(detail.activityQuantity)} ${detail.activityUnit}`}
+          />
+          <CalculationDetailField label="Activity Source" value={formatCalculationSourceReference(detail)} />
+          <CalculationDetailField label="Jurisdiction" value={formatDetailJurisdiction(detail)} />
+          <CalculationDetailField label="Status" value={formatCalculationStatus(detail.status)} />
+          <CalculationDetailField label="Scope" value={formatCalculationScopeLabel(detail)} />
+          <CalculationDetailField
+            label="Factor Used"
+            value={detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'Not calculated'}
+          />
+          <CalculationDetailField label="Factor Source" value={formatTraceabilitySource(detail)} />
+          <CalculationDetailField
+            label="Formula"
+            value={buildCalculatedFormula(detail)}
+            fullWidth
+          />
+          <CalculationDetailField
+            label="Matching Explanation"
+            value={formatMatchingMethod(detail)}
+            fullWidth
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CalculationDetailField({
+  label,
+  value,
+  fullWidth = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div style={fullWidth ? calculationDetailFieldFullStyle : calculationDetailFieldStyle}>
+      <span style={calculationDetailLabelStyle}>{label}</span>
+      <span style={calculationDetailValueStyle}>{value}</span>
+    </div>
+  );
+}
+
+function formatCalculationScopeLabel(detail: CalculationAuditDetail) {
+  if (detail.status !== 'CALCULATED') return 'Not calculated';
+
+  const resolution = resolveScopeClassification({
+    activityType: detail.activityType,
+    scopeOverride: detail.scopeOverride,
+    factorDefaultScope: detail.factorDefaultScope,
+    factorScope: detail.factorScope,
+  });
+
+  return `${formatScopeClassification(resolution.scope)} (${formatScopeSource(resolution.source)})`;
 }
 
 function sanitizeIssueValue(value: unknown, fallback = 'Unknown') {
@@ -1208,6 +1335,79 @@ function getYearFromDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? null : date.getUTCFullYear();
 }
 
+function buildScopeSummary(calculationDetails: CalculationAuditDetail[]) {
+  const summary = {
+    SCOPE_1: 0,
+    SCOPE_2: 0,
+    SCOPE_3: 0,
+    TRACKED_METRIC: 0,
+    UNCLASSIFIED: 0,
+  };
+
+  calculationDetails.forEach((detail) => {
+    const resolution = resolveScopeClassification({
+      activityType: detail.activityType,
+      scopeOverride: detail.scopeOverride,
+      factorDefaultScope: detail.factorDefaultScope,
+      factorScope: detail.factorScope,
+    });
+
+    if (detail.status === 'TRACKED_ONLY' || resolution.scope === 'TRACKED_METRIC') {
+      summary.TRACKED_METRIC += 1;
+      return;
+    }
+
+    if (detail.status !== 'CALCULATED') return;
+
+    const emissions = Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0);
+    if (!Number.isFinite(emissions)) return;
+
+    summary[resolution.scope] += emissions;
+  });
+
+  return summary;
+}
+
+function ScopeSummaryCard({ summary }: { summary: ReturnType<typeof buildScopeSummary> }) {
+  const rows = [
+    { label: 'Scope 1', value: summary.SCOPE_1, note: 'Direct fuel emissions' },
+    { label: 'Scope 2', value: summary.SCOPE_2, note: 'Purchased energy' },
+    { label: 'Scope 3', value: summary.SCOPE_3, note: 'Other indirect emissions' },
+  ];
+
+  return (
+    <section style={tableCardStyle} aria-labelledby="scope-summary-title">
+      <div style={{ padding: 16, borderBottom: '1px solid #eee' }}>
+        <h2 id="scope-summary-title" style={{ margin: 0, fontSize: 18 }}>
+          Emissions by Scope
+        </h2>
+        <p style={summaryHelperTextStyle}>
+          Scope totals include calculated records only. Tracked metrics and records requiring review are excluded from emissions totals.
+        </p>
+      </div>
+      <div style={scopeSummaryGridStyle}>
+        {rows.map((row) => (
+          <div key={row.label} style={scopeSummaryItemStyle}>
+            <span>{row.label}</span>
+            <strong>{formatEmissionsValue(row.value)} kg CO2e</strong>
+            <small>{row.note}</small>
+          </div>
+        ))}
+      </div>
+      {summary.UNCLASSIFIED > 0 ? (
+        <div style={scopeWarningStyle}>
+          {formatEmissionsValue(summary.UNCLASSIFIED)} kg CO2e is calculated but unclassified and should be reviewed.
+        </div>
+      ) : null}
+      {summary.TRACKED_METRIC > 0 ? (
+        <div style={trackedScopeNoteStyle}>
+          {summary.TRACKED_METRIC} tracked metric {summary.TRACKED_METRIC === 1 ? 'record is' : 'records are'} excluded from Scope 1, 2, and 3 totals.
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
   return (
     <section style={readinessCardStyle} aria-labelledby="data-readiness-title">
@@ -1798,25 +1998,7 @@ function getCalculationIssueDescription(group: CalculationIssueGroup) {
 }
 
 function IssueBadge({ type }: { type: CalculationIssueGroup['issueType'] }) {
-  const label =
-    type === 'invalidUnit'
-      ? 'Invalid Unit'
-      : type === 'missingJurisdiction'
-      ? 'Missing Jurisdiction'
-      : type === 'missingData'
-      ? 'Missing Data'
-      : type === 'missingFactor'
-      ? 'Missing Factor'
-      : 'Informational';
-
-  const style =
-    type === 'missingData' || type === 'invalidUnit' || type === 'missingJurisdiction'
-      ? missingDataBadgeStyle
-      : type === 'missingFactor'
-      ? missingFactorBadgeStyle
-      : informationalBadgeStyle;
-
-  return <span style={style}>{label}</span>;
+  return <SharedIssueBadge issueType={type} showTooltip />;
 }
 
 function getUnitMismatchDensityHint(group: MissingFactorGroup) {
@@ -2417,6 +2599,118 @@ const sourceDetailsSummaryStyle: React.CSSProperties = {
   fontWeight: 800,
 };
 
+const calculationDetailsTableWrapStyle: React.CSSProperties = {
+  marginTop: 12,
+  overflowX: 'auto',
+};
+
+const calculationDetailsTableStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 820,
+  borderCollapse: 'collapse',
+};
+
+const calculationDetailsButtonStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1d4ed8',
+  fontWeight: 800,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
+const calculationDetailModalBackdropStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 1000,
+  display: 'grid',
+  placeItems: 'center',
+  padding: 20,
+  background: 'rgba(15, 23, 42, 0.38)',
+};
+
+const calculationDetailModalStyle: React.CSSProperties = {
+  width: 'min(760px, 100%)',
+  maxHeight: 'min(720px, calc(100vh - 40px))',
+  overflow: 'auto',
+  borderRadius: 14,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  boxShadow: '0 24px 70px rgba(15, 23, 42, 0.22)',
+};
+
+const calculationDetailModalHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  gap: 16,
+  padding: '18px 20px 14px',
+  borderBottom: '1px solid #e2e8f0',
+};
+
+const calculationDetailModalTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#0f172a',
+  fontSize: 20,
+};
+
+const calculationDetailModalSubtitleStyle: React.CSSProperties = {
+  margin: '4px 0 0',
+  color: '#64748b',
+  fontSize: 14,
+  lineHeight: 1.4,
+};
+
+const calculationDetailModalCloseStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 34,
+  height: 34,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#334155',
+  fontSize: 22,
+  lineHeight: 1,
+  cursor: 'pointer',
+};
+
+const calculationDetailGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 12,
+  padding: 20,
+};
+
+const calculationDetailFieldStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  alignContent: 'start',
+  minWidth: 0,
+};
+
+const calculationDetailFieldFullStyle: React.CSSProperties = {
+  ...calculationDetailFieldStyle,
+  gridColumn: '1 / -1',
+};
+
+const calculationDetailLabelStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: 'uppercase',
+};
+
+const calculationDetailValueStyle: React.CSSProperties = {
+  color: '#0f172a',
+  fontSize: 14,
+  lineHeight: 1.5,
+  overflowWrap: 'anywhere',
+};
+
 const reconciliationHeaderStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -2541,34 +2835,6 @@ const editRecordButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-const issueBadgeBaseStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  borderRadius: 999,
-  padding: '3px 8px',
-  fontSize: 12,
-  fontWeight: 800,
-  whiteSpace: 'nowrap',
-};
-
-const missingDataBadgeStyle: React.CSSProperties = {
-  ...issueBadgeBaseStyle,
-  color: '#92400e',
-  background: '#fef3c7',
-};
-
-const missingFactorBadgeStyle: React.CSSProperties = {
-  ...issueBadgeBaseStyle,
-  color: '#b91c1c',
-  background: '#fee2e2',
-};
-
-const informationalBadgeStyle: React.CSSProperties = {
-  ...issueBadgeBaseStyle,
-  color: '#0369a1',
-  background: '#e0f2fe',
-};
-
 const tableCardStyle: React.CSSProperties = {
   border: '1px solid #ddd',
   borderRadius: 12,
@@ -2582,6 +2848,39 @@ const summaryHelperTextStyle: React.CSSProperties = {
   color: '#64748b',
   lineHeight: 1.5,
   fontSize: 14,
+};
+
+const scopeSummaryGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 12,
+  padding: 16,
+};
+
+const scopeSummaryItemStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  padding: 14,
+  borderRadius: 8,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+
+const scopeWarningStyle: React.CSSProperties = {
+  margin: '0 16px 12px',
+  padding: 10,
+  borderRadius: 8,
+  border: '1px solid #fed7aa',
+  background: '#fff7ed',
+  color: '#9a3412',
+  fontSize: 13,
+};
+
+const trackedScopeNoteStyle: React.CSSProperties = {
+  margin: '0 16px 16px',
+  color: '#0369a1',
+  fontSize: 13,
+  fontWeight: 700,
 };
 
 const calculationEmptyStateStyle: React.CSSProperties = {

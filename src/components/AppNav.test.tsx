@@ -16,7 +16,7 @@ describe('AppNav logout flow', () => {
     );
 
     render(
-      <MemoryRouter initialEntries={['/upload']}>
+      <MemoryRouter initialEntries={['/input-data']}>
         <AuthProvider>
           <AppNav />
         </AuthProvider>
@@ -29,6 +29,31 @@ describe('AppNav logout flow', () => {
     expect(screen.getByRole('button', { name: /logout/i })).toBeInTheDocument();
   });
 
+  it('keeps the app header above scrolling page content', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'user@example.com',
+        organizationName: 'KACH CANADA LTD.',
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/data-records']}>
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('banner')).toHaveStyle({
+      position: 'sticky',
+      top: '0px',
+      zIndex: '2000',
+    });
+  });
+
   it('keeps all navigation tabs available without a special demo state', () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem('carbonliteDemoMode', 'enabled');
@@ -38,7 +63,7 @@ describe('AppNav logout flow', () => {
     );
 
     render(
-      <MemoryRouter initialEntries={['/upload']}>
+      <MemoryRouter initialEntries={['/input-data']}>
         <AuthProvider>
           <AppNav />
         </AuthProvider>
@@ -46,8 +71,8 @@ describe('AppNav logout flow', () => {
     );
 
     [
-      'Upload',
-      'Records',
+      'Input Data',
+      'Data Records',
       'Factors',
       'Metrics',
       'Reports',
@@ -69,7 +94,7 @@ describe('AppNav logout flow', () => {
     );
 
     render(
-      <MemoryRouter initialEntries={['/upload']}>
+      <MemoryRouter initialEntries={['/input-data']}>
         <AuthProvider>
           <AppNav />
         </AuthProvider>
@@ -124,15 +149,15 @@ describe('AppNav logout flow', () => {
     localStorage.setItem('currentUser', JSON.stringify({ email: 'user@example.com' }));
 
     render(
-      <MemoryRouter initialEntries={['/upload']}>
+      <MemoryRouter initialEntries={['/input-data']}>
         <AuthProvider>
           <Routes>
             <Route
-              path="/upload"
+              path="/input-data"
               element={
                 <>
                   <AppNav />
-                  <div>Upload page</div>
+                  <div>Input Data page</div>
                 </>
               }
             />

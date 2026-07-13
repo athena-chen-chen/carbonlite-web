@@ -14,6 +14,8 @@ import {
   getCurrentUser,
   getOrganizationName,
 } from '../services/auth';
+import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
+import { getActivityTypeLabel } from '../utils/activityType';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -143,11 +145,7 @@ function formatAuditDate(value?: string | null) {
 function formatActivityTypeDisplay(value?: string | null) {
   if (!value) return '-';
 
-  return value
-    .toLowerCase()
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+  return getActivityTypeLabel(value);
 }
 
 function formatFactorNameDisplay(item: ConversionFactorItem) {
@@ -164,14 +162,19 @@ function formatFactorNameDisplay(item: ConversionFactorItem) {
 }
 
 function defaultScopeForFactor(item: ConversionFactorItem) {
-  const type = String(item.activityType ?? item.name ?? '').toUpperCase();
-  if (isWaterTrackedFactor(item)) return 'Tracked Metric / Not included in emissions total by default';
-  if (['DIESEL', 'GASOLINE', 'NATURAL_GAS', 'PROPANE'].some((value) => type.includes(value))) return 'Scope 1';
-  if (type.includes('ELECTRICITY')) return 'Scope 2';
-  if (['HOTEL', 'AIR_TRAVEL', 'AIR TRAVEL', 'SHIPPING', 'FREIGHT', 'WASTE'].some((value) => type.includes(value))) {
-    return 'Scope 3';
+  const resolution = resolveScopeClassification({
+    activityType: item.activityType ?? item.name,
+    factorDefaultScope: item.defaultScope,
+    factorScope: item.scope,
+  });
+
+  if (resolution.scope === 'TRACKED_METRIC') {
+    return 'Tracked Metric / Not included in emissions total by default';
   }
-  return 'Not specified';
+
+  return resolution.scope === 'UNCLASSIFIED'
+    ? 'Not specified'
+    : formatScopeClassification(resolution.scope);
 }
 
 function formatMethodologyDisplay(item: ConversionFactorItem) {
@@ -1586,7 +1589,7 @@ const tdStyle: React.CSSProperties = {
 const factorValueCellStyle: React.CSSProperties = {
   ...tdStyle,
   color: '#065f46',
-  fontSize: 22,
+  fontSize: 18,
   fontWeight: 900,
   letterSpacing: 0,
 };

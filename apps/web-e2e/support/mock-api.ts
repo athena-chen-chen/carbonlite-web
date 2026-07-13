@@ -25,6 +25,8 @@ type TestActivity = {
   recordDate: string;
   quantity: number;
   unit: string;
+  jurisdictionCountry: string;
+  jurisdictionRegion: string;
   sourceType: string;
   sourceReference: string;
   notes: string;
@@ -54,6 +56,7 @@ type TestConversionFactor = {
   notes: string;
   isDefault: boolean;
   isSystemDefault: boolean;
+  defaultScope: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -175,6 +178,8 @@ export async function installCarbonLiteApiMock(
             recordDate: { value: '2026-05-31', confidence: 'high' },
             quantity: { value: 4280, confidence: 'high' },
             unit: { value: 'kWh', confidence: 'high' },
+            jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+            jurisdictionRegion: { value: 'Alberta', confidence: 'high' },
             sourceType: 'AI_EXTRACTION',
             sourceReference: {
               value: 'enmax-electricity.csv',
@@ -296,6 +301,7 @@ export async function installCarbonLiteApiMock(
         notes: String(input.notes ?? ''),
         isDefault: Boolean(input.isDefault),
         isSystemDefault: false,
+        defaultScope: String(input.defaultScope ?? ''),
         createdAt: now,
         updatedAt: now,
       };
@@ -347,6 +353,8 @@ function buildImportedActivity(): TestActivity {
     recordDate: '2026-05-31',
     quantity: 4280,
     unit: 'kWh',
+    jurisdictionCountry: 'Canada',
+    jurisdictionRegion: 'Alberta',
     sourceType: 'AI_EXTRACTION',
     sourceReference: 'enmax-electricity.csv',
     notes: 'Imported from AI extraction.',
@@ -378,6 +386,7 @@ function buildSystemConversionFactor(): TestConversionFactor {
     notes: 'Regression smoke fixture.',
     isDefault: true,
     isSystemDefault: true,
+    defaultScope: 'SCOPE_2',
     createdAt: now,
     updatedAt: now,
   };
@@ -542,6 +551,8 @@ function buildCalculationSummary(
             dateEstimated: false,
             reportingYear: 2026,
             jurisdiction: 'Alberta, Canada',
+            jurisdictionCountry: 'Canada',
+            jurisdictionRegion: 'Alberta',
             activityQuantity: 4280,
             activityUnit: 'kWh',
             factorId: 'factor-electricity-ab-2026',
@@ -556,6 +567,7 @@ function buildCalculationSummary(
             sourceYear: 2026,
             factorVerified: true,
             factorType: 'System',
+            factorDefaultScope: 'SCOPE_2',
             calculatedEmissionsKgCO2e: emissions,
             status: 'CALCULATED',
             sourceType: 'AI_EXTRACTION',

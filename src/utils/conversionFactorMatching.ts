@@ -1,4 +1,5 @@
 import { normalizeUnitKey } from './unitNormalization';
+import { normalizeActivityType as normalizeSharedActivityType } from './activityType';
 
 export type MatchableConversionFactor = {
   id: string;
@@ -27,6 +28,8 @@ export type MatchableConversionFactor = {
   sourceUrl?: string | null;
   sourceYear?: number | null;
   factorYear?: number | null;
+  defaultScope?: string | null;
+  scope?: string | null;
   confidenceLevel?: string | null;
   verified?: boolean | null;
   updatedAt?: string | null;
@@ -200,32 +203,7 @@ function compareNewestDefaultFirst(
 }
 
 export function normalizeActivityType(value?: string | null) {
-  const normalized = String(value ?? '')
-    .trim()
-    .toUpperCase()
-    .replace(/&/g, ' AND ')
-    .replace(/[-/]+/g, ' ')
-    .replace(/\s+/g, '_');
-
-  if (!normalized) return '';
-  if (normalized.includes('NATURAL_GAS')) return 'NATURAL_GAS';
-  if (normalized.includes('DIESEL')) return 'DIESEL';
-  if (normalized.includes('GASOLINE')) return 'GASOLINE';
-  if (normalized.includes('ELECTRICITY')) return 'ELECTRICITY';
-  if (normalized.includes('WATER')) return 'WATER';
-  if (normalized.includes('WASTE')) return 'WASTE';
-  if (
-    normalized.includes('HOTEL') ||
-    normalized.includes('ACCOMMODATION') ||
-    normalized.includes('LODGING')
-  ) {
-    return 'HOTEL';
-  }
-
-  return normalized
-    .replace(/_EMISSION_FACTOR$/, '')
-    .replace(/_COMBUSTION$/, '')
-    .replace(/_USAGE$/, '');
+  return normalizeSharedActivityType(value) ?? '';
 }
 
 export function normalizeUnit(value?: string | null) {

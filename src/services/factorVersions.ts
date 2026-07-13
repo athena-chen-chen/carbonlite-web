@@ -26,6 +26,8 @@ export type FactorVersion = {
   methodology?: string | null;
   verificationStatus?: string | null;
   verified: boolean;
+  defaultScope?: string | null;
+  scope?: string | null;
   reviewedBy?: string | null;
   reviewedAt?: string | null;
   reviewNotes?: string | null;
