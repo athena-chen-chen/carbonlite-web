@@ -71,6 +71,13 @@ export type DeleteActivityDataResponse = void | {
   count?: number;
 };
 
+export type ClearActivityRecordsResponse = {
+  deletedActivityRecords: number;
+  deletedCalculationDetails: number;
+  deletedImportBatches: number;
+  resetReports: number;
+};
+
 const ACTIVITY_DATA_PAGE_SIZE = 100;
 
 export async function createActivityData(data: any) {
@@ -286,5 +293,40 @@ export async function bulkDeleteActivityData(ids: string[]) {
     }
 
     throw new Error('Unable to delete selected records. Please try again.');
+  }
+}
+
+export async function clearActivityRecordsForCurrentCompany() {
+  try {
+    const response = await apiFetch<ClearActivityRecordsResponse>(
+      '/admin/activity-records/clear',
+      {
+        method: 'DELETE',
+      },
+    );
+
+    const summary = {
+      deletedActivityRecords: Number(response?.deletedActivityRecords ?? 0),
+      deletedCalculationDetails: Number(response?.deletedCalculationDetails ?? 0),
+      deletedImportBatches: Number(response?.deletedImportBatches ?? 0),
+      resetReports: Number(response?.resetReports ?? 0),
+    };
+
+    track('ACTIVITY_RECORDS_CLEARED', {
+      source: 'admin_clear',
+      recordCount: summary.deletedActivityRecords,
+    });
+
+    return summary;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      throw new Error('Please log in again before clearing activity records.');
+    }
+
+    if (err instanceof ApiError && err.status === 403) {
+      throw new Error('Only admins and owners can clear activity records.');
+    }
+
+    throw new Error('Unable to clear activity records. Please try again.');
   }
 }

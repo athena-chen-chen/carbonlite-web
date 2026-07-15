@@ -3,6 +3,11 @@ import {
   normalizeActivityType,
   normalizeJurisdictionRegion,
 } from './conversionFactorMatching';
+import {
+  pilotConversionFactors,
+  pilotFactorCoverage,
+  pilotUnsupportedElectricityProvinces,
+} from '../test/pilotEmissionsFixture';
 
 const systemDiesel = {
   id: 'system-diesel',
@@ -222,6 +227,41 @@ describe('findBestConversionFactorMatch', () => {
 
     expect(match).toBeUndefined();
   });
+
+  it.each(pilotFactorCoverage)(
+    'matches current pilot electricity factor coverage for %s',
+    (province) => {
+      const match = findBestConversionFactorMatch({
+        activityType: 'ELECTRICITY',
+        inputUnit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: province,
+        recordYear: 2026,
+        organizationId: 'org-1',
+        factors: pilotConversionFactors,
+      });
+
+      expect(match?.factor.name).toContain(`Electricity - ${province}`);
+      expect(match?.sourceLabel).toBe('System Default Factor');
+    },
+  );
+
+  it.each(pilotUnsupportedElectricityProvinces)(
+    'returns missing factor for unsupported pilot electricity province %s',
+    (province) => {
+      const match = findBestConversionFactorMatch({
+        activityType: 'ELECTRICITY',
+        inputUnit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: province,
+        recordYear: 2026,
+        organizationId: 'org-1',
+        factors: pilotConversionFactors,
+      });
+
+      expect(match).toBeUndefined();
+    },
+  );
 
   it('does not match unsupported units without a factor', () => {
     const match = findBestConversionFactorMatch({

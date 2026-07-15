@@ -1,5 +1,10 @@
 import { apiFetch } from './api';
 import { clampApiPageSize } from '../config/api';
+import {
+  PILOT_SUPPORTED_PROVINCES,
+  getPilotProvinceCode,
+  normalizeProvince,
+} from '../utils/province';
 
 export type ConversionFactorInput = {
   name: string;
@@ -70,6 +75,47 @@ export type ConversionFactorListResponse = {
   totalPages: number;
 };
 
+const PILOT_ELECTRICITY_FACTOR_VALUES: Record<string, number> = {
+  AB: 0.52,
+  BC: 0.012,
+  ON: 0.03,
+};
+
+const PILOT_ELECTRICITY_FACTORS: ConversionFactorItem[] = PILOT_SUPPORTED_PROVINCES.map(
+  (province) => ({
+    id: `pilot-electricity-${province.code.toLowerCase()}-2026`,
+    organizationId: null,
+    name: `Electricity - ${province.name} - 2026`,
+    type: 'EMISSION',
+    activityType: 'ELECTRICITY',
+    jurisdiction: `${province.name}, Canada`,
+    region: province.name,
+    country: 'Canada',
+    inputUnit: 'kWh',
+    unit: 'kWh',
+    factorValue: PILOT_ELECTRICITY_FACTOR_VALUES[province.code],
+    resultUnit: 'kgCO2e',
+    sourceName: 'CarbonLite Pilot Electricity Factors',
+    sourceReference: `CarbonLite pilot ${province.code} electricity factor`,
+    sourceAuthority: 'CarbonLite',
+    sourceDocument: 'CarbonLite Pilot Electricity Factors 2026',
+    sourceYear: 2026,
+    sourceUrl: '/methodology/default-factors',
+    methodology:
+      'Demo factor for current CarbonLite pilot workflows. Replace with verified official provincial electricity factors before formal reporting.',
+    confidenceLevel: 'Demo Factor',
+    verificationStatus: 'Pilot Demo',
+    verified: true,
+    notes: 'Current pilot coverage supports AB, BC, and ON only.',
+    isDefault: true,
+    isSystemDefault: true,
+    defaultScope: 'SCOPE_2',
+    scope: 'SCOPE_2',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }),
+);
+
 export async function createConversionFactor(input: ConversionFactorInput) {
   return apiFetch<ConversionFactorItem>('/conversion-factors', {
     method: 'POST',
@@ -100,8 +146,78 @@ export async function getConversionFactors(params?: {
   if (params?.search) searchParams.set('search', params.search);
 
   const query = searchParams.toString();
-  return apiFetch<ConversionFactorListResponse>(
+  const response = await apiFetch<ConversionFactorListResponse>(
     `/conversion-factors${query ? `?${query}` : ''}`,
+  );
+
+  return withPilotElectricityFactors(response, params);
+}
+
+function withPilotElectricityFactors(
+  response: ConversionFactorListResponse,
+  params?: {
+    activityType?: string;
+    jurisdiction?: string;
+    sourceYear?: number;
+    search?: string;
+  },
+): ConversionFactorListResponse {
+  const items = response.items ?? [];
+  const pilotFactors = getPilotElectricityFactorsForParams(params).filter(
+    (pilotFactor) => !items.some((item) => isSameElectricityRegionFactor(item, pilotFactor)),
+  );
+
+  if (pilotFactors.length === 0) return response;
+
+  const nextItems = [...items, ...pilotFactors];
+
+  return {
+    ...response,
+    items: nextItems,
+    total: Math.max(Number(response.total ?? 0), nextItems.length),
+    totalPages: Math.max(1, Number(response.totalPages ?? 1)),
+  };
+}
+
+function getPilotElectricityFactorsForParams(params?: {
+  activityType?: string;
+  jurisdiction?: string;
+  sourceYear?: number;
+  search?: string;
+}) {
+  const activityType = String(params?.activityType ?? '').trim().toUpperCase();
+  if (activityType && activityType !== 'ELECTRICITY') return [];
+
+  if (params?.sourceYear && params.sourceYear !== 2026) return [];
+
+  const jurisdictionFilter = String(params?.jurisdiction ?? params?.search ?? '').trim();
+  if (!jurisdictionFilter) return PILOT_ELECTRICITY_FACTORS;
+
+  const normalizedFilter = jurisdictionFilter.toLowerCase();
+  const pilotCode = getPilotProvinceCode(jurisdictionFilter);
+
+  return PILOT_ELECTRICITY_FACTORS.filter((factor) => {
+    const factorProvince = normalizeProvince(factor.region ?? factor.jurisdiction);
+    const factorCode = getPilotProvinceCode(factorProvince);
+
+    return (
+      (pilotCode && factorCode === pilotCode) ||
+      String(factorProvince ?? '').toLowerCase().includes(normalizedFilter) ||
+      String(factorCode ?? '').toLowerCase() === normalizedFilter
+    );
+  });
+}
+
+function isSameElectricityRegionFactor(
+  item: ConversionFactorItem,
+  pilotFactor: ConversionFactorItem,
+) {
+  const activityType = String(item.activityType ?? '').trim().toUpperCase();
+  if (activityType !== 'ELECTRICITY') return false;
+
+  return (
+    getPilotProvinceCode(item.region ?? item.jurisdiction) ===
+    getPilotProvinceCode(pilotFactor.region ?? pilotFactor.jurisdiction)
   );
 }
 

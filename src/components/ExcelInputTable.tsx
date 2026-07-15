@@ -22,7 +22,6 @@ import {
 } from '../utils/scopeClassification';
 import {
   ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
-  getProvinceOptionsForActivity,
   normalizeProvince as normalizeCanadianProvince,
 } from '../utils/province';
 import { getFacilities, type FacilityItem } from '../services/facilities';
@@ -955,7 +954,10 @@ function normalizeProvince(value?: string | null) {
 }
 
 function getProvinceOptions(currentProvince?: string | null) {
-  return getProvinceOptionsForActivity(undefined, currentProvince);
+  const normalizedProvince = normalizeProvince(currentProvince);
+  return normalizedProvince && !ELECTRICITY_FACTOR_PROVINCE_OPTIONS.includes(normalizedProvince)
+    ? [...ELECTRICITY_FACTOR_PROVINCE_OPTIONS, normalizedProvince]
+    : ELECTRICITY_FACTOR_PROVINCE_OPTIONS;
 }
 
 function normalizeCountry(value?: string | null) {
@@ -1233,7 +1235,7 @@ const missingElectricityProvinceCount = rows.filter(
               }}
               style={secondaryButtonStyle}
             >
-              View Metrics
+              View Calculation Review
             </button>
             <button
               type="button"

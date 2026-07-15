@@ -42,6 +42,54 @@ const baseFactor = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+const pilotElectricityFactors = [
+  {
+    ...baseFactor,
+    id: 'pilot-electricity-ab-2026',
+    name: 'Electricity - Alberta - 2026',
+    activityType: 'ELECTRICITY',
+    jurisdiction: 'Alberta, Canada',
+    region: 'Alberta',
+    country: 'Canada',
+    unit: 'kWh',
+    factorValue: 0.52,
+    sourceYear: 2026,
+    confidenceLevel: 'Demo Factor',
+    verificationStatus: 'Pilot Demo',
+    verified: true,
+  },
+  {
+    ...baseFactor,
+    id: 'pilot-electricity-bc-2026',
+    name: 'Electricity - British Columbia - 2026',
+    activityType: 'ELECTRICITY',
+    jurisdiction: 'British Columbia, Canada',
+    region: 'British Columbia',
+    country: 'Canada',
+    unit: 'kWh',
+    factorValue: 0.012,
+    sourceYear: 2026,
+    confidenceLevel: 'Demo Factor',
+    verificationStatus: 'Pilot Demo',
+    verified: true,
+  },
+  {
+    ...baseFactor,
+    id: 'pilot-electricity-on-2026',
+    name: 'Electricity - Ontario - 2026',
+    activityType: 'ELECTRICITY',
+    jurisdiction: 'Ontario, Canada',
+    region: 'Ontario',
+    country: 'Canada',
+    unit: 'kWh',
+    factorValue: 0.03,
+    sourceYear: 2026,
+    confidenceLevel: 'Demo Factor',
+    verificationStatus: 'Pilot Demo',
+    verified: true,
+  },
+];
+
 describe('ConversionFactorsPage traceability', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -190,6 +238,99 @@ describe('ConversionFactorsPage traceability', () => {
       'https://example.com/factor-source',
     );
     expect(screen.getByText('Review before reporting.')).toBeInTheDocument();
+  });
+
+  it('hides province-required electricity placeholders from the factor list', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        {
+          ...baseFactor,
+          id: 'factor-electricity-ab',
+          name: 'Electricity - Alberta - 2026',
+          activityType: 'ELECTRICITY',
+          jurisdiction: 'Alberta, Canada',
+          unit: 'kWh',
+          factorValue: 0.12,
+          sourceYear: 2026,
+          sourceAuthority: 'CarbonLite system defaults',
+          verified: true,
+        },
+        {
+          ...baseFactor,
+          id: 'factor-electricity-province-required',
+          name: 'Electricity - Province Required',
+          activityType: 'ELECTRICITY',
+          jurisdiction: 'Province Required',
+          unit: 'kWh',
+          factorValue: 0,
+          sourceAuthority: 'CarbonLite validation',
+          verified: true,
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 2,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('factor-row-factor-electricity-ab')).toBeInTheDocument();
+    expect(screen.getByText('Electricity - Alberta - 2026')).toBeInTheDocument();
+    expect(screen.queryByTestId('factor-row-factor-electricity-province-required')).not.toBeInTheDocument();
+    expect(screen.queryByText('Electricity - Province Required')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Electricity requires province-specific factors/i),
+    ).toHaveTextContent('Current pilot coverage supports AB, BC, and ON.');
+  });
+
+  it('shows the current pilot electricity factors and supports the Electricity filter', async () => {
+    vi.mocked(getConversionFactors)
+      .mockResolvedValueOnce({
+        items: [baseFactor, ...pilotElectricityFactors],
+        page: 1,
+        pageSize: 20,
+        total: 4,
+        totalPages: 1,
+      })
+      .mockResolvedValueOnce({
+        items: pilotElectricityFactors,
+        page: 1,
+        pageSize: 20,
+        total: 3,
+        totalPages: 1,
+      });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    const activityTypeFilter = await screen.findByLabelText('Activity Type');
+    expect(within(activityTypeFilter).getByRole('option', { name: 'ELECTRICITY' })).toBeInTheDocument();
+
+    expect(screen.getByText('Electricity - Alberta - 2026')).toBeInTheDocument();
+    expect(screen.getByText('Electricity - British Columbia - 2026')).toBeInTheDocument();
+    expect(screen.getByText('Electricity - Ontario - 2026')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-value-pilot-electricity-ab-2026')).toHaveTextContent('0.52 kgCO2e/kWh');
+    expect(screen.getByTestId('factor-value-pilot-electricity-bc-2026')).toHaveTextContent('0.012 kgCO2e/kWh');
+    expect(screen.getByTestId('factor-value-pilot-electricity-on-2026')).toHaveTextContent('0.03 kgCO2e/kWh');
+
+    await userEvent.selectOptions(activityTypeFilter, 'ELECTRICITY');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+
+    expect(getConversionFactors).toHaveBeenLastCalledWith({
+      activityType: 'ELECTRICITY',
+      jurisdiction: undefined,
+      sourceYear: undefined,
+    });
+    expect(screen.queryByTestId('factor-row-factor-1')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/factor-row-pilot-electricity-/)).toHaveLength(3);
   });
 
   it('renders consultant-friendly activity, factor, and source labels in the table', async () => {

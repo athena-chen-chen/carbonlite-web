@@ -205,10 +205,10 @@ export default function DataCollectionGuidePage() {
       </section>
 
       <section style={calloutStyle}>
-        <h2 style={sectionTitleStyle}>How this connects to Metrics and Hotspots</h2>
+        <h2 style={sectionTitleStyle}>How this connects to Calculation Review and Reports</h2>
         <p style={bodyTextStyle}>
-          Metrics Summary shows calculated emissions, records requiring review, tracked metrics, and data readiness.
-          Hotspot analysis is based only on calculated records. Records requiring review are excluded until fixed.
+          Calculation Review shows calculated emissions, records requiring review, tracked metrics, and data readiness.
+          Reports turn reviewed calculations into a polished output for sharing.
         </p>
         <div style={actionRowStyle}>
           <Link to="/activity-records" style={primaryLinkStyle}>Review Activity Records</Link>

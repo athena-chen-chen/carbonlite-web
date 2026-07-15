@@ -20,7 +20,7 @@ describe('AnalyticsRouteTracker', () => {
     );
 
     expect(track).toHaveBeenCalledWith('PAGE_VIEW', {
-      pageName: 'Metrics Summary',
+      pageName: 'Calculation Review',
       route: '/metrics-summary',
     });
   });

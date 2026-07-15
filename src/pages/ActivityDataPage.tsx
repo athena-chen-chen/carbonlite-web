@@ -7,8 +7,11 @@ import {
   updateActivityData,
   deleteActivityData,
   bulkDeleteActivityData,
+  clearActivityRecordsForCurrentCompany,
+  type ClearActivityRecordsResponse,
   type DeleteActivityDataResponse,
 } from '../services/activityData';
+import { getCurrentUser, isAdminOrOwnerUser } from '../services/auth';
 import { EditRecordPanel } from '../components/data-records/EditRecordPanel';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { BulkProvinceToolbar } from '../components/shared/BulkProvinceToolbar';
@@ -23,6 +26,7 @@ import {
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 
 const PAGE_SIZE = 15;
+const CLEAR_ACTIVITY_RECORDS_CONFIRMATION = 'CLEAR RECORDS';
 
 const ACTIVITY_TABLE_COLUMNS = [
   { key: 'status', label: 'Status' },
@@ -83,6 +87,9 @@ const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left
 const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
 const [qualityFilter, setQualityFilter] = useState('all');
 const [viewedRecord, setViewedRecord] = useState<ActivityDataItem | null>(null);
+const [isClearRecordsModalOpen, setIsClearRecordsModalOpen] = useState(false);
+const [clearRecordsConfirmation, setClearRecordsConfirmation] = useState('');
+const [isClearingRecords, setIsClearingRecords] = useState(false);
 const [visibleColumns, setVisibleColumns] = useState<Record<ActivityTableColumnKey, boolean>>({
   status: true,
   date: true,
@@ -124,6 +131,7 @@ const selectedMissingProvinceElectricityRows = items.filter(
     String(item.activityType ?? '').toUpperCase() === 'ELECTRICITY' &&
     isMissingRecordValue(item.jurisdictionRegion),
 );
+const canClearActivityRecords = isAdminOrOwnerUser(getCurrentUser());
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
@@ -186,6 +194,15 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
 
   function formatDeletedMessage(deletedCount: number) {
     return `${deletedCount} ${deletedCount === 1 ? 'record' : 'records'} deleted.`;
+  }
+
+  function formatClearRecordsSuccess(summary: ClearActivityRecordsResponse) {
+    return [
+      `${summary.deletedActivityRecords} activity record${summary.deletedActivityRecords === 1 ? '' : 's'}`,
+      `${summary.deletedCalculationDetails} calculated result${summary.deletedCalculationDetails === 1 ? '' : 's'}`,
+      `${summary.deletedImportBatches} import batch${summary.deletedImportBatches === 1 ? '' : 'es'}`,
+      `${summary.resetReports} report draft${summary.resetReports === 1 ? '' : 's'} reset`,
+    ].join(', ') + '.';
   }
 
   useEffect(() => {
@@ -985,6 +1002,120 @@ function cancelEdit() {
   setEditRow({});
   setEditErrors({});
 }
+
+function closeClearRecordsModal() {
+  if (isClearingRecords) return;
+
+  setIsClearRecordsModalOpen(false);
+  setClearRecordsConfirmation('');
+}
+
+async function handleClearActivityRecords() {
+  if (clearRecordsConfirmation !== CLEAR_ACTIVITY_RECORDS_CONFIRMATION) return;
+
+  setIsClearingRecords(true);
+  setError(null);
+  setSuccessMessage(null);
+
+  try {
+    const summary = await clearActivityRecordsForCurrentCompany();
+
+    setItems([]);
+    setSelectedIds([]);
+    setLastDeleted(null);
+    setCurrentPage(1);
+    setIsClearRecordsModalOpen(false);
+    setClearRecordsConfirmation('');
+    setSuccessMessage(`Activity records cleared: ${formatClearRecordsSuccess(summary)}`);
+    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+    window.dispatchEvent(new Event('carbonlite:reports-stale'));
+
+    const refreshedItems = await loadItems({ updateState: false });
+    setItems(refreshedItems);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Unable to clear activity records. Please try again.',
+    );
+  } finally {
+    setIsClearingRecords(false);
+  }
+}
+
+function renderClearRecordsModal() {
+  if (!isClearRecordsModalOpen) return null;
+
+  const canConfirm =
+    clearRecordsConfirmation === CLEAR_ACTIVITY_RECORDS_CONFIRMATION &&
+    !isClearingRecords;
+
+  return createPortal(
+    <div style={detailsModalBackdropStyle} onClick={closeClearRecordsModal}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="clear-activity-records-title"
+        style={clearRecordsModalStyle}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div style={detailsModalHeaderStyle}>
+          <div>
+            <h2 id="clear-activity-records-title" style={detailsModalTitleStyle}>
+              Clear Activity Records
+            </h2>
+            <p style={detailsModalSubtitleStyle}>Advanced company data action</p>
+          </div>
+          <button
+            type="button"
+            onClick={closeClearRecordsModal}
+            aria-label="Close clear activity records confirmation"
+            style={detailsModalCloseButtonStyle}
+            disabled={isClearingRecords}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={clearRecordsModalBodyStyle}>
+          <p style={clearRecordsWarningTextStyle}>
+            This will permanently remove all activity records and related calculated results for the current company. It will not delete users, facilities, emission factors, or settings.
+          </p>
+          <label style={clearRecordsConfirmLabelStyle}>
+            <span>Type CLEAR RECORDS to confirm</span>
+            <input
+              value={clearRecordsConfirmation}
+              onChange={(event) => setClearRecordsConfirmation(event.target.value)}
+              style={clearRecordsInputStyle}
+              autoFocus
+            />
+          </label>
+          <div style={clearRecordsModalActionsStyle}>
+            <button
+              type="button"
+              onClick={closeClearRecordsModal}
+              disabled={isClearingRecords}
+              style={secondaryActionBtnStyle(isClearingRecords)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleClearActivityRecords}
+              disabled={!canConfirm}
+              style={clearRecordsConfirmButtonStyle(canConfirm)}
+            >
+              {isClearingRecords ? 'Clearing...' : 'Clear Activity Records'}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function handleRetryLoad() {
   setError(null);
   setRecordLoadError(null);
@@ -1042,6 +1173,26 @@ function handleRetryLoad() {
     </button>
   </div>
 )}
+      {canClearActivityRecords ? (
+        <section style={advancedActionsStyle} aria-labelledby="advanced-actions-title">
+          <div>
+            <h2 id="advanced-actions-title" style={advancedActionsTitleStyle}>
+              Advanced Actions
+            </h2>
+            <p style={advancedActionsTextStyle}>
+              Admin-only data management for pilot resets in the current company.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsClearRecordsModalOpen(true)}
+            disabled={isClearingRecords}
+            style={clearRecordsButtonStyle}
+          >
+            Clear Activity Records
+          </button>
+        </section>
+      ) : null}
       {/* ⭐ Table */}
       <div style={tableCard}>
         <div style={tableHeaderRowStyle}>
@@ -1200,7 +1351,7 @@ function handleRetryLoad() {
           </div>
         ) : (
           <>
-            <div style={scrollHintStyle}>Scroll horizontally →</div>
+            <div style={scrollHintStyle}>Scroll horizontally to view all columns →</div>
             <div ref={tableScrollRef} style={tableScrollContainerStyle}>
             <table style={activityRecordsTableStyle}>
               <thead>
@@ -1270,6 +1421,7 @@ function handleRetryLoad() {
       </div>
       {renderActionMenuPortal()}
       {renderViewedRecordModal()}
+      {renderClearRecordsModal()}
     </div>
   );
 }
@@ -1952,6 +2104,98 @@ const successStyle: React.CSSProperties = {
   background: '#f0fdf4',
   color: '#166534',
 };
+
+const advancedActionsStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 16,
+  borderRadius: 10,
+  border: '1px solid #fecaca',
+  background: '#fff7f7',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 14,
+  flexWrap: 'wrap',
+};
+
+const advancedActionsTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#7f1d1d',
+  fontSize: 18,
+};
+
+const advancedActionsTextStyle: React.CSSProperties = {
+  margin: '4px 0 0',
+  color: '#7f1d1d',
+  fontSize: 13,
+};
+
+const clearRecordsButtonStyle: React.CSSProperties = {
+  padding: '9px 12px',
+  borderRadius: 8,
+  border: '1px solid #dc2626',
+  background: '#dc2626',
+  color: '#fff',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const clearRecordsModalStyle: React.CSSProperties = {
+  width: 'min(560px, 100%)',
+  borderRadius: 14,
+  border: '1px solid #fecaca',
+  background: '#fff',
+  boxShadow: '0 24px 70px rgba(15, 23, 42, 0.22)',
+};
+
+const clearRecordsModalBodyStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 16,
+  padding: 20,
+};
+
+const clearRecordsWarningTextStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#7f1d1d',
+  lineHeight: 1.55,
+  fontWeight: 700,
+};
+
+const clearRecordsConfirmLabelStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  color: '#334155',
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const clearRecordsInputStyle: React.CSSProperties = {
+  height: 40,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  padding: '0 10px',
+  color: '#0f172a',
+  fontWeight: 700,
+};
+
+const clearRecordsModalActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: 10,
+  flexWrap: 'wrap',
+};
+
+function clearRecordsConfirmButtonStyle(enabled: boolean): React.CSSProperties {
+  return {
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: enabled ? '1px solid #dc2626' : '1px solid #d1d5db',
+    background: enabled ? '#dc2626' : '#f3f4f6',
+    color: enabled ? '#fff' : '#6b7280',
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    fontWeight: 800,
+  };
+}
 
 const emptyStateStyle: React.CSSProperties = {
   marginTop: 16,

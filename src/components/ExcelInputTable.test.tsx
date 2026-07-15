@@ -220,7 +220,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     ).toBeInTheDocument();
   });
 
-  it('uses a province dropdown with Canadian provinces and territories', async () => {
+  it('uses the current pilot province dropdown for manual input', async () => {
     renderTable();
 
     const row = await addEmptyRow();
@@ -231,9 +231,10 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(
       within(provinceSelect).getByRole('option', { name: 'British Columbia' }),
     ).toBeInTheDocument();
-    expect(within(provinceSelect).getByRole('option', { name: 'Quebec' })).toBeInTheDocument();
-    expect(within(provinceSelect).getByRole('option', { name: 'Saskatchewan' })).toBeInTheDocument();
-    expect(within(provinceSelect).getByRole('option', { name: 'Nunavut' })).toBeInTheDocument();
+    expect(within(provinceSelect).getByRole('option', { name: 'Ontario' })).toBeInTheDocument();
+    expect(within(provinceSelect).queryByRole('option', { name: 'Quebec' })).not.toBeInTheDocument();
+    expect(within(provinceSelect).queryByRole('option', { name: 'Saskatchewan' })).not.toBeInTheDocument();
+    expect(within(provinceSelect).queryByRole('option', { name: 'Nunavut' })).not.toBeInTheDocument();
   });
 
   it('shows remove after a type is selected and returns to empty state after removal', async () => {
@@ -330,6 +331,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(row).getByText('Select province to calculate.')).toBeInTheDocument();
     expect(within(row).getByText('Not selected')).toBeInTheDocument();
     expect(within(row).getByText('Province required')).toBeInTheDocument();
+    expect(within(row).getByText('Current pilot coverage supports AB, BC, and ON.')).toBeInTheDocument();
     expect(
       screen.getAllByText(
         'Electricity emissions require a province-specific factor. Please select the province where the electricity was used.',
@@ -369,6 +371,56 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(row).getByText('Electricity - British Columbia')).toBeInTheDocument();
     expect(within(row).getByText('Scope 2')).toBeInTheDocument();
     expect(within(row).getByText('Included')).toBeInTheDocument();
+  });
+
+  it('matches a valid manual electricity row with the Alberta pilot factor', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValueOnce({
+      items: [
+        {
+          id: 'factor-electricity-ab',
+          name: 'Electricity - Alberta',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          unit: 'kWh',
+          factorValue: 0.12,
+          resultUnit: 'kgCO2e',
+          sourceAuthority: 'Demo / Placeholder',
+          sourceYear: 2026,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          isSystemDefault: true,
+          isDefault: true,
+          verified: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      page: 1,
+      pageSize: 100,
+      total: 1,
+      totalPages: 1,
+    });
+    renderTable();
+
+    const row = await addEmptyRow();
+    await userEvent.selectOptions(
+      within(row).getByRole('combobox', { name: /Activity type/i }),
+      'ELECTRICITY',
+    );
+    await userEvent.type(within(row).getByPlaceholderText('Quantity'), '500');
+    await userEvent.selectOptions(
+      within(row).getByRole('combobox', { name: /Province required for electricity records/i }),
+      'Alberta',
+    );
+
+    await waitFor(() => {
+      expect(within(row).getByText('Matched')).toBeInTheDocument();
+    });
+    expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
+    expect(within(row).getByText('Scope 2')).toBeInTheDocument();
+    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).queryByText('Missing Province')).not.toBeInTheDocument();
   });
 
   it('normalizes manually selected electricity province and shows missing factor clearly', async () => {

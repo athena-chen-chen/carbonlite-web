@@ -8,14 +8,12 @@ import {
   loadMetricsOverview,
 } from '../services/metricsOverview';
 import {
-  MetricsSummarySection,
   buildDataReadinessSummary,
   buildCarbonCreditReadinessAssessment,
   buildHotspotAnalysis,
   CARBON_CREDIT_READINESS_DISCLAIMER,
   buildMetricsSummaryTableRows,
   type HotspotAnalysis,
-  type MissingFactorItem,
 } from '../components/MetricsSummarySection';
 import {
   FORMAL_REPORT_METHODOLOGY,
@@ -100,7 +98,7 @@ const scopeLabelByName = Object.fromEntries(
 const REPORT_SECTION_DEFAULTS = {
   reportScope: true,
   executiveSummary: true,
-  emissionsHotspots: true,
+  emissionsHotspots: false,
   scopeBreakdown: true,
   calculationQuality: true,
   calculationSummary: false,
@@ -109,9 +107,9 @@ const REPORT_SECTION_DEFAULTS = {
   calculationTraceability: false,
   sourceEvidence: false,
   recordsRequiringReview: false,
-  dataQualityNotes: false,
+  dataQualityNotes: true,
   carbonCreditReadiness: false,
-  methodologyDisclaimer: false,
+  methodologyDisclaimer: true,
   activityRecords: false,
 } as const;
 
@@ -152,7 +150,6 @@ export default function ReportingPage() {
       invalidData: 0,
     },
   });
-  const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 const [reloadKey, setReloadKey] = useState(0);
@@ -213,7 +210,6 @@ const trackedReportViewRef = useRef(false);
         missingFactorRecords: overview.missingFactorRecords,
         skippedReasons: overview.skippedReasons,
       });
-      setMissingFactors(overview.missingFactors);
       track('REPORT_GENERATED', {
         reportType: 'emissions',
         reportScope,
@@ -1262,10 +1258,10 @@ function setAllReportSections(expanded: boolean) {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1>Traceable Emissions Reports</h1>
+      <h1>Reports</h1>
 
       <p style={{ color: '#666', marginBottom: 20 }}>
-        Reports include calculation traceability, factor sources, source evidence, data quality notes, and records requiring review so emissions results can be explained and validated.
+        Polished reporting output for sharing emissions totals, scope summaries, included and excluded record counts, methodology notes, factor source notes, and disclaimers.
       </p>
 
       <div style={sectionControlsStyle}>
@@ -1383,22 +1379,7 @@ function setAllReportSections(expanded: boolean) {
       ) : null}
 
       {loading ? (
-        <>
-          <div style={loadingNoticeStyle}>Loading summary...</div>
-          <MetricsSummarySection
-            usageTotals={usageTotals}
-            totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
-            countSummary={reportCountSummary}
-            missingFactors={missingFactors}
-            calculationDetails={calculationDetails}
-            emptyMessage={
-              activities.length === 0 && countSummary.totalRecordsFound > 0
-                ? 'No records found for selected period.'
-                : 'No calculated metrics available.'
-            }
-            isLoading={!summary}
-          />
-        </>
+        <div style={loadingNoticeStyle}>Generating report output...</div>
       ) : hasReportOutput ? (
         <>
           {hasRecordsRequiringReviewOnly ? (
@@ -1407,19 +1388,6 @@ function setAllReportSections(expanded: boolean) {
               calculation issues and skipped records below.
             </div>
           ) : null}
-
-          <MetricsSummarySection
-            usageTotals={usageTotals}
-            totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
-            countSummary={countSummary}
-            missingFactors={missingFactors}
-            calculationDetails={calculationDetails}
-            emptyMessage={
-              activities.length === 0 && countSummary.totalRecordsFound > 0
-                ? 'No records found for selected period.'
-                : 'No calculated metrics available.'
-            }
-          />
 
           <FormalReportPreview
             organizationName={organizationName}

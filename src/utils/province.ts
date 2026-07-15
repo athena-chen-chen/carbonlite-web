@@ -17,11 +17,28 @@ export const CANADIAN_PROVINCES = [
 ] as const;
 
 export const CANADIAN_PROVINCE_OPTIONS = CANADIAN_PROVINCES.map((province) => province.value);
-export const ELECTRICITY_FACTOR_PROVINCE_OPTIONS = [
-  'Alberta',
-  'British Columbia',
-  'Ontario',
-];
+
+export const PILOT_SUPPORTED_PROVINCES = [
+  { code: 'AB', name: 'Alberta' },
+  { code: 'BC', name: 'British Columbia' },
+  { code: 'ON', name: 'Ontario' },
+] as const;
+
+export const PILOT_SUPPORTED_PROVINCE_NAMES = PILOT_SUPPORTED_PROVINCES.map(
+  (province) => province.name,
+);
+
+export const PILOT_SUPPORTED_PROVINCE_CODES = PILOT_SUPPORTED_PROVINCES.map(
+  (province) => province.code,
+);
+
+export const PILOT_PROVINCE_COVERAGE_HELPER_TEXT =
+  'Current pilot coverage supports AB, BC, and ON.';
+
+export const UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE =
+  'Electricity factor not available for this province in the current pilot.';
+
+export const ELECTRICITY_FACTOR_PROVINCE_OPTIONS = PILOT_SUPPORTED_PROVINCE_NAMES;
 
 export function getProvinceOptionsForActivity(
   activityType?: string | null,
@@ -49,6 +66,19 @@ export function normalizeProvince(value?: string | null): string | null {
 
   const alias = PROVINCE_ALIAS_MAP[normalized.toLowerCase()];
   return alias ?? normalized;
+}
+
+export function getPilotProvinceCode(value?: string | null): string | null {
+  const normalizedProvince = normalizeProvince(value);
+  const match = PILOT_SUPPORTED_PROVINCES.find(
+    (province) => province.name === normalizedProvince,
+  );
+
+  return match?.code ?? null;
+}
+
+export function isSupportedPilotProvince(value?: string | null): boolean {
+  return Boolean(getPilotProvinceCode(value));
 }
 
 export function getProvinceLabel(value?: string | null): string {

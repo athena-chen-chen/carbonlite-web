@@ -1,6 +1,7 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
   bulkDeleteActivityData,
+  clearActivityRecordsForCurrentCompany,
   createActivityData,
   deleteActivityData,
   getAllActivityData,
@@ -212,6 +213,57 @@ describe('bulkDeleteActivityData', () => {
 
     await expect(bulkDeleteActivityData(['activity-1'])).rejects.toThrow(
       'Activity records were not deleted. Please refresh and try again.',
+    );
+  });
+});
+
+describe('clearActivityRecordsForCurrentCompany', () => {
+  it('calls DELETE /admin/activity-records/clear with Authorization header', async () => {
+    localStorage.setItem('accessToken', 'admin-token');
+    const summary = {
+      deletedActivityRecords: 4,
+      deletedCalculationDetails: 4,
+      deletedImportBatches: 1,
+      resetReports: 2,
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(summary), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(clearActivityRecordsForCurrentCompany()).resolves.toEqual(summary);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/admin/activity-records/clear`,
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer admin-token',
+        }),
+      }),
+    );
+  });
+
+  it('shows login-friendly error when unauthenticated', async () => {
+    window.history.pushState({}, '', '/login');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('unauthorized', { status: 401 }),
+    );
+
+    await expect(clearActivityRecordsForCurrentCompany()).rejects.toThrow(
+      'Please log in again before clearing activity records.',
+    );
+  });
+
+  it('shows role-friendly error when user is not admin or owner', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('forbidden', { status: 403 }),
+    );
+
+    await expect(clearActivityRecordsForCurrentCompany()).rejects.toThrow(
+      'Only admins and owners can clear activity records.',
     );
   });
 });

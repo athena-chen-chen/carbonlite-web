@@ -6,7 +6,7 @@ authenticated workflows with a deterministic, stateful API mock:
 1. Upload a document.
 2. Extract and review its activity row.
 3. Import the row exactly once.
-4. Generate and verify the Metrics Summary.
+4. Generate and verify Calculation Review.
 5. Generate the Reports view.
 6. Export the report as PDF.
 7. Retry a failed extraction.

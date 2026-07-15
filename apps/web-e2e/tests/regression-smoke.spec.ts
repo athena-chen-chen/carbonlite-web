@@ -198,7 +198,7 @@ test('@smoke data records Columns menu opens and toggles columns', async ({ page
   await expect(page.getByRole('heading', { name: 'Activity Records' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Source Reference' })).toBeVisible();
 
-  await expect(page.getByText('Scroll horizontally →')).toBeVisible();
+  await expect(page.getByText('Scroll horizontally to view all columns →')).toBeVisible();
   await expect(page.getByRole('button', { name: /Scroll horizontally/i })).toHaveCount(0);
 
   const moreColumnsButton = page.getByRole('button', { name: 'Columns' });

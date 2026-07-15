@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import {
   CANADIAN_PROVINCE_OPTIONS,
+  PILOT_PROVINCE_COVERAGE_HELPER_TEXT,
   normalizeProvince as normalizeProvinceValue,
 } from '../../utils/province';
 
@@ -36,7 +37,7 @@ export function ProvinceSelect({
   disabled = false,
   label = 'Province',
   showHelperText = false,
-  helperText = 'Required for electricity.',
+  helperText = PILOT_PROVINCE_COVERAGE_HELPER_TEXT,
   error,
   placeholder = 'Select province',
   ariaLabel,
@@ -73,7 +74,7 @@ export function ProvinceSelect({
         <span
           id={descriptionId}
           style={helperTextStyle}
-          title="Province is required because electricity factors vary by province."
+          title={helperText}
         >
           {helperText}
         </span>

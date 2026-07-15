@@ -113,7 +113,7 @@ export default function CarbonLiteLandingPage() {
     {
       name: 'Free pilot',
       price: 'Pilot access',
-      text: 'Test data upload, record review, metrics summary, hotspot analysis, and traceability workflows.',
+      text: 'Test data upload, record review, calculation review, hotspot analysis, and traceability workflows.',
     },
     {
       name: 'Report-ready workflows',

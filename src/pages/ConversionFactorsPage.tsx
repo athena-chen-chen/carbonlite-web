@@ -16,6 +16,7 @@ import {
 } from '../services/auth';
 import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
 import { getActivityTypeLabel } from '../utils/activityType';
+import { PILOT_PROVINCE_COVERAGE_HELPER_TEXT } from '../utils/province';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -93,9 +94,7 @@ function isProvinceRequiredJurisdiction(value?: string | null) {
 function isPlaceholderElectricityFactor(item: ConversionFactorItem) {
   return (
     isElectricityFactor(item) &&
-    (isProvinceRequiredJurisdiction(getFactorJurisdiction(item)) ||
-      String(item.confidenceLevel ?? '').toLowerCase().includes('placeholder') ||
-      (!item.verified && item.verificationStatus === 'Internal Review Required'))
+    isProvinceRequiredJurisdiction(getFactorJurisdiction(item))
   );
 }
 
@@ -153,7 +152,11 @@ function formatFactorNameDisplay(item: ConversionFactorItem) {
     const jurisdiction = getFactorJurisdiction(item);
     if (isProvinceRequiredJurisdiction(jurisdiction)) return 'Electricity - Province Required';
     const region = jurisdiction.split(',')[0]?.trim();
-    if (region) return `Electricity - ${region}`;
+    if (region) {
+      return item.sourceYear
+        ? `Electricity - ${region} - ${item.sourceYear}`
+        : `Electricity - ${region}`;
+    }
   }
 
   const activityTypeLabel = item.activityType ? formatActivityTypeDisplay(item.activityType) : '';
@@ -344,25 +347,35 @@ export function ConversionFactorsPage() {
     };
   }, [openActionMenuId]);
 
-  const defaultCount = useMemo(
-    () => items.filter((item) => item.isSystemDefault).length,
+  const visibleFactorItems = useMemo(
+    () => items.filter((item) => !isPlaceholderElectricityFactor(item)),
     [items],
   );
 
+  const defaultCount = useMemo(
+    () => visibleFactorItems.filter((item) => item.isSystemDefault).length,
+    [visibleFactorItems],
+  );
+
   const emissionCount = useMemo(
-    () => items.filter((item) => item.type === 'EMISSION').length,
-    [items],
+    () => visibleFactorItems.filter((item) => item.type === 'EMISSION').length,
+    [visibleFactorItems],
   );
 
   const activityTypesCovered = useMemo(() => {
     const types = new Set(
-      items
+      visibleFactorItems
         .map((item) => item.activityType)
         .filter((value): value is string => Boolean(value)),
     );
 
     return types.size;
-  }, [items]);
+  }, [visibleFactorItems]);
+
+  const hiddenPlaceholderCount = useMemo(
+    () => items.length - visibleFactorItems.length,
+    [items, visibleFactorItems],
+  );
 
   const displayedItems = useMemo(() => {
     const minValue = minFactorValueFilter.trim() === ''
@@ -372,7 +385,7 @@ export function ConversionFactorsPage() {
       ? null
       : Number(maxFactorValueFilter);
 
-    const filtered = items.filter((item) => {
+    const filtered = visibleFactorItems.filter((item) => {
       const value = Number(item.factorValue);
 
       if (!Number.isFinite(value)) {
@@ -402,7 +415,7 @@ export function ConversionFactorsPage() {
 
       return factorValueSort === 'asc' ? aValue - bValue : bValue - aValue;
     });
-  }, [factorValueSort, items, maxFactorValueFilter, minFactorValueFilter]);
+  }, [factorValueSort, maxFactorValueFilter, minFactorValueFilter, visibleFactorItems]);
 
   function updateField<K extends keyof ConversionFactorInput>(
     key: K,
@@ -651,7 +664,7 @@ export function ConversionFactorsPage() {
         <SummaryCard
           icon="🧮"
           title="Total Factors"
-          value={String(items.length)}
+          value={String(visibleFactorItems.length)}
           subtitle="Available conversion rules"
         />
 
@@ -682,6 +695,12 @@ export function ConversionFactorsPage() {
 
       <div className="no-print" style={pilotDisclaimerStyle}>
         System default factors are provided for pilot workflow validation. Users should verify factors against applicable reporting requirements before relying on final reports.
+      </div>
+      <div className="no-print" style={pilotCoverageNoteStyle}>
+        Electricity requires province-specific factors. {PILOT_PROVINCE_COVERAGE_HELPER_TEXT}
+        {hiddenPlaceholderCount > 0
+          ? ' Province-required validation placeholders are hidden from the factor list.'
+          : ''}
       </div>
 
       {!showFactorForm ? (
@@ -1479,6 +1498,18 @@ const pilotDisclaimerStyle: React.CSSProperties = {
   background: '#fffbeb',
   color: '#92400e',
   fontWeight: 600,
+};
+
+const pilotCoverageNoteStyle: React.CSSProperties = {
+  marginTop: -12,
+  marginBottom: 20,
+  padding: 10,
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1e40af',
+  fontSize: 13,
+  fontWeight: 700,
 };
 
 const inputStyle: React.CSSProperties = {

@@ -26,7 +26,6 @@ import {
 } from '../utils/activityType';
 import {
   normalizeJurisdictionCountry,
-  normalizeJurisdictionRegion,
 } from '../utils/conversionFactorMatching';
 import { buildApiUrl } from '../config/api';
 import { ApiError } from '../services/api';
@@ -38,6 +37,11 @@ import {
 } from '../demo/demoData';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import { ExcelInputTable } from '../components/ExcelInputTable';
+import {
+  UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE,
+  isSupportedPilotProvince,
+  normalizeProvince,
+} from '../utils/province';
 
 
 type DocumentItem = {
@@ -230,15 +234,22 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
     }
 
     const normalizedActivityType = normalizeCanonicalActivityType(row.activityType.value);
-    if (
-      normalizedActivityType === 'ELECTRICITY' &&
-      !normalizePreviewProvince(row.jurisdictionRegion.value)
-    ) {
-      issues.push({
-        rowIndex: index,
-        field: 'jurisdictionRegion',
-        message: 'Missing Province: Electricity records require province before factor matching.',
-      });
+    if (normalizedActivityType === 'ELECTRICITY') {
+      const normalizedProvince = normalizePreviewProvince(row.jurisdictionRegion.value);
+
+      if (!normalizedProvince) {
+        issues.push({
+          rowIndex: index,
+          field: 'jurisdictionRegion',
+          message: 'Missing Province: Electricity records require province before factor matching.',
+        });
+      } else if (!isSupportedPilotProvince(normalizedProvince)) {
+        issues.push({
+          rowIndex: index,
+          field: 'jurisdictionRegion',
+          message: UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE,
+        });
+      }
     }
   });
 
@@ -383,7 +394,7 @@ function normalizePreviewCountry(value: RawExtractionField) {
 }
 
 function normalizePreviewProvince(value: RawExtractionField) {
-  return normalizeJurisdictionRegion(formatOptionalExtractionField(value)) ?? '';
+  return normalizeProvince(formatOptionalExtractionField(value)) ?? '';
 }
 
 function normalizePreviewActivityType(value: RawExtractionField) {
@@ -1047,7 +1058,7 @@ ${sampleRows.join('\n')}`,
   function handleManualOrSpreadsheetSave() {
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
-    setSuccessMessage('Activity data saved. Review saved records in Data Records, Metrics, or Reports.');
+    setSuccessMessage('Activity data saved. Review saved records in Data Records, Calculation Review, or Reports.');
   }
 
   async function uploadSelectedFile(options?: { extractAfterUpload?: boolean }) {
@@ -1744,17 +1755,17 @@ ${sampleRows.join('\n')}`,
         }
 
         setSuccessMessage(
-          `Imported ${importedCount} activity record(s). Generated emissions metrics. Redirecting to Metrics Summary...`,
+          `Imported ${importedCount} activity record(s). Generated emissions metrics. Redirecting to Calculation Review...`,
         );
         navigate('/metrics-summary');
       } catch {
         setError(
-          'Imported activity records, but emissions metrics could not be generated automatically. Metrics Summary will retry automatically, or you can use Refresh.',
+          'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
         );
         navigate('/metrics-summary', {
           state: {
             metricsError:
-              'Imported activity records, but emissions metrics could not be generated automatically. Metrics Summary will retry automatically, or you can use Refresh.',
+              'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
           },
         });
       } finally {
@@ -1783,8 +1794,60 @@ ${sampleRows.join('\n')}`,
     )?.message;
   }
 
+  function getFieldValidationDisplayMessage(
+    field: ImportValidationField,
+    message?: string,
+  ) {
+    if (!message) return '';
+    if (field === 'jurisdictionRegion' && isUnsupportedPilotProvinceIssue(message)) {
+      return 'Missing Factor';
+    }
+    if (field === 'jurisdictionRegion') return 'Province required';
+
+    return message;
+  }
+
+  function getImportValidationIssueLabel(issue: ImportValidationIssue) {
+    if (
+      issue.field === 'jurisdictionRegion' &&
+      isUnsupportedPilotProvinceIssue(issue.message)
+    ) {
+      return 'Missing Factor';
+    }
+    if (issue.field === 'jurisdictionRegion') return 'Missing Province';
+    if (issue.field === 'unit') return 'Unit Mismatch';
+    if (issue.field === 'quantity') return 'Invalid Amount';
+    if (issue.field === 'activityType') return 'Missing Activity Type';
+    if (issue.field === 'recordDate') return 'Missing Date';
+
+    return 'Needs Review';
+  }
+
+  function getImportValidationIssueDetail(issue: ImportValidationIssue) {
+    if (
+      issue.field === 'jurisdictionRegion' &&
+      isUnsupportedPilotProvinceIssue(issue.message)
+    ) {
+      return UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE;
+    }
+    if (issue.field === 'jurisdictionRegion') {
+      return 'Electricity records require province before factor matching.';
+    }
+
+    return issue.message;
+  }
+
   function getRowStatusLabel(rowIndex: number) {
     const issues = getRowValidationIssues(rowIndex);
+    if (
+      issues.some(
+        (issue) =>
+          issue.field === 'jurisdictionRegion' &&
+          isUnsupportedPilotProvinceIssue(issue.message),
+      )
+    ) {
+      return 'Missing Factor';
+    }
     if (issues.some((issue) => issue.field === 'jurisdictionRegion')) return 'Missing Province';
     if (issues.some((issue) => issue.field === 'unit')) return 'Unit Mismatch';
     return issues.length > 0 ? 'Needs Review' : 'Ready';
@@ -1792,11 +1855,34 @@ ${sampleRows.join('\n')}`,
 
   function getRowIssueText(rowIndex: number) {
     const issues = getRowValidationIssues(rowIndex);
-    return issues.length ? issues.map((issue) => issue.message).join(' ') : '-';
+    return issues.length
+      ? Array.from(new Set(issues.map(getImportValidationIssueLabel))).join(', ')
+      : '-';
+  }
+
+  function getRowIssueTitle(rowIndex: number) {
+    const issues = getRowValidationIssues(rowIndex);
+    return issues.length
+      ? issues.map(getImportValidationIssueDetail).join(' ')
+      : undefined;
+  }
+
+  function getRowReportTreatment(rowIndex: number, item: EditableParsedActivity) {
+    const issues = getRowValidationIssues(rowIndex);
+    if (issues.length > 0) return 'Excluded';
+
+    const activityType = normalizeCanonicalActivityType(item.activityType.value);
+    if (activityType === 'WATER' || activityType === 'WATER_USAGE') return 'Tracked Only';
+
+    return 'Included';
   }
 
   function parsedActivityHasValidationIssues(item: EditableParsedActivity) {
     return getImportValidationIssues([item]).length > 0;
+  }
+
+  function isUnsupportedPilotProvinceIssue(message?: string) {
+    return message === UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE;
   }
 
   function getPreviewDatePeriod(item: EditableParsedActivity) {
@@ -1978,7 +2064,7 @@ ${sampleRows.join('\n')}`,
       </p>
 
       <div style={stepBarStyle}>
-        Input Data → Input Review → Save Records → Data Records → Metrics → Reports
+        Input Data → Input Review → Save Records → Data Records → Calculation Review → Reports
       </div>
 
       <div style={methodTabsStyle} role="tablist" aria-label="Input data methods">
@@ -2370,7 +2456,7 @@ ${sampleRows.join('\n')}`,
           {showPostImportLinks ? (
             <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
               <button type="button" onClick={() => navigate('/metrics-summary')}>
-                View Metrics
+                View Calculation Review
               </button>
 
               <button type="button" onClick={() => navigate('/reports')}>
@@ -2443,15 +2529,34 @@ ${sampleRows.join('\n')}`,
                 <strong>⚠ Please correct the following issues:</strong>
                 <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
                   {importValidationIssues.map((issue) => (
-                    <li key={`${issue.rowIndex}-${issue.field}`}>
-                      Row {issue.rowIndex + 1}: {issue.message}
+                    <li
+                      key={`${issue.rowIndex}-${issue.field}`}
+                      title={getImportValidationIssueDetail(issue)}
+                    >
+                      Row {issue.rowIndex + 1}: {getImportValidationIssueLabel(issue)}
                     </li>
                   ))}
                 </ul>
               </div>
             ) : null}
+            <div style={previewScrollHintStyle}>Scroll horizontally to view all columns →</div>
             <div style={previewTableWrapStyle}>
             <table style={previewTableStyle}>
+              <colgroup>
+                <col style={previewSelectColStyle} />
+                <col style={previewStatusColStyle} />
+                <col style={previewActivityTypeColStyle} />
+                <col style={previewDateColStyle} />
+                <col style={previewQuantityColStyle} />
+                <col style={previewUnitColStyle} />
+                <col style={previewCountryColStyle} />
+                <col style={previewProvinceColStyle} />
+                <col style={previewSourceReferenceColStyle} />
+                <col style={previewIssueColStyle} />
+                <col style={previewTreatmentColStyle} />
+                <col style={previewNotesColStyle} />
+                <col style={previewActionsColStyle} />
+              </colgroup>
               <thead>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>Select</th>
@@ -2464,6 +2569,7 @@ ${sampleRows.join('\n')}`,
                   <th style={thStyle}>Province</th>
                   <th style={thStyle}>Source Reference</th>
                   <th style={thStyle}>Issue</th>
+                  <th style={thStyle}>Report Treatment</th>
                   <th style={thStyle}>Notes</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
@@ -2477,7 +2583,9 @@ ${sampleRows.join('\n')}`,
                   const provinceError = getFieldValidationMessage(index, 'jurisdictionRegion');
                   const rowStatusLabel = getRowStatusLabel(index);
                   const rowIssueText = getRowIssueText(index);
+                  const rowIssueTitle = getRowIssueTitle(index);
                   const rowHasValidationIssues = getRowValidationIssues(index).length > 0;
+                  const rowReportTreatment = getRowReportTreatment(index, item);
 
                   return (
                   <tr key={`parsed-${index}`}>
@@ -2541,6 +2649,7 @@ ${sampleRows.join('\n')}`,
                         }
                         style={{
                           width: '100%',
+                          boxSizing: 'border-box',
                           padding: 8,
                           borderRadius: 6,
                           ...getConfidenceStyle(item.recordDate.confidence),
@@ -2592,6 +2701,7 @@ ${sampleRows.join('\n')}`,
                         }
                         style={{
                           width: '100%',
+                          boxSizing: 'border-box',
                           padding: 8,
                           borderRadius: 6,
                           ...getConfidenceStyle(item.quantity.confidence),
@@ -2614,6 +2724,7 @@ ${sampleRows.join('\n')}`,
                         }
                         style={{
                           width: '100%',
+                          boxSizing: 'border-box',
                           padding: 8,
                           borderRadius: 6,
                           ...getConfidenceStyle(item.unit.confidence),
@@ -2662,7 +2773,9 @@ ${sampleRows.join('\n')}`,
                         )}
                       />
                       {provinceError ? (
-                        <div style={fieldErrorStyle}>{provinceError}</div>
+                        <div style={fieldErrorStyle} title={getRowIssueTitle(index)}>
+                          {getFieldValidationDisplayMessage('jurisdictionRegion', provinceError)}
+                        </div>
                       ) : null}
                     </td>
 
@@ -2679,12 +2792,28 @@ ${sampleRows.join('\n')}`,
                           item.sourceReference.value,
                           { neutralWhenPresent: true },
                         )}
+                        title={item.sourceReference.value ?? item.documentFileName}
                       />
                     </td>
 
                     <td style={tdStyle}>
-                      <span style={rowIssueText === '-' ? mutedIssueStyle : issueTextStyle}>
+                      <span
+                        style={rowIssueText === '-' ? mutedIssueStyle : issueTextStyle}
+                        title={rowIssueTitle}
+                      >
                         {rowIssueText}
+                      </span>
+                    </td>
+
+                    <td style={tdStyle}>
+                      <span
+                        style={
+                          rowReportTreatment === 'Included'
+                            ? includedTreatmentStyle
+                            : excludedTreatmentStyle
+                        }
+                      >
+                        {rowReportTreatment}
                       </span>
                     </td>
 
@@ -2699,6 +2828,7 @@ ${sampleRows.join('\n')}`,
                         style={optionalInputStyle(item.notes.confidence, item.notes.value, {
                           neutralWhenPresent: true,
                         })}
+                        title={item.notes.value ?? ''}
                       />
                     </td>
 
@@ -2895,14 +3025,50 @@ const sampleCsvRowStyle: React.CSSProperties = {
 };
 
 const issueTextStyle: React.CSSProperties = {
+  display: '-webkit-box',
+  maxWidth: '100%',
+  overflow: 'hidden',
   color: '#92400e',
   fontSize: 12,
   lineHeight: 1.4,
+  fontWeight: 700,
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 2,
+  overflowWrap: 'anywhere',
 };
 
 const mutedIssueStyle: React.CSSProperties = {
+  display: 'block',
+  maxWidth: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
   color: '#94a3b8',
   fontSize: 12,
+};
+
+const includedTreatmentStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  whiteSpace: 'nowrap',
+  borderRadius: 999,
+  padding: '3px 8px',
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#047857',
+  background: '#d1fae5',
+};
+
+const excludedTreatmentStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  whiteSpace: 'nowrap',
+  borderRadius: 999,
+  padding: '3px 8px',
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#b91c1c',
+  background: '#fee2e2',
 };
 
 function linkButtonStyle(disabled: boolean): React.CSSProperties {
@@ -3028,40 +3194,74 @@ const previewHeaderStyle: React.CSSProperties = {
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
-  padding: 12,
+  padding: '10px 8px',
   borderBottom: '1px solid #ddd',
+  boxSizing: 'border-box',
+  color: '#475569',
+  fontSize: 12,
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: 12,
+  padding: 8,
   borderBottom: '1px solid #eee',
+  boxSizing: 'border-box',
   verticalAlign: 'top',
+  minWidth: 0,
+  maxWidth: 0,
 };
 
 const previewTableWrapStyle: React.CSSProperties = {
   overflowX: 'auto',
+  width: '100%',
+  maxWidth: '100%',
+  WebkitOverflowScrolling: 'touch',
+};
+
+const previewScrollHintStyle: React.CSSProperties = {
+  margin: '0 16px 6px',
+  color: '#94a3b8',
+  fontSize: 12,
+  fontWeight: 600,
+  textAlign: 'right',
+  cursor: 'default',
+  userSelect: 'none',
 };
 
 const previewTableStyle: React.CSSProperties = {
   width: '100%',
-  minWidth: 980,
+  minWidth: 1800,
   borderCollapse: 'collapse',
+  tableLayout: 'fixed',
 };
 
 const activityTypeThStyle: React.CSSProperties = {
   ...thStyle,
-  minWidth: 170,
 };
 
 const activityTypeTdStyle: React.CSSProperties = {
   ...tdStyle,
-  minWidth: 170,
 };
+
+const previewSelectColStyle: React.CSSProperties = { width: 64 };
+const previewStatusColStyle: React.CSSProperties = { width: 132 };
+const previewActivityTypeColStyle: React.CSSProperties = { width: 180 };
+const previewDateColStyle: React.CSSProperties = { width: 156 };
+const previewQuantityColStyle: React.CSSProperties = { width: 112 };
+const previewUnitColStyle: React.CSSProperties = { width: 112 };
+const previewCountryColStyle: React.CSSProperties = { width: 124 };
+const previewProvinceColStyle: React.CSSProperties = { width: 152 };
+const previewSourceReferenceColStyle: React.CSSProperties = { width: 220 };
+const previewIssueColStyle: React.CSSProperties = { width: 180 };
+const previewTreatmentColStyle: React.CSSProperties = { width: 140 };
+const previewNotesColStyle: React.CSSProperties = { width: 220 };
+const previewActionsColStyle: React.CSSProperties = { width: 108 };
 
 function activityTypeSelectStyle(confidence: string): React.CSSProperties {
   return {
     width: '100%',
-    minWidth: 150,
+    boxSizing: 'border-box',
     padding: '8px 30px 8px 8px',
     borderRadius: 6,
     ...getPreviewConfidenceStyle(confidence),
@@ -3109,6 +3309,10 @@ const fieldErrorStyle: React.CSSProperties = {
   color: '#b91c1c',
   fontSize: 12,
   fontWeight: 600,
+  lineHeight: 1.25,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 };
 
 const validationSummaryStyle: React.CSSProperties = {
@@ -3174,6 +3378,7 @@ function optionalInputStyle(
 
   return {
     width: '100%',
+    boxSizing: 'border-box',
     padding: 8,
     borderRadius: 6,
     ...(isEmpty

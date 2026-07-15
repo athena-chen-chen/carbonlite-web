@@ -9,7 +9,7 @@ const navItems = [
   { to: '/data-collection-guide', label: 'Data Guide' },
   { to: '/data-records', label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
   { to: '/conversion-factors', label: 'Factors' },
-  { to: '/metrics-summary', label: 'Metrics' },
+  { to: '/metrics-summary', label: 'Calculation Review' },
   { to: '/reports', label: 'Reports' },
 ] as const;
 

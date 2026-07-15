@@ -74,7 +74,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
     await page.reload();
     await openPersistedPreview();
 
-    await page.getByRole('link', { name: 'Metrics Summary', exact: true }).click();
+    await page.getByRole('link', { name: 'Calculation Review', exact: true }).click();
     await expect(page).toHaveURL(/\/metrics-summary$/);
     await page.getByRole('link', { name: 'Upload', exact: true }).click();
     await openPersistedPreview();

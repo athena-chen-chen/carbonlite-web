@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import {
   bulkDeleteActivityData,
+  clearActivityRecordsForCurrentCompany,
   deleteActivityData,
   getAllActivityData,
   getActivityDataList,
@@ -15,6 +16,7 @@ vi.mock('../components/ExcelInputTable', () => ({
 
 vi.mock('../services/activityData', () => ({
   bulkDeleteActivityData: vi.fn(),
+  clearActivityRecordsForCurrentCompany: vi.fn(),
   createActivityData: vi.fn(),
   deleteActivityData: vi.fn(),
   getAllActivityData: vi.fn(),
@@ -77,6 +79,12 @@ describe('ActivityDataPage delete flows', () => {
     mockActivityRecords(records);
     vi.mocked(getAllActivityData).mockResolvedValue(records);
     vi.mocked(bulkDeleteActivityData).mockResolvedValue({ deletedCount: 1 });
+    vi.mocked(clearActivityRecordsForCurrentCompany).mockResolvedValue({
+      deletedActivityRecords: 2,
+      deletedCalculationDetails: 2,
+      deletedImportBatches: 1,
+      resetReports: 1,
+    });
     vi.mocked(deleteActivityData).mockResolvedValue({ deletedCount: 1 });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
@@ -178,6 +186,56 @@ describe('ActivityDataPage delete flows', () => {
       expect(getAllActivityData).toHaveBeenCalledTimes(2);
     });
     expect(await screen.findByText('DIESEL')).toBeInTheDocument();
+  });
+
+  it('requires admins to type CLEAR RECORDS before confirming activity record clear', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN' }),
+    );
+    mockInitialAndRefreshedRecords([]);
+    renderPage();
+
+    await screen.findByText('DIESEL');
+    await userEvent.click(
+      screen.getByRole('button', { name: /^Clear Activity Records$/i }),
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Clear Activity Records' });
+    const confirmButton = within(dialog).getByRole('button', {
+      name: /^Clear Activity Records$/i,
+    });
+
+    expect(
+      within(dialog).getByText(
+        'This will permanently remove all activity records and related calculated results for the current company. It will not delete users, facilities, emission factors, or settings.',
+      ),
+    ).toBeInTheDocument();
+    expect(confirmButton).toBeDisabled();
+
+    await userEvent.type(
+      within(dialog).getByLabelText(/Type CLEAR RECORDS to confirm/i),
+      'CLEAR',
+    );
+
+    expect(confirmButton).toBeDisabled();
+
+    await userEvent.type(
+      within(dialog).getByLabelText(/Type CLEAR RECORDS to confirm/i),
+      ' RECORDS',
+    );
+
+    expect(confirmButton).toBeEnabled();
+
+    await userEvent.click(confirmButton);
+
+    expect(clearActivityRecordsForCurrentCompany).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/Activity records cleared:/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'No saved activity records yet. Add data from Input Data to create records for review.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('uses neutral disabled state when no rows are selected and red enabled state when selected', async () => {
@@ -318,7 +376,7 @@ describe('ActivityDataPage delete flows', () => {
   it('shows horizontal scroll hint as text above the records table', async () => {
     renderPage();
 
-    expect(await screen.findByText('Scroll horizontally →')).toBeInTheDocument();
+    expect(await screen.findByText('Scroll horizontally to view all columns →')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Scroll horizontally/i })).not.toBeInTheDocument();
   });
 

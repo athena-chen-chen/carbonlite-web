@@ -88,7 +88,7 @@ export function createCarbonLiteApiState(): CarbonLiteApiState {
   return {
     documents: [],
     activities: [],
-    conversionFactors: [buildSystemConversionFactor()],
+    conversionFactors: buildSystemConversionFactors(),
     extractionResults: {},
     uploadRequests: 0,
     extractionRequests: 0,
@@ -363,16 +363,28 @@ function buildImportedActivity(): TestActivity {
   };
 }
 
-function buildSystemConversionFactor(): TestConversionFactor {
+function buildSystemConversionFactors(): TestConversionFactor[] {
+  return [
+    buildSystemConversionFactor('AB', 'Alberta', 0.52),
+    buildSystemConversionFactor('BC', 'British Columbia', 0.012),
+    buildSystemConversionFactor('ON', 'Ontario', 0.03),
+  ];
+}
+
+function buildSystemConversionFactor(
+  code: 'AB' | 'BC' | 'ON',
+  province: string,
+  factorValue: number,
+): TestConversionFactor {
   return {
-    id: 'factor-electricity-ab-2026',
+    id: `factor-electricity-${code.toLowerCase()}-2026`,
     organizationId: null,
-    name: 'Electricity - Alberta - 2026',
+    name: `Electricity - ${province} - 2026`,
     type: 'EMISSION',
     activityType: 'ELECTRICITY',
-    jurisdiction: 'Alberta, Canada',
+    jurisdiction: `${province}, Canada`,
     unit: 'kWh',
-    factorValue: 0.5,
+    factorValue,
     resultUnit: 'kgCO2e',
     sourceName: 'E2E verified fixture',
     sourceReference: 'Playwright calculation fixture',
@@ -383,7 +395,7 @@ function buildSystemConversionFactor(): TestConversionFactor {
     methodology: 'Quantity multiplied by factor value.',
     confidenceLevel: 'high',
     verified: true,
-    notes: 'Regression smoke fixture.',
+    notes: `Regression smoke fixture for ${code}.`,
     isDefault: true,
     isSystemDefault: true,
     defaultScope: 'SCOPE_2',
@@ -456,7 +468,7 @@ function buildCalculationSummary(
   const hasRecords = activities.length > 0;
   const totalRecordsFound = allActivities.length;
   const records = hasRecords ? activities.length : 0;
-  const emissions = hasRecords ? 2140 : 0;
+  const emissions = hasRecords ? 2225.6 : 0;
   const electricity = hasRecords ? 4280 : 0;
   const outsideDateRange = totalRecordsFound - records;
 
@@ -527,7 +539,7 @@ function buildCalculationSummary(
             factorId: 'factor-electricity-ab-2026',
             activityType: 'ELECTRICITY',
             factorName: 'Electricity - Alberta - 2026',
-            factorValue: 0.5,
+            factorValue: 0.52,
             inputUnit: 'kWh',
             resultUnit: 'kgCO2e',
             jurisdiction: 'Alberta, Canada',
@@ -557,7 +569,7 @@ function buildCalculationSummary(
             activityUnit: 'kWh',
             factorId: 'factor-electricity-ab-2026',
             factorName: 'Electricity - Alberta - 2026',
-            factorValue: 0.5,
+            factorValue: 0.52,
             factorInputUnit: 'kWh',
             factorResultUnit: 'kgCO2e',
             factorPriority: 'VERIFIED_SYSTEM',

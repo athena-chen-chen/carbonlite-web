@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { UploadPage } from './UploadPage';
@@ -221,26 +221,100 @@ describe('UploadPage sample workflow', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
 
-    expect(await screen.findByText('Missing Province')).toBeInTheDocument();
+    expect((await screen.findAllByText('Missing Province')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Scroll horizontally to view all columns →')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Electricity')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Natural Gas')).toBeInTheDocument();
     expect(screen.getAllByDisplayValue('Canada').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('2026-01-01 to 2026-01-31')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Optional note')).toBeInTheDocument();
     expect(
-      screen.getAllByText(
+      screen.queryByText(
         'Missing Province: Electricity records require province before factor matching.',
-      ).length,
-    ).toBeGreaterThan(0);
+      ),
+    ).not.toBeInTheDocument();
 
     const electricityRow = screen.getByDisplayValue('Electricity').closest('tr');
     expect(electricityRow).toBeTruthy();
     expect(within(electricityRow!).getByRole('checkbox')).not.toBeChecked();
     expect(within(electricityRow!).getByRole('checkbox')).toBeDisabled();
+    expect(within(electricityRow!).getByText('Province required')).toBeInTheDocument();
+    expect(
+      within(electricityRow!)
+        .getAllByText('Missing Province')
+        .some(
+          (element) =>
+            element.getAttribute('title') ===
+            'Electricity records require province before factor matching.',
+        ),
+    ).toBe(true);
     expect(within(electricityRow!).queryByText('-')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /Select All/i }));
     expect(within(electricityRow!).getByRole('checkbox')).not.toBeChecked();
+  });
+
+  it('keeps unsupported electricity provinces in JSON preview for factor review', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'json-doc',
+          fileName: 'activity-records.json',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'json-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'electricity',
+          amount: '1000',
+          unit: 'kWh',
+          country: 'Canada',
+          province: 'SK',
+          startDate: '2026-01-01',
+          notes: 'Unsupported pilot province should be factor-reviewed later.',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    const row = screen.getByDisplayValue('Electricity').closest('tr');
+    expect(row).toBeTruthy();
+    expect(within(row!).getByDisplayValue('Saskatchewan')).toBeInTheDocument();
+    expect(within(row!).getAllByText('Missing Factor').length).toBeGreaterThan(0);
+    expect(within(row!).getByText('Excluded')).toBeInTheDocument();
+    expect(
+      within(row!)
+        .getAllByText('Missing Factor')
+        .some(
+          (element) =>
+            element.getAttribute('title') ===
+            'Electricity factor not available for this province in the current pilot.',
+        ),
+    ).toBe(true);
+    expect(within(row!).queryByText('Missing Province')).not.toBeInTheDocument();
+    expect(within(row!).queryByText('Province required')).not.toBeInTheDocument();
+    expect(within(row!).getByRole('checkbox')).not.toBeChecked();
+    expect(within(row!).getByRole('checkbox')).toBeDisabled();
   });
 
   it('clears preview row selection when an edit makes the row invalid', async () => {
@@ -292,12 +366,19 @@ describe('UploadPage sample workflow', () => {
 
     await userEvent.clear(screen.getByDisplayValue('Alberta'));
 
-    expect(await within(row!).findByText('Missing Province')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(row!).getAllByText('Missing Province').length).toBeGreaterThan(0);
+    });
+    expect(within(row!).getByText('Province required')).toBeInTheDocument();
     expect(
-      within(row!).getAllByText(
-        'Missing Province: Electricity records require province before factor matching.',
-      ).length,
-    ).toBeGreaterThan(0);
+      within(row!)
+        .getAllByText('Missing Province')
+        .some(
+          (element) =>
+            element.getAttribute('title') ===
+            'Electricity records require province before factor matching.',
+        ),
+    ).toBe(true);
     expect(within(row!).getByRole('checkbox')).not.toBeChecked();
     expect(within(row!).getByRole('checkbox')).toBeDisabled();
   });

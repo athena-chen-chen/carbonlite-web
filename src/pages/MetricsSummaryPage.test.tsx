@@ -15,6 +15,7 @@ import {
   loadDefaultMetricsDateRange,
   loadMetricsOverview,
 } from '../services/metricsOverview';
+import { pilotExpectedEmissions } from '../test/pilotEmissionsFixture';
 
 vi.mock('../services/metricsOverview', async () => {
   const actual = await vi.importActual<typeof import('../services/metricsOverview')>(
@@ -44,7 +45,7 @@ describe('buildMetricsSummaryTableRows', () => {
     ],
   };
 
-  it('uses the same values shown in the Metrics Summary cards', () => {
+  it('uses the same values shown in the Calculation Review cards', () => {
     const rows = buildMetricsSummaryTableRows({
       usageTotals,
       totalEstimatedEmissionsKgCO2e: 1234.5,
@@ -460,6 +461,110 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('0 kg CO2e');
     expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('144 kg CO2e');
     expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('0 kg CO2e');
+  });
+
+  it('reconciles total emissions to Scope 1 + Scope 2 + Scope 3 and excludes review rows', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 200,
+            electricity: 500,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [
+              { activityType: 'DIESEL', total: 100, unit: 'liters' },
+              { activityType: 'NATURAL_GAS', total: 100, unit: 'm3' },
+            ],
+          }}
+          totalEstimatedEmissionsKgCO2e={pilotExpectedEmissions.totalKgCO2e}
+          countSummary={{
+            totalRecordsFound: 8,
+            processedRecords: 4,
+            skippedRecords: 4,
+            missingFactorRecords: 1,
+            skippedReasons: {
+              missingFactor: 1,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 3,
+            },
+          }}
+          calculationDetails={[
+            {
+              activityDataId: 'scope-1',
+              activityType: 'DIESEL',
+              activityQuantity: 100,
+              activityUnit: 'L',
+              calculatedEmissionsKgCO2e: pilotExpectedEmissions.scope1KgCO2e,
+              status: 'CALCULATED',
+            },
+            {
+              activityDataId: 'scope-2',
+              activityType: 'ELECTRICITY',
+              jurisdictionCountry: 'Canada',
+              jurisdictionRegion: 'Alberta',
+              activityQuantity: 500,
+              activityUnit: 'kWh',
+              calculatedEmissionsKgCO2e: pilotExpectedEmissions.scope2KgCO2e,
+              status: 'CALCULATED',
+            },
+            {
+              activityDataId: 'scope-3',
+              activityType: 'AIR_TRAVEL',
+              activityQuantity: 1325,
+              activityUnit: 'km',
+              calculatedEmissionsKgCO2e: pilotExpectedEmissions.scope3KgCO2e,
+              status: 'CALCULATED',
+            },
+            {
+              activityDataId: 'water',
+              activityType: 'WATER',
+              activityQuantity: 1000,
+              activityUnit: 'm3',
+              calculatedEmissionsKgCO2e: null,
+              status: 'TRACKED_ONLY',
+            },
+            {
+              activityDataId: 'missing-province',
+              activityType: 'ELECTRICITY',
+              activityQuantity: 100,
+              activityUnit: 'kWh',
+              calculatedEmissionsKgCO2e: null,
+              status: 'MISSING_JURISDICTION',
+            },
+            {
+              activityDataId: 'missing-factor',
+              activityType: 'ELECTRICITY',
+              jurisdictionRegion: 'Quebec',
+              activityQuantity: 100,
+              activityUnit: 'kWh',
+              calculatedEmissionsKgCO2e: null,
+              status: 'MISSING_FACTOR',
+            },
+            {
+              activityDataId: 'unit-mismatch',
+              activityType: 'DIESEL',
+              activityQuantity: 20,
+              activityUnit: 'bottles',
+              calculatedEmissionsKgCO2e: null,
+              status: 'INVALID_UNIT',
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
+    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('457 kg CO2e');
+    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('260 kg CO2e');
+    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('212 kg CO2e');
+    expect(screen.getByText('929 kg CO2e')).toBeInTheDocument();
+    expect(
+      pilotExpectedEmissions.scope1KgCO2e +
+        pilotExpectedEmissions.scope2KgCO2e +
+        pilotExpectedEmissions.scope3KgCO2e,
+    ).toBe(pilotExpectedEmissions.totalKgCO2e);
   });
 
   it('renders the shared summary section with multiple records and populated calculation table', () => {
@@ -1168,7 +1273,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     );
 
     expect(
-      await screen.findByText('Unable to load metrics summary. Please try again.'),
+      await screen.findByText('Unable to load calculation review. Please try again.'),
     ).toBeInTheDocument();
   });
 

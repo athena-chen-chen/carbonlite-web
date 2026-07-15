@@ -84,7 +84,7 @@ export function MetricsSummaryPage() {
       // Usage tracking should never block metrics loading.
     });
     track('METRICS_SUMMARY_VIEWED', {
-      page: 'Metrics Summary',
+      page: 'Calculation Review',
     });
   }, [location.pathname]);
 
@@ -146,7 +146,7 @@ export function MetricsSummaryPage() {
       setLastUpdated(new Date());
     } catch (err) {
       if (requestSequence === requestSequenceRef.current) {
-        setError('Unable to load metrics summary. Please try again.');
+        setError('Unable to load calculation review. Please try again.');
       }
     } finally {
       if (inFlightRequestKeyRef.current === requestKey) {
@@ -281,7 +281,7 @@ function handleDownloadCSV() {
   const link = document.createElement('a');
 
   link.href = url;
-  link.download = `carbonlite-metrics-summary-${new Date()
+  link.download = `carbonlite-calculation-review-${new Date()
     .toISOString()
     .slice(0, 10)}.csv`;
 
@@ -297,7 +297,7 @@ function handleDownloadPDF() {
   const doc = new jsPDF();
 
   doc.setFontSize(18);
-  doc.text('CarbonLite AI Metrics Summary', 14, 20);
+  doc.text('CarbonLite AI Calculation Review', 14, 20);
 
   doc.setFontSize(10);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
@@ -326,7 +326,7 @@ function handleDownloadPDF() {
   });
 
   doc.save(
-    `carbonlite-metrics-summary-${new Date().toISOString().slice(0, 10)}.pdf`,
+    `carbonlite-calculation-review-${new Date().toISOString().slice(0, 10)}.pdf`,
   );
 }
   const totalsByMetric = buildMetricsSummaryTableRows({
@@ -340,10 +340,10 @@ function handleDownloadPDF() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 8 }}>Metrics Summary</h1>
+      <h1 style={{ marginBottom: 8 }}>Calculation Review</h1>
 
       <p style={{ color: '#666', marginBottom: 24 }}>
-        Metrics Summary shows calculated emissions, records requiring review, tracked metrics, and calculation issues so users can understand not only the total emissions, but also what was included, excluded, and why.
+        Internal workspace for validating emissions calculations, data quality, included and excluded records, and factor matching issues before generating a shareable report.
       </p>
       <div style={filterCardStyle}>
         <div>

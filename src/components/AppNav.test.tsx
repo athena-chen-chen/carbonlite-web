@@ -74,7 +74,7 @@ describe('AppNav logout flow', () => {
       'Input Data',
       'Data Records',
       'Factors',
-      'Metrics',
+      'Calculation Review',
       'Reports',
     ].forEach((label) => {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href');
