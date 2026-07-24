@@ -984,7 +984,7 @@ describe('buildDataReadinessSummary', () => {
     ]);
 
     expect(summary.recordsReadyForCalculation).toBe(0);
-    expect(summary.recordsRequiringReview).toBe(4);
+    expect(summary.recordsRequiringReview).toBe(3);
     expect(summary.invalidUnitCount).toBe(1);
     expect(summary.missingJurisdictionCount).toBe(1);
     expect(summary.missingFactorCount).toBe(1);

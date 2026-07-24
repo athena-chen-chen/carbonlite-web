@@ -164,7 +164,7 @@ const PILOT_GROUND_TRANSPORT_FACTOR: ConversionFactorItem = {
   methodology:
     'Pilot estimate for taxi, rideshare, rental car, mileage, and local business travel distance. Internal review required before formal reporting.',
   confidenceLevel: 'LOW',
-  verificationStatus: 'PILOT_ESTIMATE',
+  verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
   isPilotEstimate: true,
   consultantReviewRecommended: true,
   verified: false,

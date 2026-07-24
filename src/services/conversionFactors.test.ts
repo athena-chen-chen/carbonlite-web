@@ -160,8 +160,8 @@ describe('conversion factor traceability API payloads', () => {
       factorValue: 0.2,
       sourceAuthority: 'CarbonLite',
       sourceYear: 2025,
-      confidenceLevel: 'Pilot Estimate',
-      verificationStatus: 'Internal Review Required',
+      confidenceLevel: 'LOW',
+      verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
       isSystemDefault: true,
       defaultScope: 'SCOPE_3',
     });
