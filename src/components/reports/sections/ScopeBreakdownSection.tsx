@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { CalculationAuditDetail } from '../../../services/metrics';
 import { formatDisplayNumber, formatEmissionsValue } from '../../../utils/numberFormatting';
+import { getActivityTypeLabel } from '../../../utils/activityType';
 
 type ScopeSummary = {
   SCOPE_1: number;
@@ -52,7 +53,7 @@ export function ScopeBreakdownSection({
             headers={['Activity', 'Quantity', 'Calculated Emissions', 'Scope Source']}
             emptyMessage="No unclassified calculated records."
             rows={unclassifiedCalculatedRecords.map((item) => [
-              item.activityType,
+              getActivityTypeLabel(item.activityType),
               `${formatDisplayNumber(item.activityQuantity)} ${formatRecordUnit(item.activityUnit, item)}`,
               `${formatEmissionsValue(item.calculatedEmissionsKgCO2e ?? item.calculatedEmission ?? 0)} kgCO2e`,
               formatScopeSourceLabel(item),

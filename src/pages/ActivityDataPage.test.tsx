@@ -3,11 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import {
   bulkDeleteActivityData,
-  clearActivityRecordsForCurrentCompany,
   deleteActivityData,
   getAllActivityData,
   getActivityDataList,
+  resetDemoDataForCurrentCompany,
+  updateActivityData,
 } from '../services/activityData';
+import { getAllConversionFactors } from '../services/conversionFactors';
 import { ActivityDataPage } from './ActivityDataPage';
 
 vi.mock('../components/ExcelInputTable', () => ({
@@ -16,12 +18,16 @@ vi.mock('../components/ExcelInputTable', () => ({
 
 vi.mock('../services/activityData', () => ({
   bulkDeleteActivityData: vi.fn(),
-  clearActivityRecordsForCurrentCompany: vi.fn(),
   createActivityData: vi.fn(),
   deleteActivityData: vi.fn(),
   getAllActivityData: vi.fn(),
   getActivityDataList: vi.fn(),
+  resetDemoDataForCurrentCompany: vi.fn(),
   updateActivityData: vi.fn(),
+}));
+
+vi.mock('../services/conversionFactors', () => ({
+  getAllConversionFactors: vi.fn(),
 }));
 
 describe('ActivityDataPage delete flows', () => {
@@ -78,11 +84,34 @@ describe('ActivityDataPage delete flows', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock);
     mockActivityRecords(records);
     vi.mocked(getAllActivityData).mockResolvedValue(records);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([
+      {
+        id: 'factor-electricity-bc-2025',
+        organizationId: null,
+        name: 'Electricity - British Columbia - 2025',
+        type: 'EMISSION',
+        activityType: 'ELECTRICITY',
+        inputUnit: 'kWh',
+        unit: 'kWh',
+        factorValue: 0.02,
+        resultUnit: 'kgCO2e/kWh',
+        sourceAuthority: 'CarbonLite',
+        sourceYear: 2025,
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'British Columbia',
+        isDefault: true,
+        isSystemDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ] as any);
     vi.mocked(bulkDeleteActivityData).mockResolvedValue({ deletedCount: 1 });
-    vi.mocked(clearActivityRecordsForCurrentCompany).mockResolvedValue({
-      deletedActivityRecords: 2,
-      deletedCalculationDetails: 2,
-      deletedImportBatches: 1,
+    vi.mocked(resetDemoDataForCurrentCompany).mockResolvedValue({
+      activityRecordsDeleted: 2,
+      importBatchesDeleted: 1,
+      uploadedDocumentsDeleted: 1,
+      stagedRowsDeleted: 3,
+      metricsCacheCleared: 2,
       resetReports: 1,
     });
     vi.mocked(deleteActivityData).mockResolvedValue({ deletedCount: 1 });
@@ -165,7 +194,7 @@ describe('ActivityDataPage delete flows', () => {
 
     resolveRecords(records);
 
-    expect(await screen.findByText('DIESEL')).toBeInTheDocument();
+    expect(await screen.findByText('Diesel')).toBeInTheDocument();
   });
 
   it('shows a retryable error state when activity records fail to load', async () => {
@@ -185,57 +214,80 @@ describe('ActivityDataPage delete flows', () => {
     await waitFor(() => {
       expect(getAllActivityData).toHaveBeenCalledTimes(2);
     });
-    expect(await screen.findByText('DIESEL')).toBeInTheDocument();
+    expect(await screen.findByText('Diesel')).toBeInTheDocument();
   });
 
-  it('requires admins to type CLEAR RECORDS before confirming activity record clear', async () => {
+  it('shows activity records in read-only mode for viewers', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'viewer@example.com', role: 'VIEWER', organizationId: 'org-1' }),
+    );
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-1');
+
+    expect(screen.getByText(/Read-only access:/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Add data$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Delete Selected/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
+  });
+
+  it('requires admins to type RESET DEMO DATA before confirming demo data reset', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({ email: 'admin@example.com', role: 'ADMIN' }),
     );
+    localStorage.setItem('carbonlite-upload-review-draft', 'stale');
+    const resetEventListener = vi.fn();
+    window.addEventListener('carbonlite:demo-data-reset', resetEventListener);
     mockInitialAndRefreshedRecords([]);
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await userEvent.click(
-      screen.getByRole('button', { name: /^Clear Activity Records$/i }),
+      screen.getByRole('button', { name: /^Reset Demo Data$/i }),
     );
 
-    const dialog = screen.getByRole('dialog', { name: 'Clear Activity Records' });
+    const dialog = screen.getByRole('dialog', { name: 'Reset Demo Data' });
     const confirmButton = within(dialog).getByRole('button', {
-      name: /^Clear Activity Records$/i,
+      name: /^Reset Demo Data$/i,
     });
 
     expect(
       within(dialog).getByText(
-        'This will permanently remove all activity records and related calculated results for the current company. It will not delete users, facilities, emission factors, or settings.',
+        'This will permanently remove activity records, input review documents, extracted staging rows, and related calculated results for the current company. It will not delete users, facilities, emission factors, custom factors, or settings.',
       ),
     ).toBeInTheDocument();
     expect(confirmButton).toBeDisabled();
 
     await userEvent.type(
-      within(dialog).getByLabelText(/Type CLEAR RECORDS to confirm/i),
-      'CLEAR',
+      within(dialog).getByLabelText(/Type RESET DEMO DATA to confirm/i),
+      'RESET',
     );
 
     expect(confirmButton).toBeDisabled();
 
     await userEvent.type(
-      within(dialog).getByLabelText(/Type CLEAR RECORDS to confirm/i),
-      ' RECORDS',
+      within(dialog).getByLabelText(/Type RESET DEMO DATA to confirm/i),
+      ' DEMO DATA',
     );
 
     expect(confirmButton).toBeEnabled();
 
     await userEvent.click(confirmButton);
 
-    expect(clearActivityRecordsForCurrentCompany).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText(/Activity records cleared:/i)).toBeInTheDocument();
+    expect(resetDemoDataForCurrentCompany).toHaveBeenCalledTimes(1);
+    expect(resetEventListener).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem('carbonlite-upload-review-draft')).toBeNull();
+    expect(await screen.findByText(/Demo data reset:/i)).toBeInTheDocument();
     expect(
       screen.getByText(
         'No saved activity records yet. Add data from Input Data to create records for review.',
       ),
     ).toBeInTheDocument();
+    window.removeEventListener('carbonlite:demo-data-reset', resetEventListener);
   });
 
   it('uses neutral disabled state when no rows are selected and red enabled state when selected', async () => {
@@ -268,7 +320,7 @@ describe('ActivityDataPage delete flows', () => {
     mockInitialAndRefreshedRecords([records[1]]);
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
@@ -277,8 +329,8 @@ describe('ActivityDataPage delete flows', () => {
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('1 record deleted.')).toBeInTheDocument();
-    expect(screen.queryByText('DIESEL')).not.toBeInTheDocument();
-    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+    expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
+    expect(screen.getByText('Electricity')).toBeInTheDocument();
   });
 
   it('shows a warning and refetches when backend reports zero deleted records', async () => {
@@ -286,14 +338,14 @@ describe('ActivityDataPage delete flows', () => {
     mockInitialAndRefreshedRecords(records);
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
     );
 
     expect(await screen.findByText(/No records were deleted/i)).toBeInTheDocument();
-    expect(screen.getByText('DIESEL')).toBeInTheDocument();
+    expect(screen.getByText('Diesel')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Delete Selected \(1\)/i })).toBeEnabled();
   });
 
@@ -301,14 +353,14 @@ describe('ActivityDataPage delete flows', () => {
     mockInitialAndRefreshedRecords([records[1]]);
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await clickFirstRowDeleteAction();
 
     expect(deleteActivityData).toHaveBeenCalledWith('activity-1');
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('1 record deleted.')).toBeInTheDocument();
-    expect(screen.queryByText('DIESEL')).not.toBeInTheDocument();
-    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+    expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
+    expect(screen.getByText('Electricity')).toBeInTheDocument();
   });
 
   it('deletes multiple selected records and confirms they are gone after backend refresh', async () => {
@@ -316,7 +368,7 @@ describe('ActivityDataPage delete flows', () => {
     mockInitialAndRefreshedRecords([]);
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(2\)/i }),
@@ -325,46 +377,46 @@ describe('ActivityDataPage delete flows', () => {
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1', 'activity-2']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('2 records deleted.')).toBeInTheDocument();
-    expect(screen.queryByText('DIESEL')).not.toBeInTheDocument();
-    expect(screen.queryByText('ELECTRICITY')).not.toBeInTheDocument();
+    expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
+    expect(screen.queryByText('Electricity')).not.toBeInTheDocument();
   });
 
   it('keeps selected rows visible and selected when delete is unauthorized', async () => {
     vi.mocked(bulkDeleteActivityData).mockRejectedValue(
-      new Error('You can only delete your own activity records.'),
+      new Error('You do not have permission to perform this action.'),
     );
 
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
     );
 
-    expect(await screen.findByText('You can only delete your own activity records.')).toBeInTheDocument();
-    expect(screen.getByText('DIESEL')).toBeInTheDocument();
+    expect(await screen.findByText('You do not have permission to perform this action.')).toBeInTheDocument();
+    expect(screen.getByText('Diesel')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Delete Selected \(1\)/i })).toBeEnabled();
   });
 
   it('keeps row visible when single delete is unauthorized', async () => {
     vi.mocked(deleteActivityData).mockRejectedValue(
-      new Error('You can only delete your own activity records.'),
+      new Error('You do not have permission to perform this action.'),
     );
 
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await clickFirstRowDeleteAction();
 
-    expect(await screen.findByText('You can only delete your own activity records.')).toBeInTheDocument();
-    expect(screen.getByText('DIESEL')).toBeInTheDocument();
+    expect(await screen.findByText('You do not have permission to perform this action.')).toBeInTheDocument();
+    expect(screen.getByText('Diesel')).toBeInTheDocument();
   });
 
   it('shows source references for imported records and manual fallback for manual records', async () => {
     renderPage();
 
-    expect(await screen.findByText('DIESEL')).toBeInTheDocument();
+    expect(await screen.findByText('Diesel')).toBeInTheDocument();
     expect(screen.getByText('Source Reference')).toBeInTheDocument();
     expect(screen.getAllByText('Manual Entry').length).toBeGreaterThan(0);
     expect(screen.getByText('Document')).toBeInTheDocument();
@@ -384,7 +436,7 @@ describe('ActivityDataPage delete flows', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     const moreColumnsButton = screen.getByRole('button', { name: /^Columns$/i });
 
     expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'false');
@@ -416,7 +468,7 @@ describe('ActivityDataPage delete flows', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     const actionButton = screen.getAllByLabelText(/More actions for/i)[0];
 
     expect(actionButton).toHaveAttribute('aria-expanded', 'false');
@@ -446,7 +498,7 @@ describe('ActivityDataPage delete flows', () => {
   it('limits electricity edit province options to provinces with factor coverage', async () => {
     renderPage();
 
-    await screen.findByText('DIESEL');
+    await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByLabelText(/More actions for/i)[1]);
     await userEvent.click(screen.getByRole('menuitem', { name: /^Edit$/i }));
 
@@ -463,6 +515,159 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(provinceSelect).queryByRole('option', { name: 'Nunavut' })).not.toBeInTheDocument();
   });
 
+  it('shows saved valid BC electricity records as matched even when stale notes say missing factor', async () => {
+    mockActivityRecords([
+      {
+        id: 'activity-bc-electricity',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-07-20',
+        quantity: 100,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'British Columbia',
+        sourceType: 'MANUAL',
+        sourceReference: 'manual',
+        notes:
+          'Created from MANUAL. Calculation status: Missing Factor. No conversion factor found for Electricity / kWh. Matched factor: N/A (N/A)',
+      },
+    ] as any);
+
+    renderPage();
+
+    expect(await screen.findByText('Electricity')).toBeInTheDocument();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+    expect(screen.queryByText('Missing Factor')).not.toBeInTheDocument();
+  });
+
+  it('uses canonical matched fields instead of stale missing factor notes', async () => {
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([] as any);
+    mockActivityRecords([
+      {
+        id: 'activity-bc-electricity-canonical',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-07-20',
+        quantity: 100,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'British Columbia',
+        sourceType: 'MANUAL',
+        sourceReference: 'manual',
+        matchingStatus: 'MATCHED',
+        calculationStatus: 'CALCULATED',
+        reportTreatment: 'INCLUDED',
+        scope: 'SCOPE_2',
+        matchedFactorId: 'factor-electricity-bc-2025',
+        matchedFactorName: 'Electricity - British Columbia - 2025',
+        matchedFactorSourceYear: 2025,
+        calculatedEmissionsKgCO2e: 2,
+        notes:
+          'Created from MANUAL. Calculation status: Missing Factor. No conversion factor found for Electricity / kWh.',
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-bc-electricity-canonical');
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
+  });
+
+  it('shows identical BC electricity records with the same matched status even when one has stale saved metadata', async () => {
+    mockActivityRecords([
+      {
+        id: 'activity-bc-electricity-old',
+        activityType: 'Electricity',
+        recordDate: '2026-07-20',
+        quantity: 100,
+        unit: 'KWH',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'BC',
+        sourceType: 'MANUAL',
+        sourceReference: 'manual',
+        notes:
+          'Created from MANUAL. Calculation status: Missing Factor. No conversion factor found for Electricity / kWh.',
+      },
+      {
+        id: 'activity-bc-electricity-new',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-07-20',
+        quantity: 100,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'British Columbia',
+        sourceType: 'MANUAL',
+        sourceReference: 'manual',
+        matchingStatus: 'MATCHED',
+        reportTreatment: 'INCLUDED',
+        scope: 'SCOPE_2',
+        matchedFactorId: 'factor-electricity-bc-2025',
+        matchedFactorName: 'Electricity - British Columbia - 2025',
+        calculatedEmissionsKgCO2e: 2,
+        calculationStatus: 'CALCULATED',
+      },
+    ] as any);
+
+    renderPage();
+
+    const oldRow = await screen.findByTestId('activity-row-activity-bc-electricity-old');
+    const newRow = await screen.findByTestId('activity-row-activity-bc-electricity-new');
+
+    expect(within(oldRow).getByText('Ready')).toBeInTheDocument();
+    expect(within(newRow).getByText('Ready')).toBeInTheDocument();
+    expect(within(oldRow).queryByText('Missing Factor')).not.toBeInTheDocument();
+    expect(within(newRow).queryByText('Missing Factor')).not.toBeInTheDocument();
+  });
+
+  it('recalculates stale valid BC electricity records with matched canonical metadata', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+    );
+    vi.mocked(updateActivityData).mockResolvedValue({} as any);
+    mockActivityRecords([
+      {
+        id: 'activity-bc-electricity-stale',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-07-20',
+        quantity: 100,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'British Columbia',
+        sourceType: 'MANUAL',
+        sourceReference: 'manual',
+        notes:
+          'Created from MANUAL. Calculation status: Missing Factor. No conversion factor found for Electricity / kWh.',
+      },
+    ] as any);
+
+    renderPage();
+
+    await screen.findByText('Electricity');
+    await userEvent.click(
+      screen.getByRole('button', { name: /^Recalculate Activity Records$/i }),
+    );
+
+    await waitFor(() => {
+      expect(updateActivityData).toHaveBeenCalledWith(
+        'activity-bc-electricity-stale',
+        expect.objectContaining({
+          matchingStatus: 'MATCHED',
+          reportTreatment: 'INCLUDED',
+          calculationStatus: 'CALCULATED',
+          scope: 'SCOPE_2',
+          matchedFactorId: 'factor-electricity-bc-2025',
+          matchedFactorName: 'Electricity - British Columbia - 2025',
+          matchedFactorSourceYear: 2025,
+          calculatedEmissionsKgCO2e: 2,
+          calculationMessage: 'Matched factor. Using latest available factor year: 2025.',
+          notes:
+            'Created from MANUAL. Calculation status: Missing Factor. No conversion factor found for Electricity / kWh.',
+        }),
+      );
+    });
+    expect(await screen.findByText(/1 record recalculated, 1 matched/i)).toBeInTheDocument();
+  });
+
   it('filters records by document id from the URL and clears the filter', async () => {
     renderPage({
       pathname: '/activity-records',
@@ -474,13 +679,13 @@ describe('ActivityDataPage delete flows', () => {
     expect(
       screen.getByText('37_mixed_utility_report_missing_units.pdf'),
     ).toBeInTheDocument();
-    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
-    expect(screen.queryByText('DIESEL')).not.toBeInTheDocument();
+    expect(screen.getByText('Electricity')).toBeInTheDocument();
+    expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
 
-    expect(screen.getByText('DIESEL')).toBeInTheDocument();
-    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+    expect(screen.getByText('Diesel')).toBeInTheDocument();
+    expect(screen.getByText('Electricity')).toBeInTheDocument();
   });
 
   it('shows a document-specific empty state when no imported records match', async () => {
@@ -505,13 +710,13 @@ describe('ActivityDataPage delete flows', () => {
     expect(
       await screen.findByText('Showing 1 record requiring attention.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
-    expect(screen.queryByText('DIESEL')).not.toBeInTheDocument();
+    expect(screen.getByText('Electricity')).toBeInTheDocument();
+    expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
 
-    expect(screen.getByText('DIESEL')).toBeInTheDocument();
-    expect(screen.getByText('ELECTRICITY')).toBeInTheDocument();
+    expect(screen.getByText('Diesel')).toBeInTheDocument();
+    expect(screen.getByText('Electricity')).toBeInTheDocument();
   });
 
   it('shows a friendly empty state when requested record is missing', async () => {
@@ -555,7 +760,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
     expect(within(dialog).getByText('Requires Review')).toBeInTheDocument();
-    expect(within(dialog).getByText('NATURAL_GAS')).toBeInTheDocument();
+    expect(within(dialog).getByText('Natural Gas')).toBeInTheDocument();
     expect(within(dialog).getByText('Missing unit')).toBeInTheDocument();
     expect(
       within(row).getByText('37_mixed_utility_report_missing_units.pdf'),
@@ -596,7 +801,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
     expect(within(dialog).getByText('Activity Record Details')).toBeInTheDocument();
-    expect(within(dialog).getByText('DIESEL')).toBeInTheDocument();
+    expect(within(dialog).getByText('Diesel')).toBeInTheDocument();
     expect(within(dialog).getByText('2026-05-14')).toBeInTheDocument();
     expect(within(dialog).getAllByText('Manual Entry').length).toBeGreaterThan(0);
 
@@ -605,5 +810,72 @@ describe('ActivityDataPage delete flows', () => {
     );
 
     expect(screen.queryByRole('dialog', { name: 'Activity Record Details' })).not.toBeInTheDocument();
+  });
+
+  it.each(['2026-07-20', '2026-01-15'])(
+    'displays API activity record date %s without timezone shifting',
+    async (recordDate) => {
+      mockActivityRecords([
+        {
+          id: `activity-date-${recordDate}`,
+          activityType: 'ELECTRICITY',
+          recordDate: `${recordDate}T00:00:00.000Z`,
+          quantity: 100,
+          unit: 'kWh',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceType: 'MANUAL',
+          sourceReference: 'manual',
+        },
+      ] as any);
+
+      renderPage();
+
+      const row = await screen.findByTestId(`activity-row-activity-date-${recordDate}`);
+      expect(within(row).getByText(recordDate)).toBeInTheDocument();
+      expect(within(row).queryByText('2026-07-21')).not.toBeInTheDocument();
+      expect(within(row).queryByText('2026-01-16')).not.toBeInTheDocument();
+    },
+  );
+
+  it('opens the edit panel with the same date-only value and preserves it on save', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+    );
+    vi.mocked(updateActivityData).mockResolvedValue({} as any);
+    mockActivityRecords([
+      {
+        id: 'activity-date-edit',
+        activityType: 'DIESEL',
+        recordDate: '2026-07-20T00:00:00.000Z',
+        quantity: 10,
+        unit: 'L',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        sourceType: 'MANUAL',
+        sourceReference: 'manual',
+      },
+    ] as any);
+
+    renderPage();
+
+    await screen.findByTestId('activity-row-activity-date-edit');
+    await userEvent.click(screen.getByLabelText(/More actions for Diesel 2026-07-20/i));
+    await userEvent.click(screen.getByRole('menuitem', { name: /^Edit$/i }));
+
+    const dateInput = screen.getByLabelText('Date') as HTMLInputElement;
+    expect(dateInput.value).toBe('2026-07-20');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(updateActivityData).toHaveBeenCalledWith(
+        'activity-date-edit',
+        expect.objectContaining({
+          recordDate: '2026-07-20',
+        }),
+      );
+    });
   });
 });

@@ -3,29 +3,29 @@ import type { CalculationAuditDetail } from '../../../services/metrics';
 import {
   buildCalculatedFormula,
   formatCalculationStatus,
-  formatMatchingMethod,
-  formatTraceabilitySource,
   formatTraceableFactor,
 } from '../../../utils/calculationTraceability';
 import { formatDisplayNumber } from '../../../utils/numberFormatting';
+import { getActivityTypeLabel } from '../../../utils/activityType';
+import {
+  formatTraceabilityReviewNote,
+} from '../../../utils/reportCredibility';
 
 type CalculationTraceabilitySectionProps = {
   calculationDetails: CalculationAuditDetail[];
   formatRecordUnit: (unit?: string | number | null, detail?: Pick<CalculationAuditDetail, 'status'> | null) => string;
   formatScopeLabel: (detail: CalculationAuditDetail) => string;
-  formatScopeSourceLabel: (detail: CalculationAuditDetail) => string;
 };
 
 export function CalculationTraceabilitySection({
   calculationDetails,
   formatRecordUnit,
   formatScopeLabel,
-  formatScopeSourceLabel,
 }: CalculationTraceabilitySectionProps) {
   return (
     <>
       <p style={sectionHelperStyle}>
-        Each calculated row shows the activity quantity, matched conversion factor, source, formula, and emissions result.
+        Each row shows the activity quantity, matched factor, calculation formula, scope, status, and review note.
       </p>
       <details>
         <summary style={detailsSummaryStyle}>
@@ -37,24 +37,20 @@ export function CalculationTraceabilitySection({
               'Activity',
               'Quantity',
               'Factor Used',
-              'Source',
-              'Match',
               'Calculation',
               'Scope',
-              'Scope Source',
               'Status',
+              'Review Note',
             ]}
             emptyMessage="No calculation details available."
             rows={calculationDetails.map((item) => [
-              item.activityType,
+              getActivityTypeLabel(item.activityType),
               `${formatDisplayNumber(item.activityQuantity)} ${formatRecordUnit(item.activityUnit, item)}`,
               formatTraceableFactor(item),
-              formatTraceabilitySource(item),
-              formatMatchingMethod(item),
               buildCalculatedFormula(item),
               formatScopeLabel(item),
-              formatScopeSourceLabel(item),
               formatCalculationStatus(item.status),
+              formatTraceabilityReviewNote(item),
             ])}
           />
         </div>

@@ -1,3 +1,8 @@
+import {
+  pilotActivityTypeLabels,
+  supportedPilotActivityTypeSet,
+} from '../constants/activityTypes';
+
 const ACTIVITY_TYPE_ALIASES: Record<string, string> = {
   DIESEL: 'DIESEL',
   GASOLINE: 'GASOLINE',
@@ -21,9 +26,14 @@ const ACTIVITY_TYPE_ALIASES: Record<string, string> = {
   AIRFARE: 'AIR_TRAVEL',
   GROUND_TRANSPORT: 'GROUND_TRANSPORT',
   GROUND_TRANSPORT_TAXI_RIDESHARE: 'GROUND_TRANSPORT',
+  BUSINESS_TRAVEL_GROUND_TRANSPORT: 'GROUND_TRANSPORT',
   TAXI: 'GROUND_TRANSPORT',
   RIDESHARE: 'GROUND_TRANSPORT',
   RIDE_SHARE: 'GROUND_TRANSPORT',
+  RENTAL_CAR: 'GROUND_TRANSPORT',
+  CAR_RENTAL: 'GROUND_TRANSPORT',
+  MILEAGE: 'GROUND_TRANSPORT',
+  LOCAL_BUSINESS_TRAVEL: 'GROUND_TRANSPORT',
   SHIPPING: 'SHIPPING',
   FREIGHT: 'SHIPPING',
   DELIVERY: 'SHIPPING',
@@ -37,7 +47,7 @@ const ACTIVITY_TYPE_ALIASES: Record<string, string> = {
   DISTRICT_HEAT: 'PURCHASED_HEAT',
   PURCHASED_COOLING: 'PURCHASED_COOLING',
   DISTRICT_COOLING: 'PURCHASED_COOLING',
-  BUSINESS_TRAVEL: 'BUSINESS_TRAVEL',
+  BUSINESS_TRAVEL: 'AIR_TRAVEL',
   CUSTOM: 'CUSTOM',
 };
 
@@ -45,16 +55,19 @@ export function normalizeActivityType(value?: string | null): string | null {
   const normalized = normalizeActivityTypeKey(value);
   if (!normalized) return null;
 
-  return (
+  const candidate =
     ACTIVITY_TYPE_ALIASES[normalized] ??
     normalizeActivityTypeBySubstring(normalized) ??
-    stripActivityTypeSuffix(normalized)
-  );
+    stripActivityTypeSuffix(normalized);
+
+  return supportedPilotActivityTypeSet.has(candidate) ? candidate : null;
 }
 
 export function getActivityTypeLabel(activityType?: string | null): string {
   const normalized = normalizeActivityType(activityType);
   if (!normalized) return 'Not specified';
+
+  if (pilotActivityTypeLabels[normalized]) return pilotActivityTypeLabels[normalized];
 
   return normalized
     .toLowerCase()
@@ -86,18 +99,21 @@ function normalizeActivityTypeBySubstring(value: string) {
   if (value.includes('GASOLINE')) return 'GASOLINE';
   if (value.includes('ELECTRICITY')) return 'ELECTRICITY';
   if (value.includes('WATER')) return 'WATER';
-  if (value.includes('WASTE')) return 'WASTE';
+  if (value.includes('WASTE')) return null;
   if (value.includes('AIR_TRAVEL')) return 'AIR_TRAVEL';
   if (value.includes('FLIGHT')) return 'AIR_TRAVEL';
   if (
     value.includes('GROUND_TRANSPORT') ||
     value.includes('TAXI') ||
     value.includes('RIDESHARE') ||
-    value.includes('RIDE_SHARE')
+    value.includes('RIDE_SHARE') ||
+    value.includes('RENTAL_CAR') ||
+    value.includes('CAR_RENTAL') ||
+    value.includes('MILEAGE')
   ) {
     return 'GROUND_TRANSPORT';
   }
-  if (value.includes('BUSINESS_TRAVEL')) return 'BUSINESS_TRAVEL';
+  if (value.includes('BUSINESS_TRAVEL')) return 'AIR_TRAVEL';
   if (value.includes('SHIPPING') || value.includes('FREIGHT')) return 'SHIPPING';
   if (value.includes('PROPANE')) return 'PROPANE';
   if (value.includes('STEAM')) return 'STEAM';

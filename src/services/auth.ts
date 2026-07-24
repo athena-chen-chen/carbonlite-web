@@ -6,7 +6,7 @@ const USER_KEY = 'currentUser';
 export type AuthUser = {
   id?: string;
   email: string;
-  role?: 'ADMIN' | 'OWNER' | 'USER';
+  role?: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' | 'USER';
   organizationId?: string;
   organizationName?: string;
   organization?: {
@@ -159,7 +159,12 @@ export function getUserDisplayName(user: AuthUser | null) {
 }
 
 export function getUserRole(user: AuthUser | null) {
-  return user?.role ?? 'USER';
+  const role = String(user?.role ?? 'MEMBER').toUpperCase();
+  if (role === 'USER') return 'MEMBER';
+  if (role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER' || role === 'VIEWER') {
+    return role;
+  }
+  return 'MEMBER';
 }
 
 export function isAdminUser(user: AuthUser | null) {
@@ -169,4 +174,31 @@ export function isAdminUser(user: AuthUser | null) {
 export function isAdminOrOwnerUser(user: AuthUser | null) {
   const role = getUserRole(user);
   return role === 'ADMIN' || role === 'OWNER';
+}
+
+export function canManageActivityRecords(user: AuthUser | null) {
+  const role = getUserRole(user);
+  return role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER';
+}
+
+export function canImportActivityRecords(user: AuthUser | null) {
+  return canManageActivityRecords(user);
+}
+
+export function canClearActivityRecords(user: AuthUser | null) {
+  return isAdminOrOwnerUser(user);
+}
+
+export function canManageConversionFactors(user: AuthUser | null) {
+  return isAdminOrOwnerUser(user);
+}
+
+export function isReadOnlyUser(user: AuthUser | null) {
+  return getUserRole(user) === 'VIEWER';
+}
+
+export function requirePermission(allowed: boolean) {
+  if (!allowed) {
+    throw new Error('You do not have permission to perform this action.');
+  }
 }

@@ -55,6 +55,22 @@ describe('activity usage aggregation', () => {
     expect(totals.electricity).toBe(15);
   });
 
+  it('normalizes compatible electricity units to kWh before summing', () => {
+    const totals = aggregateActivityUsage([
+      { activityType: 'ELECTRICITY', quantity: 12500, unit: 'kWh' },
+      { activityType: 'ELECTRICITY', quantity: 100, unit: 'kWh' },
+      { activityType: 'ELECTRICITY', quantity: 1000, unit: 'kWh' },
+      { activityType: 'ELECTRICITY', quantity: 50, unit: 'MWh' },
+      { activityType: 'WATER', quantity: 100, unit: 'm3' },
+    ]);
+
+    expect(totals.electricity).toBe(63600);
+    expect(totals.electricityUnitLabel).toBe('kWh');
+    expect(formatActivityUsageValue(totals.electricity, totals.electricityUnitLabel)).toBe(
+      '63,600 kWh',
+    );
+  });
+
   it('does not combine incompatible fuel units into one display value', () => {
     const totals = aggregateActivityUsage([
       { activityType: 'DIESEL', quantity: 1710, unit: 'L' },

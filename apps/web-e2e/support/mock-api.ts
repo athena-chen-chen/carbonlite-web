@@ -52,6 +52,7 @@ type TestConversionFactor = {
   sourceUrl: string;
   methodology: string;
   confidenceLevel: string;
+  verificationStatus: string;
   verified: boolean;
   notes: string;
   isDefault: boolean;
@@ -157,6 +158,37 @@ export async function installCarbonLiteApiMock(
       await fulfillJson(route, {
         deletedDocument: true,
         deletedActivityRecords,
+      });
+      return;
+    }
+
+    if (method === 'POST' && path === '/admin/demo-data/reset') {
+      const activityRecordsDeleted = state.activities.length;
+      const uploadedDocumentsDeleted = state.documents.length;
+      const stagedRowsDeleted = Object.values(state.extractionResults).reduce(
+        (total, extraction) => {
+          const rows = (extraction as { parsedActivities?: unknown[] }).parsedActivities;
+          return total + (Array.isArray(rows) ? rows.length : 0);
+        },
+        0,
+      );
+      const importBatchesDeleted = new Set(
+        state.activities
+          .map((activity) => activity.importBatchId)
+          .filter(Boolean),
+      ).size;
+
+      state.activities = [];
+      state.documents = [];
+      state.extractionResults = {};
+
+      await fulfillJson(route, {
+        activityRecordsDeleted,
+        importBatchesDeleted,
+        uploadedDocumentsDeleted,
+        stagedRowsDeleted,
+        metricsCacheCleared: activityRecordsDeleted,
+        resetReports: 0,
       });
       return;
     }
@@ -297,6 +329,7 @@ export async function installCarbonLiteApiMock(
         sourceUrl: String(input.sourceUrl ?? ''),
         methodology: String(input.methodology ?? ''),
         confidenceLevel: String(input.confidenceLevel ?? ''),
+        verificationStatus: String(input.verificationStatus ?? ''),
         verified: Boolean(input.verified),
         notes: String(input.notes ?? ''),
         isDefault: Boolean(input.isDefault),
@@ -365,9 +398,37 @@ function buildImportedActivity(): TestActivity {
 
 function buildSystemConversionFactors(): TestConversionFactor[] {
   return [
-    buildSystemConversionFactor('AB', 'Alberta', 0.52),
-    buildSystemConversionFactor('BC', 'British Columbia', 0.012),
-    buildSystemConversionFactor('ON', 'Ontario', 0.03),
+    buildSystemConversionFactor('AB', 'Alberta', 0.53),
+    buildSystemConversionFactor('BC', 'British Columbia', 0.02),
+    buildSystemConversionFactor('ON', 'Ontario', 0.12),
+    {
+      id: 'factor-ground-transport-ca-2025',
+      organizationId: null,
+      name: 'Ground Transport - Canada - 2025',
+      type: 'EMISSION',
+      activityType: 'GROUND_TRANSPORT',
+      jurisdiction: 'Canada - National',
+      unit: 'km',
+      factorValue: 0.2,
+      resultUnit: 'kgCO2e',
+      sourceName: 'CarbonLite Pilot Estimate',
+      sourceReference: 'CarbonLite pilot ground transport estimate',
+      sourceAuthority: 'CarbonLite',
+      sourceDocument: 'CarbonLite Pilot Ground Transport Estimate 2025',
+      sourceYear: 2025,
+      sourceUrl: '',
+      methodology:
+        'Pilot estimate for taxi, rideshare, rental car, mileage, and local business travel distance. Internal review required before formal reporting.',
+      confidenceLevel: 'Pilot Estimate',
+      verificationStatus: 'Internal Review Required',
+      verified: false,
+      notes: 'Pilot estimate for Scope 3 ground transport.',
+      isDefault: true,
+      isSystemDefault: true,
+      defaultScope: 'SCOPE_3',
+      createdAt: now,
+      updatedAt: now,
+    },
   ];
 }
 
@@ -394,6 +455,7 @@ function buildSystemConversionFactor(
     sourceUrl: '',
     methodology: 'Quantity multiplied by factor value.',
     confidenceLevel: 'high',
+    verificationStatus: 'Verified',
     verified: true,
     notes: `Regression smoke fixture for ${code}.`,
     isDefault: true,
@@ -468,7 +530,7 @@ function buildCalculationSummary(
   const hasRecords = activities.length > 0;
   const totalRecordsFound = allActivities.length;
   const records = hasRecords ? activities.length : 0;
-  const emissions = hasRecords ? 2225.6 : 0;
+  const emissions = hasRecords ? 2268.4 : 0;
   const electricity = hasRecords ? 4280 : 0;
   const outsideDateRange = totalRecordsFound - records;
 
@@ -539,7 +601,7 @@ function buildCalculationSummary(
             factorId: 'factor-electricity-ab-2026',
             activityType: 'ELECTRICITY',
             factorName: 'Electricity - Alberta - 2026',
-            factorValue: 0.52,
+            factorValue: 0.53,
             inputUnit: 'kWh',
             resultUnit: 'kgCO2e',
             jurisdiction: 'Alberta, Canada',
@@ -569,7 +631,7 @@ function buildCalculationSummary(
             activityUnit: 'kWh',
             factorId: 'factor-electricity-ab-2026',
             factorName: 'Electricity - Alberta - 2026',
-            factorValue: 0.52,
+            factorValue: 0.53,
             factorInputUnit: 'kWh',
             factorResultUnit: 'kgCO2e',
             factorPriority: 'VERIFIED_SYSTEM',

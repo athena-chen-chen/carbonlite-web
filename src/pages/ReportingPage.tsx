@@ -40,9 +40,8 @@ import type { CalculationAuditDetail } from '../services/metrics';
 import {
   buildCalculatedFormula,
   formatCalculationStatus,
-  formatMatchingMethod,
+  formatFactorValue,
   formatRecordSource,
-  formatTraceabilitySource,
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
@@ -51,6 +50,21 @@ import {
   formatScopeSource,
   resolveScopeClassification,
 } from '../utils/scopeClassification';
+import { getActivityTypeLabel } from '../utils/activityType';
+import { formatDateOnly } from '../utils/dateOnly';
+import { formatCredibilityLabel } from '../utils/factorCredibility';
+import {
+  formatReportAssumptions,
+  formatReportFactorVersion,
+  formatReportVerification,
+  formatTraceabilityReviewNote,
+  getDisplaySourceLabel,
+  getTrackedMetricAction,
+  getTrackedMetricMessage,
+  isRecordRequiringCorrection,
+  isTrackedMetricDetail,
+} from '../utils/reportCredibility';
+import { buildPilotCsv } from '../utils/reportCsvExport';
 
 type ActivityItem = {
   id: string;
@@ -344,11 +358,11 @@ function getCalculationScopeResolution(item: CalculationAuditDetail) {
 const scopeRows = useMemo(() => {
   return activities.map((item) => ({
     scope: classifyScope(item.activityType),
-    activityType: item.activityType,
+    activityType: getActivityTypeLabel(item.activityType),
     quantity: item.quantity,
     unit: formatReportUnit(item.unit),
-    source: formatSourceType(item.sourceType),
-    reference: item.sourceReference ?? '-',
+    source: formatSourceType(item.sourceType, item.sourceFileName, item.sourceReference),
+    reference: getDisplaySourceLabel(item),
   }));
 }, [activities]);
 
@@ -391,59 +405,14 @@ const unclassifiedCalculatedRecords = useMemo(
 function handleDownloadCSV() {
   if (!hasReportOutput) return;
 
-    const rows = [
-      [
-        'activityRecordId',
-        'activityType',
-        'quantity',
-        'unit',
-        'recordDate',
-        'sourceFileName',
-        'sourceReference',
-        'factorVersionId',
-        'factorValue',
-        'factorYear',
-        'factorJurisdiction',
-        'sourceAuthority',
-        'sourceDocument',
-        'matchingMethod',
-        'calculationFormula',
-        'calculatedEmission',
-        'scopeClassification',
-        'scopeSource',
-        'calculationStatus',
-      ],
-      ...calculationDetails.map((item) => [
-        item.activityDataId,
-        item.activityType,
-        formatDisplayNumber(item.activityQuantity),
-        formatReportUnit(item.activityUnit, item),
-        item.recordDate?.slice(0, 10) ?? '',
-        item.sourceFileName || (String(item.sourceType).toUpperCase() === 'MANUAL' ? 'Manual entry' : ''),
-        formatRecordSource(item),
-        item.factorVersionId || '',
-        item.factorValue ?? '',
-        item.factorYear ?? '',
-        formatReportJurisdiction(item.factorJurisdictionRegion, item.factorJurisdictionCountry),
-        item.sourceAuthority || '',
-        item.sourceDocument || '',
-        formatMatchingMethod(item),
-        buildCalculatedFormula(item),
-        item.calculatedEmissionsKgCO2e ?? '',
-        formatScopeClassification(getCalculationScopeResolution(item).scope),
-        formatScopeSource(getCalculationScopeResolution(item).source),
-        formatCalculationStatus(item.status),
-      ]),
-    ];
-
-    const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
+    const csv = buildPilotCsv(calculationDetails);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
 
     link.href = url;
-    link.download = `carbonlite-ai-report-${new Date()
+    link.download = `carbonlite-pilot-report-${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
 
@@ -818,26 +787,6 @@ function handleDownloadPDF() {
   });
 
   nextY = (doc as any).lastAutoTable.finalY + 12;
-  drawPdfSectionTitle(doc, 'Carbon Credit Readiness Notes', nextY);
-  autoTable(doc, {
-    startY: nextY + 6,
-    head: [['Readiness Signal', 'Value']],
-    body: [
-      ['Readiness Level', formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)],
-      ['Readiness Score', `${carbonCreditReadiness.score}/100`],
-      [
-        'Reduction Detected',
-        carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
-          ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e (${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%)`
-          : 'Not assessed or not detected',
-      ],
-      ['Baseline Data', carbonCreditReadiness.checklist.find((item) => item.key === 'baseline-data')?.status ?? 'Not assessed'],
-      ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
-      ['Disclaimer', CARBON_CREDIT_READINESS_DISCLAIMER],
-    ],
-  });
-
-  nextY = (doc as any).lastAutoTable.finalY + 12;
   if (nextY > 235) {
     doc.addPage();
     nextY = 18;
@@ -892,12 +841,12 @@ function handleDownloadPDF() {
     head: [['Activity Type', 'Quantity', 'Unit', 'Estimated Emissions', 'Scope', 'Source Reference']],
     body: matchedActivityEmissions.length
       ? matchedActivityEmissions.map((item) => [
-          item.activityType,
+          getActivityTypeLabel(item.activityType),
           formatDisplayNumber(item.quantity),
           item.unit,
           `${formatEmissionsValue(item.estimatedEmissionsKgCO2e)} kgCO2e`,
           classifyScope(item.activityType),
-          item.sourceReference ?? '',
+          getDisplaySourceLabel(item),
         ])
       : [['No activity records with matching conversion factors.', '', '', '', '', '']],
   });
@@ -908,44 +857,77 @@ function handleDownloadPDF() {
     nextY = 18;
   }
 
-  drawPdfSectionTitle(doc, 'Emission Factors Used', nextY + 10);
+  drawPdfSectionTitle(doc, 'Emission Factors Summary', nextY + 10);
   autoTable(doc, {
     startY: nextY + 16,
     head: [[
       'Factor',
-      'Version',
       'Value',
       'Unit',
       'Jurisdiction',
       'Year',
-      'Source Authority',
-      'Source Document',
-      'Status',
+      'Source',
+      'Verification',
+      'Confidence',
       'Used Records',
     ]],
     body: conversionFactorsUsed.length
       ? conversionFactorsUsed.map((factor) => [
-          factor.factorName || factor.activityType || 'Factor not specified',
-          factor.factorVersionId || 'Legacy factor',
-          formatDisplayNumber(factor.factorValue),
+          factor.factorName || getActivityTypeLabel(factor.activityType) || 'Factor not specified',
+          formatFactorValue(factor.factorValue),
           `${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
           factor.jurisdiction || 'Not specified',
           factor.factorYear || factor.sourceYear || 'Not specified',
-          factor.sourceAuthority || 'Source not specified',
-          factor.sourceDocument || 'Source not specified',
-          factor.verified
-            ? 'Verified'
-            : factor.factorStatus
-            ? formatCalculationStatus(factor.factorStatus)
-            : 'Unverified / user review required',
+          factor.sourceAuthority || factor.sourceDocument || 'Source not specified',
+          formatReportVerification(factor),
+          formatCredibilityLabel(factor.confidenceLevel) || 'Not specified',
           factor.usedRecordsCount ?? 1,
         ])
-      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '', '']],
-    styles: { fontSize: 6.5, cellPadding: 1.5 },
+      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '']],
+    styles: { fontSize: 7.4, cellPadding: 1.7 },
     headStyles: { fillColor: [15, 23, 42] },
+    columnStyles: {
+      0: { cellWidth: 30 },
+      1: { cellWidth: 14 },
+      2: { cellWidth: 20 },
+      3: { cellWidth: 24 },
+      4: { cellWidth: 12 },
+      5: { cellWidth: 22 },
+      6: { cellWidth: 26 },
+      7: { cellWidth: 18 },
+      8: { cellWidth: 12 },
+    },
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (conversionFactorsUsed.length > 0) {
+    nextY += 10;
+    if (nextY > 235) {
+      doc.addPage();
+      nextY = 20;
+    }
+    drawPdfSectionTitle(doc, 'Factor Details / Assumptions', nextY);
+    nextY += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.2);
+    doc.setTextColor(51, 65, 85);
+
+    conversionFactorsUsed.forEach((factor) => {
+      nextY = ensurePdfSpace(doc, nextY, 31);
+      const factorName = factor.factorName || getActivityTypeLabel(factor.activityType) || 'Factor not specified';
+      const factorText = [
+        `Factor: ${factorName}`,
+        `Value: ${formatFactorValue(factor.factorValue)} ${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
+        `Source: ${factor.sourceDocument || factor.sourceAuthority || 'Source not specified'}`,
+        `Version: ${formatReportFactorVersion(factor)}`,
+        `Verification: ${formatReportVerification(factor)}`,
+        `Confidence: ${formatCredibilityLabel(factor.confidenceLevel) || 'Not specified'}`,
+        `Assumption: ${formatReportAssumptions(factor)}`,
+      ].join('\n');
+      nextY = drawPdfTextBlock(doc, factorText, 14, nextY, 178, 4.1) + 5;
+    });
+  }
+
   if (nextY > 230) {
     doc.addPage();
     nextY = 20;
@@ -958,28 +940,33 @@ function handleDownloadPDF() {
       'Activity',
       'Quantity',
       'Factor Used',
-      'Source',
-      'Match',
       'Calculation',
       'Scope',
-      'Scope Source',
       'Status',
+      'Review Note',
     ]],
     body: calculationDetails.length
       ? calculationDetails.map((item) => [
-          item.activityType,
+          getActivityTypeLabel(item.activityType),
           `${formatDisplayNumber(item.activityQuantity)} ${formatReportUnit(item.activityUnit, item)}`,
           formatTraceableFactor(item),
-          formatTraceabilitySource(item),
-          formatMatchingMethod(item),
           buildCalculatedFormula(item),
           formatScopeClassification(getCalculationScopeResolution(item).scope),
-          formatScopeSource(getCalculationScopeResolution(item).source),
           formatCalculationStatus(item.status),
+          formatTraceabilityReviewNote(item),
         ])
-      : [['No calculation details available.', '', '', '', '', '', '', '', '']],
-    styles: { fontSize: 6.5, cellPadding: 1.5 },
+      : [['No calculation details available.', '', '', '', '', '', '']],
+    styles: { fontSize: 7.2, cellPadding: 1.7 },
     headStyles: { fillColor: [15, 23, 42] },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 26 },
+      3: { cellWidth: 40 },
+      4: { cellWidth: 17 },
+      5: { cellWidth: 18 },
+      6: { cellWidth: 37 },
+    },
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 170;
@@ -996,7 +983,7 @@ function handleDownloadPDF() {
     head: [['Activity Type', 'Quantity', 'Unit', 'Source File', 'Source Reference', 'Source Type', 'Notes']],
     body: sourceEvidenceRows.length
       ? sourceEvidenceRows.map((item) => [
-          item.activityType,
+          getActivityTypeLabel(item.activityType),
           item.quantity,
           item.unit,
           item.sourceFile,
@@ -1015,15 +1002,14 @@ function handleDownloadPDF() {
 
   doc.setFontSize(14);
   doc.text('Records Requiring Review', 14, nextY + 10);
-  const reviewRows = calculationDetails.filter(
-    (item) => item.status !== 'CALCULATED' && item.status !== 'OUTSIDE_SCOPE',
-  );
+  const reviewRows = calculationDetails.filter(isRecordRequiringCorrection);
+  const trackedMetricRows = calculationDetails.filter(isTrackedMetricDetail);
   autoTable(doc, {
     startY: nextY + 18,
     head: [['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']],
     body: reviewRows.length
       ? reviewRows.map((item) => [
-          item.activityType,
+          getActivityTypeLabel(item.activityType),
           formatDisplayNumber(item.activityQuantity),
           formatReportUnit(item.activityUnit, item),
           formatCalculationStatus(item.status),
@@ -1034,6 +1020,75 @@ function handleDownloadPDF() {
       : [['No records require review for this report scope.', '', '', '', '', '', '']],
     styles: { fontSize: 6.5, cellPadding: 1.5 },
     headStyles: { fillColor: [15, 23, 42] },
+  });
+
+  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (trackedMetricRows.length) {
+    if (nextY > 230) {
+      doc.addPage();
+      nextY = 20;
+    }
+
+    doc.setFontSize(12);
+    doc.text('Tracked Metrics', 14, nextY + 10);
+    autoTable(doc, {
+      startY: nextY + 18,
+      head: [['Activity', 'Quantity', 'Unit', 'Status', 'Message', 'Source Reference', 'Action']],
+      body: trackedMetricRows.map((item) => [
+        getActivityTypeLabel(item.activityType),
+        formatDisplayNumber(item.activityQuantity),
+        formatReportUnit(item.activityUnit, item),
+        'Tracked Metric',
+        getTrackedMetricMessage(item),
+        formatRecordSource(item),
+        getTrackedMetricAction(),
+      ]),
+      styles: { fontSize: 6.5, cellPadding: 1.5 },
+      headStyles: { fillColor: [15, 23, 42] },
+    });
+  }
+
+  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (nextY > 230) {
+    doc.addPage();
+    nextY = 20;
+  }
+
+  drawPdfSectionTitle(doc, 'Appendix: Optional Carbon Credit Readiness Notes', nextY + 10);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  nextY = drawPdfTextBlock(
+    doc,
+    'This optional section is not a certification or eligibility determination. It is included only as an early screening note and should not be treated as a formal carbon credit assessment.',
+    14,
+    nextY + 18,
+    180,
+    4.3,
+  ) + 4;
+  autoTable(doc, {
+    startY: nextY,
+    head: [['Readiness Signal', 'Value']],
+    body: [
+      ['Readiness Level', formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)],
+      ['Readiness Score', `${carbonCreditReadiness.score}/100`],
+      [
+        'Reduction Detected',
+        carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
+          ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e (${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%)`
+          : 'Not assessed or not detected',
+      ],
+      ['Baseline Data', carbonCreditReadiness.checklist.find((item) => item.key === 'baseline-data')?.status ?? 'Not assessed'],
+      ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
+      ['Tracked Metrics', dataReadinessSummary.trackedOnlyCount],
+      ['Disclaimer', CARBON_CREDIT_READINESS_DISCLAIMER],
+    ],
+    styles: { fontSize: 7.2, cellPadding: 1.7 },
+    headStyles: { fillColor: [71, 85, 105] },
+    columnStyles: {
+      0: { cellWidth: 46 },
+      1: { cellWidth: 134 },
+    },
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 170;
@@ -1052,7 +1107,7 @@ function handleDownloadPDF() {
     nextY = drawPdfTextBlock(doc, paragraph, 14, nextY, 180, 4.4) + 5;
   });
 
-  doc.save(`carbonlite-ai-emissions-report-${today}.pdf`);
+  doc.save(`carbonlite-pilot-data-readiness-report-${today}.pdf`);
   void createClientAuditLog({
     action: 'EXPORT_PDF',
     entityType: 'Report',
@@ -1102,18 +1157,18 @@ function drawReportPdfCover(
 
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(16);
-  doc.text('CarbonLite AI', x + 19, y + 6);
+  doc.text('CarbonLite', x + 19, y + 6);
 
   doc.setFontSize(9);
   doc.setTextColor(4, 120, 87);
-  doc.text('Environmental Reporting Platform', x + 19, y + 12);
+  doc.text('Pilot reporting workflow', x + 19, y + 12);
 
   doc.setDrawColor(203, 213, 225);
   doc.line(x, y + 28, 186, y + 28);
 
   doc.setFontSize(25);
   doc.setTextColor(15, 23, 42);
-  doc.text('Emissions Summary Report', x, y + 62);
+  doc.text('Pilot Emissions Data Readiness Report', x, y + 62, { maxWidth: 166 });
 
   doc.setFontSize(16);
   doc.setTextColor(4, 120, 87);
@@ -1125,25 +1180,17 @@ function drawReportPdfCover(
   doc.text(`Reporting period: ${input.reportPeriod}`, x, y + 102);
   doc.text(`Report scope: ${input.reportScopeLabel}`, x, y + 112);
   doc.text(`Generated date: ${input.generatedDate}`, x, y + 122);
-  doc.text('Prepared by: CarbonLite AI', x, y + 132);
+  doc.text('Prepared by: CarbonLite', x, y + 132);
 
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139);
   doc.text(
-    'Prepared for review as part of a pilot emissions reporting workflow.',
+    'Prepared for review as part of a pilot emissions data readiness and reporting workflow.',
     x,
     270,
   );
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
-}
-
-function escapeCsvValue(value: unknown) {
-  const text = value === null || value === undefined ? '' : String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
 }
 
 function drawPdfSectionTitle(doc: jsPDF, title: string, y: number) {
@@ -1431,12 +1478,12 @@ function setAllReportSections(expanded: boolean) {
                 ) : (
                   activities.map((item) => (
                     <tr key={item.id}>
-                      <td style={tdStyle}>{item.recordDate?.slice(0, 10)}</td>
-                      <td style={tdStyle}>{item.activityType}</td>
+                      <td style={tdStyle}>{formatDateOnly(item.recordDate)}</td>
+                      <td style={tdStyle}>{getActivityTypeLabel(item.activityType)}</td>
                       <td style={tdStyle}>{formatDisplayNumber(item.quantity)}</td>
                       <td style={tdStyle}>{formatReportUnit(item.unit)}</td>
-                      <td style={tdStyle}>{formatSourceType(item.sourceType)}</td>
-                      <td style={tdStyle}>{item.sourceReference ?? '-'}</td>
+                      <td style={tdStyle}>{formatSourceType(item.sourceType, item.sourceFileName, item.sourceReference)}</td>
+                      <td style={tdStyle}>{getDisplaySourceLabel(item)}</td>
                     </tr>
                   ))
                 )}
@@ -1470,11 +1517,14 @@ function setAllReportSections(expanded: boolean) {
           </CollapsibleReportSection>
           <CollapsibleReportSection
             id="carbon-credit-readiness-report-section"
-            title="Carbon Credit Readiness Notes"
+            title="Appendix: Optional Carbon Credit Readiness Notes"
             summary={`${formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} · ${carbonCreditReadiness.score}/100`}
             expanded={expandedSections.carbonCreditReadiness}
             onToggle={() => toggleReportSection('carbonCreditReadiness')}
           >
+            <p style={{ color: '#64748b', lineHeight: 1.6, margin: '0 0 12px' }}>
+              This optional section is not a certification or eligibility determination. It is included only as an early screening note and should not be treated as a formal carbon credit assessment.
+            </p>
             <div style={dataQualityNotesGridStyle}>
               <DataQualityNote label="Readiness Level" value={formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} />
               <DataQualityNote label="Readiness Score" value={`${carbonCreditReadiness.score}/100`} />
@@ -1487,6 +1537,7 @@ function setAllReportSections(expanded: boolean) {
                 }
               />
               <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
+              <DataQualityNote label="Tracked Metrics" value={dataReadinessSummary.trackedOnlyCount} />
             </div>
             <p style={{ color: '#555', lineHeight: 1.7, marginTop: 12 }}>
               {carbonCreditReadiness.summary}

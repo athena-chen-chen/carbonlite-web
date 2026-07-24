@@ -9,7 +9,8 @@ import {
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 import type { CalculationAuditDetail } from '../services/metrics';
-import { formatCalculationStatus } from '../utils/calculationTraceability';
+import { formatFactorValue } from '../utils/calculationTraceability';
+import { formatCredibilityLabel } from '../utils/factorCredibility';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
@@ -17,6 +18,17 @@ import {
   formatScopeSource,
   resolveScopeClassification,
 } from '../utils/scopeClassification';
+import { getActivityTypeLabel } from '../utils/activityType';
+import {
+  buildSourceEvidenceNote,
+  formatReportAssumptions,
+  formatReportFactorVersion,
+  formatReportSourceReference,
+  formatReportSourceType,
+  formatReportVerification,
+  isRecordRequiringCorrection,
+  isTrackedMetricDetail,
+} from '../utils/reportCredibility';
 import { ActivityBreakdownSection } from './reports/sections/ActivityBreakdownSection';
 import { CalculationQualitySection } from './reports/sections/CalculationQualitySection';
 import { CalculationTraceabilitySection } from './reports/sections/CalculationTraceabilitySection';
@@ -70,6 +82,7 @@ export type FormalActivityEmission = {
   estimatedEmissionsKgCO2e: number;
   sourceType: string;
   sourceReference?: string | null;
+  sourceFileName?: string | null;
   notes?: string | null;
   factorId: string;
 };
@@ -77,6 +90,7 @@ export type FormalActivityEmission = {
 export type FormalConversionFactorUsed = {
   factorId?: string | null;
   factorVersionId?: string | null;
+  factorVersion?: string | null;
   activityType?: string | null;
   factorName: string;
   factorValue: string | number;
@@ -86,6 +100,8 @@ export type FormalConversionFactorUsed = {
   factorYear?: number | null;
   factorStatus?: string | null;
   confidenceLevel?: string | null;
+  verificationStatus?: string | null;
+  assumptions?: string | null;
   sourceAuthority: string;
   sourceDocument?: string | null;
   sourceUrl?: string | null;
@@ -216,7 +232,7 @@ export function buildReportExecutiveSummary({
   const primaryActivityTypes = Array.from(
     new Set(
       matchedActivityEmissions
-        .map((item) => String(item.activityType ?? '').trim())
+        .map((item) => getActivityTypeLabel(item.activityType))
         .filter(Boolean),
     ),
   );
@@ -241,19 +257,18 @@ export function buildConversionFactorTraceabilityRows(
   conversionFactorsUsed: FormalConversionFactorUsed[],
 ) {
   return conversionFactorsUsed.map((factor) => [
-    factor.activityType || 'Not specified',
-    formatDisplayNumber(factor.factorValue),
+    getActivityTypeLabel(factor.activityType),
+    formatFactorValue(factor.factorValue),
     factor.inputUnit || 'Not specified',
     factor.resultUnit || 'kgCO2e',
     formatReportJurisdiction(factor.jurisdiction),
     factor.sourceAuthority || 'Source not specified',
     factor.sourceYear || 'Source not specified',
-    factor.verified
-      ? 'Verified'
-      : factor.factorStatus
-      ? formatCalculationStatus(factor.factorStatus)
-      : 'Unverified / user review required',
+    formatReportVerification(factor),
     factor.factorType,
+    formatCredibilityLabel(factor.confidenceLevel) || 'Not specified',
+    formatReportFactorVersion(factor),
+    formatReportAssumptions(factor),
     factor.sourceDocument || 'Source not specified',
     factor.sourceUrl || 'Source not specified',
     factor.usedRecordsCount ?? 1,
@@ -292,16 +307,21 @@ export function buildSourceEvidenceRows(
 
   return activities.map((activity) => {
     const detail = activity.id ? detailsByActivityId.get(activity.id) : undefined;
-    const sourceType = formatSourceType(activity.sourceType);
-    const isManual = sourceType === 'Manual entry';
+    const sourceType = formatSourceType(
+      activity.sourceType,
+      activity.sourceFileName,
+      activity.sourceReference,
+    );
+    const isManual = sourceType === 'Manual Entry';
     const sourceReferenceParts = [
       activity.sourceReference?.trim(),
       activity.sourcePage ? `Page ${activity.sourcePage}` : '',
       activity.sourceRow ? `Line item ${activity.sourceRow}` : '',
     ].filter(Boolean);
+    const rawSourceReference = sourceReferenceParts.join(' · ');
 
     return {
-      activityType: activity.activityType || 'Not specified',
+      activityType: getActivityTypeLabel(activity.activityType),
       quantity:
         activity.quantity === null || activity.quantity === undefined
           ? '-'
@@ -311,13 +331,14 @@ export function buildSourceEvidenceRows(
         activity.sourceFileName?.trim() ||
         (isManual ? 'Manual entry' : 'Source not specified'),
       sourceReference: isManual
-        ? 'Manual entry'
-        : sourceReferenceParts.join(' · ') || 'Source not specified',
+        ? 'manual'
+        : formatReportSourceReference({
+            sourceReference: rawSourceReference || activity.sourceReference,
+            sourceType: activity.sourceType,
+            sourceFileName: activity.sourceFileName,
+          }),
       sourceType,
-      notes:
-        activity.sourceTextSnippet ||
-        activity.notes ||
-        '',
+      notes: buildSourceEvidenceNote({ activity, detail }),
     };
   });
 }
@@ -357,18 +378,12 @@ export function formatReportJurisdiction(
   return `${cleanRegion}, ${cleanCountry}`;
 }
 
-export function formatSourceType(sourceType?: string | null) {
-  if (!sourceType) return 'Unknown';
-
-  const value = sourceType.toUpperCase();
-
-  if (value === 'MANUAL') return 'Manual entry';
-  if (value === 'CSV') return 'CSV Import';
-  if (value === 'EXCEL') return 'Excel Import';
-  if (value === 'PASTE') return 'Pasted from Excel';
-  if (value === 'DOCUMENT_AI' || value === 'AI_EXTRACTION') return 'AI Extraction';
-
-  return sourceType;
+export function formatSourceType(
+  sourceType?: string | null,
+  sourceFileName?: string | null,
+  sourceReference?: string | null,
+) {
+  return formatReportSourceType(sourceType, sourceFileName, sourceReference);
 }
 
 export function FormalReportPreview({
@@ -403,6 +418,8 @@ export function FormalReportPreview({
   );
   const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails);
   const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
+  const reviewRecordCount = calculationDetails.filter(isRecordRequiringCorrection).length;
+  const trackedMetricCount = calculationDetails.filter(isTrackedMetricDetail).length;
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
@@ -446,20 +463,21 @@ export function FormalReportPreview({
           <div style={brandBlockStyle}>
             <div style={brandIconStyle}>CL</div>
             <div>
-              <div style={brandNameStyle}>CarbonLite AI</div>
-              <div style={brandSubtitleStyle}>Environmental Reporting Platform</div>
+              <div style={brandNameStyle}>CarbonLite</div>
+              <div style={brandSubtitleStyle}>Pilot reporting workflow</div>
             </div>
           </div>
           <div style={coverLabelStyle}>Report Cover</div>
         </div>
         <div style={coverBodyStyle}>
-          <div style={reportTitleStyle}>Emissions Summary Report</div>
+          <div style={reportTitleStyle}>Pilot Emissions Data Readiness Report</div>
           <div style={coverOrganizationStyle}>{organizationName || 'Workspace'}</div>
           <div style={coverFactsStyle}>
             <div><strong>Reporting period:</strong> {reportPeriod}</div>
             <div><strong>Report scope:</strong> {scopeLabel}</div>
             <div><strong>Generated date:</strong> {generatedAt}</div>
-            <div><strong>Prepared by:</strong> CarbonLite AI</div>
+            <div><strong>Prepared by:</strong> CarbonLite</div>
+            <div>Prepared for review as part of a pilot emissions data readiness and reporting workflow.</div>
           </div>
         </div>
       </div>
@@ -598,7 +616,6 @@ export function FormalReportPreview({
           calculationDetails={calculationDetails}
           formatRecordUnit={formatReportUnit}
           formatScopeLabel={(item) => formatScopeClassification(getFormalScopeResolution(item).scope)}
-          formatScopeSourceLabel={(item) => formatScopeSource(getFormalScopeResolution(item).source)}
         />
       </ReportSection>
 
@@ -617,7 +634,7 @@ export function FormalReportPreview({
         sectionId="records-review"
         expanded={expandedSections['records-review']}
         onToggle={toggleSection}
-        summary={`${reportCountSummary.skippedRecords} records require review`}
+        summary={`${reviewRecordCount} records require review${trackedMetricCount ? ` · ${trackedMetricCount} tracked metrics` : ''}`}
       >
         <RecordsRequiringReviewSection
           calculationDetails={calculationDetails}

@@ -2,12 +2,14 @@ import {
   FILE_MISSING_EXPLANATION,
   FILE_MISSING_TOOLTIP,
   formatSourceReference,
+  formatDocumentCreatedAt,
   formatDuplicateDocumentMessage,
   getDocumentActionModel,
   getDocumentStatusLabel,
   getDocumentDownloadUrl,
   getImportValidationIssues,
   resolveActivityRecordDate,
+  buildDocumentImportActivityPayload,
 } from './UploadPage';
 
 function buildImportRow(overrides: Record<string, any> = {}) {
@@ -34,6 +36,94 @@ describe('duplicate document messaging', () => {
         createdAt: '2026-05-30T10:30:00.000Z',
       }),
     ).toBe('utility.xlsx was already uploaded on 2026-05-30.');
+  });
+});
+
+describe('document import factor matching metadata', () => {
+  it('matches imported BC electricity with the same canonical metadata as manual entry', () => {
+    const payload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: 'Electricity', confidence: 'high' },
+        recordDate: { value: '2026-07-20', confidence: 'high' },
+        quantity: { value: 100, confidence: 'high' },
+        unit: { value: ' KWH ', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'BC', confidence: 'high' },
+      }),
+      documentId: 'doc-bc',
+      sourceFileName: 'bc-hydro.pdf',
+      importBatchId: 'document-doc-bc',
+      organizationId: 'org-1',
+      conversionFactors: [
+        {
+          id: 'factor-electricity-bc-2025',
+          organizationId: null,
+          name: 'Electricity - British Columbia - 2025',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          unit: 'kWh',
+          factorValue: 0.02,
+          resultUnit: 'kgCO2e/kWh',
+          sourceYear: 2025,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'British Columbia',
+          isSystemDefault: true,
+          isDefault: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ] as any,
+    });
+
+    expect(payload).toMatchObject({
+      activityType: 'ELECTRICITY',
+      quantity: 100,
+      unit: ' KWH ',
+      jurisdictionRegion: 'BC',
+      matchingStatus: 'MATCHED',
+      reportTreatment: 'INCLUDED',
+      scope: 'SCOPE_2',
+      matchedFactorId: 'factor-electricity-bc-2025',
+      matchedFactorName: 'Electricity - British Columbia - 2025',
+      matchedFactorSourceYear: 2025,
+      calculatedEmissionsKgCO2e: 2,
+      calculationStatus: 'CALCULATED',
+      calculationMessage: 'Matched factor. Using latest available factor year: 2025.',
+    });
+    expect(payload.notes).not.toMatch(/Missing Factor|No conversion factor/i);
+  });
+
+  it('keeps unsupported imported electricity provinces as missing factor metadata', () => {
+    const payload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: 'ELECTRICITY', confidence: 'high' },
+        quantity: { value: 100, confidence: 'high' },
+        unit: { value: 'kWh', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'Saskatchewan', confidence: 'high' },
+      }),
+      documentId: 'doc-sk',
+      sourceFileName: 'sk-power.pdf',
+      importBatchId: 'document-doc-sk',
+      conversionFactors: [],
+    });
+
+    expect(payload).toMatchObject({
+      activityType: 'ELECTRICITY',
+      jurisdictionRegion: 'Saskatchewan',
+      matchingStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'MISSING_FACTOR',
+    });
+  });
+});
+
+describe('document table formatting', () => {
+  it('formats created timestamps for compact Input Review display', () => {
+    expect(formatDocumentCreatedAt('2026-07-03T01:12:30')).toBe('2026-07-03 01:12');
+    expect(formatDocumentCreatedAt('not-a-date')).toBe('not-a-date');
+    expect(formatDocumentCreatedAt(null)).toBe('-');
   });
 });
 
@@ -138,6 +228,21 @@ describe('import row validation', () => {
 
   it('allows valid selected rows', () => {
     expect(getImportValidationIssues([buildImportRow()])).toEqual([]);
+  });
+
+  it('marks unsupported pilot activity types before import', () => {
+    expect(
+      getImportValidationIssues([
+        buildImportRow({ activityType: { value: 'WASTE', confidence: 'medium' } }),
+      ]),
+    ).toEqual([
+      {
+        rowIndex: 0,
+        field: 'activityType',
+        message:
+          'Unsupported Activity Type: This activity type is not supported in the current CarbonLite pilot.',
+      },
+    ]);
   });
 });
 

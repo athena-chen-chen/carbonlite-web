@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { ProvinceSelect } from './ProvinceSelect';
 import type { ActivityRecordField, ActivityRecordFormValues } from './types';
+import { getActivityTypeLabel } from '../../utils/activityType';
 
 export type SharedActivityRecordFieldProps = {
   values: ActivityRecordFormValues;
@@ -49,7 +50,7 @@ export function ActivityDetailsFields({
             <option value="">Select type</option>
             {activityTypeOptions.map((type) => (
               <option key={type} value={type}>
-                {type}
+                {getActivityTypeLabel(type)}
               </option>
             ))}
           </select>

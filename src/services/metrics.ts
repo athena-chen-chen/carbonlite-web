@@ -200,8 +200,12 @@ export type MetricsSummaryResponse = {
     sourceAuthority: string;
     sourceDocument?: string | null;
     sourceUrl?: string | null;
+    factorVersion?: string | null;
     sourceYear?: number | null;
     factorStatus?: string | null;
+    confidenceLevel?: string | null;
+    verificationStatus?: string | null;
+    assumptions?: string | null;
     factorType: 'System' | 'Custom';
     verified: boolean;
     priority?: string | null;
@@ -243,6 +247,7 @@ export type CalculationAuditDetail = {
   normalizedUnit?: string | null;
   factorId?: string | null;
   factorVersionId?: string | null;
+  factorVersion?: string | null;
   factorName?: string | null;
   factorDisplayName?: string | null;
   factorValue?: number | null;
@@ -257,6 +262,7 @@ export type CalculationAuditDetail = {
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
   sourceUrl?: string | null;
+  factorAssumptions?: string | null;
   factorSourcePage?: string | number | null;
   factorSourceTable?: string | null;
   sourceYear?: number | null;
@@ -331,6 +337,8 @@ export type CalculationExplanation = {
     sourceDocument?: string | null;
     sourceYear?: number | null;
     sourceUrl?: string | null;
+    factorVersion?: string | null;
+    assumptions?: string | null;
     confidenceLevel?: string | null;
     verificationStatus?: string | null;
     verified?: boolean | null;

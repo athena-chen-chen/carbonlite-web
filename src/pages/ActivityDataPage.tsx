@@ -7,11 +7,20 @@ import {
   updateActivityData,
   deleteActivityData,
   bulkDeleteActivityData,
-  clearActivityRecordsForCurrentCompany,
-  type ClearActivityRecordsResponse,
+  resetDemoDataForCurrentCompany,
+  type ResetDemoDataResponse,
   type DeleteActivityDataResponse,
 } from '../services/activityData';
-import { getCurrentUser, isAdminOrOwnerUser } from '../services/auth';
+import {
+  canClearActivityRecords as canClearActivityRecordsForUser,
+  canManageActivityRecords,
+  getCurrentUser,
+  getOrganizationId,
+} from '../services/auth';
+import {
+  getAllConversionFactors,
+  type ConversionFactorItem,
+} from '../services/conversionFactors';
 import { EditRecordPanel } from '../components/data-records/EditRecordPanel';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { BulkProvinceToolbar } from '../components/shared/BulkProvinceToolbar';
@@ -23,10 +32,31 @@ import {
   ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
   normalizeProvince as normalizeCanadianProvince,
 } from '../utils/province';
+import { getActivityTypeLabel } from '../utils/activityType';
+import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import {
+  findBestConversionFactorMatch,
+  getFactorValue,
+  type ConversionFactorMatch,
+  type MatchableConversionFactor,
+  normalizeActivityType,
+} from '../utils/conversionFactorMatching';
+import {
+  buildMatchedFactorSnapshot,
+  formatCredibilityLabel,
+  getFactorAssumptionDisclosure,
+  getFactorCredibilityBadges,
+} from '../utils/factorCredibility';
+import { inferDefaultScope } from '../utils/scopeClassification';
+import {
+  clearInputReviewBrowserState,
+  notifyDemoDataReset,
+} from '../utils/demoDataReset';
+import { invalidateDemoDataQueries } from '../queryClient';
 
 const PAGE_SIZE = 15;
-const CLEAR_ACTIVITY_RECORDS_CONFIRMATION = 'CLEAR RECORDS';
+const RESET_DEMO_DATA_CONFIRMATION = 'RESET DEMO DATA';
 
 const ACTIVITY_TABLE_COLUMNS = [
   { key: 'status', label: 'Status' },
@@ -51,6 +81,8 @@ type ActivityDataItem = {
   unit?: string | null;
   jurisdictionCountry?: string | null;
   jurisdictionRegion?: string | null;
+  country?: string | null;
+  province?: string | null;
   facilityId?: string | null;
   recordYear?: number | null;
   documentId?: string | null;
@@ -60,7 +92,35 @@ type ActivityDataItem = {
   sourceReference?: string | null;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
+  sourceTextSnippet?: string | null;
+  importBatchId?: string | null;
+  dateEstimated?: boolean | null;
+  customTypeLabel?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
   notes?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  matchingStatus?: string | null;
+  reportTreatment?: string | null;
+  scope?: string | null;
+  matchedFactorId?: string | null;
+  matchedFactorName?: string | null;
+  matchedFactorSourceYear?: number | string | null;
+  matchedFactorValue?: number | string | null;
+  matchedFactorUnit?: string | null;
+  matchedFactorVersion?: string | null;
+  matchedFactorSourceAuthority?: string | null;
+  matchedFactorSourceDocument?: string | null;
+  matchedFactorVerificationStatus?: string | null;
+  matchedFactorConfidenceLevel?: string | null;
+  matchedFactorAssumptions?: string | null;
+  calculatedEmissionsKgCO2e?: number | string | null;
+  calculatedEmission?: number | string | null;
+  calculationStatus?: string | null;
+  calculationMessage?: string | null;
 };
 
 export function ActivityDataPage() {
@@ -76,6 +136,7 @@ export function ActivityDataPage() {
 const [editingId, setEditingId] = useState<string | null>(null);
 const [editRow, setEditRow] = useState<any>({});
 const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+const [conversionFactors, setConversionFactors] = useState<ConversionFactorItem[]>([]);
 const [lastDeleted, setLastDeleted] = useState<ActivityDataItem | null>(null);
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
 const [currentPage, setCurrentPage] = useState(1);
@@ -90,6 +151,7 @@ const [viewedRecord, setViewedRecord] = useState<ActivityDataItem | null>(null);
 const [isClearRecordsModalOpen, setIsClearRecordsModalOpen] = useState(false);
 const [clearRecordsConfirmation, setClearRecordsConfirmation] = useState('');
 const [isClearingRecords, setIsClearingRecords] = useState(false);
+const [isRecalculatingRecords, setIsRecalculatingRecords] = useState(false);
 const [visibleColumns, setVisibleColumns] = useState<Record<ActivityTableColumnKey, boolean>>({
   status: true,
   date: true,
@@ -119,7 +181,7 @@ const scopeFilteredItems = recordFilterId
     })
   : items;
 const filteredItems = scopeFilteredItems.filter((item) =>
-  qualityFilter === 'all' ? true : getActivityRecordQuality(item).filterKey === qualityFilter,
+  qualityFilter === 'all' ? true : getActivityRecordQuality(item, conversionFactors).filterKey === qualityFilter,
 );
 const documentFilterName =
   sourceDocumentNameFromState ??
@@ -131,7 +193,9 @@ const selectedMissingProvinceElectricityRows = items.filter(
     String(item.activityType ?? '').toUpperCase() === 'ELECTRICITY' &&
     isMissingRecordValue(item.jurisdictionRegion),
 );
-const canClearActivityRecords = isAdminOrOwnerUser(getCurrentUser());
+const currentUser = getCurrentUser();
+const canEditActivityRecords = canManageActivityRecords(currentUser);
+const canClearActivityRecords = canClearActivityRecordsForUser(currentUser);
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
@@ -153,6 +217,14 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
       return items;
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadConversionFactors() {
+    try {
+      setConversionFactors(await getAllConversionFactors({ type: 'EMISSION' }));
+    } catch {
+      setConversionFactors([]);
     }
   }
 
@@ -183,7 +255,7 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
 
     if (stillReturnedIds.length > 0) {
       setError(
-        `Delete succeeded, but GET /activity-data still returned ${stillReturnedIds.length} deleted record(s). Showing synced UI while backend list is checked.`,
+        `Delete succeeded, but ${stillReturnedIds.length} deleted record(s) still appeared after refresh. Showing the synced view while records finish updating.`,
       );
       setItems(refreshedItems.filter((item) => !deletedIds.includes(item.id)));
       return;
@@ -196,17 +268,40 @@ const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(nu
     return `${deletedCount} ${deletedCount === 1 ? 'record' : 'records'} deleted.`;
   }
 
-  function formatClearRecordsSuccess(summary: ClearActivityRecordsResponse) {
+  function formatResetDemoDataSuccess(summary: ResetDemoDataResponse) {
     return [
-      `${summary.deletedActivityRecords} activity record${summary.deletedActivityRecords === 1 ? '' : 's'}`,
-      `${summary.deletedCalculationDetails} calculated result${summary.deletedCalculationDetails === 1 ? '' : 's'}`,
-      `${summary.deletedImportBatches} import batch${summary.deletedImportBatches === 1 ? '' : 'es'}`,
-      `${summary.resetReports} report draft${summary.resetReports === 1 ? '' : 's'} reset`,
+      `${summary.activityRecordsDeleted} activity record${summary.activityRecordsDeleted === 1 ? '' : 's'}`,
+      `${summary.uploadedDocumentsDeleted} uploaded document${summary.uploadedDocumentsDeleted === 1 ? '' : 's'}`,
+      `${summary.stagedRowsDeleted} staged row${summary.stagedRowsDeleted === 1 ? '' : 's'}`,
+      `${summary.importBatchesDeleted} import batch${summary.importBatchesDeleted === 1 ? '' : 'es'}`,
+      `${summary.metricsCacheCleared} calculated result${summary.metricsCacheCleared === 1 ? '' : 's'}`,
+      `${summary.resetReports ?? 0} report draft${summary.resetReports === 1 ? '' : 's'} reset`,
+    ].join(', ') + '.';
+  }
+
+  function formatRecalculateSuccess(summary: {
+    recalculatedRecords: number;
+    matchedRecords: number;
+    missingFactorRecords: number;
+    missingProvinceRecords: number;
+    unitMismatchRecords: number;
+    trackedOnlyRecords: number;
+    errors: number;
+  }) {
+    return [
+      `${summary.recalculatedRecords} record${summary.recalculatedRecords === 1 ? '' : 's'} recalculated`,
+      `${summary.matchedRecords} matched`,
+      `${summary.missingFactorRecords} missing factor`,
+      `${summary.missingProvinceRecords} missing province`,
+      `${summary.unitMismatchRecords} unit mismatch`,
+      `${summary.trackedOnlyRecords} tracked only`,
+      `${summary.errors} error${summary.errors === 1 ? '' : 's'}`,
     ].join(', ') + '.';
   }
 
   useEffect(() => {
     loadItems();
+    loadConversionFactors();
   }, []);
 
   const isInitialRecordsLoading = loading && items.length === 0 && !recordLoadError;
@@ -339,12 +434,16 @@ function clearActivityRecordFilters() {
 }
 
 function toggleSelect(id: string, checked: boolean) {
+  if (!canEditActivityRecords) return;
+
   setSelectedIds((prev) =>
     checked ? [...prev, id] : prev.filter((x) => x !== id),
   );
 }
 
 function toggleSelectAll(checked: boolean) {
+  if (!canEditActivityRecords) return;
+
   const pageIds = paginatedItems.map((item) => item.id);
 
   setSelectedIds((prev) => {
@@ -370,6 +469,19 @@ function handleGenerateReportFromSelection() {
 
 function normalizeProvinceValue(value?: string | null) {
   return normalizeCanadianProvince(value) ?? '';
+}
+
+function normalizeStoredStatus(value?: string | null) {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+function getActivityRecordYear(row: ActivityDataItem) {
+  const yearFromDate = getDateOnlyYear(row.recordDate);
+
+  return yearFromDate ?? row.recordYear ?? undefined;
 }
 
 function getProvinceOptions(value?: string | null) {
@@ -487,10 +599,267 @@ function isActivityRecordIncomplete(row: ActivityDataItem) {
   );
 }
 
-function getActivityRecordQuality(row: ActivityDataItem) {
+function hasStoredMatchedStatus(row: ActivityDataItem) {
+  const matchingStatus = normalizeStoredStatus(row.matchingStatus);
+  const calculationStatus = normalizeStoredStatus(row.calculationStatus);
+  const reportTreatment = normalizeStoredStatus(row.reportTreatment);
+  const emissions = Number(row.calculatedEmissionsKgCO2e ?? row.calculatedEmission);
+
+  return (
+    ['MATCHED', 'READY'].includes(matchingStatus) ||
+    calculationStatus === 'CALCULATED' ||
+    reportTreatment === 'INCLUDED' ||
+    Boolean(row.matchedFactorId || row.matchedFactorName) ||
+    Number.isFinite(emissions)
+  );
+}
+
+function hasStoredMissingFactorStatus(row: ActivityDataItem) {
+  return [
+    row.matchingStatus,
+    row.calculationStatus,
+  ].some((status) => normalizeStoredStatus(status).includes('MISSING_FACTOR'));
+}
+
+function hasStoredUnitMismatchStatus(row: ActivityDataItem) {
+  return [
+    row.matchingStatus,
+    row.calculationStatus,
+  ].some((status) => ['UNIT_MISMATCH', 'INVALID_UNIT'].includes(normalizeStoredStatus(status)));
+}
+
+function hasStoredTrackedOnlyStatus(row: ActivityDataItem) {
+  return [
+    row.matchingStatus,
+    row.calculationStatus,
+    row.reportTreatment,
+  ].some((status) => normalizeStoredStatus(status) === 'TRACKED_ONLY');
+}
+
+function hasStoredReviewStatus(row: ActivityDataItem) {
+  return [
+    row.matchingStatus,
+    row.calculationStatus,
+  ].some((status) => normalizeStoredStatus(status) === 'REQUIRES_REVIEW');
+}
+
+function getShortFactorName(match: ConversionFactorMatch) {
+  return match.factor.name || match.factor.displayName || match.factor.activityType || 'Matched factor';
+}
+
+function getActivityRecordMatch(
+  row: ActivityDataItem,
+  conversionFactors: ConversionFactorItem[],
+): ConversionFactorMatch | undefined {
+  const activityType = normalizeActivityType(row.activityType);
   const normalizedUnit = normalizeUnitForDisplay(row.unit);
-  const notes = String(row.notes ?? '').toLowerCase();
-  const activityType = String(row.activityType ?? '').toUpperCase();
+  const quantity = Number(row.quantity);
+
+  if (!activityType || normalizedUnit.status !== 'valid') return undefined;
+  if (!Number.isFinite(quantity) || quantity <= 0) return undefined;
+
+  return findBestConversionFactorMatch({
+    activityType,
+    inputUnit: normalizedUnit.value,
+    jurisdictionCountry: row.jurisdictionCountry,
+    jurisdictionRegion: row.jurisdictionRegion,
+    recordYear: getActivityRecordYear(row),
+    organizationId: getOrganizationId(getCurrentUser()),
+    factors: conversionFactors as MatchableConversionFactor[],
+  });
+}
+
+function getActivityRecordEmissions(
+  row: ActivityDataItem,
+  match: ConversionFactorMatch,
+) {
+  const quantity = Number(row.quantity);
+  const factorValue = Number(getFactorValue(match.factor));
+
+  return Number.isFinite(quantity) && Number.isFinite(factorValue)
+    ? quantity * factorValue
+    : null;
+}
+
+function buildMatchedActivityRecordNote(
+  row: ActivityDataItem,
+  match: ConversionFactorMatch,
+) {
+  const emissions = getActivityRecordEmissions(row, match);
+  const emissionsText = emissions === null
+    ? 'N/A'
+    : emissions.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  const fallbackText = match.usedPriorYearFallback && match.factorYear
+    ? ` Using latest available factor year: ${match.factorYear}.`
+    : '';
+
+  return [
+    row.notes && !/missing factor|no conversion factor/i.test(row.notes)
+      ? row.notes
+      : '',
+    `Calculation status: Matched.${fallbackText}`,
+    `Matched factor: ${getShortFactorName(match)} (${getFactorValue(match.factor)}).`,
+    `Calculated emissions: ${emissionsText} kgCO2e.`,
+  ].filter(Boolean).join(' ');
+}
+
+function buildUnmatchedActivityRecordNote(
+  row: ActivityDataItem,
+  label: 'Missing Province' | 'Missing Factor' | 'Invalid Unit' | 'Tracked Metric' | 'Requires Review',
+) {
+  const retainedNotes = row.notes && !/missing factor|no conversion factor|calculation status/i.test(row.notes)
+    ? row.notes
+    : '';
+
+  const details: Record<typeof label, string> = {
+    'Missing Province': 'Electricity requires province before factor matching.',
+    'Missing Factor': 'No matching conversion factor is available for this record.',
+    'Invalid Unit': 'Unit must be normalized before calculation.',
+    'Tracked Metric': 'Tracked only and excluded from GHG totals.',
+    'Requires Review': 'Required fields must be completed before calculation.',
+  };
+
+  return [
+    retainedNotes,
+    `Calculation status: ${label}.`,
+    details[label],
+  ].filter(Boolean).join(' ');
+}
+
+function buildRecalculatedActivityPayload(
+  row: ActivityDataItem,
+  conversionFactors: ConversionFactorItem[],
+  options: { updateNotes?: boolean } = {},
+) {
+  const { updateNotes = true } = options;
+  const activityType = normalizeActivityType(row.activityType) || String(row.activityType ?? '');
+  const normalizedUnit = normalizeUnitForDisplay(row.unit);
+  const match = getActivityRecordMatch(row, conversionFactors);
+  const scope = inferDefaultScope(activityType);
+
+  const basePayload = {
+    activityType,
+    recordDate: formatDateOnly(row.recordDate) || null,
+    quantity: Number(row.quantity),
+    unit: String(row.unit ?? ''),
+    jurisdictionCountry: row.jurisdictionCountry || 'Canada',
+    jurisdictionRegion: row.jurisdictionRegion || '',
+    recordYear: getActivityRecordYear(row),
+    sourceType: row.sourceType || 'MANUAL',
+    sourceReference: row.sourceReference ?? '',
+    notes: row.notes ?? '',
+    facilityId: row.facilityId ?? '',
+    assetId: row.assetId ?? '',
+    documentId: row.documentId ?? '',
+    sourceDocumentId: row.sourceDocumentId ?? '',
+    sourceFileName: row.sourceFileName ?? '',
+    sourcePage: row.sourcePage ?? undefined,
+    sourceRow: row.sourceRow ?? undefined,
+    sourceTextSnippet: row.sourceTextSnippet ?? '',
+    importBatchId: row.importBatchId ?? '',
+    dateEstimated: Boolean(row.dateEstimated),
+    customTypeLabel: row.customTypeLabel ?? '',
+    periodStart: row.periodStart ?? '',
+    periodEnd: row.periodEnd ?? '',
+    scope,
+  };
+
+  if (activityType === 'ELECTRICITY' && isMissingRecordValue(row.jurisdictionRegion)) {
+    return {
+      payload: {
+        ...basePayload,
+        matchingStatus: 'MISSING_PROVINCE',
+        reportTreatment: 'EXCLUDED',
+        calculationStatus: 'MISSING_PROVINCE',
+        calculationMessage: 'Electricity records require province before factor matching.',
+        notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Missing Province') : row.notes ?? '',
+      },
+      status: 'missingProvince' as const,
+    };
+  }
+
+  if (normalizedUnit.status === 'invalid') {
+    return {
+      payload: {
+        ...basePayload,
+        matchingStatus: 'UNIT_MISMATCH',
+        reportTreatment: 'EXCLUDED',
+        calculationStatus: 'UNIT_MISMATCH',
+        calculationMessage: 'Unit mismatch. This record is excluded from emissions totals.',
+        notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Invalid Unit') : row.notes ?? '',
+      },
+      status: 'unitMismatch' as const,
+    };
+  }
+
+  if (isActivityRecordIncomplete(row)) {
+    return {
+      payload: {
+        ...basePayload,
+        matchingStatus: 'REQUIRES_REVIEW',
+        reportTreatment: 'EXCLUDED',
+        calculationStatus: 'REQUIRES_REVIEW',
+        calculationMessage: 'Required fields must be completed before calculation.',
+        notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Requires Review') : row.notes ?? '',
+      },
+      status: 'error' as const,
+    };
+  }
+
+  if (activityType === 'WATER') {
+    return {
+      payload: {
+        ...basePayload,
+        matchingStatus: 'TRACKED_ONLY',
+        reportTreatment: 'TRACKED_ONLY',
+        calculationStatus: 'TRACKED_ONLY',
+        calculationMessage: 'Water usage is tracked only and excluded from GHG emissions totals.',
+        notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Tracked Metric') : row.notes ?? '',
+      },
+      status: 'tracked' as const,
+    };
+  }
+
+  if (match) {
+    return {
+      payload: {
+        ...basePayload,
+        matchingStatus: 'MATCHED',
+        reportTreatment: 'INCLUDED',
+        calculationStatus: 'CALCULATED',
+        matchedFactorId: match.factor.id,
+        matchedFactorName: getShortFactorName(match),
+        matchedFactorSourceYear: match.factorYear ?? undefined,
+        ...buildMatchedFactorSnapshot(match),
+        calculatedEmissionsKgCO2e: getActivityRecordEmissions(row, match) ?? undefined,
+        calculationMessage: match.usedPriorYearFallback && match.factorYear
+          ? `Matched factor. Using latest available factor year: ${match.factorYear}.`
+          : 'Matched factor. This record is included in emissions totals.',
+        notes: updateNotes ? buildMatchedActivityRecordNote(row, match) : row.notes ?? '',
+      },
+      status: 'matched' as const,
+    };
+  }
+
+  return {
+    payload: {
+      ...basePayload,
+      matchingStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'MISSING_FACTOR',
+      calculationMessage: 'No matching conversion factor is available for this record.',
+      notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Missing Factor') : row.notes ?? '',
+    },
+    status: 'missingFactor' as const,
+  };
+}
+
+function getActivityRecordQuality(
+  row: ActivityDataItem,
+  conversionFactors: ConversionFactorItem[] = [],
+) {
+  const normalizedUnit = normalizeUnitForDisplay(row.unit);
+  const activityType = normalizeActivityType(row.activityType) || String(row.activityType ?? '').toUpperCase();
   const missingRequired =
     isMissingRecordValue(row.activityType) ||
     isMissingRecordValue(row.recordDate) ||
@@ -513,7 +882,7 @@ function getActivityRecordQuality(row: ActivityDataItem) {
     };
   }
 
-  if (normalizedUnit.status === 'invalid' || notes.includes('invalid unit')) {
+  if (normalizedUnit.status === 'invalid' || hasStoredUnitMismatchStatus(row)) {
     return {
       label: 'Invalid Unit',
       filterKey: 'invalid-unit',
@@ -522,7 +891,7 @@ function getActivityRecordQuality(row: ActivityDataItem) {
     };
   }
 
-  if (missingRequired || normalizedUnit.status === 'missing') {
+  if (missingRequired || normalizedUnit.status === 'missing' || hasStoredReviewStatus(row)) {
     return {
       label: 'Requires Review',
       filterKey: 'requires-review',
@@ -531,7 +900,7 @@ function getActivityRecordQuality(row: ActivityDataItem) {
     };
   }
 
-  if (activityType === 'WATER' || notes.includes('tracked metric')) {
+  if (activityType === 'WATER' || hasStoredTrackedOnlyStatus(row)) {
     return {
       label: 'Tracked Metric',
       filterKey: 'tracked-metric',
@@ -540,12 +909,40 @@ function getActivityRecordQuality(row: ActivityDataItem) {
     };
   }
 
-  if (notes.includes('missing factor') || notes.includes('no conversion factor')) {
+  if (hasStoredMatchedStatus(row)) {
+    return {
+      label: 'Ready',
+      filterKey: 'ready',
+      tone: 'success' as const,
+      title: row.matchedFactorName
+        ? `Matched factor: ${row.matchedFactorName}.`
+        : 'This record has saved canonical matching metadata.',
+    };
+  }
+
+  if (hasStoredMissingFactorStatus(row)) {
     return {
       label: 'Missing Factor',
       filterKey: 'missing-factor',
       tone: 'warning' as const,
       title: 'No matching conversion factor is available yet.',
+    };
+  }
+
+  const matchedFactor = getActivityRecordMatch(row, conversionFactors);
+  if (matchedFactor) {
+    const emissions = getActivityRecordEmissions(row, matchedFactor);
+    const fallbackText = matchedFactor.usedPriorYearFallback && matchedFactor.factorYear
+      ? ` Using latest available factor year: ${matchedFactor.factorYear}.`
+      : '';
+
+    return {
+      label: 'Ready',
+      filterKey: 'ready',
+      tone: 'success' as const,
+      title: emissions === null
+        ? `Matched factor: ${getShortFactorName(matchedFactor)}.${fallbackText}`
+        : `Matched factor: ${getShortFactorName(matchedFactor)}.${fallbackText} Estimated emissions: ${emissions.toLocaleString(undefined, { maximumFractionDigits: 3 })} kgCO2e.`,
     };
   }
 
@@ -568,6 +965,10 @@ function getActivityRecordQuality(row: ActivityDataItem) {
 
 function formatRequiredRecordValue(value: unknown) {
   return isMissingRecordValue(value) ? '⚠ Missing' : String(value);
+}
+
+function formatActivityTypeValue(value: unknown) {
+  return isMissingRecordValue(value) ? '⚠ Missing' : getActivityTypeLabel(String(value));
 }
 
 function formatRecordUnit(value: unknown) {
@@ -607,7 +1008,24 @@ function formatActivitySourceReference(row: ActivityDataItem) {
 function formatOptionalRecordValue(value: unknown) {
   return isMissingRecordValue(value) ? '-' : String(value);
 }
+
+function formatStoredStatusValue(value: unknown) {
+  const normalized = normalizeStoredStatus(value as string | null | undefined);
+  return normalized || '-';
+}
+
+function formatCalculatedEmissionValue(value: unknown) {
+  const emissions = Number(value);
+  return Number.isFinite(emissions)
+    ? `${emissions.toLocaleString(undefined, { maximumFractionDigits: 3 })} kgCO2e`
+    : '-';
+}
   async function handleBulkDelete() {
+  if (!canEditActivityRecords) {
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
   if (!selectedIds.length) return;
 
   if (!confirm(`Delete ${selectedIds.length} selected record(s)?`)) return;
@@ -647,6 +1065,11 @@ function formatOptionalRecordValue(value: unknown) {
 }
 
 async function handleBulkApplyProvince() {
+  if (!canEditActivityRecords) {
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
   const normalizedProvince = normalizeProvinceValue(bulkProvince);
   const rowsToUpdate = selectedMissingProvinceElectricityRows;
 
@@ -663,7 +1086,7 @@ async function handleBulkApplyProvince() {
 
         return updateActivityData(row.id, {
           activityType: row.activityType ?? 'ELECTRICITY',
-          recordDate: row.recordDate?.slice(0, 10) ?? null,
+          recordDate: formatDateOnly(row.recordDate) || null,
           quantity: Number.isFinite(quantity) ? quantity : 0,
           unit: row.unit ?? '',
           jurisdictionCountry: row.jurisdictionCountry || 'Canada',
@@ -698,14 +1121,24 @@ async function handleBulkApplyProvince() {
 }
 
 function startEdit(row: any) {
+  if (!canEditActivityRecords) {
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
   setOpenActionMenuId(null);
   setEditingId(row.id);
   setEditRow({
     ...row,
-    recordDate: row.recordDate?.slice(0, 10),
+    recordDate: formatDateOnly(row.recordDate),
   });
 }
 async function saveEdit() {
+  if (!canEditActivityRecords) {
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
   const errors = validateEditRow(editRow);
 
   if (Object.keys(errors).length > 0) {
@@ -714,22 +1147,24 @@ async function saveEdit() {
   }
 
   try {
-    await updateActivityData(editingId!, {
+    const editActivityRecord: ActivityDataItem = {
+      id: editingId!,
       activityType: editRow.activityType,
       recordDate: editRow.recordDate,
-      quantity: Number(editRow.quantity),
+      quantity: editRow.quantity,
       unit: editRow.unit,
       jurisdictionCountry: editRow.jurisdictionCountry ?? '',
       jurisdictionRegion: editRow.jurisdictionRegion ?? '',
+      recordYear: editRow.recordYear ?? null,
       sourceType: editRow.sourceType,
       sourceReference: editRow.sourceReference ?? '',
       notes: editRow.notes ?? '',
-      facilityId: editRow.facilityId ?? '',
-      assetId: editRow.assetId ?? '',
-      documentId: editRow.documentId ?? '',
-      customTypeLabel: editRow.customTypeLabel ?? '',
-      periodStart: editRow.periodStart ?? '',
-      periodEnd: editRow.periodEnd ?? '',
+    };
+    const recalculated = buildRecalculatedActivityPayload(editActivityRecord, conversionFactors);
+
+    await updateActivityData(editingId!, {
+      ...recalculated.payload,
+      sourceType: editRow.sourceType,
     });
 
     setEditingId(null);
@@ -739,6 +1174,69 @@ async function saveEdit() {
     setSuccessMessage('Activity record updated.');
   } catch (err) {
     setError(err instanceof Error ? err.message : 'Update failed');
+  }
+}
+
+async function handleRecalculateActivityRecords() {
+  if (!canClearActivityRecords) {
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
+  if (!items.length || isRecalculatingRecords) return;
+
+  if (conversionFactors.length === 0) {
+    setError('Conversion factors are still loading. Please try recalculating again in a moment.');
+    return;
+  }
+
+  setIsRecalculatingRecords(true);
+  setError(null);
+  setSuccessMessage(null);
+
+  const summary = {
+    recalculatedRecords: 0,
+    matchedRecords: 0,
+    missingFactorRecords: 0,
+    missingProvinceRecords: 0,
+    unitMismatchRecords: 0,
+    trackedOnlyRecords: 0,
+    errors: 0,
+  };
+
+  try {
+    for (const row of items) {
+      const recalculated = buildRecalculatedActivityPayload(row, conversionFactors, {
+        updateNotes: false,
+      });
+
+      try {
+        await updateActivityData(row.id, recalculated.payload);
+        summary.recalculatedRecords += 1;
+
+        if (recalculated.status === 'matched') summary.matchedRecords += 1;
+        if (recalculated.status === 'missingFactor') summary.missingFactorRecords += 1;
+        if (recalculated.status === 'missingProvince') summary.missingProvinceRecords += 1;
+        if (recalculated.status === 'unitMismatch') summary.unitMismatchRecords += 1;
+        if (recalculated.status === 'tracked') summary.trackedOnlyRecords += 1;
+      } catch {
+        summary.errors += 1;
+      }
+    }
+
+    await loadItems();
+    setSuccessMessage(formatRecalculateSuccess(summary));
+    window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
+    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+    window.dispatchEvent(new Event('carbonlite:reports-stale'));
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Unable to recalculate activity records. Please try again.',
+    );
+  } finally {
+    setIsRecalculatingRecords(false);
   }
 }
 function validateEditRow(row: any) {
@@ -762,6 +1260,12 @@ function validateEditRow(row: any) {
   return errors;
 }
 async function handleDelete(row: ActivityDataItem) {
+  if (!canEditActivityRecords) {
+    setOpenActionMenuId(null);
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
   setOpenActionMenuId(null);
   if (!confirm('Delete this record?')) return;
 
@@ -809,12 +1313,17 @@ function updateEditField(key: string, value: any) {
 }
 
 async function handleUndoDelete() {
+  if (!canEditActivityRecords) {
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
   if (!lastDeleted) return;
 
   try {
     await createActivityData({
       activityType: lastDeleted.activityType,
-      recordDate: lastDeleted.recordDate?.slice(0, 10),
+      recordDate: formatDateOnly(lastDeleted.recordDate),
       quantity: Number(lastDeleted.quantity),
       unit: lastDeleted.unit,
       sourceType: lastDeleted.sourceType,
@@ -830,7 +1339,7 @@ async function handleUndoDelete() {
 }
 
 function renderNormalRow(row){
-  const quality = getActivityRecordQuality(row);
+  const quality = getActivityRecordQuality(row, conversionFactors);
 
   return (
     <tr
@@ -843,11 +1352,13 @@ function renderNormalRow(row){
       }
     >
       <td style={tdStyle}>
-  <input
-    type="checkbox"
-    checked={selectedIds.includes(row.id)}
-    onChange={(e) => toggleSelect(row.id, e.target.checked)}
-  />
+  {canEditActivityRecords ? (
+    <input
+      type="checkbox"
+      checked={selectedIds.includes(row.id)}
+      onChange={(e) => toggleSelect(row.id, e.target.checked)}
+    />
+  ) : null}
 </td>
       {visibleColumns.status ? (
       <td style={tdStyle}>
@@ -858,8 +1369,8 @@ function renderNormalRow(row){
         />
       </td>
       ) : null}
-      {visibleColumns.date ? <td style={dateCellStyle}>{formatRequiredRecordValue(row.recordDate?.slice(0, 10))}</td> : null}
-      {visibleColumns.type ? <td style={tdStyle}>{formatRequiredRecordValue(row.activityType)}</td> : null}
+      {visibleColumns.date ? <td style={dateCellStyle}>{formatRequiredRecordValue(formatDateOnly(row.recordDate))}</td> : null}
+      {visibleColumns.type ? <td style={tdStyle}>{formatActivityTypeValue(row.activityType)}</td> : null}
       {visibleColumns.quantity ? <td style={tdStyle}>{formatRequiredRecordValue(row.quantity)}</td> : null}
       {visibleColumns.unit ? <td style={unitCellStyle}>{formatRecordUnit(row.unit)}</td> : null}
       {visibleColumns.country ? <td style={tdStyle}>{formatOptionalRecordValue(row.jurisdictionCountry)}</td> : null}
@@ -887,22 +1398,24 @@ function renderNormalRow(row){
           >
             View
           </button>
-          <div style={overflowMenuWrapperStyle}>
-            <button
-              ref={(element) => {
-                actionMenuButtonRefs.current[row.id] = element;
-              }}
-              type="button"
-              data-activity-action-menu-button="true"
-              aria-label={`More actions for ${row.activityType} ${row.recordDate?.slice(0, 10) ?? ''}`}
-              aria-haspopup="menu"
-              aria-expanded={openActionMenuId === row.id}
-              onClick={(event) => toggleActionMenu(row.id, event.currentTarget)}
-              style={overflowButtonStyle}
-            >
-              ⋮
-            </button>
-          </div>
+          {canEditActivityRecords ? (
+            <div style={overflowMenuWrapperStyle}>
+              <button
+                ref={(element) => {
+                  actionMenuButtonRefs.current[row.id] = element;
+                }}
+                type="button"
+                data-activity-action-menu-button="true"
+                aria-label={`More actions for ${formatActivityTypeValue(row.activityType)} ${formatDateOnly(row.recordDate)}`}
+                aria-haspopup="menu"
+                aria-expanded={openActionMenuId === row.id}
+                onClick={(event) => toggleActionMenu(row.id, event.currentTarget)}
+                style={overflowButtonStyle}
+              >
+                ⋮
+              </button>
+            </div>
+          ) : null}
         </div>
       </td>
     </tr>
@@ -939,7 +1452,32 @@ function renderEditRow(row){
 function renderViewedRecordModal() {
   if (!viewedRecord) return null;
 
-  const quality = getActivityRecordQuality(viewedRecord);
+  const quality = getActivityRecordQuality(viewedRecord, conversionFactors);
+  const matchedFactor = getActivityRecordMatch(viewedRecord, conversionFactors);
+  const normalizedActivityType = normalizeActivityType(viewedRecord.activityType) || '-';
+  const calculatedEmission =
+    viewedRecord.calculatedEmissionsKgCO2e ??
+    viewedRecord.calculatedEmission ??
+    (matchedFactor ? getActivityRecordEmissions(viewedRecord, matchedFactor) : null);
+  const matchedFactorSnapshot = matchedFactor ? buildMatchedFactorSnapshot(matchedFactor) : {};
+  const factorVerificationStatus =
+    viewedRecord.matchedFactorVerificationStatus ??
+    matchedFactorSnapshot.matchedFactorVerificationStatus;
+  const factorConfidenceLevel =
+    viewedRecord.matchedFactorConfidenceLevel ??
+    matchedFactorSnapshot.matchedFactorConfidenceLevel;
+  const factorAssumptions =
+    viewedRecord.matchedFactorAssumptions ??
+    matchedFactorSnapshot.matchedFactorAssumptions ??
+    (matchedFactor
+      ? getFactorAssumptionDisclosure(viewedRecord.activityType, matchedFactor.factor)
+      : '');
+  const credibilityBadges = matchedFactor
+    ? getFactorCredibilityBadges(viewedRecord.activityType, matchedFactor.factor)
+    : [
+        formatCredibilityLabel(factorVerificationStatus),
+        factorConfidenceLevel ? `${formatCredibilityLabel(factorConfidenceLevel)} Confidence` : '',
+      ].filter(Boolean);
 
   return createPortal(
     <div style={detailsModalBackdropStyle} onClick={() => setViewedRecord(null)}>
@@ -956,8 +1494,8 @@ function renderViewedRecordModal() {
               Activity Record Details
             </h2>
             <p style={detailsModalSubtitleStyle}>
-              {formatOptionalRecordValue(viewedRecord.activityType)} ·{' '}
-              {formatOptionalRecordValue(viewedRecord.recordDate?.slice(0, 10))}
+              {formatActivityTypeValue(viewedRecord.activityType)} ·{' '}
+              {formatOptionalRecordValue(formatDateOnly(viewedRecord.recordDate))}
             </p>
           </div>
           <button
@@ -972,22 +1510,43 @@ function renderViewedRecordModal() {
 
         <div style={detailsModalGridStyle}>
           <DetailsField label="Status" value={quality.label} />
-          <DetailsField label="Activity Type" value={formatRequiredRecordValue(viewedRecord.activityType)} />
+          <DetailsField label="Canonical Matching Status" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
+          <DetailsField label="Report Treatment" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
+          <DetailsField label="Calculation Status" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
+          <DetailsField label="Scope" value={formatStoredStatusValue(viewedRecord.scope || inferDefaultScope(normalizedActivityType))} />
+          <DetailsField label="Activity Type" value={formatActivityTypeValue(viewedRecord.activityType)} />
           <DetailsField label="Quantity" value={formatRequiredRecordValue(viewedRecord.quantity)} />
           <DetailsField label="Unit" value={formatRecordUnit(viewedRecord.unit)} />
-          <DetailsField label="Date" value={formatRequiredRecordValue(viewedRecord.recordDate?.slice(0, 10))} />
+          <DetailsField label="Date" value={formatRequiredRecordValue(formatDateOnly(viewedRecord.recordDate))} />
+          <DetailsField label="Record Year" value={formatOptionalRecordValue(getActivityRecordYear(viewedRecord))} />
           <DetailsField label="Country" value={formatOptionalRecordValue(viewedRecord.jurisdictionCountry)} />
           <DetailsField
             label="Province"
             value={formatOptionalRecordValue(normalizeProvinceValue(viewedRecord.jurisdictionRegion))}
           />
           <DetailsField label="Facility" value={formatOptionalRecordValue(viewedRecord.facilityId)} />
-          <DetailsField label="Source" value={formatActivitySourceType(viewedRecord.sourceType)} />
+          <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord.sourceType)} />
           <DetailsField
             label="Source Reference"
             value={formatActivitySourceReference(viewedRecord)}
             fullWidth
           />
+          <DetailsField label="Matched Factor ID" value={formatOptionalRecordValue(viewedRecord.matchedFactorId ?? matchedFactor?.factor.id)} />
+          <DetailsField label="Matched Factor Name" value={formatOptionalRecordValue(viewedRecord.matchedFactorName ?? (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
+          <DetailsField label="Matched Factor Value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
+          <DetailsField label="Matched Factor Unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
+          <DetailsField label="Matched Factor Source Year" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceYear ?? matchedFactor?.factorYear)} />
+          <DetailsField label="Matched Factor Version" value={formatOptionalRecordValue(viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion)} />
+          <DetailsField label="Source Authority" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceAuthority ?? matchedFactorSnapshot.matchedFactorSourceAuthority)} />
+          <DetailsField label="Source Document" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument)} />
+          <DetailsField label="Verification" value={formatOptionalRecordValue(formatCredibilityLabel(factorVerificationStatus))} />
+          <DetailsField label="Confidence" value={formatOptionalRecordValue(formatCredibilityLabel(factorConfidenceLevel))} />
+          <DetailsField label="Credibility Notes" value={formatOptionalRecordValue(credibilityBadges.join(' · '))} fullWidth />
+          <DetailsField label="Assumptions" value={formatOptionalRecordValue(factorAssumptions)} fullWidth />
+          <DetailsField label="Calculated Emissions" value={formatCalculatedEmissionValue(calculatedEmission)} />
+          <DetailsField label="Calculation Message" value={formatOptionalRecordValue(viewedRecord.calculationMessage)} fullWidth />
+          <DetailsField label="Created At" value={formatOptionalRecordValue(viewedRecord.createdAt)} />
+          <DetailsField label="Updated At" value={formatOptionalRecordValue(viewedRecord.updatedAt)} />
           <DetailsField label="Notes" value={formatOptionalRecordValue(viewedRecord.notes)} fullWidth />
           <DetailsField label="Record ID" value={viewedRecord.id} fullWidth />
         </div>
@@ -1011,14 +1570,19 @@ function closeClearRecordsModal() {
 }
 
 async function handleClearActivityRecords() {
-  if (clearRecordsConfirmation !== CLEAR_ACTIVITY_RECORDS_CONFIRMATION) return;
+  if (!canClearActivityRecords) {
+    setError('You do not have permission to perform this action.');
+    return;
+  }
+
+  if (clearRecordsConfirmation !== RESET_DEMO_DATA_CONFIRMATION) return;
 
   setIsClearingRecords(true);
   setError(null);
   setSuccessMessage(null);
 
   try {
-    const summary = await clearActivityRecordsForCurrentCompany();
+    const summary = await resetDemoDataForCurrentCompany();
 
     setItems([]);
     setSelectedIds([]);
@@ -1026,10 +1590,11 @@ async function handleClearActivityRecords() {
     setCurrentPage(1);
     setIsClearRecordsModalOpen(false);
     setClearRecordsConfirmation('');
-    setSuccessMessage(`Activity records cleared: ${formatClearRecordsSuccess(summary)}`);
+    clearInputReviewBrowserState();
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
-    window.dispatchEvent(new Event('carbonlite:metrics-stale'));
-    window.dispatchEvent(new Event('carbonlite:reports-stale'));
+    invalidateDemoDataQueries();
+    notifyDemoDataReset();
+    setSuccessMessage(`Demo data reset: ${formatResetDemoDataSuccess(summary)}`);
 
     const refreshedItems = await loadItems({ updateState: false });
     setItems(refreshedItems);
@@ -1037,7 +1602,7 @@ async function handleClearActivityRecords() {
     setError(
       err instanceof Error
         ? err.message
-        : 'Unable to clear activity records. Please try again.',
+        : 'Unable to reset demo data. Please try again.',
     );
   } finally {
     setIsClearingRecords(false);
@@ -1048,7 +1613,7 @@ function renderClearRecordsModal() {
   if (!isClearRecordsModalOpen) return null;
 
   const canConfirm =
-    clearRecordsConfirmation === CLEAR_ACTIVITY_RECORDS_CONFIRMATION &&
+    clearRecordsConfirmation === RESET_DEMO_DATA_CONFIRMATION &&
     !isClearingRecords;
 
   return createPortal(
@@ -1063,14 +1628,14 @@ function renderClearRecordsModal() {
         <div style={detailsModalHeaderStyle}>
           <div>
             <h2 id="clear-activity-records-title" style={detailsModalTitleStyle}>
-              Clear Activity Records
+              Reset Demo Data
             </h2>
             <p style={detailsModalSubtitleStyle}>Advanced company data action</p>
           </div>
           <button
             type="button"
             onClick={closeClearRecordsModal}
-            aria-label="Close clear activity records confirmation"
+            aria-label="Close reset demo data confirmation"
             style={detailsModalCloseButtonStyle}
             disabled={isClearingRecords}
           >
@@ -1080,10 +1645,10 @@ function renderClearRecordsModal() {
 
         <div style={clearRecordsModalBodyStyle}>
           <p style={clearRecordsWarningTextStyle}>
-            This will permanently remove all activity records and related calculated results for the current company. It will not delete users, facilities, emission factors, or settings.
+            This will permanently remove activity records, input review documents, extracted staging rows, and related calculated results for the current company. It will not delete users, facilities, emission factors, custom factors, or settings.
           </p>
           <label style={clearRecordsConfirmLabelStyle}>
-            <span>Type CLEAR RECORDS to confirm</span>
+            <span>Type RESET DEMO DATA to confirm</span>
             <input
               value={clearRecordsConfirmation}
               onChange={(event) => setClearRecordsConfirmation(event.target.value)}
@@ -1106,7 +1671,7 @@ function renderClearRecordsModal() {
               disabled={!canConfirm}
               style={clearRecordsConfirmButtonStyle(canConfirm)}
             >
-              {isClearingRecords ? 'Clearing...' : 'Clear Activity Records'}
+              {isClearingRecords ? 'Resetting...' : 'Reset Demo Data'}
             </button>
           </div>
         </div>
@@ -1129,13 +1694,19 @@ function handleRetryLoad() {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Data Records shows saved activity records. To add new data, go to Input Data.
       </p>
-      <button
-        type="button"
-        onClick={() => navigate('/input-data', { state: { focusInputMethod: 'manual' } })}
-        style={{ ...primaryActionBtn, marginBottom: 20 }}
-      >
-        Add data
-      </button>
+      {canEditActivityRecords ? (
+        <button
+          type="button"
+          onClick={() => navigate('/input-data', { state: { focusInputMethod: 'manual' } })}
+          style={{ ...primaryActionBtn, marginBottom: 20 }}
+        >
+          Add data
+        </button>
+      ) : (
+        <div style={readOnlyNoticeStyle}>
+          Read-only access: you can view activity records, Calculation Review, and Reports, but cannot import, edit, delete, or clear records.
+        </div>
+      )}
       {/* ⭐ Summary 卡片 */}
       <div
         style={{
@@ -1153,10 +1724,10 @@ function handleRetryLoad() {
       {/* 状态 */}
       {error && <div style={warningStyle}>{error}</div>}
       {successMessage && <div style={successStyle}>{successMessage}</div>}
-{lastDeleted && (
+{lastDeleted && canEditActivityRecords && (
   <div style={undoBarStyle}>
     <span>
-      Deleted record: {lastDeleted.activityType} {lastDeleted.quantity}{' '}
+      Deleted record: {formatActivityTypeValue(lastDeleted.activityType)} {lastDeleted.quantity}{' '}
       {lastDeleted.unit}
     </span>
 
@@ -1183,14 +1754,24 @@ function handleRetryLoad() {
               Admin-only data management for pilot resets in the current company.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsClearRecordsModalOpen(true)}
-            disabled={isClearingRecords}
-            style={clearRecordsButtonStyle}
-          >
-            Clear Activity Records
-          </button>
+          <div style={advancedActionsButtonGroupStyle}>
+            <button
+              type="button"
+              onClick={handleRecalculateActivityRecords}
+              disabled={isRecalculatingRecords || items.length === 0}
+              style={recalculateRecordsButtonStyle(isRecalculatingRecords || items.length === 0)}
+            >
+              {isRecalculatingRecords ? 'Recalculating...' : 'Recalculate Activity Records'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsClearRecordsModalOpen(true)}
+              disabled={isClearingRecords}
+              style={clearRecordsButtonStyle}
+            >
+              Reset Demo Data
+            </button>
+          </div>
         </section>
       ) : null}
       {/* ⭐ Table */}
@@ -1262,18 +1843,20 @@ function handleRetryLoad() {
           </div>
 
           <div style={toolbarRowStyle}>
-            <div style={toolbarGroupStyle}>
-              <BulkProvinceToolbar
-                selectedCount={selectedIds.length}
-                eligibleCount={selectedMissingProvinceElectricityRows.length}
-                selectedProvince={bulkProvince}
-                onProvinceChange={(value) => setBulkProvince(normalizeProvinceValue(value))}
-                provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
-                onApply={handleBulkApplyProvince}
-                isApplying={bulkApplyingProvince}
-                applyLabel="Set province"
-              />
-            </div>
+            {canEditActivityRecords ? (
+              <div style={toolbarGroupStyle}>
+                <BulkProvinceToolbar
+                  selectedCount={selectedIds.length}
+                  eligibleCount={selectedMissingProvinceElectricityRows.length}
+                  selectedProvince={bulkProvince}
+                  onProvinceChange={(value) => setBulkProvince(normalizeProvinceValue(value))}
+                  provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
+                  onApply={handleBulkApplyProvince}
+                  isApplying={bulkApplyingProvince}
+                  applyLabel="Set province"
+                />
+              </div>
+            ) : null}
 
             <div style={toolbarGroupStyle}>
               <button
@@ -1286,18 +1869,20 @@ function handleRetryLoad() {
                 Generate Report
               </button>
 
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                disabled={!selectedIds.length || bulkDeleting}
-                style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
-              >
-                {bulkDeleting
-                  ? 'Deleting...'
-                  : selectedIds.length
-                  ? `Delete Selected (${selectedIds.length})`
-                  : 'Delete Selected'}
-              </button>
+              {canEditActivityRecords ? (
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={!selectedIds.length || bulkDeleting}
+                  style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
+                >
+                  {bulkDeleting
+                    ? 'Deleting...'
+                    : selectedIds.length
+                    ? `Delete Selected (${selectedIds.length})`
+                    : 'Delete Selected'}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1357,14 +1942,16 @@ function handleRetryLoad() {
               <thead>
                 <tr>
                   <th style={checkboxThStyle}>
-                    <input
-                      type="checkbox"
-                      checked={
-                        paginatedItems.length > 0 &&
-                        paginatedItems.every((item) => selectedIds.includes(item.id))
-                      }
-                      onChange={(e) => toggleSelectAll(e.target.checked)}
-                    />
+                    {canEditActivityRecords ? (
+                      <input
+                        type="checkbox"
+                        checked={
+                          paginatedItems.length > 0 &&
+                          paginatedItems.every((item) => selectedIds.includes(item.id))
+                        }
+                        onChange={(e) => toggleSelectAll(e.target.checked)}
+                      />
+                    ) : null}
                   </th>
                   {visibleColumns.status ? <th style={statusThStyle}>Status</th> : null}
                   {visibleColumns.date ? <th style={dateThStyle}>Date</th> : null}
@@ -1787,6 +2374,17 @@ const primaryActionBtn = {
   cursor: 'pointer',
 };
 
+const readOnlyNoticeStyle: React.CSSProperties = {
+  marginBottom: 20,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #cbd5e1',
+  background: '#f8fafc',
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.5,
+};
+
 const secondaryActionBtn = {
   padding: '6px 10px',
   borderRadius: 8,
@@ -2129,6 +2727,25 @@ const advancedActionsTextStyle: React.CSSProperties = {
   color: '#7f1d1d',
   fontSize: 13,
 };
+
+const advancedActionsButtonGroupStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  flexWrap: 'wrap',
+};
+
+function recalculateRecordsButtonStyle(disabled = false): React.CSSProperties {
+  return {
+    padding: '9px 12px',
+    borderRadius: 8,
+    border: '1px solid #059669',
+    background: disabled ? '#ecfdf5' : '#059669',
+    color: disabled ? '#6ee7b7' : '#fff',
+    fontWeight: 800,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
 const clearRecordsButtonStyle: React.CSSProperties = {
   padding: '9px 12px',

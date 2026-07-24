@@ -49,6 +49,26 @@ describe('confirmDocumentImport', () => {
     });
   });
 
+  it('blocks viewer users from importing extracted records', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'viewer@example.com', role: 'VIEWER', organizationId: 'org-1' }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(
+      confirmDocumentImport('doc-1', [
+        {
+          activityType: 'DIESEL',
+          recordDate: '2026-05-01',
+          quantity: 10,
+          unit: 'L',
+        },
+      ]),
+    ).rejects.toThrow('You do not have permission to perform this action.');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('allows importing records without a confirmed date', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ count: 1, createdIds: ['activity-1'] }), {

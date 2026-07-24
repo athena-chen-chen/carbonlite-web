@@ -83,6 +83,42 @@ describe('buildMetricsSummaryTableRows', () => {
     ]);
   });
 
+  it('displays normalized electricity input totals in the Calculation Summary table', () => {
+    const rows = buildMetricsSummaryTableRows({
+      usageTotals: {
+        fuel: 3313,
+        electricity: 63600,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [
+          { activityType: 'NATURAL_GAS', total: 1000, unit: 'm3' },
+          { activityType: 'GASOLINE', total: 500, unit: 'liters' },
+          { activityType: 'DIESEL', total: 100, unit: 'liters' },
+        ],
+      },
+      totalEstimatedEmissionsKgCO2e: 37285,
+      recordsIncluded: 9,
+    });
+
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metricType: 'Electricity',
+          unit: 'kWh',
+          totalValue: '63,600',
+          category: 'input',
+          activityType: 'ELECTRICITY',
+        }),
+        expect.objectContaining({
+          metricType: 'Carbon Emissions',
+          unit: 'kgCO2e',
+          totalValue: '37,285',
+          category: 'calculated',
+        }),
+      ]),
+    );
+  });
+
   it('is not empty when records are included in the summary', () => {
     const rows = buildMetricsSummaryTableRows({
       usageTotals: {
@@ -228,7 +264,6 @@ describe('buildMetricsSummaryTableRows', () => {
           }}
           missingFactors={[
             { activityDataId: 'activity-1', activityType: 'WATER', unit: 'm³' },
-            { activityDataId: 'activity-2', activityType: 'WASTE', unit: 'kg' },
           ]}
         />
       </MemoryRouter>,
@@ -237,7 +272,6 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('No calculated emissions yet.')).toBeInTheDocument();
     expect(screen.getByText('Tracked Metrics')).toBeInTheDocument();
     expect(screen.getByText('Water / m3 — 1 record')).toBeInTheDocument();
-    expect(screen.getByText('Waste / kg — 1 record')).toBeInTheDocument();
     expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
   });
 
@@ -557,9 +591,9 @@ describe('buildMetricsSummaryTableRows', () => {
 
     const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
     expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('457 kg CO2e');
-    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('260 kg CO2e');
-    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('212 kg CO2e');
-    expect(screen.getByText('929 kg CO2e')).toBeInTheDocument();
+    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('265 kg CO2e');
+    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('210 kg CO2e');
+    expect(screen.getByText('932 kg CO2e')).toBeInTheDocument();
     expect(
       pilotExpectedEmissions.scope1KgCO2e +
         pilotExpectedEmissions.scope2KgCO2e +

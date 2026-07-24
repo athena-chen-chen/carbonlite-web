@@ -48,13 +48,13 @@ describe('deleteDocument', () => {
     });
   });
 
-  it('shows an ownership-friendly error when another organization document is rejected', async () => {
+  it('shows a permission-friendly error when another organization document is rejected', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('forbidden', { status: 403 }),
     );
 
     await expect(deleteDocument('other-org-doc')).rejects.toThrow(
-      'You can only delete your own uploaded documents.',
+      'You do not have permission to perform this action.',
     );
   });
 

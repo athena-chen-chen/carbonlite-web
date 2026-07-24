@@ -27,7 +27,10 @@ type ManualEntryFormProps = {
   saveDisabled?: boolean;
   saveLabel: string;
   canRemove?: boolean;
+  removeLabel?: string;
+  removeAriaLabel?: string;
   onRemove?: () => void;
+  savedActions?: ReactNode;
 };
 
 export function ManualEntryForm({
@@ -44,7 +47,10 @@ export function ManualEntryForm({
   saveDisabled = false,
   saveLabel,
   canRemove = false,
+  removeLabel = 'Clear Draft',
+  removeAriaLabel,
   onRemove,
+  savedActions,
 }: ManualEntryFormProps) {
   return (
     <div
@@ -85,12 +91,13 @@ export function ManualEntryForm({
               <button
                 type="button"
                 onClick={onRemove}
-                aria-label={`Remove row ${rowNumber}`}
+                aria-label={removeAriaLabel ?? `Clear draft row ${rowNumber}`}
                 style={removeButtonStyle}
               >
-                Remove
+                {removeLabel}
               </button>
             ) : null}
+            {savedActions}
           </>
         }
       />

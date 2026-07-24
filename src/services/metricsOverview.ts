@@ -26,6 +26,14 @@ import {
 } from '../utils/conversionFactorMatching';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import { normalizeActivityType } from '../utils/activityType';
+import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
+import {
+  getFactorAssumptionDisclosure,
+  getFactorConfidenceLevel,
+  getFactorSourceDocument,
+  getFactorVerificationStatus,
+  getFactorVersionLabel,
+} from '../utils/factorCredibility';
 
 export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
   fuel: 0,
@@ -99,7 +107,10 @@ export type MetricsOverview = {
     jurisdiction?: string | null;
     factorYear?: number | null;
     factorStatus?: string | null;
+    factorVersion?: string | null;
     confidenceLevel?: string | null;
+    verificationStatus?: string | null;
+    assumptions?: string | null;
     sourceAuthority: string;
     sourceDocument?: string | null;
     sourceUrl?: string | null;
@@ -136,6 +147,8 @@ type UsedConversionFactor = NonNullable<
   MetricsSummaryResponse['conversionFactorsUsed']
 >[number];
 type CalculationExplanationRecord = NonNullable<MetricsSummaryResponse['records']>[number];
+
+const VISIBLE_FACTOR_LIBRARY_MATCH_MESSAGE = 'Matched to CarbonLite System Factor.';
 
 function firstFiniteNumber(...values: unknown[]) {
   for (const value of values) {
@@ -445,20 +458,22 @@ function mergeCalculationRecordsIntoDetails(
       normalizedUnit: unit,
       factorId: record.factor?.factorId ?? null,
       factorVersionId: record.factor?.factorVersionId ?? null,
+      factorVersion: activity?.matchedFactorVersion ?? record.factor?.factorVersion ?? null,
       factorName: record.factor?.activityType ?? null,
-      factorValue: record.factor?.factorValue ?? null,
+      factorValue: firstFiniteNumber(activity?.matchedFactorValue, record.factor?.factorValue) ?? null,
       factorInputUnit: record.factor?.inputUnit ?? null,
-      factorResultUnit: record.factor?.resultUnit ?? record.resultUnit ?? null,
-      factorYear: record.factor?.factorYear ?? record.factor?.sourceYear ?? null,
+      factorResultUnit: activity?.matchedFactorUnit ?? record.factor?.resultUnit ?? record.resultUnit ?? null,
+      factorYear: record.factor?.factorYear ?? record.factor?.sourceYear ?? activity?.matchedFactorSourceYear ?? null,
       factorJurisdictionRegion: record.factor?.jurisdiction ?? null,
-      factorSource: record.factor?.sourceAuthority ?? 'Source not specified',
-      sourceAuthority: record.factor?.sourceAuthority ?? null,
-      sourceDocument: record.factor?.sourceDocument ?? null,
+      factorSource: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? 'Source not specified',
+      sourceAuthority: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? null,
+      sourceDocument: activity?.matchedFactorSourceDocument ?? record.factor?.sourceDocument ?? null,
       sourceUrl: record.factor?.sourceUrl ?? null,
-      sourceYear: record.factor?.sourceYear ?? null,
+      sourceYear: activity?.matchedFactorSourceYear ?? record.factor?.sourceYear ?? null,
+      factorAssumptions: activity?.matchedFactorAssumptions ?? record.factor?.assumptions ?? null,
       factorVerified: Boolean(record.factor?.verified ?? record.factor?.isOfficial),
-      factorConfidenceLevel: record.factor?.confidenceLevel ?? null,
-      factorVerificationStatus: record.factor?.verificationStatus ?? null,
+      factorConfidenceLevel: activity?.matchedFactorConfidenceLevel ?? record.factor?.confidenceLevel ?? null,
+      factorVerificationStatus: activity?.matchedFactorVerificationStatus ?? record.factor?.verificationStatus ?? null,
       factorType: record.factor?.isSystem || record.factor?.isOfficial ? 'System' : null,
       calculatedEmission: emissions,
       calculatedEmissionsKgCO2e: emissions,
@@ -559,6 +574,7 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       normalizedUnit: unit,
       factorId: emission.factorId ?? null,
       factorVersionId: emission.factorVersionId ?? factor?.factorVersionId ?? null,
+      factorVersion: factor?.factorVersion ?? null,
       factorName: factor?.factorName ?? null,
       factorValue: Number.isFinite(factorValue) ? factorValue : null,
       factorInputUnit: factor?.inputUnit ?? null,
@@ -571,7 +587,10 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       sourceDocument: factor?.sourceDocument ?? null,
       sourceUrl: factor?.sourceUrl ?? null,
       sourceYear: factor?.sourceYear ?? null,
+      factorAssumptions: factor?.assumptions ?? null,
       factorVerified: Boolean(factor?.verified),
+      factorConfidenceLevel: factor?.confidenceLevel ?? null,
+      factorVerificationStatus: factor?.verificationStatus ?? null,
       factorType: factor?.factorType ?? null,
       calculatedEmission: emissions,
       calculatedEmissionsKgCO2e: emissions,
@@ -660,7 +679,7 @@ async function buildSupplementalCalculations(input: {
       inputUnit: normalizedUnit.value,
       jurisdictionCountry: activity.jurisdictionCountry,
       jurisdictionRegion: activity.jurisdictionRegion,
-      recordYear: activity.recordDate ? new Date(activity.recordDate).getUTCFullYear() : undefined,
+      recordYear: getDateOnlyYear(activity.recordDate),
       organizationId,
       factors: factors as MatchableConversionFactor[],
     });
@@ -748,6 +767,7 @@ function buildSupplementalCalculationDetail(
     normalizedUnit: item.unit,
     factorId: item.factor.id,
     factorVersionId: item.factor.currentActiveVersion?.id ?? item.factor.version?.id ?? null,
+    factorVersion: getFactorVersionLabel(item.factor) || null,
     factorName: item.factor.name,
     factorDisplayName: item.factor.displayName ?? item.factor.name,
     factorValue,
@@ -757,9 +777,12 @@ function buildSupplementalCalculationDetail(
     factorStatus: item.factor.status ?? null,
     factorSource: sourceAuthority || 'Source not specified',
     sourceAuthority,
-    sourceDocument: item.factor.sourceReference ?? null,
+    sourceDocument: getFactorSourceDocument(item.factor) || null,
     sourceYear: item.factor.sourceYear ?? null,
+    factorAssumptions: getFactorAssumptionDisclosure(item.activityType, item.factor) || null,
     factorVerified: Boolean(item.factor.verified),
+    factorConfidenceLevel: getFactorConfidenceLevel(item.factor) || null,
+    factorVerificationStatus: getFactorVerificationStatus(item.factor) || null,
     factorType: item.factor.organizationId ? 'Custom' : 'System',
     factorDefaultScope: getFactorDefaultScope(item.factor),
     factorScope: getFactorScope(item.factor),
@@ -769,9 +792,8 @@ function buildSupplementalCalculationDetail(
     calculationStatus: 'CALCULATED',
     matchingStatus: 'MATCHED',
     matchedBy: 'frontend factor-library compatibility match',
-    matchingMethod: 'frontend factor-library compatibility match',
-    matchingMessage:
-      'Matched against the visible Conversion Factor Library while backend factor matching is updated.',
+    matchingMethod: 'MATCHED',
+    matchingMessage: VISIBLE_FACTOR_LIBRARY_MATCH_MESSAGE,
     status: 'CALCULATED',
     sourceType: activity?.sourceType ?? 'MANUAL',
     sourceReference: activity?.sourceReference ?? null,
@@ -808,9 +830,8 @@ function buildSupplementalMatchedEmission(
     factorId: item.factor.id,
     factorVersionId: item.factor.currentActiveVersion?.id ?? item.factor.version?.id ?? null,
     calculationFormula: `${item.quantity} × ${Number(getFactorValue(item.factor))} = ${item.emissions}`,
-    matchingMethod: 'frontend factor-library compatibility match',
-    matchingMessage:
-      'Matched against the visible Conversion Factor Library while backend factor matching is updated.',
+    matchingMethod: 'MATCHED',
+    matchingMessage: VISIBLE_FACTOR_LIBRARY_MATCH_MESSAGE,
   };
 }
 
@@ -833,6 +854,7 @@ function mergeConversionFactorsUsed(
     merged.push({
       factorId: item.factor.id,
       factorVersionId: item.factor.currentActiveVersion?.id ?? item.factor.version?.id ?? null,
+      factorVersion: getFactorVersionLabel(item.factor) || null,
       activityType: item.activityType,
       factorName: item.factor.displayName ?? item.factor.name,
       factorValue: getFactorValue(item.factor),
@@ -841,17 +863,18 @@ function mergeConversionFactorsUsed(
       jurisdiction: item.factor.jurisdiction ?? null,
       factorYear: item.factor.sourceYear ?? null,
       factorStatus: item.factor.status ?? null,
-      confidenceLevel: item.factor.confidenceLevel ?? null,
+      confidenceLevel: getFactorConfidenceLevel(item.factor) || null,
+      verificationStatus: getFactorVerificationStatus(item.factor) || null,
+      assumptions: getFactorAssumptionDisclosure(item.activityType, item.factor) || null,
       sourceAuthority: getFactorSourceAuthority(item.factor) || 'Source not specified',
-      sourceDocument: item.factor.sourceReference ?? null,
+      sourceDocument: getFactorSourceDocument(item.factor) || null,
       sourceUrl: item.factor.sourceUrl ?? null,
       sourceYear: item.factor.sourceYear ?? null,
       factorType: item.factor.organizationId ? 'Custom' : 'System',
       verified: Boolean(item.factor.verified),
       usedRecordsCount: 1,
-      matchingMethod: 'frontend factor-library compatibility match',
-      matchingMessage:
-        'Matched against the visible Conversion Factor Library while backend factor matching is updated.',
+      matchingMethod: 'MATCHED',
+      matchingMessage: VISIBLE_FACTOR_LIBRARY_MATCH_MESSAGE,
     });
   });
 
@@ -868,7 +891,7 @@ export function deriveMetricsDateRange(
   fallbackDate = new Date(),
 ): MetricsDateRange {
   const validDates = activities
-    .map((item) => item.recordDate?.slice(0, 10) ?? '')
+    .map((item) => formatDateOnly(item.recordDate))
     .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
     .sort();
 

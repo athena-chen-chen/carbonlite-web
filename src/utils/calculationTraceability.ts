@@ -1,9 +1,22 @@
 import type { CalculationAuditDetail } from '../services/metrics';
+import { getDisplaySourceLabel } from './reportCredibility';
 import { formatActivityTypeLabel } from './activityAggregation';
 import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
 
 function formatNumber(value?: string | number | null) {
   return formatDisplayNumber(value);
+}
+
+export function formatFactorValue(value?: string | number | null) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return value === null || value === undefined || value === '' ? '-' : String(value);
+  }
+
+  return numericValue.toLocaleString(undefined, {
+    maximumFractionDigits: 4,
+  });
 }
 
 export function buildCalculatedFormula(detail: CalculationAuditDetail) {
@@ -45,7 +58,7 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
     return 'No factor available for this activity.';
   }
 
-  return `${formatNumber(detail.activityQuantity)} × ${formatNumber(detail.factorValue)} = ${formatEmissionsValue(detail.calculatedEmissionsKgCO2e)} kgCO2e`;
+  return `${formatNumber(detail.activityQuantity)} × ${formatFactorValue(detail.factorValue)} = ${formatEmissionsValue(detail.calculatedEmissionsKgCO2e)} kgCO2e`;
 }
 
 export function buildFormulaInputs(detail: CalculationAuditDetail) {
@@ -69,7 +82,7 @@ export function buildFormulaInputs(detail: CalculationAuditDetail) {
     return 'No factor available for this activity.';
   }
 
-  return `${formatNumber(detail.activityQuantity)} × ${formatNumber(detail.factorValue)}`;
+  return `${formatNumber(detail.activityQuantity)} × ${formatFactorValue(detail.factorValue)}`;
 }
 
 export function formatTraceableFactor(detail: CalculationAuditDetail) {
@@ -83,8 +96,11 @@ export function formatTraceableFactor(detail: CalculationAuditDetail) {
 
   const resultUnit = detail.factorResultUnit || 'kgCO2e';
   const inputUnit = detail.factorInputUnit || detail.activityUnit;
+  if (resultUnit.includes('/')) {
+    return `${formatFactorValue(detail.factorValue)} ${resultUnit}`;
+  }
 
-  return `${formatNumber(detail.factorValue)} ${resultUnit}/${inputUnit}`;
+  return `${formatFactorValue(detail.factorValue)} ${resultUnit}/${inputUnit}`;
 }
 
 export function formatTraceabilitySource(detail: CalculationAuditDetail) {
@@ -160,14 +176,17 @@ export function formatMatchingMethod(detail: CalculationAuditDetail) {
 }
 
 export function formatRecordSource(detail: CalculationAuditDetail) {
-  if (String(detail.sourceType).toUpperCase() === 'MANUAL') return 'Manual entry';
+  const baseLabel = getDisplaySourceLabel({
+    sourceFileName: detail.sourceFileName,
+    sourceReference: detail.sourceReference,
+    sourceType: detail.sourceType,
+  });
+  if (baseLabel === 'Manual Entry') return baseLabel;
 
-  const parts = [
-    detail.sourceFileName,
-    detail.sourceReference,
+  const locationParts = [
     detail.sourcePage ? `Page ${detail.sourcePage}` : '',
     detail.sourceRow ? `Row ${detail.sourceRow}` : '',
   ].filter((part): part is string => Boolean(String(part ?? '').trim()));
 
-  return parts.join(' · ') || 'Source not specified';
+  return [baseLabel, ...locationParts].join(' · ') || 'Source not specified';
 }

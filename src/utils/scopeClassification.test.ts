@@ -19,7 +19,7 @@ describe('scope classification', () => {
     ['Hotel Stay', 'SCOPE_3'],
     ['Ground Transport', 'SCOPE_3'],
     ['SHIPPING', 'SCOPE_3'],
-    ['WASTE', 'SCOPE_3'],
+    ['WASTE', 'UNCLASSIFIED'],
     ['WATER', 'TRACKED_METRIC'],
   ])('maps %s to %s', (activityType, expectedScope) => {
     expect(inferDefaultScope(activityType)).toBe(expectedScope);

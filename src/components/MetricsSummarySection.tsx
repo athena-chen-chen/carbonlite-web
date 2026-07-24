@@ -16,6 +16,7 @@ import {
   formatTraceabilitySource,
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
+import { formatCredibilityLabel } from '../utils/factorCredibility';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
@@ -23,6 +24,11 @@ import {
   formatScopeSource,
   resolveScopeClassification,
 } from '../utils/scopeClassification';
+import { getDateOnlyYear } from '../utils/dateOnly';
+import {
+  isRecordRequiringCorrection,
+  isTrackedMetricDetail,
+} from '../utils/reportCredibility';
 import { IssueBadge as SharedIssueBadge } from './shared/StatusBadge';
 
 export type MetricsCountSummary = {
@@ -696,6 +702,10 @@ function CalculationDetailModal({
             value={detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'Not calculated'}
           />
           <CalculationDetailField label="Factor Source" value={formatTraceabilitySource(detail)} />
+          <CalculationDetailField label="Factor Version" value={detail.factorVersion || detail.factorVersionId || 'Not specified'} />
+          <CalculationDetailField label="Verification" value={formatCredibilityLabel(detail.factorVerificationStatus) || 'Not specified'} />
+          <CalculationDetailField label="Confidence" value={formatCredibilityLabel(detail.factorConfidenceLevel) || 'Not specified'} />
+          <CalculationDetailField label="Assumptions" value={detail.factorAssumptions || 'None documented'} fullWidth />
           <CalculationDetailField
             label="Formula"
             value={buildCalculatedFormula(detail)}
@@ -976,7 +986,8 @@ function roundDisplay(value: number) {
 export function buildDataReadinessSummary(calculationDetails: CalculationAuditDetail[]): DataReadinessSummary {
   const totalRecords = calculationDetails.length;
   const recordsReadyForCalculation = calculationDetails.filter((detail) => detail.status === 'CALCULATED').length;
-  const trackedOnlyCount = calculationDetails.filter((detail) => detail.status === 'TRACKED_ONLY').length;
+  const trackedOnlyCount = calculationDetails.filter(isTrackedMetricDetail).length;
+  const recordsRequiringReview = calculationDetails.filter(isRecordRequiringCorrection).length;
   const missingFactorCount = calculationDetails.filter((detail) => detail.status === 'MISSING_FACTOR').length;
   const invalidUnitCount = calculationDetails.filter((detail) => detail.status === 'INVALID_UNIT').length;
   const missingJurisdictionCount = calculationDetails.filter((detail) => detail.status === 'MISSING_JURISDICTION').length;
@@ -1035,7 +1046,7 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
     message: getDataReadinessMessage(level, score, totalRecords),
     totalRecords,
     recordsReadyForCalculation,
-    recordsRequiringReview: Math.max(0, totalRecords - recordsReadyForCalculation),
+    recordsRequiringReview,
     trackedOnlyCount,
     missingFactorCount,
     invalidUnitCount,
@@ -1330,9 +1341,7 @@ function buildCarbonCreditNextSteps(input: {
 }
 
 function getYearFromDate(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.getUTCFullYear();
+  return getDateOnlyYear(value) ?? null;
 }
 
 function buildScopeSummary(calculationDetails: CalculationAuditDetail[]) {

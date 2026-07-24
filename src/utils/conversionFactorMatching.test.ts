@@ -174,6 +174,193 @@ describe('findBestConversionFactorMatch', () => {
     expect(match?.factor.id).toBe('factor-electricity-ab');
   });
 
+  it('uses the latest available prior-year electricity factor when exact year is unavailable', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'Electricity',
+      inputUnit: 'KWH',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'AB',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-electricity-ab-2024',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2024',
+          type: 'EMISSION',
+          activityType: 'Electricity',
+          inputUnit: 'kWh',
+          factorValue: 0.5,
+          resultUnit: 'kgCO2e/kWh',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2024,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+        {
+          id: 'factor-electricity-ab-2025',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2025',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          factorValue: 0.53,
+          resultUnit: 'kgCO2e/kWh',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'AB',
+          sourceYear: 2025,
+          verified: false,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('factor-electricity-ab-2025');
+    expect(match?.factorYear).toBe(2025);
+    expect(match?.usedPriorYearFallback).toBe(true);
+  });
+
+  it('uses a prior-year province match when another province has the exact record year', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-electricity-sk-2026',
+          organizationId: null,
+          name: 'Electricity - Saskatchewan - 2026',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          value: 0.64,
+          resultUnit: 'kgCO2e/kWh',
+          jurisdiction: 'Saskatchewan',
+          sourceYear: 2026,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+        {
+          id: 'factor-electricity-ab-2025',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2025',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          value: 0.53,
+          resultUnit: 'kgCO2e/kWh',
+          jurisdiction: 'Alberta',
+          sourceYear: 2025,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('factor-electricity-ab-2025');
+    expect(match?.factorYear).toBe(2025);
+    expect(match?.usedPriorYearFallback).toBe(true);
+  });
+
+  it.each([
+    [2025, false],
+    [2026, true],
+  ])('matches the exact Manual Entry Alberta diagnostic factor for record year %s', (recordYear, usedFallback) => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear,
+      organizationId: 'org-1',
+      allowPlaceholderConfidence: true,
+      factors: [
+        {
+          id: 'cmr75gv6l0007gdjbs0bz4d3j',
+          name: 'Electricity - Alberta',
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          jurisdiction: 'Alberta',
+          sourceYear: 2025,
+          factorValue: 0.53,
+          isSystemDefault: true,
+          confidenceLevel: 'Demo / Placeholder',
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('cmr75gv6l0007gdjbs0bz4d3j');
+    expect(match?.factorYear).toBe(2025);
+    expect(match?.usedPriorYearFallback).toBe(usedFallback);
+  });
+
+  it.each([
+    ['British Columbia', 'bc-factor', 0.02],
+    ['Ontario', 'on-factor', 0.12],
+  ])('matches the Manual Entry %s diagnostic-style factor', (province, id, factorValue) => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: province,
+      recordYear: 2026,
+      organizationId: 'org-1',
+      allowPlaceholderConfidence: true,
+      factors: [
+        {
+          id,
+          name: `Electricity - ${province}`,
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          jurisdiction: province,
+          sourceYear: 2025,
+          factorValue,
+          isSystemDefault: true,
+          confidenceLevel: 'Demo / Placeholder',
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe(id);
+    expect(match?.factorYear).toBe(2025);
+    expect(match?.usedPriorYearFallback).toBe(true);
+  });
+
+  it('does not use a future-year electricity factor for an earlier activity record', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2025,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-electricity-ab-2026',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2026',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          factorValue: 0.53,
+          resultUnit: 'kgCO2e/kWh',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match).toBeUndefined();
+  });
+
   it('does not fall back across provinces for electricity', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'ELECTRICITY',
@@ -263,6 +450,69 @@ describe('findBestConversionFactorMatch', () => {
     },
   );
 
+  it('matches pilot Ground Transport km records as Scope 3 without province', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'Ground Transport',
+      inputUnit: 'KM',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: null,
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: pilotConversionFactors,
+    });
+
+    expect(match?.factor.name).toBe('Ground Transport - Canada - 2025');
+    expect(match?.factor.factorValue).toBe(0.2);
+    expect(match?.factor.defaultScope).toBe('SCOPE_3');
+    expect(match?.sourceLabel).toBe('System Default Factor');
+    expect(match?.usedPriorYearFallback).toBe(true);
+  });
+
+  it('matches a Canada - National Ground Transport factor when the record has no province', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'GROUND_TRANSPORT',
+      inputUnit: 'km',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: '',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'pilot-ground-transport-canada-2025',
+          name: 'Ground Transport - Canada - 2025',
+          type: 'EMISSION',
+          activityType: 'GROUND_TRANSPORT',
+          unit: 'km',
+          factorValue: 0.2,
+          resultUnit: 'kgCO2e',
+          jurisdiction: 'Canada - National',
+          sourceYear: 2025,
+          isSystemDefault: true,
+          isDefault: true,
+          defaultScope: 'SCOPE_3',
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('pilot-ground-transport-canada-2025');
+    expect(match?.factor.factorValue).toBe(0.2);
+    expect(match?.factorYear).toBe(2025);
+    expect(match?.usedPriorYearFallback).toBe(true);
+  });
+
+  it('does not match pilot Ground Transport when the unit is not km', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'GROUND_TRANSPORT',
+      inputUnit: 'miles',
+      jurisdictionCountry: 'Canada',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: pilotConversionFactors,
+    });
+
+    expect(match).toBeUndefined();
+  });
+
   it('does not match unsupported units without a factor', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'DIESEL',
@@ -322,6 +572,9 @@ describe('normalizeJurisdictionRegion', () => {
     ['ON', 'Ontario'],
     ['Ont.', 'Ontario'],
     ['Ontario', 'Ontario'],
+    ['Canada - National', 'Canada'],
+    ['National', 'Canada'],
+    ['Not province-specific', 'Canada'],
     [null, null],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizeJurisdictionRegion(input)).toBe(expected);

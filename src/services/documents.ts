@@ -1,6 +1,7 @@
 import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
 import { trackEvent } from './ga4.service';
+import { canImportActivityRecords, getCurrentUser, requirePermission } from './auth';
 
 export type UploadDocumentInput = {
   file: File;
@@ -58,6 +59,8 @@ export type DeleteDocumentResponse = {
 };
 
 export async function uploadDocument(input: UploadDocumentInput) {
+  requirePermission(canImportActivityRecords(getCurrentUser()));
+
   const formData = new FormData();
   formData.append('file', input.file);
   formData.append('type', input.type);
@@ -120,6 +123,8 @@ export async function getDocuments() {
 }
 
 export async function deleteDocument(id: string) {
+  requirePermission(canImportActivityRecords(getCurrentUser()));
+
   try {
     const response = await apiFetch<DeleteDocumentResponse | void>(`/documents/${id}`, {
       method: 'DELETE',
@@ -131,7 +136,7 @@ export async function deleteDocument(id: string) {
     };
   } catch (err) {
     if (err instanceof ApiError && err.status === 403) {
-      throw new Error('You can only delete your own uploaded documents.');
+      throw new Error('You do not have permission to perform this action.');
     }
 
     throw new Error('Document deletion failed. Please try again.');

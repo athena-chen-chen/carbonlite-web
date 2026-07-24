@@ -10,7 +10,8 @@ export type MatchableConversionFactor = {
   displayName?: string | null;
   inputUnit?: string | null;
   unit?: string | null;
-  factorValue: string | number;
+  factorValue?: string | number | null;
+  value?: string | number | null;
   resultUnit?: string | null;
   jurisdiction?: string | null;
   jurisdictionCountry?: string | null;
@@ -27,10 +28,17 @@ export type MatchableConversionFactor = {
   sourceReference?: string | null;
   sourceUrl?: string | null;
   sourceYear?: number | null;
+  factorVersion?: string | null;
+  factorVersionId?: string | null;
+  assumptions?: string | null;
+  methodology?: string | null;
+  consultantReviewRecommended?: boolean | null;
+  isPilotEstimate?: boolean | null;
   factorYear?: number | null;
   defaultScope?: string | null;
   scope?: string | null;
   confidenceLevel?: string | null;
+  verificationStatus?: string | null;
   verified?: boolean | null;
   updatedAt?: string | null;
   currentActiveVersion?: Partial<MatchableConversionFactor> | null;
@@ -46,6 +54,8 @@ export type MatchableConversionFactor = {
 export type ConversionFactorMatch = {
   factor: MatchableConversionFactor;
   sourceLabel: 'Organization Custom Factor' | 'System Default Factor';
+  factorYear?: number | null;
+  usedPriorYearFallback?: boolean;
 };
 
 export function findBestConversionFactorMatch(input: {
@@ -55,6 +65,7 @@ export function findBestConversionFactorMatch(input: {
   jurisdictionRegion?: string | null;
   recordYear?: number | null;
   organizationId?: string | null;
+  allowPlaceholderConfidence?: boolean;
   factors: MatchableConversionFactor[];
 }): ConversionFactorMatch | undefined {
   const activityType = normalizeActivityType(input.activityType);
@@ -74,12 +85,12 @@ export function findBestConversionFactorMatch(input: {
       factorKind === 'EMISSION' &&
       isUsableFactor(factor) &&
       normalizeFactorActivityType(factor) === activityType &&
-      !(activityType === 'ELECTRICITY' && isPlaceholderFactor(factor)) &&
+      !(activityType === 'ELECTRICITY' && isPlaceholderFactor(factor, input.allowPlaceholderConfidence)) &&
       normalizeUnit(getFactorInputUnit(factor)) === inputUnit &&
       factorYearMatches(getFactorYear(factor), recordYear) &&
       countryMatches(getFactorCountry(factor), country) &&
       regionCompatibleForActivity(activityType, getFactorRegion(factor), region) &&
-      Number.isFinite(Number(getFactorValue(factor)))
+      hasUsableFactorValue(factor)
     );
   });
 
@@ -89,23 +100,27 @@ export function findBestConversionFactorMatch(input: {
         ? String(factor.organizationId ?? '') === organizationId
         : Boolean(factor.organizationId) && !isSystemFactor(factor),
     )
-    .sort(compareNewestDefaultFirst)[0];
+    .sort((a, b) => compareBestApplicableFactor(a, b, recordYear))[0];
 
   if (organizationFactor) {
     return {
       factor: organizationFactor,
       sourceLabel: 'Organization Custom Factor',
+      factorYear: getFactorYear(organizationFactor),
+      usedPriorYearFallback: usedPriorYearFallback(organizationFactor, recordYear),
     };
   }
 
   const systemFactor = matchingFactors
     .filter((factor) => isSystemFactor(factor))
-    .sort(compareNewestDefaultFirst)[0];
+    .sort((a, b) => compareBestApplicableFactor(a, b, recordYear))[0];
 
   if (systemFactor) {
     return {
       factor: systemFactor,
       sourceLabel: 'System Default Factor',
+      factorYear: getFactorYear(systemFactor),
+      usedPriorYearFallback: usedPriorYearFallback(systemFactor, recordYear),
     };
   }
 
@@ -125,13 +140,17 @@ export function getFactorInputUnit(factor: MatchableConversionFactor) {
 export function getFactorValue(factor: MatchableConversionFactor) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
 
-  return currentVersion?.factorValue ?? factor.factorValue;
+  return currentVersion?.factorValue ?? currentVersion?.value ?? factor.factorValue ?? factor.value;
 }
 
 export function getFactorResultUnit(factor: MatchableConversionFactor) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
 
   return currentVersion?.resultUnit || factor.resultUnit || 'kgCO2e';
+}
+
+export function getFactorSourceYear(factor: MatchableConversionFactor) {
+  return getFactorYear(factor);
 }
 
 function getFactorCountry(factor: MatchableConversionFactor) {
@@ -182,24 +201,45 @@ function isUsableFactor(factor: MatchableConversionFactor) {
   return true;
 }
 
-function isPlaceholderFactor(factor: MatchableConversionFactor) {
+function hasUsableFactorValue(factor: MatchableConversionFactor) {
+  const value = getFactorValue(factor);
+  return value === null || value === undefined || Number.isFinite(Number(value));
+}
+
+function isPlaceholderFactor(
+  factor: MatchableConversionFactor,
+  allowPlaceholderConfidence = false,
+) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
   return (
     normalizeJurisdictionRegion(getFactorRegion(factor)) === 'Province Required' ||
-    String(currentVersion?.confidenceLevel ?? factor.confidenceLevel ?? '').toLowerCase().includes('placeholder') ||
-    Boolean(currentVersion?.verified ?? factor.verified) === false
+    (!allowPlaceholderConfidence &&
+      String(currentVersion?.confidenceLevel ?? factor.confidenceLevel ?? '').toLowerCase().includes('placeholder'))
   );
 }
 
-function compareNewestDefaultFirst(
+function compareBestApplicableFactor(
   a: MatchableConversionFactor,
   b: MatchableConversionFactor,
+  recordYear: number | null,
 ) {
   if (Number(a.isDefault) !== Number(b.isDefault)) {
     return Number(b.isDefault) - Number(a.isDefault);
   }
 
+  if (recordYear) {
+    const aYear = Number(getFactorYear(a) ?? Number.NEGATIVE_INFINITY);
+    const bYear = Number(getFactorYear(b) ?? Number.NEGATIVE_INFINITY);
+
+    if (aYear !== bYear) return bYear - aYear;
+  }
+
   return String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
+}
+
+function usedPriorYearFallback(factor: MatchableConversionFactor, recordYear: number | null) {
+  const factorYear = getFactorYear(factor);
+  return Boolean(recordYear && factorYear && Number(factorYear) < Number(recordYear));
 }
 
 export function normalizeActivityType(value?: string | null) {
@@ -231,8 +271,14 @@ export function normalizeJurisdictionRegion(region?: string | null): string | nu
     on: 'Ontario',
     ont: 'Ontario',
     ontario: 'Ontario',
+    ca: 'Canada',
+    national: 'Canada',
     canada: 'Canada',
     'canada generic': 'Canada',
+    'canada national': 'Canada',
+    'canada - national': 'Canada',
+    'canada-level': 'Canada',
+    'not province-specific': 'Canada',
     'province required': 'Province Required',
   };
 
@@ -263,10 +309,14 @@ function regionCompatibleForActivity(
 
   const normalizedFactorRegion = normalizeJurisdictionRegion(factorRegion);
   return (
-    !normalizedFactorRegion ||
-    normalizedFactorRegion === 'Canada' ||
+    isNationalJurisdictionRegion(normalizedFactorRegion) ||
     regionMatchesExactly(factorRegion, recordRegion)
   );
+}
+
+function isNationalJurisdictionRegion(region?: string | null) {
+  const normalized = normalizeJurisdictionRegion(region);
+  return !normalized || normalized === 'Canada';
 }
 
 function regionMatchesExactly(factorRegion?: string | null, recordRegion?: string | null) {

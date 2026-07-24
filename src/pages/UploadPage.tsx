@@ -16,6 +16,10 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { calculateMetrics } from '../services/metrics';
 import {
+  getAllConversionFactors,
+  type ConversionFactorItem,
+} from '../services/conversionFactors';
+import {
   activityTypeDefaultUnits,
   activityTypes,
   defaultActivityType,
@@ -25,17 +29,29 @@ import {
   normalizeActivityType as normalizeCanonicalActivityType,
 } from '../utils/activityType';
 import {
+  findBestConversionFactorMatch,
+  getFactorSourceYear,
+  getFactorValue,
+  type MatchableConversionFactor,
   normalizeJurisdictionCountry,
 } from '../utils/conversionFactorMatching';
+import { buildMatchedFactorSnapshot } from '../utils/factorCredibility';
+import { getDateOnlyYear } from '../utils/dateOnly';
 import { buildApiUrl } from '../config/api';
 import { ApiError } from '../services/api';
-import { getToken } from '../services/auth';
+import {
+  canImportActivityRecords,
+  getCurrentUser,
+  getOrganizationId,
+  getToken,
+} from '../services/auth';
 import { track } from '../services/analytics.service';
 import {
   sampleDocuments,
   sampleParsedActivities,
 } from '../demo/demoData';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import { inferDefaultScope } from '../utils/scopeClassification';
 import { ExcelInputTable } from '../components/ExcelInputTable';
 import {
   UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE,
@@ -119,6 +135,8 @@ export const FILE_MISSING_EXPLANATION =
   'This file is no longer available on the server. This may happen after system updates or temporary storage cleanup. Please upload the file again if you need to extract or review it.';
 export const FILE_MISSING_TOOLTIP =
   'The original uploaded file is no longer available. Please upload it again.';
+const UNSUPPORTED_ACTIVITY_TYPE_MESSAGE =
+  'Unsupported Activity Type: This activity type is not supported in the current CarbonLite pilot.';
 
 function getRouteInputMethod(state: unknown): InputMethod | null {
   const focusInputMethod = (state as UploadRouteState | null)?.focusInputMethod;
@@ -167,11 +185,19 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
   const issues: ImportValidationIssue[] = [];
 
   rows.forEach((row, index) => {
+    const normalizedActivityType = normalizeCanonicalActivityType(row.activityType.value);
+
     if (isMissingImportValue(row.activityType.value)) {
       issues.push({
         rowIndex: index,
         field: 'activityType',
         message: 'Activity type is required.',
+      });
+    } else if (!normalizedActivityType) {
+      issues.push({
+        rowIndex: index,
+        field: 'activityType',
+        message: UNSUPPORTED_ACTIVITY_TYPE_MESSAGE,
       });
     }
 
@@ -233,7 +259,6 @@ export function getImportValidationIssues(rows: EditableParsedActivity[]) {
       });
     }
 
-    const normalizedActivityType = normalizeCanonicalActivityType(row.activityType.value);
     if (normalizedActivityType === 'ELECTRICITY') {
       const normalizedProvince = normalizePreviewProvince(row.jurisdictionRegion.value);
 
@@ -398,11 +423,143 @@ function normalizePreviewProvince(value: RawExtractionField) {
 }
 
 function normalizePreviewActivityType(value: RawExtractionField) {
-  return normalizeCanonicalActivityType(formatOptionalExtractionField(value)) ?? '';
+  const rawValue = formatOptionalExtractionField(value).trim();
+  if (!rawValue) return '';
+
+  return normalizeCanonicalActivityType(rawValue) ?? rawValue;
 }
 
 function getPreviewActivityTypeLabel(value?: string | null) {
   return getActivityTypeLabel(value);
+}
+
+export function buildDocumentImportActivityPayload(input: {
+  item: EditableParsedActivity;
+  documentId: string;
+  sourceFileName: string;
+  importBatchId: string;
+  conversionFactors: ConversionFactorItem[];
+  organizationId?: string | null;
+}) {
+  const { item, documentId, sourceFileName, importBatchId, conversionFactors, organizationId } = input;
+  const activityType =
+    normalizeCanonicalActivityType(item.activityType.value) ||
+    String(item.activityType.value ?? '').trim();
+  const country = item.jurisdictionCountry.value || 'Canada';
+  const province = item.jurisdictionRegion.value || undefined;
+  const normalizedUnit = normalizeUnitForDisplay(item.unit.value);
+  const quantity = Number(item.quantity.value);
+  const recordYear = getDateOnlyYear(item.recordDate.value);
+  const baseNotes = `Imported from AI extraction. Document ID: ${documentId}`;
+  const basePayload = {
+    activityType,
+    recordDate: item.recordDate.value || null,
+    quantity: item.quantity.value,
+    unit: item.unit.value,
+    jurisdictionCountry: country,
+    jurisdictionRegion: province,
+    sourceType: 'AI_EXTRACTION',
+    sourceReference: item.sourceReference.value || sourceFileName,
+    documentId,
+    sourceDocumentId: documentId,
+    sourceFileName,
+    sourcePage: item.sourcePage ?? undefined,
+    sourceRow: item.sourceRow ?? undefined,
+    sourceTextSnippet: item.sourceTextSnippet ?? undefined,
+    importBatchId,
+    dateEstimated: item.dateEstimated,
+  };
+
+  function withCalculation(calculation: {
+    matchingStatus: string;
+    reportTreatment: string;
+    calculationStatus: string;
+    calculationMessage: string;
+    matchedFactorId?: string;
+    matchedFactorName?: string;
+    matchedFactorSourceYear?: number;
+    calculatedEmissionsKgCO2e?: number;
+  }) {
+    return {
+      ...basePayload,
+      ...calculation,
+      scope: inferDefaultScope(activityType),
+      notes: [baseNotes, calculation.calculationMessage].filter(Boolean).join(' '),
+    };
+  }
+
+  if (activityType === 'ELECTRICITY' && !normalizeProvince(province)) {
+    return withCalculation({
+      matchingStatus: 'MISSING_PROVINCE',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'MISSING_PROVINCE',
+      calculationMessage: 'Electricity records require province before factor matching.',
+    });
+  }
+
+  if (normalizedUnit.status === 'invalid') {
+    return withCalculation({
+      matchingStatus: 'UNIT_MISMATCH',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'UNIT_MISMATCH',
+      calculationMessage: 'Unit mismatch. This record is excluded from emissions totals.',
+    });
+  }
+
+  if (!activityType || !item.recordDate.value || !Number.isFinite(quantity) || quantity <= 0 || normalizedUnit.status === 'missing') {
+    return withCalculation({
+      matchingStatus: 'REQUIRES_REVIEW',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'REQUIRES_REVIEW',
+      calculationMessage: 'Required fields must be completed before calculation.',
+    });
+  }
+
+  if (activityType === 'WATER') {
+    return withCalculation({
+      matchingStatus: 'TRACKED_ONLY',
+      reportTreatment: 'TRACKED_ONLY',
+      calculationStatus: 'TRACKED_ONLY',
+      calculationMessage: 'Water usage is tracked only and excluded from GHG emissions totals.',
+    });
+  }
+
+  const match = findBestConversionFactorMatch({
+    activityType,
+    inputUnit: normalizedUnit.value,
+    jurisdictionCountry: country,
+    jurisdictionRegion: province,
+    recordYear,
+    organizationId,
+    factors: conversionFactors as MatchableConversionFactor[],
+  });
+
+  if (!match) {
+    return withCalculation({
+      matchingStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'MISSING_FACTOR',
+      calculationMessage: 'No matching conversion factor is available for this record.',
+    });
+  }
+
+  const factorValue = Number(getFactorValue(match.factor));
+  const calculatedEmissionsKgCO2e = quantity * factorValue;
+  const factorYear = getFactorSourceYear(match.factor) ?? match.factorYear ?? undefined;
+
+  return withCalculation({
+    matchingStatus: 'MATCHED',
+    reportTreatment: 'INCLUDED',
+    calculationStatus: 'CALCULATED',
+    calculationMessage: match.usedPriorYearFallback && factorYear
+      ? `Matched factor. Using latest available factor year: ${factorYear}.`
+      : 'Matched factor. This record is included in emissions totals.',
+    matchedFactorId: match.factor.id,
+    matchedFactorName: match.factor.name,
+    matchedFactorSourceYear: factorYear ?? undefined,
+    ...buildMatchedFactorSnapshot(match),
+    calculatedEmissionsKgCO2e,
+  });
 }
 
 function getExtractionFailureState(err: unknown): {
@@ -476,6 +633,21 @@ export function getDocumentStatusLabel(status: string) {
   }
 
   return 'Uploaded';
+}
+
+export function formatDocumentCreatedAt(value?: string | null) {
+  if (!value) return '-';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 export function getDocumentActionModel(input: {
@@ -622,6 +794,7 @@ export function UploadPage() {
   const [viewingDocumentId, setViewingDocumentId] = useState<string | null>(null);
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const canImportData = canImportActivityRecords(getCurrentUser());
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const manualEntryRef = useRef<HTMLDivElement | null>(null);
@@ -637,6 +810,7 @@ export function UploadPage() {
   const hasImportValidationErrors = importValidationIssues.length > 0;
   const hasSelectedImportValidationErrors = selectedImportValidationIssues.length > 0;
   const canAttemptConfirmImport =
+    canImportData &&
     confirmingId === null &&
     !generatingMetrics &&
     parsedActivities.length > 0 &&
@@ -664,6 +838,28 @@ export function UploadPage() {
 
   useEffect(() => {
     loadDocuments();
+  }, []);
+
+  useEffect(() => {
+    function handleDemoDataReset() {
+      setDocuments([]);
+      setPreviewDocumentId(null);
+      setPreviewDocumentIds([]);
+      setParsedActivities([]);
+      setLatestDocumentId(null);
+      setSelectedDocumentIds([]);
+      setDocumentToDelete(null);
+      setViewingDocumentId(null);
+      setOpenDocumentMenuId(null);
+      setSuccessMessage(null);
+      setError(null);
+    }
+
+    window.addEventListener('carbonlite:demo-data-reset', handleDemoDataReset);
+
+    return () => {
+      window.removeEventListener('carbonlite:demo-data-reset', handleDemoDataReset);
+    };
   }, []);
 
   useEffect(() => {
@@ -834,6 +1030,12 @@ export function UploadPage() {
   }
 
   function loadSampleWorkspace() {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     setDocuments(sampleDocuments);
     setPreviewDocumentId('MULTIPLE');
     setPreviewDocumentIds(sampleDocuments.map((document) => document.id));
@@ -910,6 +1112,13 @@ export function UploadPage() {
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (!canImportData) {
+      clearUploadInput();
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     const files = Array.from(event.target.files ?? []);
     selectUploadFiles(files);
   }
@@ -918,7 +1127,7 @@ export function UploadPage() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (isProcessing) return;
+    if (isProcessing || !canImportData) return;
 
     uploadDragDepthRef.current += 1;
     setIsDraggingUpload(true);
@@ -928,7 +1137,7 @@ export function UploadPage() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (isProcessing) {
+    if (isProcessing || !canImportData) {
       event.dataTransfer.dropEffect = 'none';
       return;
     }
@@ -955,13 +1164,23 @@ export function UploadPage() {
     uploadDragDepthRef.current = 0;
     setIsDraggingUpload(false);
 
-    if (isProcessing) return;
+    if (isProcessing || !canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
 
     const files = Array.from(event.dataTransfer.files ?? []);
     selectUploadFiles(files);
   }
 
   function handleUseSampleCSV() {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     const sampleRows = activityTypes.slice(0, 3).map((activityType, index) => {
       const quantity = [120, 80, 300][index] ?? 100;
       const unit = activityTypeDefaultUnits[activityType] || 'unit';
@@ -987,6 +1206,12 @@ ${sampleRows.join('\n')}`,
   }
 
   function handleUseSampleJSON() {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     const file = new File(
       [
         JSON.stringify(
@@ -1062,6 +1287,12 @@ ${sampleRows.join('\n')}`,
   }
 
   async function uploadSelectedFile(options?: { extractAfterUpload?: boolean }) {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     if (selectedFiles.length === 0) {
       setError('Please select at least one file first.');
       return;
@@ -1176,6 +1407,12 @@ ${sampleRows.join('\n')}`,
 
 
   function handleChooseFile() {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     fileInputRef.current?.click();
   }
   async function handleUploadAndExtract() {
@@ -1221,9 +1458,9 @@ ${sampleRows.join('\n')}`,
   }
 
   function getDocumentActionModelForDoc(doc: DocumentItem) {
-    return getDocumentActionModel({
+    const actionModel = getDocumentActionModel({
       status: doc.status,
-      canImport: canImportDocument(doc),
+      canImport: canImportData && canImportDocument(doc),
       hasPreview: hasPreviewForDocument(doc),
       isExtracting: extractingId === doc.id || extractingId === 'multiple',
       isImporting: confirmingId === doc.id,
@@ -1231,6 +1468,27 @@ ${sampleRows.join('\n')}`,
       isViewing: viewingDocumentId === doc.id,
       isDeleting: deletingDocumentId === doc.id,
     });
+
+    if (canImportData) return actionModel;
+
+    const mutatingActions = new Set<DocumentActionKind>([
+      'extract',
+      'reextract',
+      'import',
+      'delete',
+    ]);
+
+    return {
+      ...actionModel,
+      primaryAction: mutatingActions.has(actionModel.primaryAction.kind)
+        ? {
+            ...actionModel.primaryAction,
+            disabled: true,
+            title: 'You do not have permission to perform this action.',
+          }
+        : actionModel.primaryAction,
+      menuActions: actionModel.menuActions.filter((action) => !mutatingActions.has(action.kind)),
+    };
   }
 
   function handleDocumentAction(doc: DocumentItem, action: DocumentActionConfig) {
@@ -1436,6 +1694,13 @@ ${sampleRows.join('\n')}`,
   }
 
   async function handleDeleteDocument() {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      setDocumentToDelete(null);
+      return;
+    }
+
     if (!documentToDelete) return;
 
     const documentId = documentToDelete.id;
@@ -1607,6 +1872,12 @@ ${sampleRows.join('\n')}`,
   }
 
   async function handleConfirmImport(documentId?: string) {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     const activeDocumentIds =
       previewDocumentIds.length > 0
         ? previewDocumentIds
@@ -1698,6 +1969,10 @@ ${sampleRows.join('\n')}`,
 
       let importedCount = 0;
       const createdActivityIds: string[] = [];
+      const conversionFactors = await getAllConversionFactors({ type: 'EMISSION' }).catch(
+        () => [] as ConversionFactorItem[],
+      );
+      const organizationId = getOrganizationId(getCurrentUser());
 
       for (const [activityDocumentId, activities] of activitiesByDocument) {
         const importBatchId = `document-${activityDocumentId}`;
@@ -1705,25 +1980,16 @@ ${sampleRows.join('\n')}`,
           activities[0]?.documentFileName ??
           documents.find((d) => d.id === activityDocumentId)?.fileName ??
           activityDocumentId;
-        const normalizedActivities = activities.map((item) => ({
-          activityType: item.activityType.value,
-          recordDate: item.recordDate.value || null,
-          quantity: item.quantity.value,
-          unit: item.unit.value,
-          jurisdictionCountry: item.jurisdictionCountry.value || 'Canada',
-          jurisdictionRegion: item.jurisdictionRegion.value || undefined,
-          sourceType: 'AI_EXTRACTION',
-          sourceReference: item.sourceReference.value || sourceFileName,
-          documentId: activityDocumentId,
-          sourceDocumentId: activityDocumentId,
-          sourceFileName,
-          sourcePage: item.sourcePage ?? undefined,
-          sourceRow: item.sourceRow ?? undefined,
-          sourceTextSnippet: item.sourceTextSnippet ?? undefined,
-          importBatchId,
-          dateEstimated: item.dateEstimated,
-          notes: `Imported from AI extraction. Document ID: ${activityDocumentId}`,
-        }));
+        const normalizedActivities = activities.map((item) =>
+          buildDocumentImportActivityPayload({
+            item,
+            documentId: activityDocumentId,
+            sourceFileName,
+            importBatchId,
+            conversionFactors,
+            organizationId,
+          }),
+        );
 
         if (normalizedActivities.length === 0) continue;
 
@@ -1803,6 +2069,9 @@ ${sampleRows.join('\n')}`,
       return 'Missing Factor';
     }
     if (field === 'jurisdictionRegion') return 'Province required';
+    if (field === 'activityType' && message === UNSUPPORTED_ACTIVITY_TYPE_MESSAGE) {
+      return 'Unsupported Activity Type';
+    }
 
     return message;
   }
@@ -1817,6 +2086,9 @@ ${sampleRows.join('\n')}`,
     if (issue.field === 'jurisdictionRegion') return 'Missing Province';
     if (issue.field === 'unit') return 'Unit Mismatch';
     if (issue.field === 'quantity') return 'Invalid Amount';
+    if (issue.field === 'activityType' && issue.message === UNSUPPORTED_ACTIVITY_TYPE_MESSAGE) {
+      return 'Unsupported Activity Type';
+    }
     if (issue.field === 'activityType') return 'Missing Activity Type';
     if (issue.field === 'recordDate') return 'Missing Date';
 
@@ -1833,12 +2105,24 @@ ${sampleRows.join('\n')}`,
     if (issue.field === 'jurisdictionRegion') {
       return 'Electricity records require province before factor matching.';
     }
+    if (issue.field === 'activityType' && issue.message === UNSUPPORTED_ACTIVITY_TYPE_MESSAGE) {
+      return 'This activity type is not supported in the current CarbonLite pilot.';
+    }
 
     return issue.message;
   }
 
   function getRowStatusLabel(rowIndex: number) {
     const issues = getRowValidationIssues(rowIndex);
+    if (
+      issues.some(
+        (issue) =>
+          issue.field === 'activityType' &&
+          issue.message === UNSUPPORTED_ACTIVITY_TYPE_MESSAGE,
+      )
+    ) {
+      return 'Unsupported Activity Type';
+    }
     if (
       issues.some(
         (issue) =>
@@ -1942,6 +2226,8 @@ ${sampleRows.join('\n')}`,
     field: keyof EditableParsedActivity,
     value: string,
   ) {
+    if (!canImportData) return;
+
     setParsedActivities((prev) =>
       prev.map((item, i) => {
         if (i !== index) return item;
@@ -1980,10 +2266,18 @@ ${sampleRows.join('\n')}`,
   }
 
   function removeParsedActivity(index: number) {
+    if (!canImportData) return;
+
     setParsedActivities((prev) => prev.filter((_, i) => i !== index));
   }
 
   function addParsedActivity() {
+    if (!canImportData) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     setParsedActivities((prev) => [
       ...prev,
       {
@@ -2017,6 +2311,8 @@ ${sampleRows.join('\n')}`,
   }
 
   function toggleParsedActivitySelected(index: number, checked: boolean) {
+    if (!canImportData) return;
+
     setParsedActivities((prev) =>
       prev.map((item, i) =>
         i === index
@@ -2030,6 +2326,8 @@ ${sampleRows.join('\n')}`,
   }
 
   function selectAllParsedActivities() {
+    if (!canImportData) return;
+
     setParsedActivities((prev) =>
       prev.map((item) => ({
         ...item,
@@ -2039,6 +2337,8 @@ ${sampleRows.join('\n')}`,
   }
 
   function clearAllParsedActivities() {
+    if (!canImportData) return;
+
     setParsedActivities((prev) =>
       prev.map((item) => ({
         ...item,
@@ -2062,6 +2362,11 @@ ${sampleRows.join('\n')}`,
       <p style={{ color: '#666', marginBottom: 16 }}>
         Add emissions-related activity data from documents, spreadsheets, or manual entry. New records can be reviewed before they are included in emissions calculations.
       </p>
+      {!canImportData ? (
+        <div style={readOnlyNoticeStyle}>
+          Read-only access: you can view existing records, Calculation Review, and Reports, but cannot upload, import, edit, delete, or reset pilot data.
+        </div>
+      ) : null}
 
       <div style={stepBarStyle}>
         Input Data → Input Review → Save Records → Data Records → Calculation Review → Reports
@@ -2106,7 +2411,12 @@ ${sampleRows.join('\n')}`,
             Preload sample uploaded documents and extracted rows without changing how the app works.
           </div>
         </div>
-        <button type="button" onClick={loadSampleWorkspace} style={primaryButtonStyle(false)}>
+        <button
+          type="button"
+          onClick={loadSampleWorkspace}
+          disabled={!canImportData}
+          style={primaryButtonStyle(!canImportData)}
+        >
           {sampleWorkspaceLoaded ? 'Reload Sample Data' : 'Load Sample Data'}
         </button>
       </div>
@@ -2123,10 +2433,10 @@ ${sampleRows.join('\n')}`,
             role="button"
             tabIndex={0}
             onClick={() => {
-              if (!isProcessing) handleChooseFile();
+              if (!isProcessing && canImportData) handleChooseFile();
             }}
             onKeyDown={(event) => {
-              if (isProcessing) return;
+              if (isProcessing || !canImportData) return;
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 handleChooseFile();
@@ -2136,7 +2446,9 @@ ${sampleRows.join('\n')}`,
             onDragOver={handleUploadDragOver}
             onDragLeave={handleUploadDragLeave}
             onDrop={handleUploadDrop}
-            style={uploadDropzoneStyle(isDraggingUpload, isProcessing)}
+            aria-disabled={isProcessing || !canImportData}
+            title={!canImportData ? 'You do not have permission to perform this action.' : undefined}
+            style={uploadDropzoneStyle(isDraggingUpload, isProcessing || !canImportData)}
           >
             <strong>
               {isDraggingUpload ? 'Drop to select files' : 'Drag and drop files here or browse files'}
@@ -2205,10 +2517,12 @@ ${sampleRows.join('\n')}`,
             <button
               type="button"
               onClick={handleUploadAndExtract}
-              disabled={isProcessing || selectedFiles.length === 0}
-              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0)}
+              disabled={isProcessing || selectedFiles.length === 0 || !canImportData}
+              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0 || !canImportData)}
               title={
-                selectedFiles.length === 0
+                !canImportData
+                  ? 'You do not have permission to perform this action.'
+                  : selectedFiles.length === 0
                   ? 'Select a document before extracting data.'
                   : 'Upload the selected document and extract activity data.'
               }
@@ -2221,16 +2535,18 @@ ${sampleRows.join('\n')}`,
               <button
                 type="button"
                 onClick={handleUseSampleCSV}
-                disabled={isProcessing}
-                style={linkButtonStyle(isProcessing)}
+                disabled={isProcessing || !canImportData}
+                style={linkButtonStyle(isProcessing || !canImportData)}
+                title={!canImportData ? 'You do not have permission to perform this action.' : undefined}
               >
                 Use Sample CSV
               </button>
               <button
                 type="button"
                 onClick={handleUseSampleJSON}
-                disabled={isProcessing}
-                style={linkButtonStyle(isProcessing)}
+                disabled={isProcessing || !canImportData}
+                style={linkButtonStyle(isProcessing || !canImportData)}
+                title={!canImportData ? 'You do not have permission to perform this action.' : undefined}
               >
                 Use Sample JSON
               </button>
@@ -2292,9 +2608,9 @@ ${sampleRows.join('\n')}`,
           </div>
         ) : documents.length === 0 ? (
           <div style={emptyStateStyle}>
-            <strong>No documents yet</strong>
+            <strong>No documents waiting for review.</strong>
             <p style={{ margin: '8px 0 0', color: '#64748b' }}>
-              Add data from documents, spreadsheets, or manual entry to review draft records.
+              Upload a file or add records manually to begin.
             </p>
           </div>
         ) : (
@@ -2304,15 +2620,16 @@ ${sampleRows.join('\n')}`,
               {FILE_MISSING_EXPLANATION}
             </div>
           ) : null}
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={inputReviewTableWrapStyle}>
+          <table style={inputReviewTableStyle}>
             <colgroup>
-              <col style={{ width: 52 }} />
-              <col />
-              <col style={{ width: 110 }} />
-              <col style={{ width: 150 }} />
-              <col style={{ width: 80 }} />
-              <col style={{ width: 150 }} />
-              <col style={{ width: 190 }} />
+              <col style={inputReviewSelectColStyle} />
+              <col style={inputReviewFileNameColStyle} />
+              <col style={inputReviewTypeColStyle} />
+              <col style={inputReviewStatusColStyle} />
+              <col style={inputReviewSizeColStyle} />
+              <col style={inputReviewCreatedAtColStyle} />
+              <col style={inputReviewActionsColStyle} />
             </colgroup>
             <thead>
               <tr style={{ background: '#fafafa' }}>
@@ -2357,15 +2674,15 @@ ${sampleRows.join('\n')}`,
                         aria-label={`Select document ${doc.fileName}`}
                       />
                     </td>
-                    <td style={tdStyle}>{doc.fileName}</td>
-                    <td style={tdStyle}>{doc.type}</td>
-                    <td style={tdStyle}>
+                    <td style={inputReviewFileNameTdStyle}>{doc.fileName}</td>
+                    <td style={inputReviewTypeTdStyle}>{doc.type}</td>
+                    <td style={inputReviewStatusTdStyle}>
                       <span style={documentStatusBadgeStyle(doc.status)}>
                         {actionModel.statusLabel}
                       </span>
                     </td>
                     <td style={tdStyle}>{doc.fileSize ?? '-'}</td>
-                    <td style={tdStyle}>{doc.createdAt}</td>
+                    <td style={inputReviewCreatedAtTdStyle}>{formatDocumentCreatedAt(doc.createdAt)}</td>
                     <td style={documentActionTdStyle}>
                       <div style={documentActionRowCompactStyle}>
                         <span
@@ -2433,6 +2750,7 @@ ${sampleRows.join('\n')}`,
               })}
             </tbody>
           </table>
+          </div>
           </>
         )}
       </div>
@@ -2485,31 +2803,48 @@ ${sampleRows.join('\n')}`,
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" onClick={selectAllParsedActivities} style={secondaryButtonStyle}>
+              <button
+                type="button"
+                onClick={selectAllParsedActivities}
+                disabled={!canImportData}
+                style={secondaryButtonStyle}
+              >
                 Select All
               </button>
 
-              <button type="button" onClick={clearAllParsedActivities} style={secondaryButtonStyle}>
+              <button
+                type="button"
+                onClick={clearAllParsedActivities}
+                disabled={!canImportData}
+                style={secondaryButtonStyle}
+              >
                 Clear All
               </button>
 
-              <button type="button" onClick={addParsedActivity} style={secondaryButtonStyle}>
+              <button
+                type="button"
+                onClick={addParsedActivity}
+                disabled={!canImportData}
+                style={secondaryButtonStyle}
+              >
                 Add Row
               </button>
 
               <button
                 type="button"
                 onClick={() => handleConfirmImport()}
-                disabled={!canAttemptConfirmImport}
-                aria-disabled={!canConfirmImport}
+                disabled={!canAttemptConfirmImport || !canImportData}
+                aria-disabled={!canConfirmImport || !canImportData}
                 title={
-                  hasSelectedImportValidationErrors
+                  !canImportData
+                    ? 'You do not have permission to perform this action.'
+                    : hasSelectedImportValidationErrors
                     ? 'Please fix validation errors before importing.'
                     : selectedParsedActivitiesCount === 0
                     ? 'Please select at least one activity to import.'
                     : undefined
                 }
-                style={confirmButtonStyle(canConfirmImport)}
+                style={confirmButtonStyle(canConfirmImport && canImportData)}
               >
                 {generatingMetrics
                   ? 'Generating metrics...'
@@ -2626,6 +2961,12 @@ ${sampleRows.join('\n')}`,
                         )}
                       >
                         <option value="">-- Select --</option>
+                        {item.activityType.value &&
+                        !activityTypes.includes(item.activityType.value) ? (
+                          <option value={item.activityType.value}>
+                            {item.activityType.value} (Unsupported)
+                          </option>
+                        ) : null}
                         {activityTypes.map((type) => (
                           <option key={type} value={type}>
                             {getPreviewActivityTypeLabel(type)}
@@ -2902,6 +3243,17 @@ const stepBarStyle: React.CSSProperties = {
   border: '1px solid #a7f3d0',
   color: '#047857',
   fontWeight: 600,
+};
+
+const readOnlyNoticeStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #cbd5e1',
+  background: '#f8fafc',
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.5,
 };
 
 const sampleBannerStyle: React.CSSProperties = {
@@ -3212,6 +3564,57 @@ const tdStyle: React.CSSProperties = {
   maxWidth: 0,
 };
 
+const inputReviewTableWrapStyle: React.CSSProperties = {
+  overflowX: 'auto',
+  maxWidth: '100%',
+  width: '100%',
+  WebkitOverflowScrolling: 'touch',
+};
+
+const inputReviewTableStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 980,
+  borderCollapse: 'collapse',
+  tableLayout: 'fixed',
+};
+
+const inputReviewSelectColStyle: React.CSSProperties = { width: 52 };
+const inputReviewFileNameColStyle: React.CSSProperties = { width: 'auto' };
+const inputReviewTypeColStyle: React.CSSProperties = { width: 156 };
+const inputReviewStatusColStyle: React.CSSProperties = { width: 156 };
+const inputReviewSizeColStyle: React.CSSProperties = { width: 96 };
+const inputReviewCreatedAtColStyle: React.CSSProperties = { width: 160 };
+const inputReviewActionsColStyle: React.CSSProperties = { width: 196 };
+
+const inputReviewFileNameTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  maxWidth: 'none',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const inputReviewTypeTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  maxWidth: 'none',
+  paddingRight: 20,
+  whiteSpace: 'nowrap',
+};
+
+const inputReviewStatusTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  maxWidth: 'none',
+  paddingLeft: 14,
+  paddingRight: 14,
+  whiteSpace: 'nowrap',
+};
+
+const inputReviewCreatedAtTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  maxWidth: 'none',
+  whiteSpace: 'nowrap',
+};
+
 const previewTableWrapStyle: React.CSSProperties = {
   overflowX: 'auto',
   width: '100%',
@@ -3397,9 +3800,9 @@ function optionalInputStyle(
 
 const documentActionTdStyle: React.CSSProperties = {
   ...tdStyle,
-  width: 190,
-  minWidth: 190,
-  maxWidth: 190,
+  width: 196,
+  minWidth: 196,
+  maxWidth: 196,
   whiteSpace: 'normal',
 };
 

@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { SourceEvidenceRow } from '../../FormalReportPreview';
+import { getActivityTypeLabel } from '../../../utils/activityType';
 
 type SourceEvidenceSectionProps = {
   sourceEvidenceRows: SourceEvidenceRow[];
@@ -13,7 +14,7 @@ export function SourceEvidenceSection({
       headers={['Activity Type', 'Quantity', 'Unit', 'Source File', 'Source Reference', 'Source Type', 'Notes']}
       emptyMessage="No source evidence available."
       rows={sourceEvidenceRows.map((item) => [
-        item.activityType,
+        getActivityTypeLabel(item.activityType),
         item.quantity,
         item.unit,
         item.sourceFile,

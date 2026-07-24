@@ -2,7 +2,7 @@
 import { createActivityData, updateActivityData } from '../services/activityData';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { getConversionFactors } from '../services/conversionFactors';
+import { getAllConversionFactors } from '../services/conversionFactors';
 import {
   activityTypeDefaultUnits,
   activityTypes,
@@ -10,11 +10,25 @@ import {
 import * as XLSX from 'xlsx';
 import {
   findBestConversionFactorMatch,
+  getFactorResultUnit,
   getFactorSourceAuthority,
+  getFactorSourceYear,
+  getFactorValue,
   normalizeActivityType,
+  normalizeFactorActivityType,
   normalizeJurisdictionRegion,
 } from '../utils/conversionFactorMatching';
-import { getCurrentUser, getOrganizationId } from '../services/auth';
+import {
+  buildMatchedFactorSnapshot,
+  getFactorAssumptionDisclosure,
+  getFactorCredibilityBadges,
+  getFactorVersionLabel,
+} from '../utils/factorCredibility';
+import {
+  canImportActivityRecords,
+  getCurrentUser,
+  getOrganizationId,
+} from '../services/auth';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
   formatScopeClassification,
@@ -24,6 +38,13 @@ import {
   ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
   normalizeProvince as normalizeCanadianProvince,
 } from '../utils/province';
+import {
+  formatDateOnly,
+  getDateOnlyYear,
+  getTodayDateOnly,
+  isValidDateOnly,
+} from '../utils/dateOnly';
+import { getActivityTypeLabel } from '../utils/activityType';
 import { getFacilities, type FacilityItem } from '../services/facilities';
 import {
   ManualEntryForm,
@@ -34,6 +55,7 @@ import { BulkProvinceToolbar } from './shared/BulkProvinceToolbar';
 
 type Row = {
   id: string;
+  origin?: 'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE';
   activityType: string;
   quantity: string;
   unit: string;
@@ -49,7 +71,15 @@ type Row = {
   factorValue?: string | number;
   factorSourceLabel?: string;
   factorSourceAuthority?: string;
+  factorSourceDocument?: string;
   factorSourceYear?: string | number | null;
+  factorVersion?: string;
+  factorConfidenceLevel?: string;
+  factorVerificationStatus?: string;
+  factorAssumptions?: string;
+  factorCredibilityBadges?: string[];
+  factorYearFallback?: boolean;
+  factorResultUnit?: string;
   factorStatus?: 'matched' | 'missing';
   calculationStatus?: 'calculated' | 'invalidUnit' | 'missingFactor' | 'missingJurisdiction' | 'trackedMetric' | 'needsReview';
   calculationMessage?: string;
@@ -60,6 +90,7 @@ type Row = {
 };
 
 export function ExcelInputTable({ onSuccess }: { onSuccess: () => void }) {
+  const canImportRows = canImportActivityRecords(getCurrentUser());
   const [rows, setRows] = useState<Row[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
@@ -70,11 +101,11 @@ export function ExcelInputTable({ onSuccess }: { onSuccess: () => void }) {
   useEffect(() => {
   async function loadReferenceData() {
     try {
-      const [factorData, facilityData] = await Promise.all([
-        getConversionFactors(),
+      const [factorItems, facilityData] = await Promise.all([
+        getAllConversionFactors(),
         getFacilities().catch(() => []),
       ]);
-      setConversionFactors(factorData.items ?? []);
+      setConversionFactors(factorItems ?? []);
       setFacilities(facilityData);
     } catch {
       setConversionFactors([]);
@@ -106,6 +137,11 @@ useEffect(() => {
 }, [hasUnsavedRows]);
 
 function importFile(file: File) {
+  if (!canImportRows) {
+    alert('You do not have permission to perform this action.');
+    return;
+  }
+
   const fileName = file.name.toLowerCase();
 
   if (fileName.endsWith('.csv')) {
@@ -153,6 +189,10 @@ function handleDrop(event: React.DragEvent<HTMLDivElement>) {
 
   const file = event.dataTransfer.files?.[0];
   if (!file) return;
+  if (!canImportRows) {
+    alert('You do not have permission to perform this action.');
+    return;
+  }
 
   importFile(file);
   const sourceType = getSourceTypeFromFile(file);
@@ -173,20 +213,24 @@ function findMatchingFactor(row: Pick<Row, 'activityType' | 'unit' | 'jurisdicti
   const { activityType, unit } = row;
   if (!activityType || !unit) return undefined;
 
-  return findBestConversionFactorMatch({
+  const recordYear = getDateOnlyYear(row.recordDate);
+  const matchInput = {
     activityType,
     inputUnit: unit,
     jurisdictionCountry: row.jurisdictionCountry,
     jurisdictionRegion: row.jurisdictionRegion,
-    recordYear: row.recordDate ? new Date(row.recordDate).getUTCFullYear() : undefined,
+    recordYear,
     organizationId: getOrganizationId(getCurrentUser()),
+    allowPlaceholderConfidence: true,
     factors: conversionFactors,
-  });
+  };
+  return findBestConversionFactorMatch(matchInput);
 }
 
 function getSupportedUnitsForActivityType(activityType: string) {
+  const normalizedActivityType = normalizeActivityType(activityType);
   const units = conversionFactors
-    .filter((factor) => factor.activityType === activityType)
+    .filter((factor) => normalizeFactorActivityType(factor) === normalizedActivityType)
     .map((factor) => factor.inputUnit || factor.unit)
     .filter((unit): unit is string => Boolean(unit));
 
@@ -227,10 +271,11 @@ function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'juris
   }
 
   const normalizedUnit = normalizeUnitForDisplay(row.unit);
+  const activityTypeLabel = getActivityTypeLabel(row.activityType);
   if (normalizedUnit.status !== 'valid') {
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${row.activityType} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
       supportedUnits,
     };
   }
@@ -239,14 +284,14 @@ function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'juris
   if (supportedUnits.length > 0 && !normalizedSupportedUnits.includes(normalizedUnit.value)) {
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${row.activityType} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
       supportedUnits,
     };
   }
 
   return {
     calculationStatus: 'missingFactor' as const,
-    calculationMessage: `No conversion factor found for ${row.activityType} / ${normalizedUnit.value}. This record was saved but excluded from emissions totals.`,
+    calculationMessage: `No conversion factor found for ${activityTypeLabel} / ${normalizedUnit.value}. This record was saved but excluded from emissions totals.`,
     supportedUnits,
   };
 }
@@ -260,7 +305,15 @@ function applyFactorToRow(row: Row): Row {
       factorValue: undefined,
       factorSourceLabel: undefined,
       factorSourceAuthority: undefined,
+      factorSourceDocument: undefined,
       factorSourceYear: undefined,
+      factorVersion: undefined,
+      factorConfidenceLevel: undefined,
+      factorVerificationStatus: undefined,
+      factorAssumptions: undefined,
+      factorCredibilityBadges: undefined,
+      factorYearFallback: undefined,
+      factorResultUnit: undefined,
       factorStatus: undefined,
       calculationStatus: undefined,
       calculationMessage: undefined,
@@ -277,8 +330,31 @@ function applyFactorToRow(row: Row): Row {
     jurisdictionCountry: normalizeCountry(row.jurisdictionCountry || facilityCountry),
     jurisdictionRegion: normalizeProvince(row.jurisdictionRegion) || facilityProvince,
   };
-  const match = findMatchingFactor(normalizedRow);
   const review = getRowCalculationReview(normalizedRow);
+
+  if (review.calculationStatus === 'trackedMetric') {
+    return {
+      ...normalizedRow,
+      factorId: undefined,
+      factorName: undefined,
+      factorValue: undefined,
+      factorSourceLabel: undefined,
+      factorSourceAuthority: undefined,
+      factorSourceDocument: undefined,
+      factorSourceYear: undefined,
+      factorVersion: undefined,
+      factorConfidenceLevel: undefined,
+      factorVerificationStatus: undefined,
+      factorAssumptions: undefined,
+      factorCredibilityBadges: undefined,
+      factorYearFallback: undefined,
+      factorResultUnit: undefined,
+      factorStatus: undefined,
+      ...review,
+    };
+  }
+
+  const match = findMatchingFactor(normalizedRow);
 
   if (!match) {
     return {
@@ -288,7 +364,15 @@ function applyFactorToRow(row: Row): Row {
       factorValue: undefined,
       factorSourceLabel: undefined,
       factorSourceAuthority: undefined,
+      factorSourceDocument: undefined,
       factorSourceYear: undefined,
+      factorVersion: undefined,
+      factorConfidenceLevel: undefined,
+      factorVerificationStatus: undefined,
+      factorAssumptions: undefined,
+      factorCredibilityBadges: undefined,
+      factorYearFallback: undefined,
+      factorResultUnit: undefined,
       factorStatus: 'missing',
       ...review,
     };
@@ -300,13 +384,23 @@ function applyFactorToRow(row: Row): Row {
     ...normalizedRow,
     factorId: factor.id,
     factorName: factor.name,
-    factorValue: factor.factorValue,
+    factorValue: getFactorValue(factor),
     factorSourceLabel: match.sourceLabel,
     factorSourceAuthority: getFactorSourceAuthority(factor),
-    factorSourceYear: factor.sourceYear,
+    factorSourceDocument: buildMatchedFactorSnapshot(match).matchedFactorSourceDocument,
+    factorSourceYear: match.factorYear ?? getFactorSourceYear(factor),
+    factorVersion: getFactorVersionLabel(factor),
+    factorConfidenceLevel: buildMatchedFactorSnapshot(match).matchedFactorConfidenceLevel,
+    factorVerificationStatus: buildMatchedFactorSnapshot(match).matchedFactorVerificationStatus,
+    factorAssumptions: getFactorAssumptionDisclosure(row.activityType, factor),
+    factorCredibilityBadges: getFactorCredibilityBadges(row.activityType, factor),
+    factorYearFallback: match.usedPriorYearFallback,
+    factorResultUnit: getFactorResultUnit(factor),
     factorStatus: 'matched',
     calculationStatus: 'calculated',
-    calculationMessage: 'Matched factor. This row can be included in emissions totals.',
+    calculationMessage: match.usedPriorYearFallback && match.factorYear
+      ? `Matched factor. Using latest available factor year: ${match.factorYear}.`
+      : 'Matched factor. This row can be included in emissions totals.',
     supportedUnits: getSupportedUnitsForActivityType(row.activityType),
   };
 }
@@ -328,10 +422,11 @@ function importExcelFile(file: File) {
 
       return {
         id: Math.random().toString(),
+        origin: 'EXCEL' as const,
         activityType,
         recordDate:
           readAliasedField(row, ['recordDate', 'Record Date', 'date', 'Date']) ||
-          new Date().toISOString().slice(0, 10),
+          getTodayDateOnly(),
         quantity: readAliasedField(row, ['quantity', 'Quantity', 'qty', 'amount', 'usage']) || '',
         unit: readAliasedField(row, ['unit', 'Unit', 'uom', 'measurement']) || getDefaultUnit(activityType),
         jurisdictionCountry: normalizeCountry(readAliasedField(row, [
@@ -430,11 +525,12 @@ function parseCSVText(text: string) {
 
     return {
       id: Math.random().toString(),
+      origin: 'CSV' as const,
       activityType,
       recordDate:
         recordDateIndex >= 0
           ? cols[recordDateIndex]
-          : new Date().toISOString().slice(0, 10),
+          : getTodayDateOnly(),
       quantity: cols[quantityIndex] || '',
       unit:
         unitIndex >= 0
@@ -459,7 +555,7 @@ function validateRow(row: Row) {
 
   if (!row.activityType) errors.push('Missing activity type');
   if (!row.recordDate) errors.push('Missing date');
-  if (row.recordDate && Number.isNaN(new Date(row.recordDate).getTime())) {
+  if (row.recordDate && !isValidDateOnly(row.recordDate)) {
     errors.push('Invalid date');
   }
   if (!row.quantity) errors.push('Missing quantity');
@@ -488,19 +584,31 @@ function getRowSaveLabel(row: Row) {
 function buildActivityPayload(row: Row) {
   const isMissingElectricityProvince =
     row.activityType === 'ELECTRICITY' && row.calculationStatus === 'missingJurisdiction';
+  const estimatedEmission = getRowEstimatedEmission(row);
+  const canonicalCalculation = getCanonicalCalculationFields(row, estimatedEmission);
+  const matchedNotes = row.factorStatus === 'matched'
+    ? [
+        row.notes,
+        `Calculation status: Matched.${row.factorYearFallback && row.factorSourceYear ? ` Using latest available factor year: ${row.factorSourceYear}.` : ''}`,
+        `Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'}).`,
+        estimatedEmission === null
+          ? ''
+          : `Calculated emissions: ${formatEmissionNumber(estimatedEmission)} kgCO2e.`,
+      ].filter(Boolean).join(' ')
+    : '';
 
   return {
     activityType: row.activityType,
-    recordDate: row.recordDate,
+    recordDate: formatDateOnly(row.recordDate),
     quantity: Number(row.quantity),
     unit: row.unit,
     jurisdictionCountry: normalizeOptional(row.jurisdictionCountry) ?? 'Canada',
     jurisdictionRegion: normalizeOptional(row.jurisdictionRegion),
     facilityId: normalizeOptional(row.facilityId),
-    recordYear: row.recordDate ? new Date(row.recordDate).getUTCFullYear() : undefined,
-    sourceType: entrySourceType,
-    sourceReference: normalizeOptional(row.sourceReference) ?? entrySourceType.toLowerCase(),
-    notes: [
+    recordYear: getDateOnlyYear(row.recordDate),
+    sourceType: row.origin ?? entrySourceType,
+    sourceReference: normalizeOptional(row.sourceReference) ?? String(row.origin ?? entrySourceType).toLowerCase(),
+    notes: matchedNotes || [
       row.notes,
       row.facilityName ? `Facility: ${row.facilityName}` : '',
       isMissingElectricityProvince
@@ -508,6 +616,153 @@ function buildActivityPayload(row: Row) {
         : '',
       `Created from ${entrySourceType}. Calculation status: ${getCalculationStatusLabel(row)}. ${row.calculationMessage ?? ''} Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
     ].filter(Boolean).join(' '),
+    matchingStatus: canonicalCalculation.matchingStatus,
+    reportTreatment: canonicalCalculation.reportTreatment,
+    scope: inferDefaultScope(row.activityType),
+    matchedFactorId: canonicalCalculation.matchedFactorId,
+    matchedFactorName: canonicalCalculation.matchedFactorName,
+    matchedFactorSourceYear: canonicalCalculation.matchedFactorSourceYear,
+    matchedFactorValue: canonicalCalculation.matchedFactorValue,
+    matchedFactorUnit: canonicalCalculation.matchedFactorUnit,
+    matchedFactorVersion: canonicalCalculation.matchedFactorVersion,
+    matchedFactorSourceAuthority: canonicalCalculation.matchedFactorSourceAuthority,
+    matchedFactorSourceDocument: canonicalCalculation.matchedFactorSourceDocument,
+    matchedFactorVerificationStatus: canonicalCalculation.matchedFactorVerificationStatus,
+    matchedFactorConfidenceLevel: canonicalCalculation.matchedFactorConfidenceLevel,
+    matchedFactorAssumptions: canonicalCalculation.matchedFactorAssumptions,
+    calculatedEmissionsKgCO2e: canonicalCalculation.calculatedEmissionsKgCO2e,
+    calculationStatus: canonicalCalculation.calculationStatus,
+    calculationMessage: row.calculationMessage,
+  };
+}
+
+function getCanonicalCalculationFields(row: Row, estimatedEmission: number | null) {
+  const factorSourceYear = typeof row.factorSourceYear === 'number'
+    ? row.factorSourceYear
+    : Number.isFinite(Number(row.factorSourceYear))
+    ? Number(row.factorSourceYear)
+    : undefined;
+
+  if (row.calculationStatus === 'trackedMetric' || inferDefaultScope(row.activityType) === 'TRACKED_METRIC') {
+    return {
+      matchingStatus: 'TRACKED_ONLY',
+      reportTreatment: 'TRACKED_ONLY',
+      calculationStatus: 'TRACKED_ONLY',
+      matchedFactorId: undefined,
+      matchedFactorName: undefined,
+      matchedFactorSourceYear: undefined,
+      matchedFactorValue: undefined,
+      matchedFactorUnit: undefined,
+      matchedFactorVersion: undefined,
+      matchedFactorSourceAuthority: undefined,
+      matchedFactorSourceDocument: undefined,
+      matchedFactorVerificationStatus: undefined,
+      matchedFactorConfidenceLevel: undefined,
+      matchedFactorAssumptions: undefined,
+      calculatedEmissionsKgCO2e: undefined,
+    };
+  }
+
+  if (row.calculationStatus === 'calculated' && row.factorStatus === 'matched') {
+    return {
+      matchingStatus: 'MATCHED',
+      reportTreatment: 'INCLUDED',
+      calculationStatus: 'CALCULATED',
+      matchedFactorId: row.factorId,
+      matchedFactorName: row.factorName,
+      matchedFactorSourceYear: factorSourceYear,
+      matchedFactorValue: Number.isFinite(Number(row.factorValue))
+        ? Number(row.factorValue)
+        : undefined,
+      matchedFactorUnit: row.factorResultUnit
+        ? `${row.factorResultUnit}/${normalizeUnitForDisplay(row.unit).value || row.unit}`
+        : undefined,
+      matchedFactorVersion: row.factorVersion,
+      matchedFactorSourceAuthority: row.factorSourceAuthority,
+      matchedFactorSourceDocument: row.factorSourceDocument,
+      matchedFactorVerificationStatus: row.factorVerificationStatus,
+      matchedFactorConfidenceLevel: row.factorConfidenceLevel,
+      matchedFactorAssumptions: row.factorAssumptions,
+      calculatedEmissionsKgCO2e: estimatedEmission ?? undefined,
+    };
+  }
+
+  if (row.calculationStatus === 'missingJurisdiction') {
+    return {
+      matchingStatus: 'MISSING_PROVINCE',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'MISSING_PROVINCE',
+      matchedFactorId: undefined,
+      matchedFactorName: undefined,
+      matchedFactorSourceYear: undefined,
+      matchedFactorValue: undefined,
+      matchedFactorUnit: undefined,
+      matchedFactorVersion: undefined,
+      matchedFactorSourceAuthority: undefined,
+      matchedFactorSourceDocument: undefined,
+      matchedFactorVerificationStatus: undefined,
+      matchedFactorConfidenceLevel: undefined,
+      matchedFactorAssumptions: undefined,
+      calculatedEmissionsKgCO2e: undefined,
+    };
+  }
+
+  if (row.calculationStatus === 'missingFactor') {
+    return {
+      matchingStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'MISSING_FACTOR',
+      matchedFactorId: undefined,
+      matchedFactorName: undefined,
+      matchedFactorSourceYear: undefined,
+      matchedFactorValue: undefined,
+      matchedFactorUnit: undefined,
+      matchedFactorVersion: undefined,
+      matchedFactorSourceAuthority: undefined,
+      matchedFactorSourceDocument: undefined,
+      matchedFactorVerificationStatus: undefined,
+      matchedFactorConfidenceLevel: undefined,
+      matchedFactorAssumptions: undefined,
+      calculatedEmissionsKgCO2e: undefined,
+    };
+  }
+
+  if (row.calculationStatus === 'invalidUnit') {
+    return {
+      matchingStatus: 'UNIT_MISMATCH',
+      reportTreatment: 'EXCLUDED',
+      calculationStatus: 'UNIT_MISMATCH',
+      matchedFactorId: undefined,
+      matchedFactorName: undefined,
+      matchedFactorSourceYear: undefined,
+      matchedFactorValue: undefined,
+      matchedFactorUnit: undefined,
+      matchedFactorVersion: undefined,
+      matchedFactorSourceAuthority: undefined,
+      matchedFactorSourceDocument: undefined,
+      matchedFactorVerificationStatus: undefined,
+      matchedFactorConfidenceLevel: undefined,
+      matchedFactorAssumptions: undefined,
+      calculatedEmissionsKgCO2e: undefined,
+    };
+  }
+
+  return {
+    matchingStatus: 'REQUIRES_REVIEW',
+    reportTreatment: 'EXCLUDED',
+    calculationStatus: 'REQUIRES_REVIEW',
+    matchedFactorId: undefined,
+    matchedFactorName: undefined,
+    matchedFactorSourceYear: undefined,
+    matchedFactorValue: undefined,
+    matchedFactorUnit: undefined,
+    matchedFactorVersion: undefined,
+    matchedFactorSourceAuthority: undefined,
+    matchedFactorSourceDocument: undefined,
+    matchedFactorVerificationStatus: undefined,
+    matchedFactorConfidenceLevel: undefined,
+    matchedFactorAssumptions: undefined,
+    calculatedEmissionsKgCO2e: undefined,
   };
 }
 
@@ -531,10 +786,11 @@ function updateRowStatus(id: string, patch: Partial<Row>) {
 function createEmptyRow(): Row {
   return {
     id: Math.random().toString(),
+    origin: 'MANUAL',
     activityType: '',
     quantity: '',
     unit: '',
-    recordDate: new Date().toISOString().slice(0, 10),
+    recordDate: getTodayDateOnly(),
     jurisdictionCountry: 'Canada',
     jurisdictionRegion: '',
     facilityId: '',
@@ -546,11 +802,16 @@ function isRowCompletelyEmpty(row: Row) {
   return !row.activityType && !row.quantity && !row.unit;
 }
 
+function isImportedReviewRow(row: Row) {
+  return row.origin !== 'MANUAL' && !isRowCompletelyEmpty(row);
+}
+
 function hasRowStarted(row: Row) {
   return Boolean(row.activityType || row.quantity || row.unit);
 }
 
 function canRemoveRow(row: Row) {
+  if (row.status === 'saved') return false;
   if (rows.length === 1 && isRowCompletelyEmpty(row)) return false;
   return Boolean(row.activityType || row.quantity);
 }
@@ -560,7 +821,7 @@ function getCalculationStatusLabel(row: Row) {
     case 'calculated':
       return 'Matched';
     case 'trackedMetric':
-      return 'Not Emissions Factor Required';
+      return 'Tracked Only';
     case 'invalidUnit':
       return 'Unit Mismatch';
     case 'missingFactor':
@@ -581,7 +842,7 @@ function getSavedReviewLabel(row: Row) {
 }
 
 function buildImportReviewSummary(rows: Row[]) {
-  const activeRows = rows.filter((row) => !isRowCompletelyEmpty(row));
+  const activeRows = rows.filter(isImportedReviewRow);
 
   return activeRows.reduce(
     (summary, row) => {
@@ -616,6 +877,7 @@ function buildImportReviewSummary(rows: Row[]) {
 
 function renderStatusCell(row: Row) {
   const summary = getRowStatusSummary(row);
+  const credibilityBadges = getRowCredibilityBadges(row);
 
   if (row.status === 'saved') {
     return (
@@ -653,6 +915,13 @@ function renderStatusCell(row: Row) {
     <div style={{ display: 'grid', gap: 4 }}>
       <StatusBadge status={summary.badge} label={summary.badge} />
       <span style={statusMessageStyle}>{summary.detail}</span>
+      {credibilityBadges.length ? (
+        <span style={factorBadgeRowStyle}>
+          {credibilityBadges.map((badge) => (
+            <span key={badge} style={factorCredibilityBadgeStyle}>{badge}</span>
+          ))}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -664,10 +933,8 @@ function renderFactorCell(row: Row) {
 
   if (row.factorStatus === 'matched') {
     const normalizedUnit = normalizeUnitForDisplay(row.unit).value || row.unit;
-    const factorTitle =
-      row.activityType === 'ELECTRICITY' && row.jurisdictionRegion
-        ? `Electricity - ${row.jurisdictionRegion}`
-        : row.factorName ?? 'Matched factor';
+    const factorTitle = row.factorName ?? 'Matched factor';
+    const credibilityBadges = getRowCredibilityBadges(row);
 
     return (
       <div style={factorCellTextStyle}>
@@ -675,6 +942,24 @@ function renderFactorCell(row: Row) {
         <span>
           kgCO2e/{normalizedUnit} {row.factorSourceYear ? `· ${row.factorSourceYear}` : ''}
         </span>
+        {row.factorYearFallback && row.factorSourceYear ? (
+          <span>Using latest available factor year: {row.factorSourceYear}</span>
+        ) : null}
+        {row.factorSourceAuthority ? <span>Source: {row.factorSourceAuthority}</span> : null}
+        {row.factorVersion ? <span>Version: {row.factorVersion}</span> : null}
+        {credibilityBadges.length ? (
+          <span style={factorBadgeRowStyle}>
+            {credibilityBadges.map((badge) => (
+              <span key={badge} style={factorCredibilityBadgeStyle}>{badge}</span>
+            ))}
+          </span>
+        ) : null}
+        {row.factorAssumptions ? (
+          <span title={row.factorAssumptions}>
+            {row.factorAssumptions}
+          </span>
+        ) : null}
+        <span>{formatEstimatedEmissions(row)}</span>
       </div>
     );
   }
@@ -742,6 +1027,54 @@ function renderFactorCell(row: Row) {
   );
 }
 
+function getRowCredibilityBadges(row: Row) {
+  const explicitBadges = row.factorCredibilityBadges ?? [];
+  if (explicitBadges.length) return explicitBadges;
+
+  if (
+    row.factorStatus === 'matched' &&
+    inferDefaultScope(row.activityType) === 'SCOPE_3'
+  ) {
+    return ['Pilot Estimate', 'Consultant Review Recommended'];
+  }
+
+  return [];
+}
+
+function formatEstimatedEmissions(row: Row) {
+  const emissions = getRowEstimatedEmission(row);
+  const resultUnit = getEmissionResultUnit(row);
+
+  if (!String(row.quantity ?? '').trim()) return 'Estimated emissions: Waiting for quantity';
+  if (emissions === null) return 'Estimated emissions: Waiting for valid quantity';
+
+  return `Estimated emissions: ${formatEmissionNumber(emissions)} ${resultUnit}`;
+}
+
+function getRowEstimatedEmission(row: Row) {
+  const quantity = Number(row.quantity);
+  const factorValue = Number(row.factorValue);
+
+  if (!String(row.quantity ?? '').trim()) return null;
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  if (!Number.isFinite(factorValue)) return null;
+
+  return quantity * factorValue;
+}
+
+function getEmissionResultUnit(row: Row) {
+  const resultUnit = row.factorResultUnit || 'kgCO2e';
+  return resultUnit.includes('/')
+    ? resultUnit.split('/')[0]
+    : resultUnit;
+}
+
+function formatEmissionNumber(value: number) {
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: 3,
+  });
+}
+
 function getRowStatusSummary(row: Row): { badge: string; detail: string } {
   if (row.activityType === 'ELECTRICITY') {
     if (row.calculationStatus === 'missingJurisdiction') {
@@ -764,7 +1097,9 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
       const province = normalizeProvince(row.jurisdictionRegion);
       return {
         badge: 'Matched',
-        detail: `${province || 'Province'} electricity factor matched.`,
+        detail: row.factorYearFallback && row.factorSourceYear
+          ? `${province || 'Province'} electricity factor matched. Using latest available factor year: ${row.factorSourceYear}.`
+          : `${province || 'Province'} electricity factor matched.`,
       };
     }
   }
@@ -786,17 +1121,17 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
 }
 
 function getReportTreatment(row: Row) {
+  if (row.calculationStatus === 'trackedMetric' || inferDefaultScope(row.activityType) === 'TRACKED_METRIC') {
+    return {
+      label: 'Tracked Only',
+      detail: 'Excluded from GHG total.',
+    };
+  }
+
   if (row.calculationStatus === 'calculated') {
     return {
       label: 'Included',
       detail: 'Included in GHG total.',
-    };
-  }
-
-  if (row.calculationStatus === 'trackedMetric') {
-    return {
-      label: 'Tracked Only',
-      detail: 'Operational metric, excluded from GHG total.',
     };
   }
 
@@ -910,15 +1245,30 @@ function updateRow(id: string, key: keyof Row, value: string) {
 }
 
   function addRow() {
+    if (!canImportRows) {
+      alert('You do not have permission to perform this action.');
+      return;
+    }
+
     setRows((prev) => [...prev, applyFactorToRow(createEmptyRow())]);
   }
 
 function removeRow(id: string) {
+  if (!canImportRows) {
+    alert('You do not have permission to perform this action.');
+    return;
+  }
+
   setRows((prev) => prev.filter((row) => row.id !== id));
   setEntrySourceType('MANUAL');
 }
 
 function clearSavedRowsFromForm() {
+  if (!canImportRows) {
+    alert('You do not have permission to perform this action.');
+    return;
+  }
+
   setRows((prev) => prev.filter((row) => row.status !== 'saved'));
 }
 
@@ -976,6 +1326,8 @@ function findFacilityByName(name: string | undefined, facilities: FacilityItem[]
   );
 }
 function handlePasteRows(event: React.ClipboardEvent<HTMLTableElement>) {
+  if (!canImportRows) return;
+
   const text = event.clipboardData.getData('text');
 
   if (!text.includes('\t') && !text.includes('\n')) {
@@ -991,10 +1343,11 @@ function handlePasteRows(event: React.ClipboardEvent<HTMLTableElement>) {
     .map(([activityType, recordDate, quantity, unit, country, province, facilityName]) => {
       const type = normalizeActivityType(activityType || '');
 
-      return {
-        id: Math.random().toString(),
-        activityType: type,
-        recordDate: recordDate || new Date().toISOString().slice(0, 10),
+    return {
+      id: Math.random().toString(),
+      origin: 'PASTE' as const,
+      activityType: type,
+        recordDate: recordDate || getTodayDateOnly(),
         quantity: quantity || '',
         unit: unit || getDefaultUnit(type),
         jurisdictionCountry: normalizeCountry(country || 'Canada'),
@@ -1019,18 +1372,38 @@ function getSourceTypeFromFile(file: File) {
   return 'MANUAL';
 }
 function handleImportCSV(event: React.ChangeEvent<HTMLInputElement>) {
+  if (!canImportRows) {
+    event.target.value = '';
+    alert('You do not have permission to perform this action.');
+    return;
+  }
+
   const file = event.target.files?.[0];
   if (file) importFile(file);
   event.target.value = '';
   setEntrySourceType('CSV');
 }
 function handleImportExcel(event: React.ChangeEvent<HTMLInputElement>) {
+  if (!canImportRows) {
+    event.target.value = '';
+    alert('You do not have permission to perform this action.');
+    return;
+  }
+
   const file = event.target.files?.[0];
   if (file) importFile(file);
   event.target.value = '';
   setEntrySourceType('EXCEL');
 }
 async function saveRow(row: Row) {
+  if (!canImportRows) {
+    updateRowStatus(row.id, {
+      errors: ['You do not have permission to perform this action.'],
+      status: 'error',
+    });
+    return;
+  }
+
   const errors = validateRow(row);
 
   if (errors.length > 0) {
@@ -1065,6 +1438,11 @@ async function saveRow(row: Row) {
 }
 
 async function saveAll() {
+  if (!canImportRows) {
+    alert('You do not have permission to perform this action.');
+    return;
+  }
+
   const rowsToSave = rows.filter(
     (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
   );
@@ -1124,11 +1502,13 @@ const rowsToSave = rows.filter(
 );
 const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
 const hasSavedRows = rows.some((row) => row.status === 'saved');
+const importedReviewRows = rows.filter(isImportedReviewRow);
+const hasImportedReviewRows = importedReviewRows.length > 0;
 const importReviewSummary = buildImportReviewSummary(rows);
-const hasMissingElectricityProvince = rows.some(
+const hasImportedMissingElectricityProvince = importedReviewRows.some(
   (row) => row.calculationStatus === 'missingJurisdiction',
 );
-const missingElectricityProvinceCount = rows.filter(
+const importedMissingElectricityProvinceCount = importedReviewRows.filter(
   (row) => row.calculationStatus === 'missingJurisdiction',
 ).length;
 
@@ -1149,9 +1529,14 @@ const missingElectricityProvinceCount = rows.filter(
       <p style={{ margin: '6px 0 0', color: '#64748b' }}>
         Type directly, paste rows from Excel, import CSV/XLSX files, or drag and drop a file here. Use + Add Row to add another row.
       </p>
+      {!canImportRows ? (
+        <p style={readOnlyNoticeStyle}>
+          Read-only access: you can view records and reports, but cannot import or edit activity rows.
+        </p>
+      ) : null}
       {hasSavedRows ? (
         <p style={savedRowsHelperStyle}>
-          Saved rows remain here so you can review, edit, or remove them before viewing metrics.
+          Saved rows remain here for review. Use Data Records for delete actions.
         </p>
       ) : null}
       {bulkProvinceMessage ? (
@@ -1159,7 +1544,7 @@ const missingElectricityProvinceCount = rows.filter(
           {bulkProvinceMessage}
         </div>
       ) : null}
-      {importReviewSummary.total > 0 ? (
+      {hasImportedReviewRows && importReviewSummary.total > 0 ? (
         <div style={importReviewSummaryStyle}>
           <strong>Import Review Summary</strong>
           <span>{importReviewSummary.total} records found</span>
@@ -1178,7 +1563,12 @@ const missingElectricityProvinceCount = rows.filter(
   <div style={manualEntryToolbarStyle} aria-label="Manual entry toolbar">
     <div style={manualEntryToolbarRowStyle}>
       <div style={manualEntryToolbarGroupStyle}>
-        <button type="button" onClick={addRow} style={secondaryButtonStyle}>
+        <button
+          type="button"
+          onClick={addRow}
+          disabled={!canImportRows}
+          style={secondaryButtonStyle}
+        >
           + Add Row
         </button>
       </div>
@@ -1186,18 +1576,20 @@ const missingElectricityProvinceCount = rows.filter(
 
     <div style={manualEntryToolbarRowStyle}>
       <div style={manualEntryToolbarGroupStyle}>
-        {hasMissingElectricityProvince ? (
+        {hasImportedMissingElectricityProvince && canImportRows ? (
           <BulkProvinceToolbar
-            selectedCount={missingElectricityProvinceCount}
-            eligibleCount={missingElectricityProvinceCount}
+            selectedCount={importedMissingElectricityProvinceCount}
+            eligibleCount={importedMissingElectricityProvinceCount}
             selectedProvince={bulkProvince}
             onProvinceChange={setBulkProvince}
             provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
+            label="Bulk set province for selected imported rows"
+            helperText="Apply a province to selected imported electricity rows that need province-specific factor matching."
             onApply={() => {
               const normalizedBulkProvince = normalizeProvince(bulkProvince);
               setRows((prev) =>
                 prev.map((row) =>
-                  row.calculationStatus === 'missingJurisdiction'
+                  isImportedReviewRow(row) && row.calculationStatus === 'missingJurisdiction'
                     ? applyFactorToRow({
                         ...row,
                         jurisdictionRegion: normalizedBulkProvince,
@@ -1208,7 +1600,7 @@ const missingElectricityProvinceCount = rows.filter(
                 ),
               );
               setBulkProvince('');
-              setBulkProvinceMessage('Province applied to electricity rows.');
+              setBulkProvinceMessage('Province applied to imported electricity rows.');
             }}
           />
         ) : null}
@@ -1218,14 +1610,19 @@ const missingElectricityProvinceCount = rows.filter(
         <button
           type="button"
           onClick={saveAll}
-          disabled={!hasValidRows}
-          style={primaryButtonStyle(!hasValidRows)}
+          disabled={!hasValidRows || !canImportRows}
+          style={primaryButtonStyle(!hasValidRows || !canImportRows)}
         >
           Save All
         </button>
         {hasSavedRows ? (
           <>
-            <button type="button" onClick={clearSavedRowsFromForm} style={secondaryButtonStyle}>
+            <button
+              type="button"
+              onClick={clearSavedRowsFromForm}
+              disabled={!canImportRows}
+              style={secondaryButtonStyle}
+            >
               Clear Saved Rows
             </button>
             <button
@@ -1283,6 +1680,8 @@ const missingElectricityProvinceCount = rows.filter(
             provinceOptions={getProvinceOptions(row.jurisdictionRegion)}
             hasErrors={Boolean(row.errors?.length)}
             onChange={(field: ManualEntryField, value) => {
+              if (!canImportRows) return;
+
               if (field === 'activityType') {
                 setRows((prev) =>
                   prev.map((currentRow) =>
@@ -1327,18 +1726,43 @@ const missingElectricityProvinceCount = rows.filter(
               </div>
             }
             onSave={() => saveRow(row)}
-            saveDisabled={isRowSaveDisabled(row)}
+            saveDisabled={isRowSaveDisabled(row) || !canImportRows}
             saveLabel={getRowSaveLabel(row)}
-            canRemove={canRemoveRow(row)}
+            canRemove={canImportRows && canRemoveRow(row)}
+            removeLabel="Clear Draft"
+            removeAriaLabel={`Clear draft row ${index + 1}`}
             onRemove={() => removeRow(row.id)}
+            savedActions={
+              row.status === 'saved' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={addRow}
+                    disabled={!canImportRows}
+                    style={secondaryButtonStyle}
+                  >
+                    Add Another Record
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.location.href = '/activity-records';
+                    }}
+                    style={secondaryButtonStyle}
+                  >
+                    View in Data Records
+                  </button>
+                </>
+              ) : null
+            }
           />
         ))}
       </div>
     )}
   </div>
-  {hasMissingElectricityProvince ? (
+  {hasImportedMissingElectricityProvince ? (
     <div style={validationSummaryStyle}>
-      Electricity emissions require a province-specific factor. Please select the province where the electricity was used.
+      Imported electricity rows require province-specific factors. Use the bulk action above or edit each imported row before saving.
     </div>
   ) : null}
 
@@ -1375,6 +1799,17 @@ const savedRowsHelperStyle: React.CSSProperties = {
   color: '#047857',
   fontSize: 13,
   fontWeight: 700,
+};
+
+const readOnlyNoticeStyle: React.CSSProperties = {
+  margin: '10px 0 0',
+  padding: 10,
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  background: '#f8fafc',
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.45,
 };
 
 const importReviewSummaryStyle: React.CSSProperties = {
@@ -1528,6 +1963,24 @@ const factorCellTextStyle: React.CSSProperties = {
   color: '#334155',
   fontSize: 12,
   lineHeight: 1.35,
+};
+
+const factorBadgeRowStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 4,
+};
+
+const factorCredibilityBadgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  width: 'fit-content',
+  padding: '2px 6px',
+  borderRadius: 999,
+  border: '1px solid #f59e0b',
+  background: '#fffbeb',
+  color: '#92400e',
+  fontSize: 11,
+  fontWeight: 800,
 };
 
 const previewPanelHeaderStyle: React.CSSProperties = {

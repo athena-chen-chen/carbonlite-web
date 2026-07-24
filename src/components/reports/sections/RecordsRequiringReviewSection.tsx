@@ -5,6 +5,13 @@ import {
   formatRecordSource,
 } from '../../../utils/calculationTraceability';
 import { formatDisplayNumber } from '../../../utils/numberFormatting';
+import { getActivityTypeLabel } from '../../../utils/activityType';
+import {
+  getTrackedMetricAction,
+  getTrackedMetricMessage,
+  isRecordRequiringCorrection,
+  isTrackedMetricDetail,
+} from '../../../utils/reportCredibility';
 
 type RecordsRequiringReviewSectionProps = {
   calculationDetails: CalculationAuditDetail[];
@@ -15,14 +22,16 @@ export function RecordsRequiringReviewSection({
   calculationDetails,
   formatRecordUnit,
 }: RecordsRequiringReviewSectionProps) {
+  const reviewRows = calculationDetails.filter(isRecordRequiringCorrection);
+  const trackedMetricRows = calculationDetails.filter(isTrackedMetricDetail);
+
   return (
-    <SimpleTable
-      headers={['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']}
-      emptyMessage="No records require review for this report scope."
-      rows={calculationDetails
-        .filter((item) => item.status !== 'CALCULATED' && item.status !== 'OUTSIDE_SCOPE')
-        .map((item) => [
-          item.activityType,
+    <>
+      <SimpleTable
+        headers={['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']}
+        emptyMessage="No records require review for this report scope."
+        rows={reviewRows.map((item) => [
+          getActivityTypeLabel(item.activityType),
           formatDisplayNumber(item.activityQuantity),
           formatRecordUnit(item.activityUnit, item),
           formatCalculationStatus(item.status),
@@ -30,7 +39,26 @@ export function RecordsRequiringReviewSection({
           formatRecordSource(item),
           item.status === 'MISSING_FACTOR' ? 'Create factor' : 'Fix record',
         ])}
-    />
+      />
+      {trackedMetricRows.length ? (
+        <div style={trackedMetricSectionStyle}>
+          <h3 style={trackedMetricTitleStyle}>Tracked Metrics</h3>
+          <SimpleTable
+            headers={['Activity', 'Quantity', 'Unit', 'Status', 'Message', 'Source Reference', 'Action']}
+            emptyMessage="No tracked-only operational metrics in this report scope."
+            rows={trackedMetricRows.map((item) => [
+              getActivityTypeLabel(item.activityType),
+              formatDisplayNumber(item.activityQuantity),
+              formatRecordUnit(item.activityUnit, item),
+              'Tracked Metric',
+              getTrackedMetricMessage(item),
+              formatRecordSource(item),
+              getTrackedMetricAction(),
+            ])}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -101,4 +129,14 @@ const emptyStyle: CSSProperties = {
   padding: 14,
   color: '#64748b',
   textAlign: 'center',
+};
+
+const trackedMetricSectionStyle: CSSProperties = {
+  marginTop: 18,
+};
+
+const trackedMetricTitleStyle: CSSProperties = {
+  margin: '0 0 8px',
+  color: '#0f172a',
+  fontSize: 15,
 };

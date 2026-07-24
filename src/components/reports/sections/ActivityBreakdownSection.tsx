@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { FormalActivityEmission } from '../../FormalReportPreview';
 import { formatDisplayNumber, formatEmissionsValue } from '../../../utils/numberFormatting';
+import { getActivityTypeLabel } from '../../../utils/activityType';
+import { getDisplaySourceLabel } from '../../../utils/reportCredibility';
 
 type ActivityBreakdownSectionProps = {
   matchedActivityEmissions: FormalActivityEmission[];
@@ -20,11 +22,11 @@ export function ActivityBreakdownSection({
       ]}
       emptyMessage="No activity records with matching conversion factors."
       rows={matchedActivityEmissions.map((item) => [
-        item.activityType,
+        getActivityTypeLabel(item.activityType),
         formatDisplayNumber(item.quantity),
         item.unit,
         `${formatEmissionsValue(item.estimatedEmissionsKgCO2e)} kgCO2e`,
-        item.sourceReference || '-',
+        getDisplaySourceLabel(item),
       ])}
     />
   );

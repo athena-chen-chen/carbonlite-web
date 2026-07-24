@@ -35,6 +35,11 @@ const FUEL_ACTIVITY_TYPES = new Set([
   'FUEL',
 ]);
 
+const ELECTRICITY_UNIT_TO_KWH: Record<string, number> = {
+  kWh: 1,
+  MWh: 1000,
+};
+
 function toQuantity(value?: string | number | null) {
   const quantity = Number(value ?? 0);
   return Number.isFinite(quantity) ? quantity : 0;
@@ -83,7 +88,13 @@ export function aggregateActivityUsage(
           return totals;
         }
 
-        totals.electricity += quantity;
+        const conversionFactor = ELECTRICITY_UNIT_TO_KWH[normalizedUnit.value];
+        if (!conversionFactor) {
+          totals.invalidElectricityRecordCount += 1;
+          return totals;
+        }
+
+        totals.electricity += quantity * conversionFactor;
       }
 
       return totals;

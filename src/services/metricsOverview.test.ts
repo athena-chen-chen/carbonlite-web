@@ -584,8 +584,10 @@ describe('loadMetricsOverview', () => {
       expect(overview.calculationDetails[0]).toMatchObject({
         status: 'CALCULATED',
         factorId: 'factor-visible',
+        matchingMessage: 'Matched to CarbonLite System Factor.',
         calculatedEmissionsKgCO2e: expectedEmissions,
       });
+      expect(overview.calculationDetails[0].matchingMessage).not.toMatch(/backend factor matching/i);
     },
   );
 

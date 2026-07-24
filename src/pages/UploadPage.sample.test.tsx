@@ -64,6 +64,41 @@ describe('UploadPage sample workflow', () => {
     });
   });
 
+  it('clears Input Review documents when demo data reset is broadcast', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          id: 'doc-reset',
+          fileName: 'stale-import.xlsx',
+          fileUrl: '',
+          type: 'SPREADSHEET',
+          status: 'IMPORTED',
+          fileSize: 100,
+          createdAt: '2026-07-20T00:00:00.000Z',
+          updatedAt: '2026-07-20T00:00:00.000Z',
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('stale-import.xlsx')).toBeInTheDocument();
+
+    window.dispatchEvent(new Event('carbonlite:demo-data-reset'));
+
+    expect(await screen.findByText('No documents waiting for review.')).toBeInTheDocument();
+    expect(screen.getByText('Upload a file or add records manually to begin.')).toBeInTheDocument();
+    expect(screen.queryByText('stale-import.xlsx')).not.toBeInTheDocument();
+  });
+
   it('opens Manual Entry when route state requests manual input focus', async () => {
     render(
       <MemoryRouter

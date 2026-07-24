@@ -11,12 +11,22 @@ import {
 } from '../services/conversionFactors';
 import { activityTypes } from '../constants/activityTypes';
 import {
+  canManageConversionFactors,
   getCurrentUser,
   getOrganizationName,
 } from '../services/auth';
 import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
-import { getActivityTypeLabel } from '../utils/activityType';
-import { PILOT_PROVINCE_COVERAGE_HELPER_TEXT } from '../utils/province';
+import { getActivityTypeLabel, normalizeActivityType } from '../utils/activityType';
+import { normalizeUnitForDisplay } from '../utils/unitNormalization';
+import {
+  PILOT_PROVINCE_COVERAGE_HELPER_TEXT,
+  getPilotProvinceCode,
+  normalizeProvince,
+} from '../utils/province';
+import {
+  formatCredibilityLabel,
+  getFactorCredibilityBadges,
+} from '../utils/factorCredibility';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -29,8 +39,10 @@ type ConversionFactorRouteState = {
 const initialForm: ConversionFactorInput = {
   name: '',
   type: 'EMISSION',
+  factorType: 'CUSTOM',
   activityType: '',
-  jurisdiction: '',
+  jurisdiction: 'NATIONAL',
+  country: 'Canada',
   unit: '',
   factorValue: '' as unknown as number,
   resultUnit: 'kgCO2e',
@@ -40,21 +52,35 @@ const initialForm: ConversionFactorInput = {
   sourceDocument: '',
   sourceYear: '' as unknown as number,
   sourceUrl: '',
+  factorVersion: 'v1.0',
+  assumptions: '',
   methodology: '',
-  confidenceLevel: '',
+  confidenceLevel: 'MEDIUM',
+  verificationStatus: 'DRAFT',
   verified: false,
   notes: '',
   isDefault: true,
 };
 
+const CUSTOM_FACTOR_TYPE = 'CUSTOM';
+const NATIONAL_JURISDICTION = 'NATIONAL';
+const NATIONAL_JURISDICTION_LABEL = 'Canada - National';
+const JURISDICTION_OPTIONS = [
+  { value: NATIONAL_JURISDICTION, label: NATIONAL_JURISDICTION_LABEL },
+  { value: 'AB', label: 'Alberta' },
+  { value: 'BC', label: 'British Columbia' },
+  { value: 'ON', label: 'Ontario' },
+] as const;
+const JURISDICTION_FILTER_OPTIONS = [
+  { value: '', label: 'All jurisdictions' },
+  ...JURISDICTION_OPTIONS,
+] as const;
+
 export function getFactorJurisdiction(item: ConversionFactorItem) {
   const region = item.jurisdiction?.trim() || item.region?.trim() || '';
   const country = item.country?.trim() || '';
   if (isProvinceRequiredJurisdiction(region)) return 'Province Required';
-  if (!region && !country) return '';
-  if (!region) return country;
-  if (!country || region === country || region.toLowerCase().includes(country.toLowerCase())) return region;
-  return `${region}, ${country}`;
+  return formatJurisdictionDisplay(region, country);
 }
 
 export function getFactorTraceability(item: ConversionFactorItem) {
@@ -64,9 +90,11 @@ export function getFactorTraceability(item: ConversionFactorItem) {
     sourceDocument: item.sourceDocument || item.sourceReference || '',
     sourceYear: item.sourceYear ?? null,
     sourceUrl: item.sourceUrl ?? '',
+    factorVersion: item.factorVersion ?? '',
+    assumptions: item.assumptions || item.methodology || item.notes || '',
     methodology: item.methodology || '',
-    confidenceLevel: item.confidenceLevel ?? '',
-    verificationStatus: item.verificationStatus ?? '',
+    confidenceLevel: formatCredibilityLabel(item.confidenceLevel),
+    verificationStatus: formatCredibilityLabel(item.verificationStatus),
     verified: Boolean(item.verified),
     notes: item.notes || '',
   };
@@ -112,11 +140,18 @@ function formatFactorValue(value: ConversionFactorItem['factorValue']) {
 
 function formatFactorValueDisplay(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) return 'Tracked only';
-  return `${formatFactorValue(item.factorValue)} ${item.resultUnit || 'kgCO2e'}/${singularUnit(item.unit)}`;
+  return `${formatFactorValue(item.factorValue)} ${formatFactorUnitDisplay(item)}`;
 }
 
 function formatFactorResultUnitDisplay(item: ConversionFactorItem) {
-  return isWaterTrackedFactor(item) ? 'Not applicable' : item.resultUnit;
+  return isWaterTrackedFactor(item) ? 'Not applicable' : formatFactorUnitDisplay(item);
+}
+
+function formatFactorUnitDisplay(item: Pick<ConversionFactorItem, 'resultUnit' | 'unit'>) {
+  const resultUnit = String(item.resultUnit || 'kgCO2e').trim();
+  if (resultUnit.includes('/')) return resultUnit;
+
+  return `${resultUnit}/${singularUnit(item.unit)}`;
 }
 
 function singularUnit(unit?: string | null) {
@@ -148,6 +183,8 @@ function formatActivityTypeDisplay(value?: string | null) {
 }
 
 function formatFactorNameDisplay(item: ConversionFactorItem) {
+  if (!isSystemFactor(item) && item.name) return item.name;
+
   if (isElectricityFactor(item)) {
     const jurisdiction = getFactorJurisdiction(item);
     if (isProvinceRequiredJurisdiction(jurisdiction)) return 'Electricity - Province Required';
@@ -162,6 +199,36 @@ function formatFactorNameDisplay(item: ConversionFactorItem) {
   const activityTypeLabel = item.activityType ? formatActivityTypeDisplay(item.activityType) : '';
 
   return activityTypeLabel || item.name;
+}
+
+function formatJurisdictionDisplay(region?: string | null, country?: string | null) {
+  const cleanRegion = String(region ?? '').trim();
+  const cleanCountry = String(country ?? '').trim();
+  const pilotCode = getPilotProvinceCode(cleanRegion);
+
+  if (pilotCode) {
+    return JURISDICTION_OPTIONS.find((option) => option.value === pilotCode)?.label ?? cleanRegion;
+  }
+
+  if (isNationalJurisdiction(cleanRegion, cleanCountry)) {
+    return NATIONAL_JURISDICTION_LABEL;
+  }
+
+  return normalizeProvince(cleanRegion) ?? (cleanRegion || cleanCountry || NATIONAL_JURISDICTION_LABEL);
+}
+
+function isNationalJurisdiction(region?: string | null, country?: string | null) {
+  const cleanRegion = String(region ?? '').trim().toLowerCase();
+  const cleanCountry = String(country ?? '').trim().toLowerCase();
+
+  return (
+    !cleanRegion ||
+    cleanRegion === 'national' ||
+    cleanRegion === 'canada' ||
+    cleanRegion === 'ca' ||
+    cleanRegion === NATIONAL_JURISDICTION.toLowerCase() ||
+    (!cleanRegion && ['canada', 'ca'].includes(cleanCountry))
+  );
 }
 
 function defaultScopeForFactor(item: ConversionFactorItem) {
@@ -201,6 +268,156 @@ function formatTableSourceAuthority(value?: string | null) {
   return value;
 }
 
+function isSystemFactor(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'factorType' | 'organizationId'>) {
+  const factorType = String(item.factorType ?? '').toUpperCase();
+  if (factorType === 'CUSTOM') return false;
+  if (factorType === 'SYSTEM') return true;
+
+  return (
+    item.isSystemDefault ||
+    !item.organizationId
+  );
+}
+
+function getFactorTypeLabel(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'factorType' | 'organizationId'>) {
+  return isSystemFactor(item) ? 'CarbonLite System Factor' : 'Custom Factor';
+}
+
+function getFactorTypeTableLabel(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'factorType' | 'organizationId'>) {
+  return isSystemFactor(item) ? 'System Factor' : 'Custom Factor';
+}
+
+function getCustomFactorFormErrors(
+  form: ConversionFactorInput,
+  existingItems: ConversionFactorItem[],
+  editingId: string | null,
+) {
+  const errors: string[] = [];
+  const activityType = normalizeActivityType(form.activityType);
+  const factorValue = Number(form.factorValue);
+  const sourceYear = Number(form.sourceYear);
+  const inputUnit = String(form.unit ?? '').trim();
+  const factorUnit = String(form.resultUnit ?? '').trim();
+  const country = String(form.country ?? 'Canada').trim();
+  const jurisdictionSelection = getJurisdictionSelectValue(form.jurisdiction ?? form.region, country);
+  const province = jurisdictionSelection === NATIONAL_JURISDICTION ? '' : jurisdictionSelection;
+  const sourceAuthority = String(form.sourceAuthority ?? '').trim();
+  const sourceReference = String(
+    form.sourceReference ?? form.sourceDocument ?? form.sourceUrl ?? '',
+  ).trim();
+
+  if (!String(form.name ?? '').trim()) errors.push('Factor Name is required.');
+  if (!activityType) errors.push('Activity Type is required.');
+  if (!inputUnit) errors.push('Input Unit is required.');
+  if (!factorUnit) errors.push('Factor Unit is required.');
+  if (!Number.isFinite(factorValue) || factorValue <= 0) {
+    errors.push('Factor Value must be a positive number.');
+  }
+  if (!Number.isInteger(sourceYear) || sourceYear < 1900 || sourceYear > 2100) {
+    errors.push('Source Year is required.');
+  }
+  if (!sourceAuthority && !sourceReference) {
+    errors.push('Source Authority or Source Reference is required.');
+  }
+  if (activityType === 'ELECTRICITY' && !province) {
+    errors.push('Province / Jurisdiction is required for Electricity custom factors.');
+  }
+
+  if (
+    activityType &&
+    inputUnit &&
+    Number.isInteger(sourceYear) &&
+    hasDuplicateCustomFactor(existingItems, {
+      editingId,
+      activityType,
+      unit: inputUnit,
+      country,
+      province,
+      sourceYear,
+    })
+  ) {
+    errors.push(
+      'A custom factor already exists for this activity type, input unit, country, province, and source year.',
+    );
+  }
+
+  return errors;
+}
+
+function hasDuplicateCustomFactor(
+  items: ConversionFactorItem[],
+  input: {
+    editingId: string | null;
+    activityType: string;
+    unit: string;
+    country: string;
+    province: string;
+    sourceYear: number;
+  },
+) {
+  return items.some((item) => {
+    if (item.id === input.editingId) return false;
+    if (isSystemFactor(item)) return false;
+
+    return (
+      normalizeActivityType(item.activityType) === input.activityType &&
+      normalizeFactorUnitKey(item.unit) === normalizeFactorUnitKey(input.unit) &&
+      normalizeFactorText(item.country ?? 'Canada') === normalizeFactorText(input.country || 'Canada') &&
+      normalizeFactorText(getFactorRegionForDuplicate(item)) === normalizeFactorText(input.province) &&
+      Number(item.sourceYear) === input.sourceYear
+    );
+  });
+}
+
+function getFactorRegionForDuplicate(item: ConversionFactorItem) {
+  const region = item.region ?? item.jurisdiction ?? '';
+  const country = item.country ?? '';
+  const normalizedCountry = normalizeFactorText(country);
+  const normalizedRegion = normalizeFactorText(region);
+
+  return normalizedRegion === normalizedCountry ? '' : region;
+}
+
+function getJurisdictionSelectValue(region?: string | null, country?: string | null) {
+  const cleanRegion = String(region ?? '').trim();
+  if (!cleanRegion && !country) return NATIONAL_JURISDICTION;
+  if (isNationalJurisdiction(cleanRegion, country)) return NATIONAL_JURISDICTION;
+
+  return getPilotProvinceCode(cleanRegion) ?? cleanRegion;
+}
+
+function getJurisdictionFilterParam(value: string) {
+  if (!value) return undefined;
+  if (value === NATIONAL_JURISDICTION) return 'Canada';
+  return value;
+}
+
+function getPayloadJurisdiction(value?: string | null) {
+  const selection = getJurisdictionSelectValue(value, 'Canada');
+  if (selection === NATIONAL_JURISDICTION) return 'Canada';
+  return selection;
+}
+
+function factorMatchesJurisdictionFilter(item: ConversionFactorItem, filterValue: string) {
+  if (!filterValue) return true;
+
+  return getJurisdictionSelectValue(item.jurisdiction ?? item.region, item.country) === filterValue;
+}
+
+function normalizeFactorUnitKey(value?: string | null) {
+  const normalized = normalizeUnitForDisplay(value ?? '');
+  return normalized.status === 'valid'
+    ? normalized.value.toLowerCase()
+    : String(value ?? '').trim().toLowerCase();
+}
+
+function normalizeFactorText(value?: string | null) {
+  return String(value ?? '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+}
+
 function getSourceUrlHref(sourceUrl?: string | null) {
   if (!sourceUrl) return '';
 
@@ -229,7 +446,9 @@ function getSourceLinkLabel(sourceUrl?: string | null, item?: ConversionFactorIt
 export function ConversionFactorsPage() {
   const location = useLocation();
   const prefillFactor = (location.state as ConversionFactorRouteState)?.prefillFactor;
-  const organizationName = getOrganizationName(getCurrentUser());
+  const currentUser = getCurrentUser();
+  const organizationName = getOrganizationName(currentUser);
+  const canManageFactors = canManageConversionFactors(currentUser);
   const generatedAt = new Date().toLocaleString();
   const [form, setForm] = useState<ConversionFactorInput>(initialForm);
   const [items, setItems] = useState<ConversionFactorItem[]>([]);
@@ -264,8 +483,7 @@ export function ConversionFactorsPage() {
       const data = (await getConversionFactors({
         activityType:
           (filters?.activityType ?? activityTypeFilter) || undefined,
-        jurisdiction:
-          (filters?.jurisdiction ?? jurisdictionFilter).trim() || undefined,
+        jurisdiction: getJurisdictionFilterParam(filters?.jurisdiction ?? jurisdictionFilter),
         sourceYear: (filters?.sourceYear ?? sourceYearFilter)
           ? Number(filters?.sourceYear ?? sourceYearFilter)
           : undefined,
@@ -289,7 +507,9 @@ export function ConversionFactorsPage() {
     setShowFactorForm(true);
     setError(null);
     setSuccessMessage(
-      `Add a conversion factor for ${prefillFactor.activityType ?? 'this activity'} / ${prefillFactor.unit ?? 'this unit'} to include skipped records.`,
+      `Add a conversion factor for ${
+        prefillFactor.activityType ? getActivityTypeLabel(prefillFactor.activityType) : 'this activity'
+      } / ${prefillFactor.unit ?? 'this unit'} to include skipped records.`,
     );
     setForm({
       ...initialForm,
@@ -386,6 +606,8 @@ export function ConversionFactorsPage() {
       : Number(maxFactorValueFilter);
 
     const filtered = visibleFactorItems.filter((item) => {
+      if (!factorMatchesJurisdictionFilter(item, jurisdictionFilter)) return false;
+
       const value = Number(item.factorValue);
 
       if (!Number.isFinite(value)) {
@@ -415,7 +637,7 @@ export function ConversionFactorsPage() {
 
       return factorValueSort === 'asc' ? aValue - bValue : bValue - aValue;
     });
-  }, [factorValueSort, maxFactorValueFilter, minFactorValueFilter, visibleFactorItems]);
+  }, [factorValueSort, jurisdictionFilter, maxFactorValueFilter, minFactorValueFilter, visibleFactorItems]);
 
   function updateField<K extends keyof ConversionFactorInput>(
     key: K,
@@ -428,29 +650,52 @@ export function ConversionFactorsPage() {
   }
 
   function getPayloadFromForm() {
+    const activityType = normalizeActivityType(form.activityType) ?? form.activityType;
+    const jurisdiction = getPayloadJurisdiction(form.jurisdiction);
+    const country = String(form.country ?? 'Canada').trim() || 'Canada';
+
     return {
       ...form,
+      type: 'EMISSION',
+      factorType: CUSTOM_FACTOR_TYPE,
+      activityType,
+      country,
+      region: jurisdiction,
+      jurisdiction,
+      verified: form.verificationStatus === 'CONSULTANT_REVIEWED' ? true : Boolean(form.verified),
       factorValue: Number(form.factorValue),
       sourceYear: form.sourceYear ? Number(form.sourceYear) : undefined,
+      isDefault: true,
     };
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!canManageFactors) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
     setSuccessMessage(null);
 
     try {
+      const validationErrors = getCustomFactorFormErrors(form, visibleFactorItems, editingId);
+      if (validationErrors.length > 0) {
+        setError(validationErrors.join(' '));
+        return;
+      }
+
       if (editingId) {
         await updateConversionFactor(editingId, getPayloadFromForm());
-        setSuccessMessage('Conversion factor updated successfully.');
+        setSuccessMessage('Custom factor updated successfully.');
         setEditingId(null);
         setShowFactorForm(false);
       } else {
         await createConversionFactor(getPayloadFromForm());
-        setSuccessMessage('Conversion factor created successfully.');
+        setSuccessMessage('Custom factor created successfully.');
         setShowFactorForm(false);
       }
 
@@ -472,15 +717,24 @@ export function ConversionFactorsPage() {
   }
 
   function handleEditFactor(item: ConversionFactorItem) {
-    if (item.isSystemDefault) return;
+    if (!canManageFactors) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (isSystemFactor(item)) return;
 
     setEditingId(item.id);
     setShowFactorForm(true);
     setForm({
       name: item.name,
-      type: item.type,
+      type: 'EMISSION',
+      factorType: CUSTOM_FACTOR_TYPE,
       activityType: item.activityType ?? '',
-      jurisdiction: getFactorJurisdiction(item),
+      jurisdiction: getJurisdictionSelectValue(getFactorRegionForDuplicate(item), item.country),
+      region: getJurisdictionSelectValue(getFactorRegionForDuplicate(item), item.country),
+      country: item.country ?? 'Canada',
       unit: item.unit,
       factorValue: Number(item.factorValue),
       resultUnit: item.resultUnit,
@@ -490,8 +744,11 @@ export function ConversionFactorsPage() {
       sourceDocument: item.sourceDocument ?? '',
       sourceYear: item.sourceYear ?? ('' as unknown as number),
       sourceUrl: item.sourceUrl ?? '',
+      factorVersion: item.factorVersion ?? '',
+      assumptions: item.assumptions ?? '',
       methodology: item.methodology ?? '',
-      confidenceLevel: item.confidenceLevel ?? '',
+      confidenceLevel: item.confidenceLevel ?? 'MEDIUM',
+      verificationStatus: item.verificationStatus ?? 'DRAFT',
       verified: Boolean(item.verified),
       notes: item.notes ?? '',
       isDefault: item.isDefault,
@@ -510,6 +767,12 @@ export function ConversionFactorsPage() {
   }
 
   async function deleteFactorById(id: string) {
+    if (!canManageFactors) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
     setDeletingId(id);
     setError(null);
     setSuccessMessage(null);
@@ -528,10 +791,16 @@ export function ConversionFactorsPage() {
   }
 
   async function handleDeleteFactor(item: ConversionFactorItem) {
-    if (item.isSystemDefault) return;
+    if (!canManageFactors) {
+      setError('You do not have permission to perform this action.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (isSystemFactor(item)) return;
 
     const shouldDelete = window.confirm(
-      `Delete conversion factor "${item.name}"?`,
+      `Delete custom factor "${item.name}"?`,
     );
 
     if (!shouldDelete) return;
@@ -592,8 +861,12 @@ export function ConversionFactorsPage() {
           zIndex: 9999,
         }}
       >
-        {item.isSystemDefault ? (
-          <div style={lockedMenuLabelStyle}>Locked</div>
+        {isSystemFactor(item) || !canManageFactors ? (
+          <div style={lockedMenuLabelStyle}>
+            {isSystemFactor(item)
+              ? 'System factor'
+              : 'Only admins can manage custom factors.'}
+          </div>
         ) : null}
         <button
           type="button"
@@ -602,8 +875,8 @@ export function ConversionFactorsPage() {
             closeActionMenu();
             handleEditFactor(item);
           }}
-          disabled={item.isSystemDefault || deletingId === item.id || submitting}
-          style={menuItemButtonStyle(item.isSystemDefault)}
+          disabled={!canManageFactors || isSystemFactor(item) || deletingId === item.id || submitting}
+          style={menuItemButtonStyle(!canManageFactors || isSystemFactor(item))}
         >
           Edit
         </button>
@@ -614,8 +887,8 @@ export function ConversionFactorsPage() {
             closeActionMenu();
             void handleDeleteFactor(item);
           }}
-          disabled={item.isSystemDefault || deletingId === item.id || editingId === item.id}
-          style={menuItemDangerStyle(item.isSystemDefault || deletingId === item.id)}
+          disabled={!canManageFactors || isSystemFactor(item) || deletingId === item.id || editingId === item.id}
+          style={menuItemDangerStyle(!canManageFactors || isSystemFactor(item) || deletingId === item.id)}
         >
           {deletingId === item.id ? 'Deleting...' : 'Delete'}
         </button>
@@ -703,7 +976,11 @@ export function ConversionFactorsPage() {
           : ''}
       </div>
 
-      {!showFactorForm ? (
+      {!canManageFactors ? (
+        <div className="no-print" style={readOnlyNoticeStyle}>
+          Read-only access: system factors are visible to all authenticated users. Only Owners and Admins can create, edit, or delete company-specific factors.
+        </div>
+      ) : !showFactorForm ? (
         <div className="no-print" style={collapsedFormStyle}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20 }}>Custom conversion factors</h2>
@@ -729,39 +1006,16 @@ export function ConversionFactorsPage() {
       <form className="no-print" onSubmit={handleSubmit} style={formCardStyle}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>
-            {editingId ? 'Edit Conversion Factor' : 'Add Custom Factor'}
+            {editingId ? 'Edit Custom Factor' : 'Add Custom Factor'}
           </h2>
           <p style={{ marginTop: 6, color: '#666' }}>
             {editingId
-              ? 'Update this conversion rule, then save your changes.'
-              : 'Define how an activity record should be converted into a calculated result.'}
+              ? 'Update this company-specific factor, then save your changes.'
+              : 'Create a company-specific factor. System factors remain read-only and unchanged.'}
           </p>
         </div>
 
         <div style={formGridStyle}>
-          <Field label="Name">
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => updateField('name', e.target.value)}
-              style={inputStyle}
-              placeholder="e.g. Diesel emission factor"
-            />
-          </Field>
-
-          <Field label="Type">
-            <select
-              value={form.type}
-              onChange={(e) => updateField('type', e.target.value)}
-              style={inputStyle}
-            >
-              <option value="EMISSION">EMISSION</option>
-              <option value="ENERGY">ENERGY</option>
-              <option value="COST">COST</option>
-              <option value="CUSTOM">CUSTOM</option>
-            </select>
-          </Field>
-
           <Field label="Activity Type">
             <select
               value={form.activityType ?? ''}
@@ -771,36 +1025,27 @@ export function ConversionFactorsPage() {
               <option value="">-- Select --</option>
               {activityTypes.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {getActivityTypeLabel(type)}
                 </option>
               ))}
             </select>
           </Field>
 
-          <Field label="Input Unit">
+          <Field label="Factor Name">
             <input
               type="text"
-              value={form.unit}
-              onChange={(e) => updateField('unit', e.target.value)}
+              value={form.name}
+              onChange={(e) => updateField('name', e.target.value)}
               style={inputStyle}
-              placeholder="e.g. liters"
-            />
-          </Field>
-
-          <Field label="Jurisdiction / Region">
-            <input
-              type="text"
-              value={form.jurisdiction ?? ''}
-              onChange={(e) => updateField('jurisdiction', e.target.value)}
-              style={inputStyle}
-              placeholder="e.g. Alberta, Canada"
+              placeholder="e.g. Company diesel factor"
             />
           </Field>
 
           <Field label="Factor Value">
             <input
               type="number"
-              step="0.0001"
+              step="any"
+              min="0"
               value={form.factorValue}
               onChange={(e) =>
                 updateField(
@@ -813,24 +1058,48 @@ export function ConversionFactorsPage() {
             />
           </Field>
 
-          <Field label="Result Unit">
+          <Field label="Input Unit">
+            <input
+              type="text"
+              value={form.unit}
+              onChange={(e) => updateField('unit', e.target.value)}
+              style={inputStyle}
+              placeholder="e.g. liters"
+            />
+          </Field>
+
+          <Field label="Factor Unit">
             <input
               type="text"
               value={form.resultUnit}
               onChange={(e) => updateField('resultUnit', e.target.value)}
               style={inputStyle}
-              placeholder="e.g. kgCO2e"
+              placeholder="e.g. kgCO2e/liter"
             />
           </Field>
 
-          <Field label="Source Name">
+          <Field label="Country">
             <input
               type="text"
-              value={form.sourceName ?? ''}
-              onChange={(e) => updateField('sourceName', e.target.value)}
+              value={form.country ?? ''}
+              onChange={(e) => updateField('country', e.target.value)}
               style={inputStyle}
-              placeholder="e.g. Environment Canada"
+              placeholder="e.g. Canada"
             />
+          </Field>
+
+          <Field label="Province / Jurisdiction">
+            <select
+              value={form.jurisdiction ?? ''}
+              onChange={(e) => updateField('jurisdiction', e.target.value)}
+              style={inputStyle}
+            >
+              {JURISDICTION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field label="Source Reference">
@@ -882,6 +1151,16 @@ export function ConversionFactorsPage() {
               />
             </Field>
 
+            <Field label="Version">
+              <input
+                type="text"
+                value={form.factorVersion ?? ''}
+                onChange={(e) => updateField('factorVersion', e.target.value)}
+                style={inputStyle}
+                placeholder="e.g. v1.0"
+              />
+            </Field>
+
             <Field label="Source URL">
               <input
                 type="url"
@@ -892,12 +1171,50 @@ export function ConversionFactorsPage() {
               />
             </Field>
 
+            <Field label="Confidence Level">
+              <select
+                value={form.confidenceLevel ?? 'MEDIUM'}
+                onChange={(e) => updateField('confidenceLevel', e.target.value)}
+                style={inputStyle}
+              >
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
+              </select>
+            </Field>
+
+            <Field label="Verification Status">
+              <select
+                value={form.verificationStatus ?? 'DRAFT'}
+                onChange={(e) => {
+                  updateField('verificationStatus', e.target.value);
+                  updateField('verified', e.target.value === 'CONSULTANT_REVIEWED');
+                }}
+                style={inputStyle}
+              >
+                <option value="DRAFT">Draft</option>
+                <option value="USER_PROVIDED">User Provided</option>
+                <option value="CONSULTANT_REVIEWED">Consultant Reviewed</option>
+                <option value="INTERNAL_REVIEW_REQUIRED">Internal Review Required</option>
+                <option value="PILOT_ESTIMATE">Pilot Estimate</option>
+              </select>
+            </Field>
+
             <Field label="Methodology">
               <textarea
                 value={form.methodology ?? ''}
                 onChange={(e) => updateField('methodology', e.target.value)}
                 style={textareaStyle}
                 placeholder="Describe how the factor should be applied."
+              />
+            </Field>
+
+            <Field label="Assumptions">
+              <textarea
+                value={form.assumptions ?? ''}
+                onChange={(e) => updateField('assumptions', e.target.value)}
+                style={textareaStyle}
+                placeholder="Document limitations, applicability, or review notes."
               />
             </Field>
 
@@ -919,6 +1236,11 @@ export function ConversionFactorsPage() {
             />
             Verified source and methodology
           </label>
+          {form.activityType === 'WATER' ? (
+            <div style={waterCustomFactorNoticeStyle}>
+              Water is tracked only in CarbonLite pilot reporting and remains excluded from GHG totals by default.
+            </div>
+          ) : null}
         </div>
 
         <label style={checkboxRowStyle}>
@@ -992,17 +1314,22 @@ export function ConversionFactorsPage() {
             >
               <option value="">All activity types</option>
               {activityTypes.map((type) => (
-                <option key={type} value={type}>{type}</option>
+                <option key={type} value={type}>{getActivityTypeLabel(type)}</option>
               ))}
             </select>
           </Field>
           <Field label="Jurisdiction">
-            <input
+            <select
               value={jurisdictionFilter}
               onChange={(event) => setJurisdictionFilter(event.target.value)}
               style={inputStyle}
-              placeholder="e.g. Alberta"
-            />
+            >
+              {JURISDICTION_FILTER_OPTIONS.map((option) => (
+                <option key={option.value || 'all'} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Source Year">
             <input
@@ -1075,22 +1402,45 @@ export function ConversionFactorsPage() {
         {loading ? (
           <div style={{ padding: 16 }}>Loading conversion factors...</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <>
+          <div style={tableScrollHintStyle}>Scroll horizontally to view all columns →</div>
+          <div style={factorTableWrapStyle}>
+          <table style={factorTableStyle}>
+            <colgroup>
+              <col style={factorActivityTypeColStyle} />
+              <col style={factorNameColStyle} />
+              <col style={factorJurisdictionColStyle} />
+              <col style={factorValueColStyle} />
+              <col style={factorInputUnitColStyle} />
+              <col style={factorSourceAuthorityColStyle} />
+              <col style={factorSourceYearColStyle} />
+              <col style={factorConfidenceColStyle} />
+              <col style={factorVerificationColStyle} />
+              <col style={factorTypeColStyle} />
+              <col style={factorActionsColStyle} />
+            </colgroup>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 <th style={thStyle}>Activity Type</th>
                 <th style={thStyle}>Factor</th>
+                <th style={thStyle}>Jurisdiction</th>
                 <th style={thStyle}>Factor Value</th>
                 <th style={thStyle}>Input Unit</th>
                 <th style={thStyle}>Source Authority</th>
+                <th style={thStyle}>Source Document</th>
+                <th style={thStyle}>Source Year</th>
+                <th style={thStyle}>Version</th>
+                <th style={thStyle}>Confidence</th>
+                <th style={thStyle}>Verification</th>
+                <th style={thStyle}>Assumptions</th>
                 <th style={thStyle}>Factor Type</th>
-                <th className="no-print" style={thStyle}>Actions</th>
+                <th className="no-print" style={stickyActionThStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {displayedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
+                  <td colSpan={14} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
                     No conversion factors yet.
                   </td>
                 </tr>
@@ -1100,25 +1450,40 @@ export function ConversionFactorsPage() {
 
                   return (
                       <tr key={item.id} data-testid={`factor-row-${item.id}`}>
-                        <td style={tdStyle}>{formatActivityTypeDisplay(item.activityType)}</td>
+                        <td style={nowrapCellStyle}>{formatActivityTypeDisplay(item.activityType)}</td>
                         <td style={factorNameCellStyle}>
                           {formatFactorNameDisplay(item)}
                         </td>
+                        <td style={nowrapCellStyle}>{traceability.jurisdiction}</td>
                         <td
                           style={factorValueCellStyle}
                           data-testid={`factor-value-${item.id}`}
                         >
                           {formatFactorValueDisplay(item)}
                         </td>
-                        <td style={tdStyle}>{item.unit}</td>
+                        <td style={nowrapCellStyle}>{item.unit}</td>
                         <td style={sourceAuthorityCellStyle}>
                           {formatTableSourceAuthority(traceability.sourceAuthority)}
                         </td>
-                        <td style={tdStyle}>
-                          {item.isSystemDefault ? (
-                            <Badge label="CarbonLite System Factor" color="#1d4ed8" background="#dbeafe" />
+                        <td style={truncateCellStyle} title={traceability.sourceDocument || undefined}>
+                          {traceability.sourceDocument || '-'}
+                        </td>
+                        <td style={nowrapCellStyle}>{traceability.sourceYear ?? '-'}</td>
+                        <td style={nowrapCellStyle}>{traceability.factorVersion || '-'}</td>
+                        <td style={nowrapCellStyle}>{traceability.confidenceLevel || '-'}</td>
+                        <td style={nowrapCellStyle}>{traceability.verificationStatus || '-'}</td>
+                        <td style={truncateCellStyle} title={traceability.assumptions || undefined}>
+                          {traceability.assumptions || '-'}
+                        </td>
+                        <td style={factorTypeCellStyle}>
+                          {isSystemFactor(item) ? (
+                            <span title={getFactorTypeLabel(item)}>
+                              <Badge label={getFactorTypeTableLabel(item)} color="#1d4ed8" background="#dbeafe" />
+                            </span>
                           ) : (
-                            <Badge label="Custom" color="#6b7280" background="#f3f4f6" />
+                            <span title={getFactorTypeLabel(item)}>
+                              <Badge label={getFactorTypeTableLabel(item)} color="#047857" background="#dcfce7" />
+                            </span>
                           )}
                         </td>
                         <td className="no-print" style={actionsCellStyle}>
@@ -1151,6 +1516,8 @@ export function ConversionFactorsPage() {
               )}
             </tbody>
           </table>
+          </div>
+          </>
         )}
       </div>
 
@@ -1258,7 +1625,7 @@ function FactorDetailsModal({
         <div style={modalHeaderStyle}>
           <div>
             <div style={{ color: '#047857', fontWeight: 700, fontSize: 13 }}>
-              {item.activityType || 'Conversion Factor'}
+              {formatActivityTypeDisplay(item.activityType)}
             </div>
             <h2 id="factor-details-title" style={{ margin: '4px 0 0' }}>{formatFactorNameDisplay(item)}</h2>
           </div>
@@ -1267,10 +1634,10 @@ function FactorDetailsModal({
           </button>
         </div>
         <div style={modalBadgeRowStyle}>
-          {item.isSystemDefault ? (
-            <Badge label="CarbonLite System Factor" color="#1d4ed8" background="#dbeafe" />
+          {isSystemFactor(item) ? (
+            <Badge label={getFactorTypeLabel(item)} color="#1d4ed8" background="#dbeafe" />
           ) : (
-            <Badge label="Custom Factor" color="#6b7280" background="#f3f4f6" />
+            <Badge label={getFactorTypeLabel(item)} color="#047857" background="#dcfce7" />
           )}
           {traceability.verified ? (
             <Badge label="Verified" color="#047857" background="#dcfce7" />
@@ -1278,7 +1645,7 @@ function FactorDetailsModal({
             <Badge label="Internal Review Required" color="#b45309" background="#fef3c7" />
           )}
         </div>
-        {item.isSystemDefault ? (
+        {isSystemFactor(item) ? (
           <div style={systemFactorNoticeStyle}>
             System factors are managed by CarbonLite and cannot be edited directly.
             {!traceability.verified
@@ -1298,8 +1665,9 @@ function FactorDetailsModal({
             <DetailItem label="Activity" value={formatActivityTypeDisplay(item.activityType)} />
             <DetailItem label="Factor" value={formatFactorValueDisplay(item)} />
             <DetailItem label="Activity Unit" value={item.unit} />
-            <DetailItem label="Emission Unit" value={formatFactorResultUnitDisplay(item)} />
+            <DetailItem label="Factor Unit" value={formatFactorResultUnitDisplay(item)} />
             <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
+            <DetailItem label="Factor Type" value={getFactorTypeLabel(item)} />
             <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
             {isWaterTrackedFactor(item) ? (
               <DetailItem label="Calculation" value="Not calculated by default" />
@@ -1310,6 +1678,7 @@ function FactorDetailsModal({
             <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
             <DetailItem label="Source Document" value={traceability.sourceDocument} />
             <DetailItem label="Source Year" value={traceability.sourceYear} />
+            <DetailItem label="Version" value={traceability.factorVersion} />
             <DetailItem
               label="Source URL"
               value={
@@ -1326,6 +1695,10 @@ function FactorDetailsModal({
             <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
             <DetailItem label="Verification Status" value={traceability.verificationStatus} />
             <DetailItem
+              label="Review Guidance"
+              value={getFactorCredibilityBadges(item.activityType, item).join(' · ')}
+            />
+            <DetailItem
               label="Verified"
               value={traceability.verified ? 'Yes' : 'No / user review required'}
             />
@@ -1333,6 +1706,7 @@ function FactorDetailsModal({
 
           <DetailSection title="Methodology">
             <DetailItem label="Methodology" value={formatMethodologyDisplay(item)} />
+            <DetailItem label="Assumptions" value={traceability.assumptions} />
             <DetailItem label="Notes" value={formatNotesDisplay(item)} />
             <DetailItem
               label="Audit History"
@@ -1457,6 +1831,15 @@ const collapsedFormStyle: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
+const readOnlyNoticeStyle: React.CSSProperties = {
+  ...formCardStyle,
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.5,
+  background: '#f8fafc',
+  border: '1px solid #cbd5e1',
+};
+
 const formGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
@@ -1534,6 +1917,17 @@ const checkboxRowStyle: React.CSSProperties = {
   color: '#444',
 };
 
+const waterCustomFactorNoticeStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: 10,
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1e40af',
+  fontSize: 13,
+  fontWeight: 700,
+};
+
 function primaryButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     height: 42,
@@ -1600,6 +1994,40 @@ const tableHeaderStyle: React.CSSProperties = {
   borderBottom: '1px solid #eee',
 };
 
+const tableScrollHintStyle: React.CSSProperties = {
+  padding: '0 16px 8px',
+  color: '#94a3b8',
+  fontSize: 12,
+  fontWeight: 700,
+  textAlign: 'right',
+};
+
+const factorTableWrapStyle: React.CSSProperties = {
+  overflowX: 'auto',
+  maxWidth: '100%',
+  width: '100%',
+  WebkitOverflowScrolling: 'touch',
+};
+
+const factorTableStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 1640,
+  borderCollapse: 'collapse',
+  tableLayout: 'fixed',
+};
+
+const factorActivityTypeColStyle: React.CSSProperties = { width: 120 };
+const factorNameColStyle: React.CSSProperties = { width: 220 };
+const factorJurisdictionColStyle: React.CSSProperties = { width: 140 };
+const factorValueColStyle: React.CSSProperties = { width: 160 };
+const factorInputUnitColStyle: React.CSSProperties = { width: 100 };
+const factorSourceAuthorityColStyle: React.CSSProperties = { width: 130 };
+const factorSourceYearColStyle: React.CSSProperties = { width: 100 };
+const factorConfidenceColStyle: React.CSSProperties = { width: 160 };
+const factorVerificationColStyle: React.CSSProperties = { width: 160 };
+const factorTypeColStyle: React.CSSProperties = { width: 170 };
+const factorActionsColStyle: React.CSSProperties = { width: 120 };
+
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '8px 12px',
@@ -1607,6 +2035,21 @@ const thStyle: React.CSSProperties = {
   color: '#475569',
   fontSize: 12,
   fontWeight: 800,
+};
+
+const stickyActionBaseStyle: React.CSSProperties = {
+  position: 'sticky',
+  right: 0,
+  zIndex: 2,
+  background: '#fff',
+  boxShadow: '-8px 0 12px rgba(15, 23, 42, 0.08)',
+};
+
+const stickyActionThStyle: React.CSSProperties = {
+  ...thStyle,
+  ...stickyActionBaseStyle,
+  zIndex: 3,
+  background: '#f8fafc',
 };
 
 const tdStyle: React.CSSProperties = {
@@ -1617,17 +2060,26 @@ const tdStyle: React.CSSProperties = {
   lineHeight: 1.25,
 };
 
+const nowrapCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
 const factorValueCellStyle: React.CSSProperties = {
   ...tdStyle,
   color: '#065f46',
-  fontSize: 18,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontSize: 16,
   fontWeight: 900,
   letterSpacing: 0,
 };
 
 const factorNameCellStyle: React.CSSProperties = {
   ...tdStyle,
-  maxWidth: 180,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -1636,20 +2088,37 @@ const factorNameCellStyle: React.CSSProperties = {
 
 const sourceAuthorityCellStyle: React.CSSProperties = {
   ...tdStyle,
-  maxWidth: 150,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
   color: '#475569',
 };
 
+const truncateCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  maxWidth: 180,
+  minWidth: 160,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: '#475569',
+};
+
+const factorTypeCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  overflow: 'hidden',
+  whiteSpace: 'nowrap',
+};
+
 const actionsCellStyle: React.CSSProperties = {
   ...tdStyle,
+  ...stickyActionBaseStyle,
   display: 'flex',
   alignItems: 'center',
   gap: 6,
-  position: 'relative',
-  width: 108,
+  width: 120,
+  minWidth: 120,
+  maxWidth: 120,
 };
 
 const overflowMenuWrapperStyle: React.CSSProperties = {
