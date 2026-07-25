@@ -1,5 +1,6 @@
 // src/pages/Emissions.tsx
 import { useState } from "react";
+import { useAppDialog } from "../components/AppDialog";
 
 type FuelRecord = {
   id: string;
@@ -12,6 +13,7 @@ type FuelRecord = {
 };
 
 export default function Emissions() {
+  const { showError } = useAppDialog();
   // mock data as if already entered
   const [records, setRecords] = useState<FuelRecord[]>([
     {
@@ -78,11 +80,17 @@ export default function Emissions() {
   function handleSave() {
     // Basic validation idea: require facility, amount >0
     if (!draft.facility.trim()) {
-      alert("Facility is required.");
+      showError({
+        title: "Unable to save record",
+        message: "Facility is required.",
+      });
       return;
     }
     if (draft.amount <= 0) {
-      alert("Amount must be > 0.");
+      showError({
+        title: "Unable to save record",
+        message: "Amount must be greater than 0.",
+      });
       return;
     }
 

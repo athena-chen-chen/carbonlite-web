@@ -10,6 +10,7 @@ import {
   updateActivityData,
 } from '../services/activityData';
 import { getAllConversionFactors } from '../services/conversionFactors';
+import { AppDialogProvider } from '../components/AppDialog';
 import { ActivityDataPage } from './ActivityDataPage';
 
 vi.mock('../components/ExcelInputTable', () => ({
@@ -145,7 +146,9 @@ describe('ActivityDataPage delete flows', () => {
   function renderPage(initialEntry: any = '/data-records') {
     return render(
       <MemoryRouter initialEntries={[initialEntry]}>
-        <ActivityDataPage />
+        <AppDialogProvider>
+          <ActivityDataPage />
+        </AppDialogProvider>
       </MemoryRouter>,
     );
   }
@@ -162,13 +165,20 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));
   }
 
+  async function confirmDangerDialog(title: RegExp | string) {
+    const dialog = await screen.findByRole('dialog', { name: title });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Delete$/i }));
+  }
+
   it('navigates Add data to Input Data with manual entry focused', async () => {
     render(
       <MemoryRouter initialEntries={['/data-records']}>
-        <Routes>
-          <Route path="/data-records" element={<ActivityDataPage />} />
-          <Route path="/input-data" element={<InputDataRouteProbe />} />
-        </Routes>
+        <AppDialogProvider>
+          <Routes>
+            <Route path="/data-records" element={<ActivityDataPage />} />
+            <Route path="/input-data" element={<InputDataRouteProbe />} />
+          </Routes>
+        </AppDialogProvider>
       </MemoryRouter>,
     );
 
@@ -325,6 +335,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
     );
+    await confirmDangerDialog(/Delete selected records/i);
 
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
@@ -343,6 +354,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
     );
+    await confirmDangerDialog(/Delete selected records/i);
 
     expect(await screen.findByText(/No records were deleted/i)).toBeInTheDocument();
     expect(screen.getByText('Diesel')).toBeInTheDocument();
@@ -355,6 +367,7 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await clickFirstRowDeleteAction();
+    await confirmDangerDialog(/Delete activity record/i);
 
     expect(deleteActivityData).toHaveBeenCalledWith('activity-1');
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
@@ -373,6 +386,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(2\)/i }),
     );
+    await confirmDangerDialog(/Delete selected records/i);
 
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1', 'activity-2']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
@@ -393,6 +407,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
     );
+    await confirmDangerDialog(/Delete selected records/i);
 
     expect(await screen.findByText('You do not have permission to perform this action.')).toBeInTheDocument();
     expect(screen.getByText('Diesel')).toBeInTheDocument();
@@ -408,6 +423,7 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await clickFirstRowDeleteAction();
+    await confirmDangerDialog(/Delete activity record/i);
 
     expect(await screen.findByText('You do not have permission to perform this action.')).toBeInTheDocument();
     expect(screen.getByText('Diesel')).toBeInTheDocument();

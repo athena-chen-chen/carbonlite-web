@@ -52,6 +52,8 @@ import {
 } from './manual-entry/ManualEntryForm';
 import { StatusBadge } from './shared/StatusBadge';
 import { BulkProvinceToolbar } from './shared/BulkProvinceToolbar';
+import { useToast } from './Toast';
+import { useAppDialog } from './AppDialog';
 
 type Row = {
   id: string;
@@ -91,6 +93,8 @@ type Row = {
 
 export function ExcelInputTable({ onSuccess }: { onSuccess: () => void }) {
   const canImportRows = canImportActivityRecords(getCurrentUser());
+  const toast = useToast();
+  const { showError } = useAppDialog();
   const [rows, setRows] = useState<Row[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
@@ -138,7 +142,10 @@ useEffect(() => {
 
 function importFile(file: File) {
   if (!canImportRows) {
-    alert('You do not have permission to perform this action.');
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
     return;
   }
 
@@ -154,7 +161,10 @@ function importFile(file: File) {
     return;
   }
 
-  alert('Please drop or select a CSV or Excel file.');
+  showError({
+    title: 'Unsupported file type',
+    message: 'Please drop or select a CSV or Excel file.',
+  });
 }
 
 function handleDragEnter(event: React.DragEvent<HTMLDivElement>) {
@@ -190,7 +200,10 @@ function handleDrop(event: React.DragEvent<HTMLDivElement>) {
   const file = event.dataTransfer.files?.[0];
   if (!file) return;
   if (!canImportRows) {
-    alert('You do not have permission to perform this action.');
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
     return;
   }
 
@@ -468,7 +481,10 @@ function parseCSVText(text: string) {
   const lines = text.split(/\r?\n/).filter(Boolean);
 
   if (lines.length < 2) {
-    alert('CSV must include a header row and at least one data row.');
+    showError({
+      title: 'Unable to import CSV',
+      message: 'CSV must include a header row and at least one data row.',
+    });
     return;
   }
 
@@ -515,7 +531,10 @@ function parseCSVText(text: string) {
   const notesIndex = findColumnIndex(headers, ['notes', 'note']);
 
   if (activityTypeIndex === -1 || quantityIndex === -1) {
-    alert('CSV must include at least activity type and quantity columns.');
+    showError({
+      title: 'Unable to import CSV',
+      message: 'CSV must include at least activity type and quantity columns.',
+    });
     return;
   }
 
@@ -1246,7 +1265,10 @@ function updateRow(id: string, key: keyof Row, value: string) {
 
   function addRow() {
     if (!canImportRows) {
-      alert('You do not have permission to perform this action.');
+      showError({
+        title: 'Permission required',
+        message: 'You do not have permission to perform this action.',
+      });
       return;
     }
 
@@ -1255,7 +1277,10 @@ function updateRow(id: string, key: keyof Row, value: string) {
 
 function removeRow(id: string) {
   if (!canImportRows) {
-    alert('You do not have permission to perform this action.');
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
     return;
   }
 
@@ -1265,7 +1290,10 @@ function removeRow(id: string) {
 
 function clearSavedRowsFromForm() {
   if (!canImportRows) {
-    alert('You do not have permission to perform this action.');
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
     return;
   }
 
@@ -1374,7 +1402,10 @@ function getSourceTypeFromFile(file: File) {
 function handleImportCSV(event: React.ChangeEvent<HTMLInputElement>) {
   if (!canImportRows) {
     event.target.value = '';
-    alert('You do not have permission to perform this action.');
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
     return;
   }
 
@@ -1386,7 +1417,10 @@ function handleImportCSV(event: React.ChangeEvent<HTMLInputElement>) {
 function handleImportExcel(event: React.ChangeEvent<HTMLInputElement>) {
   if (!canImportRows) {
     event.target.value = '';
-    alert('You do not have permission to perform this action.');
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
     return;
   }
 
@@ -1439,7 +1473,10 @@ async function saveRow(row: Row) {
 
 async function saveAll() {
   if (!canImportRows) {
-    alert('You do not have permission to perform this action.');
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
     return;
   }
 
@@ -1459,7 +1496,10 @@ async function saveAll() {
         validatedRows.find((validatedRow) => validatedRow.id === row.id) ?? row,
       ),
     );
-    alert('Some rows have errors. Please fix highlighted rows before saving.');
+    showError({
+      title: 'Unable to save records',
+      message: 'Some rows have errors. Please fix highlighted rows before saving.',
+    });
     return;
   }
 
@@ -1491,9 +1531,13 @@ async function saveAll() {
       }),
     );
     onSuccess();
-    alert('Saved!');
+    toast.success('Saved.');
   } catch (err) {
-    alert(err instanceof Error ? err.message : 'Failed to save');
+    showError({
+      title: 'Unable to save records',
+      message: 'We could not save these records. Please review the information and try again.',
+      technicalDetails: err instanceof Error ? err.message : 'Failed to save',
+    });
   }
 }
 

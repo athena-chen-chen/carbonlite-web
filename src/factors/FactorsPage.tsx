@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import FactorForm, { FactorFormValues } from './FactorForm';
 import type { CarbonFactor } from '@carbonlite/shared-types';
+import { useAppDialog } from '../components/AppDialog';
 
 type Mode = { kind: 'idle' } |
             { kind: 'create' } |
             { kind: 'edit', row: CarbonFactor };
 
 export default function FactorsPage() {
+  const { confirm } = useAppDialog();
   const [rows, setRows] = useState<CarbonFactor[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<Mode>({ kind: 'idle' });
@@ -35,7 +37,13 @@ export default function FactorsPage() {
   };
 
   const onDelete = async (id: string) => {
-    if (!window.confirm('Delete this factor?')) return;
+    const shouldDelete = await confirm({
+      title: 'Delete factor',
+      message: 'Delete this factor? This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!shouldDelete) return;
     await api.delete(`/factors/${id}`);
     load();
   };

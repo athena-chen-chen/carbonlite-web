@@ -3,6 +3,8 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { API_BASE_URL } from '../config/api';
+import { useAppDialog } from '../components/AppDialog';
+import { useToast } from '../components/Toast';
 
 /* ------------------------- storage keys ------------------------- */
 const LS_ORG = 'cl_org_v1';
@@ -213,6 +215,7 @@ const orgSchema = z.object({
 type OrgForm = z.infer<typeof orgSchema>;
 
 function OrgTab({ org, onChange }: { org: OrgSettings; onChange: (o: OrgSettings) => void }) {
+  const toast = useToast();
   const { register, handleSubmit, formState: { errors }, reset } = useForm<OrgForm>({
     resolver: zodResolver(orgSchema),
     defaultValues: {
@@ -236,7 +239,7 @@ function OrgTab({ org, onChange }: { org: OrgSettings; onChange: (o: OrgSettings
 
   const onSubmit = (v: OrgForm) => {
     onChange({ ...org, ...v, logoUrl: v.logoUrl || undefined });
-    alert('Organization settings saved.');
+    toast.success('Organization settings saved.');
   };
 
   return (
@@ -292,13 +295,20 @@ const userSchema = z.object({
 type UserForm = z.infer<typeof userSchema>;
 
 function UsersTab({ users, onChange }: { users: UserRow[]; onChange: (u: UserRow[]) => void }) {
+  const { confirm } = useAppDialog();
   const [mode, setMode] = useState<{ kind: 'idle' } | { kind: 'create' } | { kind: 'edit'; row: UserRow }>({ kind: 'idle' });
 
   const startCreate = () => setMode({ kind: 'create' });
   const startEdit = (row: UserRow) => setMode({ kind: 'edit', row });
 
-  const onDelete = (id: string) => {
-    if (!window.confirm('Delete this user?')) return;
+  const onDelete = async (id: string) => {
+    const shouldDelete = await confirm({
+      title: 'Delete user',
+      message: 'Delete this user? This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!shouldDelete) return;
     onChange(users.filter(u => u.id !== id));
   };
 
@@ -456,6 +466,8 @@ function FlagsTab({ flags, onChange }: { flags: Flags; onChange: (f: Flags) => v
 
 /* ------------------------ Data Management ----------------------- */
 function DataTab({ emissionsCount, factorsCount }: { emissionsCount: number; factorsCount: number }) {
+  const { confirm, showError } = useAppDialog();
+  const toast = useToast();
   const exportJson = (key: string, filename: string) => {
     const raw = localStorage.getItem(key) ?? '[]';
     download(filename, raw, 'application/json;charset=utf-8');
@@ -468,17 +480,26 @@ function DataTab({ emissionsCount, factorsCount }: { emissionsCount: number; fac
     try {
       JSON.parse(text); // validate shape loosely
       localStorage.setItem(key, text);
-      alert('Import successful.');
+      toast.success('Import successful.');
       window.location.reload();
     } catch {
-      alert('Invalid JSON.');
+      showError({
+        title: 'Unable to import JSON',
+        message: 'The selected file is not valid JSON.',
+      });
     }
   };
 
-  const clearData = (key: string, label: string) => {
-    if (!window.confirm(`Clear ${label}? This cannot be undone.`)) return;
+  const clearData = async (key: string, label: string) => {
+    const shouldClear = await confirm({
+      title: `Clear ${label}`,
+      message: `Clear ${label}? This cannot be undone.`,
+      confirmLabel: 'Clear',
+      variant: 'danger',
+    });
+    if (!shouldClear) return;
     localStorage.removeItem(key);
-    alert('Cleared.');
+    toast.success('Cleared.');
     window.location.reload();
   };
 
@@ -515,6 +536,7 @@ const runtimeSchema = z.object({
 type RuntimeForm = z.infer<typeof runtimeSchema>;
 
 function SystemTab({ runtime, onChange }: { runtime: RuntimeConfig; onChange: (r: RuntimeConfig) => void }) {
+  const toast = useToast();
   const { register, handleSubmit, formState: { errors } } = useForm<RuntimeForm>({
     resolver: zodResolver(runtimeSchema),
     defaultValues: runtime,
@@ -522,7 +544,7 @@ function SystemTab({ runtime, onChange }: { runtime: RuntimeConfig; onChange: (r
 
   const onSubmit = (v: RuntimeForm) => {
     onChange(v);
-    alert('Runtime config saved to localStorage.');
+    toast.success('Runtime config saved to localStorage.');
   };
 
   return (

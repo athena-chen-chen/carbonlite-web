@@ -1,0 +1,11 @@
+activityType,recordDate,quantity,unit,country,province,sourceReference,notes
+Electricity,2026-07-20,12500,kWh,Canada,Alberta,pilot-golden-dataset.csv,Alberta electricity usage
+Electricity,2026-07-20,100,kWh,Canada,British Columbia,pilot-golden-dataset.csv,British Columbia electricity usage
+Electricity,2026-07-20,1000,kWh,Canada,Ontario,pilot-golden-dataset.csv,Ontario electricity usage
+Natural Gas,2026-07-20,1000,m3,Canada,,pilot-golden-dataset.csv,Building natural gas usage
+Gasoline,2026-07-20,500,liters,Canada,,pilot-golden-dataset.csv,Fleet gasoline usage
+Diesel,2026-07-20,100,liters,Canada,,pilot-golden-dataset.csv,Fleet diesel usage
+Air Travel,2026-07-20,5000,km,Canada,,pilot-golden-dataset.csv,Business travel flight distance
+Hotel,2026-07-20,10,nights,Canada,,pilot-golden-dataset.csv,Business travel hotel stays
+Water,2026-07-20,100,m3,Canada,,pilot-golden-dataset.csv,Water tracked only
+Electricity,2026-07-20,50,MWh,Canada,Alberta,pilot-golden-dataset.csv,Alberta electricity usage in MWh

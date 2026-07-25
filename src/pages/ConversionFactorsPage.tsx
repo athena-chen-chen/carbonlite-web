@@ -27,6 +27,7 @@ import {
   formatCredibilityLabel,
   getFactorCredibilityBadges,
 } from '../utils/factorCredibility';
+import { useAppDialog } from '../components/AppDialog';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -445,6 +446,7 @@ function getSourceLinkLabel(sourceUrl?: string | null, item?: ConversionFactorIt
 
 export function ConversionFactorsPage() {
   const location = useLocation();
+  const { confirm } = useAppDialog();
   const prefillFactor = (location.state as ConversionFactorRouteState)?.prefillFactor;
   const currentUser = getCurrentUser();
   const organizationName = getOrganizationName(currentUser);
@@ -799,9 +801,12 @@ export function ConversionFactorsPage() {
 
     if (isSystemFactor(item)) return;
 
-    const shouldDelete = window.confirm(
-      `Delete custom factor "${item.name}"?`,
-    );
+    const shouldDelete = await confirm({
+      title: 'Delete custom factor',
+      message: `Delete custom factor "${item.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
 
     if (!shouldDelete) return;
 
@@ -1413,9 +1418,12 @@ export function ConversionFactorsPage() {
               <col style={factorValueColStyle} />
               <col style={factorInputUnitColStyle} />
               <col style={factorSourceAuthorityColStyle} />
+              <col style={factorSourceDocumentColStyle} />
               <col style={factorSourceYearColStyle} />
+              <col style={factorVersionColStyle} />
               <col style={factorConfidenceColStyle} />
               <col style={factorVerificationColStyle} />
+              <col style={factorAssumptionsColStyle} />
               <col style={factorTypeColStyle} />
               <col style={factorActionsColStyle} />
             </colgroup>
@@ -1462,7 +1470,7 @@ export function ConversionFactorsPage() {
                           {formatFactorValueDisplay(item)}
                         </td>
                         <td style={nowrapCellStyle}>{item.unit}</td>
-                        <td style={sourceAuthorityCellStyle}>
+                        <td style={sourceAuthorityCellStyle} title={traceability.sourceAuthority || undefined}>
                           {formatTableSourceAuthority(traceability.sourceAuthority)}
                         </td>
                         <td style={truncateCellStyle} title={traceability.sourceDocument || undefined}>
@@ -1470,8 +1478,12 @@ export function ConversionFactorsPage() {
                         </td>
                         <td style={nowrapCellStyle}>{traceability.sourceYear ?? '-'}</td>
                         <td style={nowrapCellStyle}>{traceability.factorVersion || '-'}</td>
-                        <td style={nowrapCellStyle}>{traceability.confidenceLevel || '-'}</td>
-                        <td style={nowrapCellStyle}>{traceability.verificationStatus || '-'}</td>
+                        <td style={truncateCellStyle} title={traceability.confidenceLevel || undefined}>
+                          {traceability.confidenceLevel || '-'}
+                        </td>
+                        <td style={truncateCellStyle} title={traceability.verificationStatus || undefined}>
+                          {traceability.verificationStatus || '-'}
+                        </td>
                         <td style={truncateCellStyle} title={traceability.assumptions || undefined}>
                           {traceability.assumptions || '-'}
                         </td>
@@ -2010,46 +2022,57 @@ const factorTableWrapStyle: React.CSSProperties = {
 };
 
 const factorTableStyle: React.CSSProperties = {
-  width: '100%',
-  minWidth: 1640,
+  width: 'max-content',
+  minWidth: 2560,
   borderCollapse: 'collapse',
   tableLayout: 'fixed',
 };
 
-const factorActivityTypeColStyle: React.CSSProperties = { width: 120 };
-const factorNameColStyle: React.CSSProperties = { width: 220 };
-const factorJurisdictionColStyle: React.CSSProperties = { width: 140 };
-const factorValueColStyle: React.CSSProperties = { width: 160 };
-const factorInputUnitColStyle: React.CSSProperties = { width: 100 };
-const factorSourceAuthorityColStyle: React.CSSProperties = { width: 130 };
-const factorSourceYearColStyle: React.CSSProperties = { width: 100 };
-const factorConfidenceColStyle: React.CSSProperties = { width: 160 };
-const factorVerificationColStyle: React.CSSProperties = { width: 160 };
+const factorActivityTypeColStyle: React.CSSProperties = { width: 180 };
+const factorNameColStyle: React.CSSProperties = { width: 240 };
+const factorJurisdictionColStyle: React.CSSProperties = { width: 180 };
+const factorValueColStyle: React.CSSProperties = { width: 120 };
+const factorInputUnitColStyle: React.CSSProperties = { width: 150 };
+const factorSourceAuthorityColStyle: React.CSSProperties = { width: 180 };
+const factorSourceDocumentColStyle: React.CSSProperties = { width: 220 };
+const factorSourceYearColStyle: React.CSSProperties = { width: 120 };
+const factorVersionColStyle: React.CSSProperties = { width: 120 };
+const factorConfidenceColStyle: React.CSSProperties = { width: 220 };
+const factorVerificationColStyle: React.CSSProperties = { width: 240 };
+const factorAssumptionsColStyle: React.CSSProperties = { width: 260 };
 const factorTypeColStyle: React.CSSProperties = { width: 170 };
-const factorActionsColStyle: React.CSSProperties = { width: 120 };
+const factorActionsColStyle: React.CSSProperties = { width: 160 };
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
-  padding: '8px 12px',
+  padding: '10px 12px',
   borderBottom: '1px solid #ddd',
   color: '#475569',
   fontSize: 12,
   fontWeight: 800,
+  lineHeight: 1.25,
+  whiteSpace: 'normal',
+  overflowWrap: 'break-word',
 };
 
 const stickyActionBaseStyle: React.CSSProperties = {
   position: 'sticky',
   right: 0,
-  zIndex: 2,
+  zIndex: 4,
   background: '#fff',
+  borderLeft: '1px solid #e2e8f0',
   boxShadow: '-8px 0 12px rgba(15, 23, 42, 0.08)',
+  width: 160,
+  minWidth: 160,
+  maxWidth: 160,
 };
 
 const stickyActionThStyle: React.CSSProperties = {
   ...thStyle,
   ...stickyActionBaseStyle,
-  zIndex: 3,
+  zIndex: 5,
   background: '#f8fafc',
+  textAlign: 'center',
 };
 
 const tdStyle: React.CSSProperties = {
@@ -2096,8 +2119,6 @@ const sourceAuthorityCellStyle: React.CSSProperties = {
 
 const truncateCellStyle: React.CSSProperties = {
   ...tdStyle,
-  maxWidth: 180,
-  minWidth: 160,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -2115,10 +2136,8 @@ const actionsCellStyle: React.CSSProperties = {
   ...stickyActionBaseStyle,
   display: 'flex',
   alignItems: 'center',
-  gap: 6,
-  width: 120,
-  minWidth: 120,
-  maxWidth: 120,
+  justifyContent: 'center',
+  gap: 8,
 };
 
 const overflowMenuWrapperStyle: React.CSSProperties = {

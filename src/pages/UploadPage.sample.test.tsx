@@ -10,6 +10,13 @@ vi.mock('../components/ExcelInputTable', () => ({
   ExcelInputTable: () => <div>Activity Rows</div>,
 }));
 
+vi.mock('../components/AppDialog', () => ({
+  useAppDialog: () => ({
+    confirm: vi.fn(async () => true),
+    showError: vi.fn(),
+  }),
+}));
+
 vi.mock('../services/documents', () => ({
   deleteDocument: vi.fn(),
   getDocuments: vi.fn(() =>

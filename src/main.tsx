@@ -5,6 +5,7 @@ import App from './app/app';
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from './components/Toast';
+import { AppDialogProvider } from './components/AppDialog';
 import { AuthProvider } from './auth/AuthProvider'; // from earlier step
 import { AppErrorFallback } from './components/AppErrorFallback';
 import { initSentry, SentryErrorBoundary } from './sentry';
@@ -24,7 +25,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <ToastProvider>
-            <App />
+            <AppDialogProvider>
+              <App />
+            </AppDialogProvider>
           </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>

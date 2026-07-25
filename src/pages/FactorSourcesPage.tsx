@@ -4,6 +4,7 @@ import {
   FactorSource,
   getFactorSources,
 } from '../services/factorSources';
+import { useAppDialog } from '../components/AppDialog';
 
 const pageStyle: React.CSSProperties = {
   maxWidth: 1180,
@@ -83,6 +84,7 @@ function badgeStyle(source: FactorSource): React.CSSProperties {
 }
 
 export function FactorSourcesPage() {
+  const { confirm } = useAppDialog();
   const [sources, setSources] = useState<FactorSource[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -112,9 +114,12 @@ export function FactorSourcesPage() {
   }
 
   async function handleArchive(source: FactorSource) {
-    const confirmed = window.confirm(
-      `Archive ${source.sourceShortName || source.sourceAuthority}? Existing historical factor links will remain available.`,
-    );
+    const confirmed = await confirm({
+      title: 'Archive factor source',
+      message: `Archive ${source.sourceShortName || source.sourceAuthority}? Existing historical factor links will remain available.`,
+      confirmLabel: 'Archive',
+      variant: 'danger',
+    });
     if (!confirmed) return;
 
     setArchivingId(source.id);

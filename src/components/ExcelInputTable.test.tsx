@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ExcelInputTable } from './ExcelInputTable';
+import { AppDialogProvider } from './AppDialog';
+import { ToastProvider } from './Toast';
 import { createActivityData, updateActivityData } from '../services/activityData';
 import { getAllConversionFactors } from '../services/conversionFactors';
 import { getFacilities } from '../services/facilities';
@@ -197,7 +199,13 @@ describe('ExcelInputTable empty activity row UX', () => {
   });
 
   function renderTable() {
-    return render(<ExcelInputTable onSuccess={vi.fn()} />);
+    return render(
+      <ToastProvider>
+        <AppDialogProvider>
+          <ExcelInputTable onSuccess={vi.fn()} />
+        </AppDialogProvider>
+      </ToastProvider>,
+    );
   }
 
   async function getActivityRow(rowNumber: number) {
@@ -843,7 +851,13 @@ describe('ExcelInputTable empty activity row UX', () => {
 
   it('saves a single row from the row action', async () => {
     const onSuccess = vi.fn();
-    render(<ExcelInputTable onSuccess={onSuccess} />);
+    render(
+      <ToastProvider>
+        <AppDialogProvider>
+          <ExcelInputTable onSuccess={onSuccess} />
+        </AppDialogProvider>
+      </ToastProvider>,
+    );
 
     const row = await addValidDieselRow('100');
     await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
@@ -904,6 +918,20 @@ describe('ExcelInputTable empty activity row UX', () => {
         quantity: 200,
       }),
     );
+  });
+
+  it('shows a centered error dialog when Save All fails', async () => {
+    vi.mocked(createActivityData).mockRejectedValueOnce(new Error('API unavailable'));
+    renderTable();
+
+    await addValidDieselRow('100');
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Unable to save records' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(within(dialog).getByText('We could not save these records. Please review the information and try again.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Technical details')).toBeInTheDocument();
+    expect(window.alert).not.toHaveBeenCalled();
   });
 
   it('removes an unsaved row', async () => {

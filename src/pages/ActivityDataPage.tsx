@@ -24,6 +24,7 @@ import {
 import { EditRecordPanel } from '../components/data-records/EditRecordPanel';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { BulkProvinceToolbar } from '../components/shared/BulkProvinceToolbar';
+import { useAppDialog } from '../components/AppDialog';
 import {
   activityTypes,
 } from '../constants/activityTypes';
@@ -127,6 +128,7 @@ export function ActivityDataPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { confirm, showError } = useAppDialog();
   const [items, setItems] = useState<ActivityDataItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1028,7 +1030,13 @@ function formatCalculatedEmissionValue(value: unknown) {
 
   if (!selectedIds.length) return;
 
-  if (!confirm(`Delete ${selectedIds.length} selected record(s)?`)) return;
+  const shouldDelete = await confirm({
+    title: 'Delete selected records',
+    message: `Delete ${selectedIds.length} selected record(s)? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    variant: 'danger',
+  });
+  if (!shouldDelete) return;
 
   const idsToDelete = [...selectedIds];
   setBulkDeleting(true);
@@ -1267,7 +1275,13 @@ async function handleDelete(row: ActivityDataItem) {
   }
 
   setOpenActionMenuId(null);
-  if (!confirm('Delete this record?')) return;
+  const shouldDelete = await confirm({
+    title: 'Delete activity record',
+    message: 'Delete this record? This cannot be undone.',
+    confirmLabel: 'Delete',
+    variant: 'danger',
+  });
+  if (!shouldDelete) return;
 
   setError(null);
   setSuccessMessage(null);
@@ -1333,8 +1347,12 @@ async function handleUndoDelete() {
 
     setLastDeleted(null);
     await loadItems();
-  } catch {
-    alert('Undo failed');
+  } catch (err) {
+    showError({
+      title: 'Unable to undo delete',
+      message: 'We could not restore this record. Please try again.',
+      technicalDetails: err instanceof Error ? err.message : undefined,
+    });
   }
 }
 

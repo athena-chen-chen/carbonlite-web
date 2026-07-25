@@ -28,6 +28,13 @@ vi.mock('../services/auth', () => ({
   getOrganizationName: vi.fn(() => 'KACH CANADA LTD.'),
 }));
 
+vi.mock('../components/AppDialog', () => ({
+  useAppDialog: () => ({
+    confirm: vi.fn(async () => true),
+    showError: vi.fn(),
+  }),
+}));
+
 const baseFactor = {
   id: 'factor-1',
   organizationId: null,
@@ -232,7 +239,7 @@ describe('ConversionFactorsPage traceability', () => {
       totalPages: 1,
     });
 
-    render(
+    const { container } = render(
       <MemoryRouter>
         <ConversionFactorsPage />
       </MemoryRouter>,
@@ -244,6 +251,12 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByRole('columnheader', { name: 'Jurisdiction' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Verified' })).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-value-factor-1')).toHaveTextContent('2.68');
+    expect(container.querySelectorAll('col')).toHaveLength(14);
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveStyle({
+      position: 'sticky',
+      right: '0px',
+      width: '160px',
+    });
 
     await userEvent.click(screen.getByRole('button', { name: 'View' }));
 

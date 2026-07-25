@@ -53,6 +53,7 @@ import {
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import { inferDefaultScope } from '../utils/scopeClassification';
 import { ExcelInputTable } from '../components/ExcelInputTable';
+import { useAppDialog } from '../components/AppDialog';
 import {
   UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE,
   isSupportedPilotProvince,
@@ -767,6 +768,7 @@ export function getDocumentActionModel(input: {
 
 export function UploadPage() {
   const location = useLocation();
+  const { confirm } = useAppDialog();
   const [activeInputMethod, setActiveInputMethod] = useState<InputMethod>(
     () => getRouteInputMethod(location.state) ?? 'documents',
   );
@@ -1327,9 +1329,12 @@ ${sampleRows.join('\n')}`,
                 uploadError.existingDocument?.fileName || file.name,
               createdAt: uploadError.existingDocument?.createdAt,
             });
-            const keepSeparateCopy = window.confirm(
-              `${duplicateMessage}\n\nThis file appears to have already been uploaded. Select OK to keep it as a separate copy, or Cancel to prevent the duplicate.`,
-            );
+            const keepSeparateCopy = await confirm({
+              title: 'Duplicate document detected',
+              message: `${duplicateMessage} This file appears to have already been uploaded. Keep it as a separate copy?`,
+              confirmLabel: 'Keep separate copy',
+              cancelLabel: 'Cancel upload',
+            });
 
             if (!keepSeparateCopy) {
               setError(`${duplicateMessage} Duplicate upload cancelled.`);
@@ -1925,9 +1930,12 @@ ${sampleRows.join('\n')}`,
     ).length;
 
     if (missingDateCount > 0) {
-      const shouldImport = window.confirm(
-        `${missingDateCount} record${missingDateCount === 1 ? ' is' : 's are'} missing dates. Import anyway?`,
-      );
+      const shouldImport = await confirm({
+        title: 'Import records with missing dates',
+        message: `${missingDateCount} record${missingDateCount === 1 ? ' is' : 's are'} missing dates. Import anyway?`,
+        confirmLabel: 'Import anyway',
+        cancelLabel: 'Review dates',
+      });
 
       if (!shouldImport) {
         setError('Import cancelled. You can edit missing dates before importing.');
