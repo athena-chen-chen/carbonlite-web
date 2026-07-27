@@ -59,6 +59,10 @@ describe('ActivityDataPage delete flows', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+    );
     class ResizeObserverMock {
       callback: ResizeObserverCallback;
 
@@ -247,7 +251,7 @@ describe('ActivityDataPage delete flows', () => {
   it('requires admins to type RESET DEMO DATA before confirming demo data reset', async () => {
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN' }),
+      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
     );
     localStorage.setItem('carbonlite-upload-review-draft', 'stale');
     const resetEventListener = vi.fn();

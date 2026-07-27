@@ -1,10 +1,13 @@
 import { FormEvent, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { getContactEmail, isPublicSignupEnabled } from '../config/api';
 
 export function LoginPage() {
   const { isAuthenticated, login } = useAuth();
   const navigate = useNavigate();
+  const publicSignupEnabled = isPublicSignupEnabled();
+  const contactEmail = getContactEmail();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(() => {
@@ -34,7 +37,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthPageShell title="Log in to CarbonLite AI" subtitle="Access uploads, records, factors, metrics, and reports.">
+    <AuthPageShell title="Log in to CarbonLite" subtitle="Access uploads, records, factors, metrics, and reports.">
       <form onSubmit={handleSubmit} style={formStyle}>
         <label style={labelStyle}>
           Email
@@ -66,9 +69,22 @@ export function LoginPage() {
           {submitting ? 'Logging in...' : 'Log In'}
         </button>
 
-        <p style={footerTextStyle}>
-          New to CarbonLite? <Link to="/register">Create an account</Link>
-        </p>
+        {publicSignupEnabled ? (
+          <p style={footerTextStyle}>
+            New to CarbonLite? <Link to="/register">Create an account</Link>
+          </p>
+        ) : (
+          <p style={inviteOnlyTextStyle}>
+            CarbonLite pilot access is currently invite-only.
+            <br />
+            <br />
+            If you are a pilot reviewer or would like to request access, please contact us at{' '}
+            <a href={`mailto:${contactEmail}`} style={contactLinkStyle}>
+              {contactEmail}
+            </a>
+            .
+          </p>
+        )}
       </form>
     </AuthPageShell>
   );
@@ -163,4 +179,14 @@ const footerTextStyle: React.CSSProperties = {
   margin: '4px 0 0',
   color: '#64748b',
   textAlign: 'center',
+};
+
+const inviteOnlyTextStyle: React.CSSProperties = {
+  ...footerTextStyle,
+  lineHeight: 1.5,
+};
+
+const contactLinkStyle: React.CSSProperties = {
+  color: '#047857',
+  fontWeight: 800,
 };

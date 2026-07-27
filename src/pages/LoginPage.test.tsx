@@ -19,6 +19,10 @@ function renderLogin() {
 }
 
 describe('LoginPage', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('logs in successfully and redirects to upload', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
@@ -48,6 +52,43 @@ describe('LoginPage', () => {
           password: 'Password123!',
         }),
       }),
+    );
+  });
+
+  it('does not show public signup links when pilot access is invite-only', () => {
+    vi.stubEnv('VITE_CONTACT_EMAIL', 'help@carbonliteapp.ca');
+
+    renderLogin();
+
+    expect(screen.getByRole('heading', { name: 'Log in to CarbonLite' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /CarbonLite AI/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /create an account/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/pilot access is currently invite-only/i)).toBeInTheDocument();
+    expect(screen.getByText(/if you are a pilot reviewer/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'help@carbonliteapp.ca' })).toHaveAttribute(
+      'href',
+      'mailto:help@carbonliteapp.ca',
+    );
+  });
+
+  it('falls back to the CarbonLite contact email when no contact email is configured', () => {
+    renderLogin();
+
+    expect(screen.getByRole('link', { name: 'carbonliteai@gmail.com' })).toHaveAttribute(
+      'href',
+      'mailto:carbonliteai@gmail.com',
+    );
+  });
+
+  it('shows create account link only when local public signup is explicitly enabled', () => {
+    vi.stubEnv('VITE_APP_ENV', 'local');
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true');
+
+    renderLogin();
+
+    expect(screen.getByRole('link', { name: /create an account/i })).toHaveAttribute(
+      'href',
+      '/register',
     );
   });
 

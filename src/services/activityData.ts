@@ -1,5 +1,5 @@
 import { ApiError, apiFetch } from './api';
-import { clampApiPageSize } from '../config/api';
+import { clampApiPageSize, isDemoResetAvailable } from '../config/api';
 import { track } from './analytics.service';
 import { formatDateOnly } from '../utils/dateOnly';
 import {
@@ -238,23 +238,24 @@ export async function getActivityDataList(params?: {
   const response = await apiFetch<ActivityDataListResponse>(path);
   const organizationId = getOrganizationId(getCurrentUser());
 
-  if (!organizationId) return response;
+  if (!organizationId) {
+    return {
+      ...response,
+      items: [],
+      total: 0,
+      totalPages: 1,
+    };
+  }
 
   const items = (response.items ?? []).filter(
-    (item) => !item.organizationId || item.organizationId === organizationId,
+    (item) => item.organizationId === organizationId,
   );
 
   return {
     ...response,
     items,
     total: Math.min(Number(response.total ?? items.length), items.length),
-    totalPages: Math.max(
-      1,
-      Math.ceil(
-        items.length /
-          Math.max(1, Number(response.pageSize ?? (items.length || 1))),
-      ),
-    ),
+    totalPages: Math.max(1, Number(response.totalPages ?? 1)),
   };
 }
 
@@ -291,7 +292,7 @@ export async function getActivityDataById(id: string) {
   const item = await apiFetch<ActivityDataItem>(`/activity-data/${id}`);
   const organizationId = getOrganizationId(getCurrentUser());
 
-  if (organizationId && item.organizationId && item.organizationId !== organizationId) {
+  if (!organizationId || item.organizationId !== organizationId) {
     throw new Error('You do not have permission to perform this action.');
   }
 
@@ -442,6 +443,7 @@ export async function clearActivityRecordsForCurrentCompany() {
 
 export async function resetDemoDataForCurrentCompany() {
   requirePermission(canClearActivityRecords(getCurrentUser()));
+  requirePermission(isDemoResetAvailable());
 
   try {
     const response = await apiFetch<ResetDemoDataResponse>(

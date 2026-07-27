@@ -3,6 +3,7 @@ import {
   DuplicateDocumentError,
   calculateFileSha256,
   deleteDocument,
+  getDocuments,
   uploadDocument,
 } from './documents';
 
@@ -10,6 +11,10 @@ describe('deleteDocument', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
   });
 
   it('deletes the current user document with an authenticated request', async () => {
@@ -85,6 +90,10 @@ describe('uploadDocument duplicate protection', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
     vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (_algorithm, data) => {
       const input = new Uint8Array(
         data instanceof ArrayBuffer
@@ -165,5 +174,95 @@ describe('uploadDocument duplicate protection', () => {
     const formData = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData;
     expect(formData.get('allowDuplicate')).toBe('true');
     expect(String(formData.get('fileHash'))).toMatch(/^[a-f0-9]{64}$/);
+  });
+});
+
+describe('getDocuments', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('filters uploaded documents by current organization when tenant metadata is present', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'viewer@example.com', role: 'VIEWER', organizationId: 'org-1' }),
+    );
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: 'doc-1',
+              organizationId: 'org-1',
+              fileName: 'org-1.xlsx',
+              fileUrl: '',
+              type: 'SPREADSHEET',
+              status: 'UPLOADED',
+              createdAt: '2026-07-20T00:00:00.000Z',
+              updatedAt: '2026-07-20T00:00:00.000Z',
+            },
+            {
+              id: 'doc-2',
+              organizationId: 'org-2',
+              fileName: 'org-2.xlsx',
+              fileUrl: '',
+              type: 'SPREADSHEET',
+              status: 'UPLOADED',
+              createdAt: '2026-07-20T00:00:00.000Z',
+              updatedAt: '2026-07-20T00:00:00.000Z',
+            },
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 2,
+          totalPages: 1,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(getDocuments()).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: 'doc-1', organizationId: 'org-1' })],
+      total: 1,
+    });
+  });
+
+  it('returns no uploaded documents without an authenticated company context', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: 'doc-1',
+              organizationId: 'org-1',
+              fileName: 'org-1.xlsx',
+              fileUrl: '',
+              type: 'SPREADSHEET',
+              status: 'UPLOADED',
+              createdAt: '2026-07-20T00:00:00.000Z',
+              updatedAt: '2026-07-20T00:00:00.000Z',
+            },
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(getDocuments()).resolves.toMatchObject({
+      items: [],
+      total: 0,
+      totalPages: 1,
+    });
   });
 });

@@ -4,7 +4,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { UploadPage } from './UploadPage';
 import { getDocuments } from '../services/documents';
 import { ApiError } from '../services/api';
-import { extractDocument, getDocumentExtraction } from '../services/documentExtraction';
+import {
+  confirmDocumentImport,
+  extractDocument,
+  getDocumentExtraction,
+} from '../services/documentExtraction';
+import { calculateMetrics } from '../services/metrics';
 
 vi.mock('../components/ExcelInputTable', () => ({
   ExcelInputTable: () => <div>Activity Rows</div>,
@@ -41,6 +46,10 @@ vi.mock('../services/metrics', () => ({
   calculateMetrics: vi.fn(),
 }));
 
+vi.mock('../services/conversionFactors', () => ({
+  getAllConversionFactors: vi.fn(() => Promise.resolve([])),
+}));
+
 describe('UploadPage sample workflow', () => {
   const failedDocument = {
     id: 'doc-1',
@@ -55,6 +64,10 @@ describe('UploadPage sample workflow', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
     Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: vi.fn(),
@@ -62,6 +75,8 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(getDocuments).mockReset();
     vi.mocked(extractDocument).mockReset();
     vi.mocked(getDocumentExtraction).mockReset();
+    vi.mocked(confirmDocumentImport).mockReset();
+    vi.mocked(calculateMetrics).mockReset();
     vi.mocked(getDocuments).mockResolvedValue({
       items: [],
       page: 1,
@@ -69,6 +84,15 @@ describe('UploadPage sample workflow', () => {
       total: 0,
       totalPages: 1,
     });
+    vi.mocked(confirmDocumentImport).mockImplementation(
+      async (_documentId, activities) => ({
+        count: activities.length,
+        createdIds: activities.map((_, index) => `created-${index + 1}`),
+        importBatchId: 'document-import-batch',
+        alreadyImported: false,
+      }),
+    );
+    vi.mocked(calculateMetrics).mockResolvedValue({ count: 0, items: [] });
   });
 
   it('clears Input Review documents when demo data reset is broadcast', async () => {
@@ -104,6 +128,53 @@ describe('UploadPage sample workflow', () => {
     expect(await screen.findByText('No documents waiting for review.')).toBeInTheDocument();
     expect(screen.getByText('Upload a file or add records manually to begin.')).toBeInTheDocument();
     expect(screen.queryByText('stale-import.xlsx')).not.toBeInTheDocument();
+  });
+
+  it('renders the Input Review row action menu in a fixed portal', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          id: 'doc-actions',
+          fileName: 'pilot-import.xlsx',
+          fileUrl: '',
+          type: 'SPREADSHEET',
+          status: 'IMPORTED',
+          fileSize: 100,
+          createdAt: '2026-07-20T00:00:00.000Z',
+          updatedAt: '2026-07-20T00:00:00.000Z',
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    const menuButton = await screen.findByRole('button', {
+      name: /Open row actions for pilot-import.xlsx/i,
+    });
+
+    await userEvent.click(menuButton);
+
+    const menu = screen.getByRole('menu', {
+      name: /More actions for pilot-import.xlsx/i,
+    });
+    expect(menu).toBeInTheDocument();
+    expect(menu).toHaveStyle({ position: 'fixed', zIndex: '1000' });
+    expect(within(menu).getByRole('menuitem', { name: 'View' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
+
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
   });
 
   it('opens Manual Entry when route state requests manual input focus', async () => {
@@ -357,6 +428,237 @@ describe('UploadPage sample workflow', () => {
     expect(within(row!).queryByText('Province required')).not.toBeInTheDocument();
     expect(within(row!).getByRole('checkbox')).not.toBeChecked();
     expect(within(row!).getByRole('checkbox')).toBeDisabled();
+  });
+
+  it('keeps unsupported activity rows readable in the import review table', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'custom-doc',
+          fileName: 'custom-activity.csv',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'custom-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'CUSTOM',
+          amount: '25',
+          unit: 'widgets',
+          country: 'Canada',
+          province: '',
+          startDate: '2026-07-25',
+          dateEstimated: true,
+          notes: 'Unsupported activity should remain readable during review.',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    const unsupportedSelect = screen.getByDisplayValue('Custom (Unsupported)');
+    const row = unsupportedSelect.closest('tr');
+    expect(row).toBeTruthy();
+    expect(within(row!).getByText('Unsupported Activity', { exact: true })).toHaveAttribute(
+      'title',
+      'Unsupported Activity Type',
+    );
+    expect(within(row!).getAllByText('Unsupported Activity Type').length).toBeGreaterThan(0);
+    expect(unsupportedSelect).toHaveAttribute(
+      'title',
+      'Unsupported activity type: CUSTOM',
+    );
+    expect(within(row!).getByText('Date estimated: 2026-07-25')).toBeInTheDocument();
+
+    const table = row!.closest('table');
+    expect(table).toHaveStyle({ minWidth: '2500px', tableLayout: 'fixed' });
+    const columns = Array.from(table!.querySelectorAll('col'));
+    expect(columns[1]).toHaveStyle({ width: '220px' });
+    expect(columns[2]).toHaveStyle({ width: '280px' });
+    expect(columns[3]).toHaveStyle({ width: '220px' });
+    expect(within(row!).getByRole('checkbox')).not.toBeChecked();
+    expect(within(row!).getByRole('checkbox')).toBeDisabled();
+  });
+
+  it('imports selected valid rows while leaving invalid draft rows for review', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'mixed-doc',
+          fileName: 'mixed-activity-records.csv',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'mixed-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        { activityType: 'Electricity', amount: 12500, unit: 'kWh', country: 'Canada', province: 'AB', startDate: '2026-07-20' },
+        { activityType: 'Electricity', amount: 100, unit: 'kWh', country: 'Canada', province: 'BC', startDate: '2026-07-20' },
+        { activityType: 'Electricity', amount: 1000, unit: 'kWh', country: 'Canada', province: 'ON', startDate: '2026-07-20' },
+        { activityType: 'Natural Gas', amount: 1000, unit: 'm3', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'Gasoline', amount: 500, unit: 'liters', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'Diesel', amount: 100, unit: 'liters', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'Air Travel', amount: 5000, unit: 'km', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'Hotel', amount: 10, unit: 'nights', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'Shipping', amount: 50, unit: 'kg', country: 'Canada', startDate: '2026-07-20', dateEstimated: true },
+        { activityType: 'Water', amount: 100, unit: 'm3', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'CUSTOM', amount: 25, unit: 'widgets', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'Electricity', amount: 500, unit: 'kWh', country: 'Canada', province: '', startDate: '2026-07-20' },
+        { activityType: 'Electricity', amount: 700, unit: 'kWh', country: 'Canada', province: 'SK', startDate: '2026-07-20' },
+      ],
+      sourceRowCount: 13,
+      extractedRowCount: 13,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    expect(screen.getByText('Extracted rows: 13')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Ready: 9 · Tracked metrics: 1 · Requires review: 3 · Selected for import: 10',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('9 ready records and 1 tracked metric selected. 3 rows will not be imported.'),
+    ).toBeInTheDocument();
+
+    const checkboxes = screen.getAllByLabelText(/Select preview row/i) as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(13);
+    expect(checkboxes.filter((checkbox) => checkbox.checked)).toHaveLength(10);
+    expect(checkboxes.slice(10).every((checkbox) => checkbox.disabled && !checkbox.checked)).toBe(true);
+
+    const confirmButton = screen.getByRole('button', { name: 'Confirm Import' });
+    expect(confirmButton).toBeEnabled();
+
+    await userEvent.click(screen.getByRole('button', { name: /Clear All/i }));
+    expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeDisabled();
+    expect(screen.getByText('Select at least one Ready record to import.')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Select All/i }));
+    const selectedAfterSelectAll = screen.getAllByLabelText(/Select preview row/i) as HTMLInputElement[];
+    expect(selectedAfterSelectAll.filter((checkbox) => checkbox.checked)).toHaveLength(10);
+    expect(selectedAfterSelectAll.slice(10).every((checkbox) => checkbox.disabled && !checkbox.checked)).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
+
+    await waitFor(() => {
+      expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
+    });
+    const importedActivities = vi.mocked(confirmDocumentImport).mock.calls[0][1];
+    expect(importedActivities).toHaveLength(10);
+    expect(importedActivities.map((activity) => activity.activityType)).toContain('WATER');
+    expect(importedActivities.map((activity) => activity.activityType)).not.toContain('CUSTOM');
+    expect(importedActivities).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ jurisdictionRegion: 'Saskatchewan' }),
+      ]),
+    );
+    expect(await screen.findByText(
+      'Imported 10 activity record(s). 3 rows were left in draft because they require review. Generated emissions metrics. 1 imported row used an estimated date.',
+    )).toBeInTheDocument();
+    expect(screen.getByText('Extracted rows: 3')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Custom (Unsupported)')).toBeInTheDocument();
+    expect(screen.getAllByText('Missing Province').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Missing Factor').length).toBeGreaterThan(0);
+  });
+
+  it('auto-applies a default estimated date and imports the row without row-by-row suggestion', async () => {
+    const uploadDate = failedDocument.createdAt.slice(0, 10);
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'missing-date-doc',
+          fileName: 'missing-date.csv',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'missing-date-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'Natural Gas',
+          amount: 100,
+          unit: 'm3',
+          country: 'Canada',
+          startDate: '/',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    const row = screen.getByDisplayValue('Natural Gas').closest('tr');
+    expect(row).toBeTruthy();
+    expect(within(row!).getByDisplayValue(uploadDate)).toBeInTheDocument();
+    expect(within(row!).getByText(`Date estimated: ${uploadDate}`)).toBeInTheDocument();
+    expect(within(row!).queryByText(/Use Suggestion/i)).not.toBeInTheDocument();
+    expect(within(row!).queryByText('Missing Date')).not.toBeInTheDocument();
+    expect(within(row!).getByText('Ready')).toBeInTheDocument();
+    expect(within(row!).getByRole('checkbox')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
+
+    await waitFor(() => {
+      expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
+    });
+    const importedActivities = vi.mocked(confirmDocumentImport).mock.calls[0][1];
+    expect(importedActivities).toHaveLength(1);
+    expect(importedActivities[0]).toMatchObject({
+      activityType: 'NATURAL_GAS',
+      recordDate: uploadDate,
+      dateEstimated: true,
+    });
   });
 
   it('clears preview row selection when an edit makes the row invalid', async () => {

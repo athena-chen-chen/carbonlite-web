@@ -326,12 +326,16 @@ describe('resolveActivityRecordDate', () => {
     });
   });
 
-  it('returns a missing date label when no fallback exists', () => {
+  it('uses current local date fallback as estimated when no source date exists', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-26T12:00:00.000-06:00'));
+
     expect(resolveActivityRecordDate({})).toEqual({
-      value: '',
+      value: '2026-07-26',
       dateEstimated: true,
-      label: 'Missing date',
+      label: '2026-07-26 (estimated)',
     });
+    vi.useRealTimers();
   });
 });
 

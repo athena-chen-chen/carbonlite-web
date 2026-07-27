@@ -1,4 +1,4 @@
-import { FALLBACK_API_BASE_URL } from '../config/api';
+import { FALLBACK_API_BASE_URL, getContactEmail, isPublicSignupEnabled } from '../config/api';
 
 async function loadApiFetch() {
   vi.resetModules();
@@ -193,3 +193,44 @@ describe('apiFetch authenticated requests', () => {
     });
   });
 });
+
+describe('public signup environment gate', () => {
+  it('is disabled by default', () => {
+    expect(isPublicSignupEnabled({})).toBe(false);
+  });
+
+  it('is enabled only for local when explicitly configured', () => {
+    expect(
+      isPublicSignupEnabled({
+        VITE_APP_ENV: 'local',
+        VITE_PUBLIC_SIGNUP_ENABLED: 'true',
+      } as Partial<ImportMetaEnv>),
+    ).toBe(true);
+    expect(
+      isPublicSignupEnabled({
+        VITE_APP_ENV: 'pilot',
+        VITE_PUBLIC_SIGNUP_ENABLED: 'true',
+      } as Partial<ImportMetaEnv>),
+    ).toBe(false);
+    expect(
+      isPublicSignupEnabled({
+        VITE_APP_ENV: 'production',
+        VITE_PUBLIC_SIGNUP_ENABLED: 'true',
+      } as Partial<ImportMetaEnv>),
+    ).toBe(false);
+  });
+});
+
+describe('contact email config', () => {
+  it('uses configured contact email when present', () => {
+    expect(
+      getContactEmail({
+        VITE_CONTACT_EMAIL: 'help@carbonliteapp.ca',
+      } as Partial<ImportMetaEnv>),
+    ).toBe('help@carbonliteapp.ca');
+  });
+
+  it('falls back to the legacy CarbonLite email when not configured', () => {
+    expect(getContactEmail({})).toBe('help@carbonliteapp.ca');
+  });
+})

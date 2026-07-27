@@ -25,6 +25,7 @@ Backend-owned variables:
 | `DATABASE_URL` | Local/dev database | Dedicated pilot database | Dedicated production database |
 | `JWT_SECRET` | Local secret | Pilot secret | Production secret |
 | `DEMO_RESET_ENABLED` | `true` | `true` | `false` |
+| `PUBLIC_SIGNUP_ENABLED` | `false` by default. May be `true` only for local development. | `false` | `false` |
 | `API_BASE_URL` | `http://localhost:3333/api` | Pilot API URL | Production API URL |
 | `FRONTEND_URL` | `http://localhost:5173` | Pilot frontend URL | Production frontend URL |
 
@@ -34,6 +35,7 @@ Frontend-owned variables:
 | --- | --- |
 | `VITE_APP_ENV` | Frontend-visible environment label: `local`, `pilot`, or `production` |
 | `VITE_API_BASE_URL` | Frontend API base URL. This should match backend `API_BASE_URL`. |
+| `VITE_PUBLIC_SIGNUP_ENABLED` | Frontend signup UI flag. Defaults to disabled; only use `true` locally. |
 | `VITE_SHOW_TEST_CONTROLS` | May be `true` locally. Must be `false` in pilot and production. |
 | `CARBONLITE_DEMO_EMAIL` | Playwright smoke-test login email. |
 | `CARBONLITE_DEMO_PASSWORD` | Playwright smoke-test login password. |
@@ -94,6 +96,140 @@ Never delete:
 
 Production rule: in `APP_ENV=production`, reset must return `403` even for
 Owner/Admin users.
+
+## Pilot User Management Safety Contract
+
+CarbonLite Pilot Demo v0.1 / v0.2 uses minimal role-based access control. It is
+not an enterprise identity system.
+
+Required roles:
+
+| Role | Allowed pilot actions |
+| --- | --- |
+| `ADMIN` | Reset demo data, delete records, edit company settings, manage custom factors, import data, generate reports |
+| `MEMBER` | Import data, edit activity records, generate reports, view records, view reports, view factors |
+| `VIEWER` | View records, view reports, view factors only |
+
+The frontend permission helpers fail closed when there is no authenticated user
+or no company/organization id. The backend must enforce the same checks because
+frontend hiding is not a security boundary.
+
+Backend auth requirements:
+
+- `POST /api/auth/login` returns `200` for valid credentials.
+- Invalid credentials return `401`, never an uncaught `500`.
+- `POST /api/auth/register` must return `403` when
+  `PUBLIC_SIGNUP_ENABLED=false`.
+- The registration-disabled response should say:
+  `Public signup is currently disabled. CarbonLite pilot access is invite-only.`
+- Public registration must not create a user unless signup is explicitly enabled
+  for local development.
+- Missing user, missing password hash, or missing company/tenant relation must
+  return a controlled `401` or account-setup error, not a crash.
+- Disabled users must not be able to log in.
+- Auth tokens must include the user id, role, and company/organization id when
+  company setup is complete.
+- Users with no company/tenant context must not mutate company-scoped data.
+
+Recommended user status values:
+
+- `ACTIVE`
+- `DISABLED`
+- `PENDING`
+
+Pilot account model:
+
+- Create pilot users manually through an admin process or seed script.
+- Do not expose public signup in pilot or production.
+- Use one admin account for Athena / Kach Canada Ltd.
+- Create optional `MEMBER` or `VIEWER` accounts for pilot reviewers.
+- Reviewers should not receive admin/reset/delete permissions by default.
+- Each reviewer should have a separate company/workspace if they will interact
+  with non-demo data.
+
+Tenant isolation requirements:
+
+- Every company-scoped query must include the authenticated user's
+  `companyId`, `organizationId`, or `tenantId`.
+- Detail, update, and delete endpoints must verify the target record belongs to
+  the current company before returning or mutating it.
+- List endpoints must never return another company's rows.
+- Bulk endpoints must apply the company filter together with requested ids.
+- System conversion factors may have no company id and be visible to all
+  authenticated users.
+- Custom factors must always belong to exactly one company and must only be
+  visible inside that company.
+
+Company-scoped models:
+
+- `ActivityData`
+- `ImportBatch`
+- `UploadedDocument`
+- parsed or staged input-review rows
+- generated reports and report drafts
+- `Facility`
+- custom conversion factors
+- company settings
+
+Destructive endpoint rules:
+
+- Reset Demo Data: `ADMIN` only, environment-gated, exact confirmation phrase,
+  company-scoped deletes only.
+- Activity record delete and bulk delete: `ADMIN` or `MEMBER`, company-scoped.
+- Custom factor create/update/delete: `ADMIN` only, company-scoped.
+- Viewer requests to mutate data must return `403`.
+
+Reset Demo Data must preserve login-critical data:
+
+- users
+- companies or organizations
+- auth accounts
+- sessions
+- roles
+- company settings
+- system factors
+- custom factors
+
+Suggested backend regression tests:
+
+- valid demo admin login succeeds
+- wrong password returns `401`
+- missing user returns `401`
+- user with missing company does not crash login
+- public signup disabled returns `403` and creates no user
+- public signup enabled works only in local development
+- disabled user cannot log in
+- admin can reset own company demo data
+- viewer cannot reset demo data
+- reset preserves users, companies, auth accounts, roles, settings, and factors
+- company A cannot list, view, update, or delete company B activity records
+- company A cannot see company B custom factors
+- production reset returns `403` even for admins
+
+## User Audit
+
+Before pilot/UAT, list existing users and review whether public signup created
+unknown accounts.
+
+Read-only helper:
+
+```bash
+psql "$DATABASE_URL" -f scripts/list-pilot-users.sql
+```
+
+Expected columns:
+
+- email
+- name
+- company
+- role
+- status
+- createdAt
+- lastLogin
+
+Do not export or share password hashes, reset tokens, access tokens, or session
+secrets. If your backend schema uses different table or column names, adapt the
+read-only query before running it.
 
 ## Database Separation
 

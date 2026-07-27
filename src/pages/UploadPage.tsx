@@ -1,4 +1,5 @@
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import {
   DuplicateDocumentError,
@@ -36,7 +37,7 @@ import {
   normalizeJurisdictionCountry,
 } from '../utils/conversionFactorMatching';
 import { buildMatchedFactorSnapshot } from '../utils/factorCredibility';
-import { getDateOnlyYear } from '../utils/dateOnly';
+import { getDateOnlyYear, getTodayDateOnly, isValidDateOnly } from '../utils/dateOnly';
 import { buildApiUrl } from '../config/api';
 import { ApiError } from '../services/api';
 import {
@@ -354,7 +355,7 @@ function formatDateValue(value: RawExtractionField) {
 
   return text.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(text)
     ? text.slice(0, 10)
-    : text;
+    : '';
 }
 
 export function resolveActivityRecordDate(input: {
@@ -363,7 +364,7 @@ export function resolveActivityRecordDate(input: {
   uploadDate?: RawExtractionField;
 }) {
   const recordDate = formatDateValue(input.recordDate);
-  if (recordDate) {
+  if (recordDate && isValidDateOnly(recordDate)) {
     return {
       value: recordDate,
       dateEstimated: false,
@@ -372,7 +373,7 @@ export function resolveActivityRecordDate(input: {
   }
 
   const extractedDocumentDate = formatDateValue(input.extractedDocumentDate);
-  if (extractedDocumentDate) {
+  if (extractedDocumentDate && isValidDateOnly(extractedDocumentDate)) {
     return {
       value: extractedDocumentDate,
       dateEstimated: true,
@@ -381,11 +382,20 @@ export function resolveActivityRecordDate(input: {
   }
 
   const uploadDate = formatDateValue(input.uploadDate);
-  if (uploadDate) {
+  if (uploadDate && isValidDateOnly(uploadDate)) {
     return {
       value: uploadDate,
       dateEstimated: true,
       label: `${uploadDate} (estimated)`,
+    };
+  }
+
+  const today = getTodayDateOnly();
+  if (isValidDateOnly(today)) {
+    return {
+      value: today,
+      dateEstimated: true,
+      label: `${today} (estimated)`,
     };
   }
 
@@ -432,6 +442,10 @@ function normalizePreviewActivityType(value: RawExtractionField) {
 
 function getPreviewActivityTypeLabel(value?: string | null) {
   return getActivityTypeLabel(value);
+}
+
+function getUnsupportedActivityTypeDisplayLabel() {
+  return 'Custom (Unsupported)';
 }
 
 export function buildDocumentImportActivityPayload(input: {
@@ -795,6 +809,10 @@ export function UploadPage() {
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [viewingDocumentId, setViewingDocumentId] = useState<string | null>(null);
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
+  const [documentMenuPosition, setDocumentMenuPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const canImportData = canImportActivityRecords(getCurrentUser());
   const navigate = useNavigate();
@@ -802,6 +820,8 @@ export function UploadPage() {
   const manualEntryRef = useRef<HTMLDivElement | null>(null);
   const validationSummaryRef = useRef<HTMLDivElement | null>(null);
   const uploadDragDepthRef = useRef(0);
+  const documentMenuRef = useRef<HTMLDivElement | null>(null);
+  const documentMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
   const hasMissingFiles = documents.some((doc) => isMissingFileStatus(doc.status));
   const importValidationIssues = getImportValidationIssues(parsedActivities);
@@ -809,17 +829,38 @@ export function UploadPage() {
     (issue) => parsedActivities[issue.rowIndex]?.selected,
   );
   const selectedParsedActivitiesCount = parsedActivities.filter((item) => item.selected).length;
+  const importableParsedActivities = parsedActivities.filter((item, index) =>
+    isParsedActivityImportable(index, item),
+  );
+  const selectedImportableActivities = parsedActivities.filter(
+    (item, index) => item.selected && isParsedActivityImportable(index, item),
+  );
+  const selectedImportableActivitiesCount = selectedImportableActivities.length;
+  const readyImportableCount = importableParsedActivities.filter(
+    (item, index) => getRowReportTreatment(index, item) === 'Included',
+  ).length;
+  const trackedImportableCount = importableParsedActivities.filter(
+    (item, index) => getRowReportTreatment(index, item) === 'Tracked Only',
+  ).length;
+  const selectedReadyImportableCount = selectedImportableActivities.filter(
+    (item) => getRowReportTreatment(parsedActivities.indexOf(item), item) === 'Included',
+  ).length;
+  const selectedTrackedImportableCount = selectedImportableActivities.filter(
+    (item) => getRowReportTreatment(parsedActivities.indexOf(item), item) === 'Tracked Only',
+  ).length;
+  const rowsRequiringReviewCount = parsedActivities.length - importableParsedActivities.length;
+  const rowsLeftOutOfImportCount =
+    parsedActivities.length - selectedImportableActivitiesCount;
   const hasImportValidationErrors = importValidationIssues.length > 0;
   const hasSelectedImportValidationErrors = selectedImportValidationIssues.length > 0;
   const canAttemptConfirmImport =
     canImportData &&
     confirmingId === null &&
     !generatingMetrics &&
-    parsedActivities.length > 0 &&
-    selectedParsedActivitiesCount > 0;
+    parsedActivities.length > 0;
   const canConfirmImport =
     canAttemptConfirmImport &&
-    !hasSelectedImportValidationErrors;
+    selectedImportableActivitiesCount > 0;
   async function loadDocuments() {
     setLoading(true);
     setError(null);
@@ -853,6 +894,7 @@ export function UploadPage() {
       setDocumentToDelete(null);
       setViewingDocumentId(null);
       setOpenDocumentMenuId(null);
+      setDocumentMenuPosition(null);
       setSuccessMessage(null);
       setError(null);
     }
@@ -863,6 +905,52 @@ export function UploadPage() {
       window.removeEventListener('carbonlite:demo-data-reset', handleDemoDataReset);
     };
   }, []);
+
+  useEffect(() => {
+    if (!openDocumentMenuId) return;
+
+    function closeDocumentMenu() {
+      setOpenDocumentMenuId(null);
+      setDocumentMenuPosition(null);
+    }
+
+    function isInsideOpenDocumentMenu(target: Node | null) {
+      const activeButton = documentMenuButtonRefs.current[openDocumentMenuId];
+
+      return Boolean(
+        target &&
+          (documentMenuRef.current?.contains(target) || activeButton?.contains(target)),
+      );
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (isInsideOpenDocumentMenu(event.target as Node | null)) return;
+      closeDocumentMenu();
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeDocumentMenu();
+      }
+    }
+
+    function handleFocusIn(event: FocusEvent) {
+      if (isInsideOpenDocumentMenu(event.target as Node | null)) return;
+      closeDocumentMenu();
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('scroll', closeDocumentMenu, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('scroll', closeDocumentMenu, true);
+    };
+  }, [openDocumentMenuId]);
 
   useEffect(() => {
     const routeInputMethod = getRouteInputMethod(location.state);
@@ -1496,6 +1584,84 @@ ${sampleRows.join('\n')}`,
     };
   }
 
+  function getDocumentMenuPosition(button: HTMLButtonElement) {
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 172;
+    const menuHeight = 180;
+    const margin = 8;
+    const top =
+      rect.bottom + menuHeight + margin > window.innerHeight
+        ? Math.max(margin, rect.top - menuHeight - 6)
+        : rect.bottom + 6;
+    const left = Math.min(
+      Math.max(margin, rect.right - menuWidth),
+      Math.max(margin, window.innerWidth - menuWidth - margin),
+    );
+
+    return { top, left };
+  }
+
+  function toggleDocumentMenu(documentId: string, button: HTMLButtonElement) {
+    setOpenDocumentMenuId((current) => {
+      if (current === documentId) {
+        setDocumentMenuPosition(null);
+        return null;
+      }
+
+      setDocumentMenuPosition(getDocumentMenuPosition(button));
+      return documentId;
+    });
+  }
+
+  function closeDocumentMenu() {
+    setOpenDocumentMenuId(null);
+    setDocumentMenuPosition(null);
+  }
+
+  function renderDocumentActionMenuPortal() {
+    if (!openDocumentMenuId || !documentMenuPosition) return null;
+
+    const activeDocument = documents.find((item) => item.id === openDocumentMenuId);
+    if (!activeDocument) return null;
+
+    const actionModel = getDocumentActionModelForDoc(activeDocument);
+
+    return createPortal(
+      <div
+        ref={documentMenuRef}
+        role="menu"
+        aria-label={`More actions for ${activeDocument.fileName}`}
+        style={{
+          ...documentMenuStyle,
+          position: 'fixed',
+          top: documentMenuPosition.top,
+          left: documentMenuPosition.left,
+          right: 'auto',
+          zIndex: 1000,
+        }}
+      >
+        {actionModel.menuActions.map((action) => (
+          <button
+            key={action.kind}
+            type="button"
+            role="menuitem"
+            onClick={() => handleDocumentAction(activeDocument, action)}
+            disabled={action.disabled}
+            title={action.title ?? action.label}
+            style={
+              action.danger
+                ? documentMenuDangerItemStyle(Boolean(action.disabled))
+                : documentMenuItemStyle(Boolean(action.disabled))
+            }
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>,
+      globalThis.document.body,
+    );
+  }
+
   function handleDocumentAction(doc: DocumentItem, action: DocumentActionConfig) {
     if (action.disabled) {
       if (isMissingFileStatus(doc.status)) {
@@ -1504,7 +1670,7 @@ ${sampleRows.join('\n')}`,
       }
       return;
     }
-    setOpenDocumentMenuId(null);
+    closeDocumentMenu();
 
     switch (action.kind) {
       case 'view':
@@ -1907,26 +2073,29 @@ ${sampleRows.join('\n')}`,
       return;
     }
 
-    const selectedActivities = parsedActivities.filter((item) => item.selected);
-    const validationIssues = getImportValidationIssues(parsedActivities).filter(
-      (issue) => parsedActivities[issue.rowIndex]?.selected,
+    const selectedRows = parsedActivities.filter((item) => item.selected);
+    const selectedActivities = parsedActivities.filter(
+      (item, index) => item.selected && isParsedActivityImportable(index, item),
     );
 
-    if (selectedActivities.length === 0) {
+    if (selectedRows.length === 0) {
       setError('Please select at least one activity to import.');
       setSuccessMessage(null);
       return;
     }
 
-    if (validationIssues.length > 0) {
-      setError(null);
+    if (selectedActivities.length === 0) {
+      const firstSelectedIssue = getImportValidationIssues(parsedActivities).find(
+        (issue) => parsedActivities[issue.rowIndex]?.selected,
+      );
+      setError('Selected rows contain blocking errors. Select Ready rows or fix errors.');
       setSuccessMessage(null);
-      scrollToImportValidation(validationIssues[0]);
+      scrollToImportValidation(firstSelectedIssue);
       return;
     }
 
     const missingDateCount = selectedActivities.filter(
-      (item) => item.dateEstimated || !item.recordDate.value,
+      (item) => !item.recordDate.value,
     ).length;
 
     if (missingDateCount > 0) {
@@ -1943,6 +2112,9 @@ ${sampleRows.join('\n')}`,
         return;
       }
     }
+    const estimatedDateCount = selectedActivities.filter(
+      (item) => item.dateEstimated && item.recordDate.value,
+    ).length;
 
     setConfirmingId(activeDocumentIds.length > 1 ? 'multiple' : activeDocumentIds[0]);
     setError(null);
@@ -1951,9 +2123,28 @@ ${sampleRows.join('\n')}`,
     try {
       if (activeDocumentIds.every((documentId) => isSampleDocumentId(documentId))) {
         const importedCount = selectedActivities.length;
-        setPreviewDocumentId(null);
-        setPreviewDocumentIds([]);
-        setParsedActivities([]);
+        const remainingRows = parsedActivities.filter(
+          (item) => !selectedActivities.includes(item),
+        );
+        const rowsLeftForReview = remainingRows.length;
+        if (remainingRows.length === 0) {
+          setPreviewDocumentId(null);
+          setPreviewDocumentIds([]);
+          setParsedActivities([]);
+        } else {
+          setParsedActivities(remainingRows);
+          const remainingDocumentIds = Array.from(
+            new Set(remainingRows.map((item) => item.documentId).filter(Boolean)),
+          );
+          setPreviewDocumentIds(remainingDocumentIds);
+          setPreviewDocumentId(
+            remainingDocumentIds.length === 0
+              ? null
+              : remainingDocumentIds.length === 1
+              ? remainingDocumentIds[0]
+              : 'MULTIPLE',
+          );
+        }
         setDocuments((prev) =>
           prev.map((document) =>
             activeDocumentIds.includes(document.id)
@@ -1961,7 +2152,11 @@ ${sampleRows.join('\n')}`,
               : document,
           ),
         );
-        setSuccessMessage(`Imported ${importedCount} sample activity record(s). You can continue with the normal workflow.`);
+        setSuccessMessage(
+          rowsLeftForReview > 0
+            ? `Imported ${importedCount} sample activity record(s). ${rowsLeftForReview} row${rowsLeftForReview === 1 ? '' : 's'} were left in draft because they require review.`
+            : `Imported ${importedCount} sample activity record(s). You can continue with the normal workflow.`,
+        );
         return;
       }
 
@@ -2016,9 +2211,13 @@ ${sampleRows.join('\n')}`,
         return;
       }
 
-      setPreviewDocumentId(null);
-      setPreviewDocumentIds([]);
-      setParsedActivities([]);
+      const remainingRows = parsedActivities.filter(
+        (item) => !selectedActivities.includes(item),
+      );
+      const rowsLeftForReview = remainingRows.length;
+      const remainingDocumentIds = Array.from(
+        new Set(remainingRows.map((item) => item.documentId).filter(Boolean)),
+      );
 
       setGeneratingMetrics(true);
       setSuccessMessage('Generating emissions metrics...');
@@ -2028,20 +2227,57 @@ ${sampleRows.join('\n')}`,
           await calculateMetrics(createdActivityIds);
         }
 
-        setSuccessMessage(
-          `Imported ${importedCount} activity record(s). Generated emissions metrics. Redirecting to Calculation Review...`,
-        );
-        navigate('/metrics-summary');
+        if (remainingRows.length === 0) {
+          setPreviewDocumentId(null);
+          setPreviewDocumentIds([]);
+          setParsedActivities([]);
+          setSuccessMessage(
+            `Imported ${importedCount} activity record(s). Generated emissions metrics. Redirecting to Calculation Review...`,
+          );
+          navigate('/metrics-summary');
+        } else {
+          setParsedActivities(remainingRows);
+          setPreviewDocumentIds(remainingDocumentIds);
+          setPreviewDocumentId(
+            remainingDocumentIds.length === 0
+              ? null
+              : remainingDocumentIds.length === 1
+              ? remainingDocumentIds[0]
+              : 'MULTIPLE',
+          );
+          setSuccessMessage(
+            `Imported ${importedCount} activity record(s). ${rowsLeftForReview} row${rowsLeftForReview === 1 ? '' : 's'} were left in draft because they require review. Generated emissions metrics.${
+              estimatedDateCount > 0
+                ? ` ${estimatedDateCount} imported row${estimatedDateCount === 1 ? ' used an' : 's used'} estimated date.`
+                : ''
+            }`,
+          );
+        }
       } catch {
-        setError(
-          'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
-        );
-        navigate('/metrics-summary', {
-          state: {
-            metricsError:
-              'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
-          },
-        });
+        if (remainingRows.length > 0) {
+          setParsedActivities(remainingRows);
+          setPreviewDocumentIds(remainingDocumentIds);
+          setPreviewDocumentId(
+            remainingDocumentIds.length === 0
+              ? null
+              : remainingDocumentIds.length === 1
+              ? remainingDocumentIds[0]
+              : 'MULTIPLE',
+          );
+          setError(
+            `Imported ${importedCount} activity record(s), but emissions metrics could not be generated automatically. ${rowsLeftForReview} row${rowsLeftForReview === 1 ? '' : 's'} were left in draft because they require review.`,
+          );
+        } else {
+          setError(
+            'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
+          );
+          navigate('/metrics-summary', {
+            state: {
+              metricsError:
+                'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
+            },
+          });
+        }
       } finally {
         setGeneratingMetrics(false);
       }
@@ -2129,7 +2365,7 @@ ${sampleRows.join('\n')}`,
           issue.message === UNSUPPORTED_ACTIVITY_TYPE_MESSAGE,
       )
     ) {
-      return 'Unsupported Activity Type';
+      return 'Unsupported Activity';
     }
     if (
       issues.some(
@@ -2169,8 +2405,59 @@ ${sampleRows.join('\n')}`,
     return 'Included';
   }
 
+  function isParsedActivityImportable(
+    rowIndex: number,
+    _item: EditableParsedActivity,
+  ) {
+    return getRowValidationIssues(rowIndex).length === 0;
+  }
+
   function parsedActivityHasValidationIssues(item: EditableParsedActivity) {
     return getImportValidationIssues([item]).length > 0;
+  }
+
+  function getConfirmImportDisabledReason() {
+    if (!canImportData) return 'You do not have permission to perform this action.';
+    if (confirmingId || generatingMetrics) return undefined;
+    if (parsedActivities.length === 0) return 'No importable records found.';
+    if (selectedParsedActivitiesCount === 0) {
+      return importableParsedActivities.length > 0
+        ? 'Select at least one Ready record to import.'
+        : 'No importable records found.';
+    }
+    if (selectedImportableActivitiesCount === 0) {
+      return 'Selected rows contain blocking errors. Select Ready rows or fix errors.';
+    }
+
+    return undefined;
+  }
+
+  function getImportSelectionSummary() {
+    if (parsedActivities.length === 0) return '';
+
+    const selectedParts = [];
+    if (selectedReadyImportableCount > 0) {
+      selectedParts.push(
+        `${selectedReadyImportableCount} ready record${
+          selectedReadyImportableCount === 1 ? '' : 's'
+        }`,
+      );
+    }
+    if (selectedTrackedImportableCount > 0) {
+      selectedParts.push(
+        `${selectedTrackedImportableCount} tracked metric${
+          selectedTrackedImportableCount === 1 ? '' : 's'
+        }`,
+      );
+    }
+
+    if (selectedImportableActivitiesCount > 0) {
+      return `${selectedParts.join(' and ')} selected. ${rowsLeftOutOfImportCount} row${
+        rowsLeftOutOfImportCount === 1 ? '' : 's'
+      } will not be imported.`;
+    }
+
+    return getConfirmImportDisabledReason() ?? '';
   }
 
   function isUnsupportedPilotProvinceIssue(message?: string) {
@@ -2289,7 +2576,7 @@ ${sampleRows.join('\n')}`,
     setParsedActivities((prev) => [
       ...prev,
       {
-        selected: true,
+        selected: false,
         documentId: previewDocumentIds[0] ?? previewDocumentId ?? '',
         documentFileName:
           documents.find((doc) => doc.id === (previewDocumentIds[0] ?? previewDocumentId))
@@ -2326,7 +2613,7 @@ ${sampleRows.join('\n')}`,
         i === index
           ? {
               ...item,
-              selected: checked && !parsedActivityHasValidationIssues(item),
+              selected: checked && getImportValidationIssues([item]).length === 0,
             }
           : item,
       ),
@@ -2339,7 +2626,7 @@ ${sampleRows.join('\n')}`,
     setParsedActivities((prev) =>
       prev.map((item) => ({
         ...item,
-        selected: !parsedActivityHasValidationIssues(item),
+        selected: getImportValidationIssues([item]).length === 0,
       })),
     );
   }
@@ -2717,39 +3004,20 @@ ${sampleRows.join('\n')}`,
 
                         <div style={documentMenuWrapStyle}>
                           <button
+                            ref={(element) => {
+                              documentMenuButtonRefs.current[doc.id] = element;
+                            }}
                             type="button"
-                            aria-label={`More actions for ${doc.fileName}`}
+                            aria-label={`Open row actions for ${doc.fileName}`}
+                            aria-haspopup="menu"
                             aria-expanded={openDocumentMenuId === doc.id}
-                            onClick={() =>
-                              setOpenDocumentMenuId((current) =>
-                                current === doc.id ? null : doc.id,
-                              )
+                            onClick={(event) =>
+                              toggleDocumentMenu(doc.id, event.currentTarget)
                             }
                             style={kebabButtonStyle}
                           >
                             ⋮
                           </button>
-
-                          {openDocumentMenuId === doc.id ? (
-                            <div style={documentMenuStyle}>
-                              {actionModel.menuActions.map((action) => (
-                                <button
-                                  key={action.kind}
-                                  type="button"
-                                  onClick={() => handleDocumentAction(doc, action)}
-                                  disabled={action.disabled}
-                                  title={action.title ?? action.label}
-                                  style={
-                                    action.danger
-                                      ? documentMenuDangerItemStyle(Boolean(action.disabled))
-                                      : documentMenuItemStyle(Boolean(action.disabled))
-                                  }
-                                >
-                                  {action.label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
                         </div>
                       </div>
                     </td>
@@ -2803,6 +3071,9 @@ ${sampleRows.join('\n')}`,
               <p style={{ marginTop: 8, color: '#047857', fontWeight: 600 }}>
                 Extracted rows: {parsedActivities.length}
               </p>
+              <p style={importReviewCountsStyle}>
+                Ready: {readyImportableCount} · Tracked metrics: {trackedImportableCount} · Requires review: {rowsRequiringReviewCount} · Selected for import: {selectedImportableActivitiesCount}
+              </p>
               <p style={{ marginTop: 8, color: '#999' }}>
                 {previewDocumentIds.length > 1
                   ? `Documents: ${previewDocumentIds.length}`
@@ -2841,17 +3112,9 @@ ${sampleRows.join('\n')}`,
               <button
                 type="button"
                 onClick={() => handleConfirmImport()}
-                disabled={!canAttemptConfirmImport || !canImportData}
+                disabled={!canConfirmImport || !canImportData}
                 aria-disabled={!canConfirmImport || !canImportData}
-                title={
-                  !canImportData
-                    ? 'You do not have permission to perform this action.'
-                    : hasSelectedImportValidationErrors
-                    ? 'Please fix validation errors before importing.'
-                    : selectedParsedActivitiesCount === 0
-                    ? 'Please select at least one activity to import.'
-                    : undefined
-                }
+                title={getConfirmImportDisabledReason()}
                 style={confirmButtonStyle(canConfirmImport && canImportData)}
               >
                 {generatingMetrics
@@ -2860,6 +3123,11 @@ ${sampleRows.join('\n')}`,
                   ? 'Importing...'
                   : 'Confirm Import'}
               </button>
+              {parsedActivities.length > 0 ? (
+                <div style={importSelectionHelpStyle}>
+                  {getImportSelectionSummary()}
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -2949,203 +3217,236 @@ ${sampleRows.join('\n')}`,
                       />
                     </td>
 
-                    <td style={tdStyle}>
-                      <span style={rowStatusBadgeStyle(rowStatusLabel)}>
+                    <td style={previewTdStyle}>
+                      <span
+                        style={rowStatusBadgeStyle(rowStatusLabel)}
+                        title={
+                          rowStatusLabel === 'Unsupported Activity'
+                            ? 'Unsupported Activity Type'
+                            : rowStatusLabel
+                        }
+                      >
                         {rowStatusLabel}
                       </span>
                     </td>
 
                     <td style={activityTypeTdStyle}>
-                      <select
-                        data-validation-field="activityType"
-                        data-validation-row={index}
-                        value={item.activityType.value ?? ''}
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'activityType', e.target.value)
-                        }
-                        style={validatedInputStyle(
-                          activityTypeSelectStyle(item.activityType.confidence),
-                          Boolean(activityTypeError),
-                        )}
-                      >
-                        <option value="">-- Select --</option>
-                        {item.activityType.value &&
-                        !activityTypes.includes(item.activityType.value) ? (
-                          <option value={item.activityType.value}>
-                            {item.activityType.value} (Unsupported)
-                          </option>
-                        ) : null}
-                        {activityTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {getPreviewActivityTypeLabel(type)}
-                          </option>
-                        ))}
-                      </select>
+                      <div style={previewFieldStackStyle}>
+                        <select
+                          data-validation-field="activityType"
+                          data-validation-row={index}
+                          value={item.activityType.value ?? ''}
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'activityType', e.target.value)
+                          }
+                          style={validatedInputStyle(
+                            activityTypeSelectStyle(item.activityType.confidence),
+                            Boolean(activityTypeError),
+                          )}
+                          title={
+                            item.activityType.value &&
+                            !activityTypes.includes(item.activityType.value)
+                              ? `Unsupported activity type: ${item.activityType.value}`
+                              : getPreviewActivityTypeLabel(item.activityType.value)
+                          }
+                        >
+                          <option value="">-- Select --</option>
+                          {item.activityType.value &&
+                          !activityTypes.includes(item.activityType.value) ? (
+                            <option value={item.activityType.value}>
+                              {getUnsupportedActivityTypeDisplayLabel()}
+                            </option>
+                          ) : null}
+                          {activityTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {getPreviewActivityTypeLabel(type)}
+                            </option>
+                          ))}
+                        </select>
                       {activityTypeError ? (
-                        <div style={fieldErrorStyle}>{activityTypeError}</div>
-                      ) : null}
-                    </td>
-
-                    <td style={tdStyle}>
-                      <input
-                        data-validation-field="recordDate"
-                        data-validation-row={index}
-                        type="text"
-                        value={item.recordDate.value ?? ''}
-                        placeholder={item.dateEstimated ? 'Missing date' : 'YYYY-MM-DD'}
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'recordDate', e.target.value)
-                        }
-                        style={{
-                          width: '100%',
-                          boxSizing: 'border-box',
-                          padding: 8,
-                          borderRadius: 6,
-                          ...getConfidenceStyle(item.recordDate.confidence),
-                          ...(recordDateError ? validationInputOverrideStyle : {}),
-                        }}
-                      />
-                      {item.periodEndDate ? (
-                        <div style={datePeriodStyle}>{getPreviewDatePeriod(item)}</div>
-                      ) : null}
-                      {recordDateError ? (
-                        <div style={fieldErrorStyle}>{recordDateError}</div>
-                      ) : null}
-                      {recordDateError ? (
-                        <div style={dateSuggestionStyle}>
-                          Suggested: {getRecordDateSuggestion(item)}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateParsedActivityField(
-                                index,
-                                'recordDate',
-                                getRecordDateSuggestion(item),
-                              )
-                            }
-                            style={useSuggestionButtonStyle}
-                          >
-                            Use Suggestion
-                          </button>
+                        <div style={fieldErrorStyle} title={getImportValidationIssueDetail({
+                          rowIndex: index,
+                          field: 'activityType',
+                          message: activityTypeError,
+                        })}>
+                          {getFieldValidationDisplayMessage('activityType', activityTypeError)}
                         </div>
                       ) : null}
-                      {item.dateEstimated ? (
-                        <div style={dateWarningStyle}>
-                          {item.recordDate.value
-                            ? `${item.recordDate.value} (estimated)`
-                            : 'Missing date'}
-                        </div>
-                      ) : null}
+                      </div>
                     </td>
 
-                    <td style={tdStyle}>
-                      <input
-                        data-validation-field="quantity"
-                        data-validation-row={index}
-                        type="number"
-                        min="0"
-                        value={item.quantity.value ?? ''}
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'quantity', e.target.value)
-                        }
-                        style={{
-                          width: '100%',
-                          boxSizing: 'border-box',
-                          padding: 8,
-                          borderRadius: 6,
-                          ...getConfidenceStyle(item.quantity.confidence),
-                          ...(quantityError ? validationInputOverrideStyle : {}),
-                        }}
-                      />
-                      {quantityError ? (
-                        <div style={fieldErrorStyle}>{quantityError}</div>
-                      ) : null}
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        <input
+                          data-validation-field="recordDate"
+                          data-validation-row={index}
+                          type="text"
+                          value={item.recordDate.value ?? ''}
+                          placeholder={item.dateEstimated ? 'Missing date' : 'YYYY-MM-DD'}
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'recordDate', e.target.value)
+                          }
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: 8,
+                            borderRadius: 6,
+                            ...getConfidenceStyle(item.recordDate.confidence),
+                            ...(recordDateError ? validationInputOverrideStyle : {}),
+                          }}
+                        />
+                        {item.periodEndDate ? (
+                          <div style={datePeriodStyle}>{getPreviewDatePeriod(item)}</div>
+                        ) : null}
+                        {recordDateError ? (
+                          <div style={fieldErrorStyle}>{recordDateError}</div>
+                        ) : null}
+                        {recordDateError ? (
+                          <div style={dateSuggestionStyle}>
+                            Suggested: {getRecordDateSuggestion(item)}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateParsedActivityField(
+                                  index,
+                                  'recordDate',
+                                  getRecordDateSuggestion(item),
+                                )
+                              }
+                              style={useSuggestionButtonStyle}
+                            >
+                              Use Suggestion
+                            </button>
+                          </div>
+                        ) : null}
+                        {item.dateEstimated ? (
+                          <div style={dateWarningStyle}>
+                            {item.recordDate.value
+                              ? `Date estimated: ${item.recordDate.value}`
+                              : 'Missing date'}
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
 
-                    <td style={tdStyle}>
-                      <input
-                        data-validation-field="unit"
-                        data-validation-row={index}
-                        type="text"
-                        value={item.unit.value ?? ''}
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'unit', e.target.value)
-                        }
-                        style={{
-                          width: '100%',
-                          boxSizing: 'border-box',
-                          padding: 8,
-                          borderRadius: 6,
-                          ...getConfidenceStyle(item.unit.confidence),
-                          ...(unitError ? validationInputOverrideStyle : {}),
-                        }}
-                      />
-                      {unitError ? (
-                        <div style={fieldErrorStyle}>{unitError}</div>
-                      ) : null}
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        <input
+                          data-validation-field="quantity"
+                          data-validation-row={index}
+                          type="number"
+                          min="0"
+                          value={item.quantity.value ?? ''}
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'quantity', e.target.value)
+                          }
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: 8,
+                            borderRadius: 6,
+                            ...getConfidenceStyle(item.quantity.confidence),
+                            ...(quantityError ? validationInputOverrideStyle : {}),
+                          }}
+                        />
+                        {quantityError ? (
+                          <div style={fieldErrorStyle}>{quantityError}</div>
+                        ) : null}
+                      </div>
                     </td>
 
-                    <td style={tdStyle}>
-                      <input
-                        type="text"
-                        value={item.jurisdictionCountry.value ?? ''}
-                        placeholder="Canada"
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'jurisdictionCountry', e.target.value)
-                        }
-                        style={optionalInputStyle(
-                          item.jurisdictionCountry.confidence,
-                          item.jurisdictionCountry.value,
-                          { neutralWhenPresent: true },
-                        )}
-                      />
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        <input
+                          data-validation-field="unit"
+                          data-validation-row={index}
+                          type="text"
+                          value={item.unit.value ?? ''}
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'unit', e.target.value)
+                          }
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: 8,
+                            borderRadius: 6,
+                            ...getConfidenceStyle(item.unit.confidence),
+                            ...(unitError ? validationInputOverrideStyle : {}),
+                          }}
+                        />
+                        {unitError ? (
+                          <div style={fieldErrorStyle}>{unitError}</div>
+                        ) : null}
+                      </div>
                     </td>
 
-                    <td style={tdStyle}>
-                      {/* TODO: Consider ProvinceSelect here after preserving extraction confidence styling. */}
-                      <input
-                        data-validation-field="jurisdictionRegion"
-                        data-validation-row={index}
-                        type="text"
-                        value={item.jurisdictionRegion.value ?? ''}
-                        placeholder="Province"
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'jurisdictionRegion', e.target.value)
-                        }
-                        style={validatedInputStyle(
-                          optionalInputStyle(
-                            item.jurisdictionRegion.confidence,
-                            item.jurisdictionRegion.value,
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        <input
+                          type="text"
+                          value={item.jurisdictionCountry.value ?? ''}
+                          placeholder="Canada"
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'jurisdictionCountry', e.target.value)
+                          }
+                          style={optionalInputStyle(
+                            item.jurisdictionCountry.confidence,
+                            item.jurisdictionCountry.value,
                             { neutralWhenPresent: true },
-                          ),
-                          Boolean(provinceError),
-                        )}
-                      />
-                      {provinceError ? (
-                        <div style={fieldErrorStyle} title={getRowIssueTitle(index)}>
-                          {getFieldValidationDisplayMessage('jurisdictionRegion', provinceError)}
-                        </div>
-                      ) : null}
+                          )}
+                        />
+                      </div>
                     </td>
 
-                    <td style={tdStyle}>
-                      <input
-                        type="text"
-                        value={item.sourceReference.value ?? ''}
-                        placeholder={item.documentFileName}
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'sourceReference', e.target.value)
-                        }
-                        style={optionalInputStyle(
-                          item.sourceReference.confidence,
-                          item.sourceReference.value,
-                          { neutralWhenPresent: true },
-                        )}
-                        title={item.sourceReference.value ?? item.documentFileName}
-                      />
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        {/* TODO: Consider ProvinceSelect here after preserving extraction confidence styling. */}
+                        <input
+                          data-validation-field="jurisdictionRegion"
+                          data-validation-row={index}
+                          type="text"
+                          value={item.jurisdictionRegion.value ?? ''}
+                          placeholder="Province"
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'jurisdictionRegion', e.target.value)
+                          }
+                          style={validatedInputStyle(
+                            optionalInputStyle(
+                              item.jurisdictionRegion.confidence,
+                              item.jurisdictionRegion.value,
+                              { neutralWhenPresent: true },
+                            ),
+                            Boolean(provinceError),
+                          )}
+                        />
+                        {provinceError ? (
+                          <div style={fieldErrorStyle} title={getRowIssueTitle(index)}>
+                            {getFieldValidationDisplayMessage('jurisdictionRegion', provinceError)}
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        <input
+                          type="text"
+                          value={item.sourceReference.value ?? ''}
+                          placeholder={item.documentFileName}
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'sourceReference', e.target.value)
+                          }
+                          style={optionalInputStyle(
+                            item.sourceReference.confidence,
+                            item.sourceReference.value,
+                            { neutralWhenPresent: true },
+                          )}
+                          title={item.sourceReference.value ?? item.documentFileName}
+                        />
+                      </div>
+                    </td>
+
+                    <td style={previewTdStyle}>
                       <span
                         style={rowIssueText === '-' ? mutedIssueStyle : issueTextStyle}
                         title={rowIssueTitle}
@@ -3154,7 +3455,7 @@ ${sampleRows.join('\n')}`,
                       </span>
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={previewTdStyle}>
                       <span
                         style={
                           rowReportTreatment === 'Included'
@@ -3166,22 +3467,24 @@ ${sampleRows.join('\n')}`,
                       </span>
                     </td>
 
-                    <td style={tdStyle}>
-                      <input
-                        type="text"
-                        value={item.notes.value ?? ''}
-                        placeholder="Optional notes"
-                        onChange={(e) =>
-                          updateParsedActivityField(index, 'notes', e.target.value)
-                        }
-                        style={optionalInputStyle(item.notes.confidence, item.notes.value, {
-                          neutralWhenPresent: true,
-                        })}
-                        title={item.notes.value ?? ''}
-                      />
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        <input
+                          type="text"
+                          value={item.notes.value ?? ''}
+                          placeholder="Optional notes"
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'notes', e.target.value)
+                          }
+                          style={optionalInputStyle(item.notes.confidence, item.notes.value, {
+                            neutralWhenPresent: true,
+                          })}
+                          title={item.notes.value ?? ''}
+                        />
+                      </div>
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={previewTdStyle}>
                       <button
                         type="button"
                         onClick={() => removeParsedActivity(index)}
@@ -3239,6 +3542,7 @@ ${sampleRows.join('\n')}`,
           </div>
         </div>
       ) : null}
+      {renderDocumentActionMenuPortal()}
     </div>
   );
 }
@@ -3552,6 +3856,21 @@ const previewHeaderStyle: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
+const importReviewCountsStyle: React.CSSProperties = {
+  marginTop: 8,
+  color: '#475569',
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const importSelectionHelpStyle: React.CSSProperties = {
+  flexBasis: '100%',
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.4,
+  maxWidth: 520,
+};
+
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 8px',
@@ -3642,7 +3961,7 @@ const previewScrollHintStyle: React.CSSProperties = {
 
 const previewTableStyle: React.CSSProperties = {
   width: '100%',
-  minWidth: 1800,
+  minWidth: 2500,
   borderCollapse: 'collapse',
   tableLayout: 'fixed',
 };
@@ -3653,21 +3972,38 @@ const activityTypeThStyle: React.CSSProperties = {
 
 const activityTypeTdStyle: React.CSSProperties = {
   ...tdStyle,
+  padding: '10px 12px',
+  maxWidth: 'none',
+  overflow: 'visible',
 };
 
-const previewSelectColStyle: React.CSSProperties = { width: 64 };
-const previewStatusColStyle: React.CSSProperties = { width: 132 };
-const previewActivityTypeColStyle: React.CSSProperties = { width: 180 };
-const previewDateColStyle: React.CSSProperties = { width: 156 };
-const previewQuantityColStyle: React.CSSProperties = { width: 112 };
-const previewUnitColStyle: React.CSSProperties = { width: 112 };
-const previewCountryColStyle: React.CSSProperties = { width: 124 };
-const previewProvinceColStyle: React.CSSProperties = { width: 152 };
-const previewSourceReferenceColStyle: React.CSSProperties = { width: 220 };
-const previewIssueColStyle: React.CSSProperties = { width: 180 };
-const previewTreatmentColStyle: React.CSSProperties = { width: 140 };
-const previewNotesColStyle: React.CSSProperties = { width: 220 };
-const previewActionsColStyle: React.CSSProperties = { width: 108 };
+const previewTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  padding: '10px 12px',
+  maxWidth: 'none',
+  overflow: 'visible',
+};
+
+const previewFieldStackStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  minWidth: 0,
+};
+
+const previewSelectColStyle: React.CSSProperties = { width: 48 };
+const previewStatusColStyle: React.CSSProperties = { width: 220 };
+const previewActivityTypeColStyle: React.CSSProperties = { width: 280 };
+const previewDateColStyle: React.CSSProperties = { width: 220 };
+const previewQuantityColStyle: React.CSSProperties = { width: 160 };
+const previewUnitColStyle: React.CSSProperties = { width: 160 };
+const previewCountryColStyle: React.CSSProperties = { width: 180 };
+const previewProvinceColStyle: React.CSSProperties = { width: 220 };
+const previewSourceReferenceColStyle: React.CSSProperties = { width: 260 };
+const previewIssueColStyle: React.CSSProperties = { width: 220 };
+const previewTreatmentColStyle: React.CSSProperties = { width: 160 };
+const previewNotesColStyle: React.CSSProperties = { width: 260 };
+const previewActionsColStyle: React.CSSProperties = { width: 112 };
 
 function activityTypeSelectStyle(confidence: string): React.CSSProperties {
   return {
@@ -3716,14 +4052,12 @@ const validationInputOverrideStyle: React.CSSProperties = {
 };
 
 const fieldErrorStyle: React.CSSProperties = {
-  marginTop: 5,
   color: '#b91c1c',
   fontSize: 12,
   fontWeight: 600,
-  lineHeight: 1.25,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
+  lineHeight: 1.35,
+  overflowWrap: 'anywhere',
+  whiteSpace: 'normal',
 };
 
 const validationSummaryStyle: React.CSSProperties = {
@@ -3747,10 +4081,11 @@ const dateSuggestionStyle: React.CSSProperties = {
 };
 
 const datePeriodStyle: React.CSSProperties = {
-  marginTop: 5,
   color: '#475569',
   fontSize: 12,
   fontWeight: 700,
+  lineHeight: 1.35,
+  overflowWrap: 'anywhere',
 };
 
 const useSuggestionButtonStyle: React.CSSProperties = {
@@ -3770,9 +4105,12 @@ function rowStatusBadgeStyle(status: string): React.CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
+    maxWidth: 180,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     borderRadius: 999,
-    padding: '3px 8px',
+    padding: '4px 10px',
     fontSize: 12,
     fontWeight: 700,
     color: isReady ? '#047857' : '#b91c1c',
@@ -4025,11 +4363,12 @@ const deleteButtonStyle: React.CSSProperties = {
 };
 
 const dateWarningStyle: React.CSSProperties = {
-  marginTop: 4,
   color: '#92400e',
   fontSize: 12,
   fontWeight: 700,
-  whiteSpace: 'nowrap',
+  lineHeight: 1.35,
+  overflowWrap: 'anywhere',
+  whiteSpace: 'normal',
 };
 
 const modalBackdropStyle: React.CSSProperties = {

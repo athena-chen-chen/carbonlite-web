@@ -19,7 +19,24 @@ function renderRegister() {
 }
 
 describe('RegisterPage', () => {
-  it('requires organization, email, and password before submitting', async () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('shows invite-only messaging and no create account form when public signup is disabled', () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    renderRegister();
+
+    expect(screen.getByText(/pilot access is currently invite-only/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /create account/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /log in/i })).toHaveAttribute('href', '/login');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('requires organization, email, and password before submitting when local signup is enabled', async () => {
+    vi.stubEnv('VITE_APP_ENV', 'local');
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true');
     const fetchMock = vi.spyOn(globalThis, 'fetch');
 
     renderRegister();
@@ -30,7 +47,9 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText(/organization name/i)).toBeInvalid();
   });
 
-  it('registers successfully and redirects to upload', async () => {
+  it('registers successfully and redirects to upload only when local signup is enabled', async () => {
+    vi.stubEnv('VITE_APP_ENV', 'local');
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -68,7 +87,9 @@ describe('RegisterPage', () => {
     );
   });
 
-  it('shows email already registered message', async () => {
+  it('shows email already registered message when local signup is enabled', async () => {
+    vi.stubEnv('VITE_APP_ENV', 'local');
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('email already registered', { status: 409 }),
     );

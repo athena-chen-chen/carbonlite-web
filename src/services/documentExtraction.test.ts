@@ -8,6 +8,10 @@ describe('confirmDocumentImport', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
   });
 
   it('sends source document metadata with imported activity records', async () => {

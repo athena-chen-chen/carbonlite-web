@@ -1,7 +1,12 @@
 import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
 import { trackEvent } from './ga4.service';
-import { canImportActivityRecords, getCurrentUser, requirePermission } from './auth';
+import {
+  canImportActivityRecords,
+  getCurrentUser,
+  getOrganizationId,
+  requirePermission,
+} from './auth';
 
 export type UploadDocumentInput = {
   file: File;
@@ -11,6 +16,7 @@ export type UploadDocumentInput = {
 
 export type DocumentItem = {
   id: string;
+  organizationId?: string | null;
   fileName: string;
   fileUrl: string;
   mimeType?: string | null;
@@ -119,7 +125,39 @@ export async function calculateFileSha256(file: File) {
 }
 
 export async function getDocuments() {
-  return apiFetch<DocumentListResponse>('/documents');
+  const response = await apiFetch<DocumentListResponse>('/documents');
+  const organizationId = getOrganizationId(getCurrentUser());
+
+  if (!organizationId) {
+    return {
+      ...response,
+      items: [],
+      total: 0,
+      totalPages: 1,
+    };
+  }
+
+  const hasOrganizationScopedItems = (response.items ?? []).some(
+    (item) => 'organizationId' in item,
+  );
+  if (!hasOrganizationScopedItems) return response;
+
+  const items = (response.items ?? []).filter(
+    (item) => item.organizationId === organizationId,
+  );
+
+  return {
+    ...response,
+    items,
+    total: Math.min(Number(response.total ?? items.length), items.length),
+    totalPages: Math.max(
+      1,
+      Math.ceil(
+        items.length /
+          Math.max(1, Number(response.pageSize ?? (items.length || 1))),
+      ),
+    ),
+  };
 }
 
 export async function deleteDocument(id: string) {

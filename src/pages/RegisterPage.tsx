@@ -1,10 +1,12 @@
 import { FormEvent, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { isPublicSignupEnabled } from '../config/api';
 
 export function RegisterPage() {
   const { isAuthenticated, register } = useAuth();
   const navigate = useNavigate();
+  const publicSignupEnabled = isPublicSignupEnabled();
   const [organizationName, setOrganizationName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,6 +15,22 @@ export function RegisterPage() {
 
   if (isAuthenticated) {
     return <Navigate to="/upload" replace />;
+  }
+
+  if (!publicSignupEnabled) {
+    return (
+      <div style={pageStyle}>
+        <div style={cardStyle}>
+          <h1 style={{ margin: 0 }}>CarbonLite pilot access is invite-only</h1>
+          <p style={subtitleStyle}>
+            CarbonLite pilot access is currently invite-only. Please contact the CarbonLite team for access.
+          </p>
+          <Link to="/login" style={loginLinkButtonStyle}>
+            Log in
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -167,4 +185,17 @@ const footerTextStyle: React.CSSProperties = {
   margin: '4px 0 0',
   color: '#64748b',
   textAlign: 'center',
+};
+
+const loginLinkButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '11px 16px',
+  borderRadius: 10,
+  border: '1px solid #059669',
+  background: '#059669',
+  color: '#fff',
+  fontWeight: 800,
+  textDecoration: 'none',
 };

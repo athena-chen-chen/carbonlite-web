@@ -5,12 +5,20 @@ import {
   createActivityData,
   deleteActivityData,
   getAllActivityData,
+  getActivityDataById,
   getActivityDataList,
   resetDemoDataForCurrentCompany,
   updateActivityData,
 } from './activityData';
 
 describe('createActivityData', () => {
+  function setMemberUser(organizationId = 'org-1') {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId }),
+    );
+  }
+
   it('blocks viewer users from importing activity records', async () => {
     localStorage.setItem(
       'currentUser',
@@ -55,6 +63,7 @@ describe('createActivityData', () => {
   });
 
   it('sends estimated date metadata for fallback dates', async () => {
+    setMemberUser();
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ id: 'activity-1' }), {
         status: 200,
@@ -228,11 +237,15 @@ describe('createActivityData', () => {
 });
 
 describe('getActivityDataList', () => {
-  it('filters returned activity records to the current organization', async () => {
+  function setMemberUser(organizationId = 'org-a') {
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-a' }),
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId }),
     );
+  }
+
+  it('filters returned activity records to the current organization', async () => {
+    setMemberUser('org-a');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -255,6 +268,57 @@ describe('getActivityDataList', () => {
     await expect(getActivityDataList()).resolves.toMatchObject({
       items: [{ id: 'activity-a', organizationId: 'org-a' }],
       total: 1,
+    });
+  });
+
+  it('hides unscoped activity records when company context is required', async () => {
+    setMemberUser('org-a');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            { id: 'activity-a', organizationId: 'org-a' },
+            { id: 'activity-unscoped', organizationId: null },
+          ],
+          page: 1,
+          pageSize: 100,
+          total: 2,
+          totalPages: 1,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(getActivityDataList()).resolves.toMatchObject({
+      items: [{ id: 'activity-a', organizationId: 'org-a' }],
+      total: 1,
+    });
+  });
+
+  it('returns no company-scoped records without an authenticated company context', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [{ id: 'activity-a', organizationId: 'org-a' }],
+          page: 1,
+          pageSize: 100,
+          total: 1,
+          totalPages: 1,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(getActivityDataList()).resolves.toMatchObject({
+      items: [],
+      total: 0,
+      totalPages: 1,
     });
   });
 
@@ -284,11 +348,12 @@ describe('getActivityDataList', () => {
   });
 
   it('loads every Activity Data page in batches of 100', async () => {
+    setMemberUser('org-a');
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            items: [{ id: 'activity-1' }],
+            items: [{ id: 'activity-1', organizationId: 'org-a' }],
             page: 1,
             pageSize: 100,
             total: 2,
@@ -303,7 +368,7 @@ describe('getActivityDataList', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            items: [{ id: 'activity-2' }],
+            items: [{ id: 'activity-2', organizationId: 'org-a' }],
             page: 2,
             pageSize: 100,
             total: 2,
@@ -333,6 +398,13 @@ describe('getActivityDataList', () => {
 });
 
 describe('deleteActivityData', () => {
+  beforeEach(() => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
+  });
+
   it('calls DELETE /activity-data/:id with Authorization header', async () => {
     localStorage.setItem('accessToken', 'activity-token');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -394,7 +466,56 @@ describe('deleteActivityData', () => {
   });
 });
 
+describe('getActivityDataById', () => {
+  it('rejects records from another organization even if the API returns them', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-a' }),
+    );
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: 'activity-b', organizationId: 'org-b' }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(getActivityDataById('activity-b')).rejects.toThrow(
+      'You do not have permission to perform this action.',
+    );
+  });
+
+  it('rejects unscoped records when company isolation is required', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-a' }),
+    );
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: 'activity-unscoped', organizationId: null }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(getActivityDataById('activity-unscoped')).rejects.toThrow(
+      'You do not have permission to perform this action.',
+    );
+  });
+});
+
 describe('bulkDeleteActivityData', () => {
+  beforeEach(() => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
+  });
+
   it('calls POST /activity-data/bulk-delete and requires persisted delete count', async () => {
     localStorage.setItem('accessToken', 'activity-token');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -526,6 +647,10 @@ describe('clearActivityRecordsForCurrentCompany', () => {
 });
 
 describe('resetDemoDataForCurrentCompany', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('blocks viewer users before calling the reset endpoint', async () => {
     localStorage.setItem(
       'currentUser',
@@ -572,6 +697,20 @@ describe('resetDemoDataForCurrentCompany', () => {
         }),
       }),
     );
+  });
+
+  it('blocks demo reset in production before calling the API', async () => {
+    vi.stubEnv('VITE_APP_ENV', 'production');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(resetDemoDataForCurrentCompany()).rejects.toThrow(
+      'You do not have permission to perform this action.',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('shows role-friendly error when user is not admin or owner', async () => {

@@ -1,4 +1,4 @@
-import { buildApiUrl } from '../config/api';
+import { buildApiUrl, isPublicSignupEnabled } from '../config/api';
 
 const TOKEN_KEY = 'accessToken';
 const USER_KEY = 'currentUser';
@@ -7,6 +7,7 @@ export type AuthUser = {
   id?: string;
   email: string;
   role?: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' | 'USER';
+  status?: 'ACTIVE' | 'DISABLED' | 'PENDING' | string;
   organizationId?: string;
   organizationName?: string;
   organization?: {
@@ -44,6 +45,12 @@ function getFriendlyAuthError(response: Response, fallback: string, detail: stri
   const normalizedDetail = detail.toLowerCase();
 
   if (response.status === 401) return 'Invalid login. Please check your email and password.';
+  if (response.status === 403 && normalizedDetail.includes('signup')) {
+    return 'Public signup is currently disabled. CarbonLite pilot access is invite-only.';
+  }
+  if (normalizedDetail.includes('disabled')) {
+    return 'This account is disabled. Please contact the CarbonLite team for access.';
+  }
   if (response.status === 409 || normalizedDetail.includes('already')) {
     return 'Email already registered. Please log in instead.';
   }
@@ -92,6 +99,10 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
 }
 
 export async function register(input: RegisterInput) {
+  if (!isPublicSignupEnabled()) {
+    throw new Error('Public signup is currently disabled. CarbonLite pilot access is invite-only.');
+  }
+
   return authRequest('/auth/register', input);
 }
 
@@ -159,7 +170,9 @@ export function getUserDisplayName(user: AuthUser | null) {
 }
 
 export function getUserRole(user: AuthUser | null) {
-  const role = String(user?.role ?? 'MEMBER').toUpperCase();
+  if (!user) return 'VIEWER';
+
+  const role = String(user.role ?? 'MEMBER').toUpperCase();
   if (role === 'USER') return 'MEMBER';
   if (role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER' || role === 'VIEWER') {
     return role;
@@ -176,7 +189,13 @@ export function isAdminOrOwnerUser(user: AuthUser | null) {
   return role === 'ADMIN' || role === 'OWNER';
 }
 
+function hasCompanyContext(user: AuthUser | null) {
+  return Boolean(user && getOrganizationId(user));
+}
+
 export function canManageActivityRecords(user: AuthUser | null) {
+  if (!hasCompanyContext(user)) return false;
+
   const role = getUserRole(user);
   return role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER';
 }
@@ -186,10 +205,14 @@ export function canImportActivityRecords(user: AuthUser | null) {
 }
 
 export function canClearActivityRecords(user: AuthUser | null) {
+  if (!hasCompanyContext(user)) return false;
+
   return isAdminOrOwnerUser(user);
 }
 
 export function canManageConversionFactors(user: AuthUser | null) {
+  if (!hasCompanyContext(user)) return false;
+
   return isAdminOrOwnerUser(user);
 }
 
