@@ -128,7 +128,7 @@ describe('ConversionFactorsPage traceability', () => {
       sourceDocument: 'CarbonLite MVP Default Factors v1.0',
       methodology:
         'Used for pilot validation. Intended for demonstration workflows only. Replace with official ECCC or provincial emission factors before production reporting.',
-      confidenceLevel: 'Medium (Engineering Estimate)',
+      confidenceLevel: 'Medium — Engineering Estimate',
       verificationStatus: 'Internal Review Required',
       verified: false,
       notes: 'Default system factor included with CarbonLite MVP. Not intended for regulatory reporting.',
@@ -267,7 +267,57 @@ describe('ConversionFactorsPage traceability', () => {
       'href',
       'https://example.com/factor-source',
     );
-    expect(screen.getAllByText('Review before reporting.').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Internal Review Required before formal reporting/i)).toBeInTheDocument();
+  });
+
+  it('uses pilot-ready wording in system factor detail modal instead of placeholder labels', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        {
+          ...baseFactor,
+          id: 'electricity-ab-placeholder',
+          name: 'Electricity - Alberta',
+          activityType: 'ELECTRICITY',
+          jurisdiction: 'Alberta, Canada',
+          region: 'Alberta',
+          country: 'Canada',
+          unit: 'kWh',
+          factorValue: 0.53,
+          sourceDocument: null,
+          sourceReference: null,
+          factorVersion: null,
+          sourceYear: 2025,
+          confidenceLevel: 'Low (Placeholder)',
+          verificationStatus: 'Draft',
+          assumptions: 'Placeholder electricity factor for pilot testing only.',
+          methodology: 'Placeholder electricity factor for pilot testing only.',
+          verified: false,
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'View' }));
+
+    const dialog = screen.getByRole('dialog', { name: /Electricity - Alberta/i });
+    expect(within(dialog).getAllByText('Pilot Estimate').length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('Internal Review Required').length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('CarbonLite MVP Default Factors v1.0').length).toBeGreaterThan(0);
+    expect(
+      within(dialog).getAllByText(/Pilot-stage default electricity factor/i).length,
+    ).toBeGreaterThan(0);
+    expect(within(dialog).queryByText(/Placeholder/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/testing only/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Draft')).not.toBeInTheDocument();
   });
 
   it('hides province-required electricity placeholders from the factor list', async () => {

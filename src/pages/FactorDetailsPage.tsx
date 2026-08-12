@@ -675,7 +675,7 @@ export function FactorDetailsPage() {
             <span>Update Notifications</span>
             <span>Approval Workflow</span>
             <span>Reviewer Comments</span>
-            <span>AI Explanation</span>
+            <span>Traceability Explanation</span>
           </div>
         </Card>
       </div>

@@ -62,7 +62,7 @@ describe('LandingPage auth buttons', () => {
     await userEvent.click(screen.getByRole('link', { name: /view product demo/i }));
 
     expect(trackEvent).toHaveBeenCalledWith('DEMO_VIDEO_VIEWED', {
-      video_name: 'CarbonLite AI demo',
+      video_name: 'CarbonLite demo',
       source: 'hero',
     });
   });

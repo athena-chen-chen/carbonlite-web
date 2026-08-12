@@ -982,7 +982,27 @@ function formatRecordUnit(value: unknown) {
   return normalized.value;
 }
 
-function formatActivitySourceType(sourceType?: string | null) {
+function getSourceFileExtension(value?: string | null) {
+  const match = String(value ?? '').trim().toLowerCase().match(/\.([a-z0-9]+)(?:$|[?#])/);
+  return match?.[1] ?? '';
+}
+
+function formatActivitySourceType(rowOrSourceType?: ActivityDataItem | string | null) {
+  const sourceType =
+    typeof rowOrSourceType === 'string' || rowOrSourceType === null || rowOrSourceType === undefined
+      ? rowOrSourceType
+      : rowOrSourceType.sourceType;
+  const sourceFileName =
+    typeof rowOrSourceType === 'object' && rowOrSourceType !== null
+      ? rowOrSourceType.sourceFileName || rowOrSourceType.sourceReference
+      : null;
+  const extension = getSourceFileExtension(sourceFileName);
+
+  if (extension === 'xlsx' || extension === 'xls' || extension === 'csv') {
+    return 'Spreadsheet Import';
+  }
+  if (extension === 'pdf') return 'PDF Extraction';
+
   switch (sourceType) {
     case 'DOCUMENT_AI':
     case 'AI_EXTRACTION':
@@ -1402,7 +1422,7 @@ function renderNormalRow(row){
       </td>
       ) : null}
       {visibleColumns.facility ? <td style={tdStyle}>{formatOptionalRecordValue(row.facilityId)}</td> : null}
-      {visibleColumns.source ? <td style={tdStyle}>{formatActivitySourceType(row.sourceType)}</td> : null}
+      {visibleColumns.source ? <td style={tdStyle}>{formatActivitySourceType(row)}</td> : null}
       {visibleColumns.sourceReference ? (
       <td style={sourceReferenceCellStyle} title={formatActivitySourceReference(row)}>
         {formatActivitySourceReference(row)}
@@ -1543,7 +1563,7 @@ function renderViewedRecordModal() {
             value={formatOptionalRecordValue(normalizeProvinceValue(viewedRecord.jurisdictionRegion))}
           />
           <DetailsField label="Facility" value={formatOptionalRecordValue(viewedRecord.facilityId)} />
-          <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord.sourceType)} />
+          <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord)} />
           <DetailsField
             label="Source Reference"
             value={formatActivitySourceReference(viewedRecord)}

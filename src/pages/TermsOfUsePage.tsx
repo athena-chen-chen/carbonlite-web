@@ -2,16 +2,16 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 const effectiveDate = 'June 9, 2026';
-const defaultTitle = 'CarbonLite AI | Carbon Reporting for SMEs';
+const defaultTitle = 'CarbonLite | Emissions Data Readiness for SMEs';
 const defaultDescription =
-  'Turn invoices, utility bills, and spreadsheets into structured emissions reporting. CarbonLite AI helps SMEs and environmental consultants simplify carbon reporting workflows.';
+  'Turn invoices, utility bills, and spreadsheets into structured emissions data readiness and reporting workflows. CarbonLite helps SMEs and environmental consultants improve factor matching and calculation traceability.';
 
 const sections = [
   {
     title: 'Acceptance of Terms',
     content: (
       <p>
-        By accessing or using CarbonLite AI, you agree to these Terms of Use. If you
+        By accessing or using CarbonLite, you agree to these Terms of Use. If you
         do not agree with these terms, do not use the service. If you use CarbonLite
         on behalf of an organization, you confirm that you are authorized to accept
         these terms for that organization.
@@ -22,7 +22,7 @@ const sections = [
     title: 'Description of Service',
     content: (
       <>
-        <p>CarbonLite AI provides software tools for:</p>
+        <p>CarbonLite provides software tools for:</p>
         <ul>
           <li>Uploading invoices, utility bills, spreadsheets, and operational documents.</li>
           <li>Extracting and organizing activity data.</li>
@@ -36,7 +36,7 @@ const sections = [
     title: 'Pilot Stage Notice',
     content: (
       <p>
-        CarbonLite AI is currently being validated through pilot users and
+        CarbonLite is currently being validated through pilot users and
         environmental professionals. Features, workflows, availability, and service
         providers may change without notice as the product develops.
       </p>
@@ -61,7 +61,7 @@ const sections = [
     title: 'No Professional Advice',
     content: (
       <p>
-        CarbonLite AI is a software tool. Generated reports, calculations, metrics,
+        CarbonLite is a software tool. Generated reports, calculations, metrics,
         suggestions, and other outputs are provided for informational and workflow
         support purposes only. They are not legal, accounting, engineering,
         environmental, regulatory, or other professional advice. You remain
@@ -74,7 +74,7 @@ const sections = [
     title: 'Intellectual Property',
     content: (
       <p>
-        CarbonLite AI software, branding, logos, interface designs, and CarbonLite
+        CarbonLite software, branding, logos, interface designs, and CarbonLite
         content are owned by or licensed to KACH CANADA LTD. These terms do not
         transfer ownership of that intellectual property. You retain responsibility
         for and any rights you hold in content you upload to the service.
@@ -112,7 +112,7 @@ const sections = [
     content: (
       <p>
         To the maximum extent permitted by applicable law, KACH CANADA LTD. and
-        CarbonLite AI will not be liable for indirect, incidental, special,
+        CarbonLite will not be liable for indirect, incidental, special,
         consequential, or punitive damages; lost profits or business opportunities;
         business interruption; loss of data; or reporting errors arising from
         user-provided data, unreviewed extraction results, conversion factors, or use
@@ -126,7 +126,7 @@ const sections = [
     content: (
       <p>
         You should retain copies of original source documents, activity data, and
-        exported reports. CarbonLite AI does not guarantee permanent storage,
+        exported reports. CarbonLite does not guarantee permanent storage,
         recovery, or backup of uploaded files or generated content, particularly
         during pilot validation.
       </p>
@@ -203,8 +203,8 @@ export default function TermsOfUsePage() {
       document.head.append(canonical);
     }
 
-    document.title = 'Terms of Use | CarbonLite AI';
-    description.content = 'Terms of Use for CarbonLite AI carbon reporting software.';
+    document.title = 'Terms of Use | CarbonLite';
+    description.content = 'Terms of Use for CarbonLite emissions data readiness software.';
     canonical.href = 'https://carbonliteapp.ca/terms';
 
     return () => {
@@ -232,7 +232,7 @@ export default function TermsOfUsePage() {
               CL
             </span>
             <span>
-              <span className="block font-bold">CarbonLite AI</span>
+              <span className="block font-bold">CarbonLite</span>
               <span className="block text-xs text-slate-500">Terms of Use</span>
             </span>
           </Link>
@@ -248,7 +248,7 @@ export default function TermsOfUsePage() {
       <main className="mx-auto max-w-4xl px-5 py-12 sm:px-8 sm:py-16">
         <div className="border-b border-slate-200 pb-9">
           <p className="text-sm font-bold uppercase text-emerald-700">
-            CarbonLite AI
+            CarbonLite
           </p>
           <h1 className="mt-3 text-4xl font-black text-slate-950 sm:text-5xl">
             Terms of Use
@@ -257,7 +257,7 @@ export default function TermsOfUsePage() {
             Effective date: {effectiveDate}
           </p>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-600">
-            These terms explain the conditions for using CarbonLite AI during its
+            These terms explain the conditions for using CarbonLite during its
             pilot validation stage.
           </p>
         </div>

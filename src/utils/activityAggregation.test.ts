@@ -71,6 +71,31 @@ describe('activity usage aggregation', () => {
     );
   });
 
+  it('builds a complete input activity breakdown for pilot review', () => {
+    const totals = aggregateActivityUsage([
+      { activityType: 'ELECTRICITY', quantity: 12500, unit: 'kWh' },
+      { activityType: 'ELECTRICITY', quantity: 100, unit: 'kWh' },
+      { activityType: 'ELECTRICITY', quantity: 1000, unit: 'kWh' },
+      { activityType: 'ELECTRICITY', quantity: 50, unit: 'MWh' },
+      { activityType: 'NATURAL_GAS', quantity: 1000, unit: 'm3' },
+      { activityType: 'GASOLINE', quantity: 500, unit: 'liters' },
+      { activityType: 'DIESEL', quantity: 100, unit: 'liters' },
+      { activityType: 'AIR_TRAVEL', quantity: 5000, unit: 'km' },
+      { activityType: 'HOTEL', quantity: 10, unit: 'nights' },
+      { activityType: 'WATER', quantity: 100, unit: 'm3' },
+    ]);
+
+    expect(totals.activityUsageBreakdown).toEqual([
+      { activityType: 'ELECTRICITY', total: 63600, unit: 'kWh' },
+      { activityType: 'NATURAL_GAS', total: 1000, unit: 'm3' },
+      { activityType: 'GASOLINE', total: 500, unit: 'liters' },
+      { activityType: 'DIESEL', total: 100, unit: 'liters' },
+      { activityType: 'AIR_TRAVEL', total: 5000, unit: 'km' },
+      { activityType: 'HOTEL', total: 10, unit: 'nights' },
+      { activityType: 'WATER', total: 100, unit: 'm3', trackedOnly: true },
+    ]);
+  });
+
   it('does not combine incompatible fuel units into one display value', () => {
     const totals = aggregateActivityUsage([
       { activityType: 'DIESEL', quantity: 1710, unit: 'L' },

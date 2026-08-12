@@ -390,7 +390,7 @@ function buildImportedActivity(): TestActivity {
     jurisdictionRegion: 'Alberta',
     sourceType: 'AI_EXTRACTION',
     sourceReference: 'enmax-electricity.csv',
-    notes: 'Imported from AI extraction.',
+    notes: 'Imported from document extraction.',
     createdAt: now,
     updatedAt: now,
   };
@@ -590,7 +590,7 @@ function buildCalculationSummary(
             estimatedEmissionsKgCO2e: emissions,
             sourceType: 'AI_EXTRACTION',
             sourceReference: 'enmax-electricity.csv',
-            notes: 'Imported from AI extraction.',
+            notes: 'Imported from document extraction.',
             factorId: 'factor-electricity-ab-2026',
           },
         ]
@@ -648,7 +648,7 @@ function buildCalculationSummary(
             sourceReference: 'enmax-electricity.csv',
             sourceFileName: 'enmax-electricity.csv',
             sourceDocumentId: 'document-1',
-            notes: 'Imported from AI extraction.',
+            notes: 'Imported from document extraction.',
           },
         ]
       : [],

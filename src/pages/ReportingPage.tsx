@@ -717,6 +717,7 @@ function handleDownloadPDF() {
     totalEstimatedEmissionsKgCO2e,
     countSummary: reportCountSummary,
     matchedActivityEmissions,
+    calculationDetails,
   });
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);

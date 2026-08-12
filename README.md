@@ -1,6 +1,6 @@
 # CarbonLite Web
 
-React + Vite frontend for CarbonLite AI.
+React + Vite frontend for CarbonLite.
 
 This app provides document upload, extraction preview, validation, activity records,
 Calculation Review, reporting, and pilot demo workflows.
@@ -67,6 +67,10 @@ services and does not modify a real database. The golden fixture lives at:
 ```text
 apps/web-e2e/fixtures/pilot-golden-dataset.csv
 ```
+
+Ground Transport remains supported in the product, but it is intentionally
+excluded from the Pilot Demo v0.1 golden fixture so the stable report total
+remains `37,285 kgCO2e`.
 
 The smoke workflow verifies:
 

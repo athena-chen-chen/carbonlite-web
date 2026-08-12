@@ -23,10 +23,7 @@ import {
   getPilotProvinceCode,
   normalizeProvince,
 } from '../utils/province';
-import {
-  formatCredibilityLabel,
-  getFactorCredibilityBadges,
-} from '../utils/factorCredibility';
+import { formatCredibilityLabel } from '../utils/factorCredibility';
 import { useAppDialog } from '../components/AppDialog';
 
 type ConversionFactorListResponse = {
@@ -87,26 +84,32 @@ export function getFactorJurisdiction(item: ConversionFactorItem) {
 export function getFactorTraceability(item: ConversionFactorItem) {
   return {
     jurisdiction: getFactorJurisdiction(item),
-    sourceAuthority: item.sourceAuthority || item.sourceName || '',
-    sourceDocument: item.sourceDocument || item.sourceReference || '',
+    sourceAuthority: formatPilotSourceAuthority(item),
+    sourceDocument: formatPilotSourceDocument(item),
     sourceYear: item.sourceYear ?? null,
     sourceUrl: item.sourceUrl ?? '',
-    factorVersion: item.factorVersion ?? '',
-    assumptions: item.assumptions || item.methodology || item.notes || '',
+    factorVersion: formatPilotFactorVersion(item),
+    assumptions: formatPilotAssumptions(item),
     methodology: item.methodology || '',
-    confidenceLevel: formatCredibilityLabel(item.confidenceLevel),
-    verificationStatus: formatCredibilityLabel(item.verificationStatus),
+    confidenceLevel: formatPilotConfidence(item),
+    verificationStatus: formatPilotVerification(item),
     verified: Boolean(item.verified),
     notes: item.notes || '',
   };
 }
 
-function isWaterTrackedFactor(item: Pick<ConversionFactorItem, 'activityType' | 'confidenceLevel' | 'verificationStatus'>) {
-  return (
-    String(item.activityType ?? '').toUpperCase() === 'WATER' ||
-    (item.confidenceLevel === 'Pilot Estimate' &&
-      item.verificationStatus === 'Internal Review Required')
-  );
+function isWaterTrackedFactor(item: Pick<
+  ConversionFactorItem,
+  'activityType' | 'name' | 'sourceDocument' | 'sourceReference'
+>) {
+  const text = [
+    item.activityType,
+    item.name,
+    item.sourceDocument,
+    item.sourceReference,
+  ].join(' ').toLowerCase();
+
+  return String(item.activityType ?? '').toUpperCase() === 'WATER' || text.includes('water');
 }
 
 function isElectricityFactor(item: Pick<ConversionFactorItem, 'activityType' | 'name'>) {
@@ -125,6 +128,106 @@ function isPlaceholderElectricityFactor(item: ConversionFactorItem) {
     isElectricityFactor(item) &&
     isProvinceRequiredJurisdiction(getFactorJurisdiction(item))
   );
+}
+
+function isPilotDefaultFactor(item: ConversionFactorItem) {
+  return isSystemFactor(item) || String(item.sourceAuthority ?? '').toLowerCase().includes('carbonlite');
+}
+
+function isFuelFactor(item: Pick<ConversionFactorItem, 'activityType'>) {
+  return ['NATURAL_GAS', 'GASOLINE', 'DIESEL'].includes(
+    String(item.activityType ?? '').toUpperCase(),
+  );
+}
+
+function isScope3Factor(item: Pick<ConversionFactorItem, 'activityType'>) {
+  return ['AIR_TRAVEL', 'HOTEL', 'GROUND_TRANSPORT', 'SHIPPING'].includes(
+    String(item.activityType ?? '').toUpperCase(),
+  );
+}
+
+function formatPilotSourceAuthority(item: ConversionFactorItem) {
+  return item.sourceAuthority || item.sourceName || (isPilotDefaultFactor(item) ? 'CarbonLite' : '');
+}
+
+function formatPilotSourceDocument(item: ConversionFactorItem) {
+  const value = String(item.sourceDocument || item.sourceReference || '').trim();
+  if (value) return value;
+  if (isPilotDefaultFactor(item)) return 'CarbonLite MVP Default Factors v1.0';
+  return 'Source review required';
+}
+
+function formatPilotFactorVersion(item: ConversionFactorItem) {
+  if (isPilotDefaultFactor(item)) return 'CarbonLite MVP Default Factors v1.0';
+  return String(item.factorVersion ?? '').trim() || 'Not versioned — pilot default';
+}
+
+function formatPilotConfidence(item: ConversionFactorItem) {
+  if (isWaterTrackedFactor(item)) return 'Tracked Metric · No Emissions Factor Required';
+  if (isElectricityFactor(item) && isPilotDefaultFactor(item)) return 'Pilot Estimate';
+  if (isScope3Factor(item) && isPilotDefaultFactor(item)) return 'Pilot Estimate';
+  if (isFuelFactor(item) && isPilotDefaultFactor(item)) return 'Medium — Engineering Estimate';
+
+  const raw = String(item.confidenceLevel ?? '').trim();
+  const label = formatCredibilityLabel(raw);
+  const normalized = raw.toLowerCase();
+
+  if (normalized.includes('placeholder')) return 'Pilot Estimate';
+  if (label === 'Low' && isPilotDefaultFactor(item)) return 'Pilot Estimate';
+  return label || (isPilotDefaultFactor(item) ? 'Pilot Estimate' : 'Source Review Required');
+}
+
+function formatPilotVerification(item: ConversionFactorItem) {
+  if (isWaterTrackedFactor(item)) return 'Tracked Metric · No Emissions Factor Required';
+  if (isScope3Factor(item) && isPilotDefaultFactor(item)) {
+    return 'Internal Review Required · Consultant Review Recommended';
+  }
+
+  const raw = String(item.verificationStatus ?? '').trim();
+  const label = formatCredibilityLabel(raw);
+  const normalized = raw.toLowerCase();
+
+  if (!raw && isPilotDefaultFactor(item)) return 'Internal Review Required';
+  if (normalized === 'draft' || normalized.includes('placeholder') || normalized.includes('pilot demo')) {
+    return 'Internal Review Required';
+  }
+  return label || 'Source Review Required';
+}
+
+function formatPilotAssumptions(item: ConversionFactorItem) {
+  if (isWaterTrackedFactor(item)) {
+    return 'Water is tracked as an operational metric and excluded from GHG emissions totals unless a reviewed water emissions factor is provided.';
+  }
+
+  if (isElectricityFactor(item) && isPilotDefaultFactor(item)) {
+    return 'Pilot-stage default electricity factor. Uses jurisdiction-specific electricity factor and latest available prior-year factor where no reporting-year factor exists. Replace with reviewed official or consultant-approved factor before formal reporting.';
+  }
+
+  if (isFuelFactor(item) && isPilotDefaultFactor(item)) {
+    return 'Pilot-stage default fuel combustion factor. Used for workflow validation and calculation traceability. Replace with reviewed official or consultant-approved factor before formal reporting.';
+  }
+
+  if (isScope3Factor(item) && isPilotDefaultFactor(item)) {
+    return 'Pilot-stage Scope 3 estimate. Scope 3 calculations can vary by methodology, boundary, and factor source. Consultant review recommended before formal reporting.';
+  }
+
+  return item.assumptions || item.methodology || item.notes || 'Source review required before formal reporting.';
+}
+
+function formatModalReviewGuidance(item: ConversionFactorItem) {
+  if (isWaterTrackedFactor(item)) {
+    return 'Tracked Metric · No Emissions Factor Required';
+  }
+
+  if (isScope3Factor(item)) {
+    return 'Consultant Review Recommended before formal reporting.';
+  }
+
+  if (isPilotDefaultFactor(item)) {
+    return 'Internal Review Required before formal reporting.';
+  }
+
+  return 'Use documented source, verification, and reviewer notes before relying on this factor.';
 }
 
 function formatFactorValue(value: ConversionFactorItem['factorValue']) {
@@ -252,12 +355,16 @@ function formatMethodologyDisplay(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) {
     return 'Water usage is tracked as an operational metric. CarbonLite does not calculate water-related emissions by default because water emission factors vary by municipality, treatment process, and reporting methodology.';
   }
+  if (isPilotDefaultFactor(item)) return formatPilotAssumptions(item);
   return item.methodology || '';
 }
 
 function formatNotesDisplay(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) {
     return 'Tracked metric only. Not included in emissions totals unless a reviewed water factor is configured.';
+  }
+  if (isPilotDefaultFactor(item)) {
+    return 'CarbonLite does not certify emissions. Replace pilot-stage defaults with reviewed official or consultant-approved factors before formal reporting.';
   }
   return item.notes || '';
 }
@@ -912,7 +1019,7 @@ export function ConversionFactorsPage() {
       <style>{responsiveStyles}</style>
       <div className="print-report-header" style={printHeaderStyle}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>CarbonLite AI</div>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>CarbonLite</div>
           <h1 style={{ margin: '8px 0 0', fontSize: 24 }}>Conversion Factors Report</h1>
         </div>
         <div style={{ textAlign: 'right', fontSize: 12, color: '#475569' }}>
@@ -925,7 +1032,7 @@ export function ConversionFactorsPage() {
         <div>
           <h1 style={{ margin: 0 }}>Conversion Factors</h1>
           <p style={{ marginTop: 8, color: '#666' }}>
-            Manage the factors CarbonLite AI uses to convert activity data into carbon metrics.
+            Manage the factors used to convert activity data into emissions metrics.
           </p>
         </div>
         <button
@@ -1534,7 +1641,7 @@ export function ConversionFactorsPage() {
       </div>
 
       <div className="print-report-footer" style={printFooterStyle}>
-        <div>Generated by CarbonLite AI</div>
+        <div>Generated by CarbonLite</div>
         <div>For environmental reporting reference</div>
       </div>
 
@@ -1665,32 +1772,38 @@ function FactorDetailsModal({
               : ''}
           </div>
         ) : null}
-        {isPlaceholderElectricityFactor(item) ? (
-          <div style={placeholderWarningStyle}>
-            This is a placeholder electricity factor for pilot testing only. Electricity
-            factors vary by province and should be replaced with verified provincial
-            factors before production or client-facing reporting.
+        {isPilotDefaultFactor(item) ? (
+          <div style={pilotReviewNoticeStyle}>
+            Pilot-stage default factor. Replace with reviewed official or consultant-approved
+            factor before formal reporting.
           </div>
         ) : null}
         <div style={traceabilityDetailsStyle}>
-          <DetailSection title="Factor Information">
-            <DetailItem label="Activity" value={formatActivityTypeDisplay(item.activityType)} />
-            <DetailItem label="Factor" value={formatFactorValueDisplay(item)} />
+          <DetailSection title="Factor Summary">
+            <DetailItem label="Factor Name" value={formatFactorNameDisplay(item)} />
+            <DetailItem label="Activity Type" value={formatActivityTypeDisplay(item.activityType)} />
+            <DetailItem label="Value" value={formatFactorValueDisplay(item)} />
             <DetailItem label="Activity Unit" value={item.unit} />
             <DetailItem label="Factor Unit" value={formatFactorResultUnitDisplay(item)} />
             <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
-            <DetailItem label="Factor Type" value={getFactorTypeLabel(item)} />
+            <DetailItem label="Source Year" value={traceability.sourceYear} />
+            <DetailItem label="Version" value={traceability.factorVersion} />
             <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
             {isWaterTrackedFactor(item) ? (
               <DetailItem label="Calculation" value="Not calculated by default" />
             ) : null}
           </DetailSection>
 
-          <DetailSection title="Source Information">
+          <DetailSection title="Source & Governance">
             <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
             <DetailItem label="Source Document" value={traceability.sourceDocument} />
-            <DetailItem label="Source Year" value={traceability.sourceYear} />
-            <DetailItem label="Version" value={traceability.factorVersion} />
+            <DetailItem label="Verification Status" value={traceability.verificationStatus} />
+            <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
+            <DetailItem
+              label="Consultant Review"
+              value={isScope3Factor(item) || isPilotDefaultFactor(item) ? 'Recommended before formal reporting' : 'Use documented review status'}
+            />
+            <DetailItem label="Factor Type" value={getFactorTypeLabel(item)} />
             <DetailItem
               label="Source URL"
               value={
@@ -1703,22 +1816,10 @@ function FactorDetailsModal({
             />
           </DetailSection>
 
-          <DetailSection title="Governance">
-            <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
-            <DetailItem label="Verification Status" value={traceability.verificationStatus} />
-            <DetailItem
-              label="Review Guidance"
-              value={getFactorCredibilityBadges(item.activityType, item).join(' · ')}
-            />
-            <DetailItem
-              label="Verified"
-              value={traceability.verified ? 'Yes' : 'No / user review required'}
-            />
-          </DetailSection>
-
-          <DetailSection title="Methodology">
-            <DetailItem label="Methodology" value={formatMethodologyDisplay(item)} />
+          <DetailSection title="Assumptions / Review Notes">
             <DetailItem label="Assumptions" value={traceability.assumptions} />
+            <DetailItem label="Review Guidance" value={formatModalReviewGuidance(item)} />
+            <DetailItem label="Methodology Notes" value={formatMethodologyDisplay(item)} />
             <DetailItem label="Notes" value={formatNotesDisplay(item)} />
             <DetailItem
               label="Audit History"
@@ -2235,11 +2336,11 @@ const systemFactorNoticeStyle: React.CSSProperties = {
   fontWeight: 700,
 };
 
-const placeholderWarningStyle: React.CSSProperties = {
-  border: '1px solid #fed7aa',
+const pilotReviewNoticeStyle: React.CSSProperties = {
+  border: '1px solid #bfdbfe',
   borderRadius: 8,
-  background: '#fff7ed',
-  color: '#9a3412',
+  background: '#eff6ff',
+  color: '#1e40af',
   padding: '10px 12px',
   marginBottom: 14,
   fontSize: 13,

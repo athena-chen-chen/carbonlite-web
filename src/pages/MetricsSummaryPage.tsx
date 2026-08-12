@@ -297,7 +297,7 @@ function handleDownloadPDF() {
   const doc = new jsPDF();
 
   doc.setFontSize(18);
-  doc.text('CarbonLite AI Calculation Review', 14, 20);
+  doc.text('CarbonLite Calculation Review', 14, 20);
 
   doc.setFontSize(10);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
@@ -335,7 +335,7 @@ function handleDownloadPDF() {
     recordsIncluded: countSummary.processedRecords,
   });
   const hasLoadedSummary = lastUpdated !== null || summary !== null;
-  const isInitialLoading = loading && !hasLoadedSummary;
+  const isInitialLoading = !hasLoadedSummary && !error;
   const isRefreshing = loading && hasLoadedSummary;
 
   return (
@@ -432,24 +432,26 @@ function handleDownloadPDF() {
 </button> */}
       </div>
       {isInitialLoading ? (
-        <div style={loadingNoticeStyle}>Loading summary...</div>
+        <div style={loadingNoticeStyle}>Loading calculation summary...</div>
       ) : null}
 
       {error && <div style={warningStyle}>{error}</div>}
 
-      <MetricsSummarySection
-        usageTotals={usageTotals}
-        totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
-        countSummary={countSummary}
-        missingFactors={missingFactors}
-        calculationDetails={calculationDetails}
-        emptyMessage={
-          activities.length === 0 && countSummary.totalRecordsFound > 0
-            ? 'No records found for selected period.'
-            : undefined
-        }
-        isLoading={isInitialLoading}
-      />
+      {!isInitialLoading ? (
+        <MetricsSummarySection
+          usageTotals={usageTotals}
+          totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
+          countSummary={countSummary}
+          missingFactors={missingFactors}
+          calculationDetails={calculationDetails}
+          emptyMessage={
+            activities.length === 0 && countSummary.totalRecordsFound > 0
+              ? 'No records found for selected period.'
+              : undefined
+          }
+          isLoading={false}
+        />
+      ) : null}
     </div>
   );
 }

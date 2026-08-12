@@ -439,7 +439,7 @@ describe('ActivityDataPage delete flows', () => {
     expect(await screen.findByText('Diesel')).toBeInTheDocument();
     expect(screen.getByText('Source Reference')).toBeInTheDocument();
     expect(screen.getAllByText('Manual Entry').length).toBeGreaterThan(0);
-    expect(screen.getByText('Document')).toBeInTheDocument();
+    expect(screen.getByText('PDF Extraction')).toBeInTheDocument();
     expect(
       screen.getByText('utility.pdf · Utility bill usage · Page 1 · Line item 3'),
     ).toBeInTheDocument();

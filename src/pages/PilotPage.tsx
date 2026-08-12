@@ -51,7 +51,7 @@ export default function PilotPage() {
               CL
             </span>
             <span>
-              <span className="block text-base font-bold tracking-tight">CarbonLite AI</span>
+              <span className="block text-base font-bold tracking-tight">CarbonLite</span>
               <span className="block text-xs text-slate-500">Pilot Program</span>
             </span>
           </button>

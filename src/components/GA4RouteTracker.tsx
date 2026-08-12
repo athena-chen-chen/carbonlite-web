@@ -31,7 +31,7 @@ export function GA4RouteTracker() {
 
     const pageTitle = location.pathname.startsWith('/methodology/')
       ? 'Methodology'
-      : pageTitles[location.pathname] ?? 'CarbonLite AI';
+      : pageTitles[location.pathname] ?? 'CarbonLite';
 
     trackPageView(route, pageTitle);
   }, [location.pathname, location.search]);

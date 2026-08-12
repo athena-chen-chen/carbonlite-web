@@ -17,7 +17,7 @@ describe('AboutPage', () => {
     renderAboutPage();
 
     expect(
-      screen.getByRole('heading', { name: 'About CarbonLite AI', level: 1 }),
+      screen.getByRole('heading', { name: 'About CarbonLite', level: 1 }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'Pilot-stage validation' }),
@@ -35,12 +35,12 @@ describe('AboutPage', () => {
     const { unmount } = renderAboutPage();
 
     expect(document.title).toBe(
-      'About CarbonLite AI | Carbon Reporting for SMEs',
+      'About CarbonLite | Emissions Data Readiness for SMEs',
     );
     expect(
       document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content,
     ).toBe(
-      'Learn about CarbonLite AI, a Canadian-built carbon reporting workflow tool for SMEs and environmental consultants.',
+      'Learn about CarbonLite, a Canadian-built emissions data readiness and reporting workflow tool for SMEs and environmental consultants.',
     );
     expect(
       document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,

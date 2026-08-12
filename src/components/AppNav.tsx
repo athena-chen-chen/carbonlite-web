@@ -150,7 +150,7 @@ export function AppNav() {
     <header style={headerStyle}>
       <div style={containerStyle}>
         <div style={brandBlockStyle}>
-          <div style={brandStyle}>CarbonLite AI</div>
+          <div style={brandStyle}>CarbonLite</div>
           {isAuthenticated ? (
             <div style={workspaceStyle}>Workspace: {workspaceName}</div>
           ) : null}

@@ -61,7 +61,6 @@ describe('LoginPage', () => {
     renderLogin();
 
     expect(screen.getByRole('heading', { name: 'Log in to CarbonLite' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /CarbonLite AI/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /create an account/i })).not.toBeInTheDocument();
     expect(screen.getByText(/pilot access is currently invite-only/i)).toBeInTheDocument();
     expect(screen.getByText(/if you are a pilot reviewer/i)).toBeInTheDocument();
@@ -74,9 +73,9 @@ describe('LoginPage', () => {
   it('falls back to the CarbonLite contact email when no contact email is configured', () => {
     renderLogin();
 
-    expect(screen.getByRole('link', { name: 'carbonliteai@gmail.com' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'help@carbonliteapp.ca' })).toHaveAttribute(
       'href',
-      'mailto:carbonliteai@gmail.com',
+      'mailto:help@carbonliteapp.ca',
     );
   });
 

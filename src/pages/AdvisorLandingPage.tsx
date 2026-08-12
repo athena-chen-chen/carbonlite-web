@@ -5,10 +5,10 @@ export default function AdvisorLandingPage() {
         {/* Header */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold tracking-tight text-slate-900">
-            CarbonLite – AI-Powered Carbon Data Extraction for SMEs
+            CarbonLite - Emissions Data Readiness for SMEs
           </h1>
           <p className="mt-4 text-lg text-slate-600">
-            A practical solution to automate data collection from operational documents and enable structured carbon reporting workflows.
+            A practical workflow to organize operational documents, review activity data, and support traceable emissions reporting.
           </p>
         </div>
 
@@ -27,13 +27,13 @@ export default function AdvisorLandingPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-slate-900">Solution</h2>
           <p className="mt-4 text-slate-600">
-            CarbonLite AI introduces an AI-assisted workflow to convert unstructured documents into structured activity data.
+            CarbonLite introduces a guided workflow to convert unstructured documents into structured activity data.
           </p>
 
           <div className="mt-6 grid gap-4">
             {[
               "Upload documents (CSV, invoices, utility bills)",
-              "AI extracts activity data (type, quantity, unit, date)",
+              "System-assisted extraction identifies activity data (type, quantity, unit, date)",
               "User reviews and validates extracted results",
               "Confirmed data is imported into structured database",
               "Metrics are calculated for reporting",
@@ -49,7 +49,7 @@ export default function AdvisorLandingPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-slate-900">Innovation</h2>
           <ul className="mt-4 space-y-2 text-slate-600 list-disc pl-5">
-            <li>AI-based document understanding tailored for carbon workflows</li>
+            <li>Document understanding tailored for emissions data workflows</li>
             <li>Structured extraction beyond traditional OCR</li>
             <li>Validation mechanisms (row count, missing detection)</li>
             <li>Simple UX for non-technical users</li>
@@ -62,7 +62,7 @@ export default function AdvisorLandingPage() {
           <ul className="mt-4 space-y-2 text-slate-600 list-disc pl-5">
             <li>Working MVP completed</li>
             <li>End-to-end workflow implemented</li>
-            <li>AI extraction integrated</li>
+            <li>Document extraction and review workflow integrated</li>
             <li>Preview, validation, and import features functional</li>
           </ul>
         </section>
@@ -81,7 +81,7 @@ export default function AdvisorLandingPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-slate-900">Use of Funding</h2>
           <ul className="mt-4 space-y-2 text-slate-600 list-disc pl-5">
-            <li>Improve AI extraction accuracy</li>
+            <li>Improve document extraction accuracy</li>
             <li>Enhance validation and error handling</li>
             <li>Conduct pilot testing with early users</li>
             <li>Prepare system for commercialization</li>
@@ -93,7 +93,7 @@ export default function AdvisorLandingPage() {
           <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="text-xl font-semibold text-slate-900">
-                CarbonLite AI– Ready for pilot validation
+                CarbonLite - Ready for pilot validation
               </h3>
               <p className="mt-2 text-sm text-slate-600">
                 Seeking funding to validate the solution with real SME workflows and improve system robustness.

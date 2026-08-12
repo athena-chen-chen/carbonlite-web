@@ -54,14 +54,14 @@ describe('buildMetricsSummaryTableRows', () => {
 
     expect(rows).toEqual([
       {
-        metricType: 'Fuel Usage — Diesel',
+        metricType: 'Diesel',
         unit: 'liters',
         totalValue: '1,710',
         category: 'input',
         activityType: 'DIESEL',
       },
       {
-        metricType: 'Fuel Usage — Natural Gas',
+        metricType: 'Natural Gas',
         unit: 'm3',
         totalValue: '400',
         category: 'input',
@@ -75,7 +75,7 @@ describe('buildMetricsSummaryTableRows', () => {
         activityType: 'ELECTRICITY',
       },
       {
-        metricType: 'Carbon Emissions',
+        metricType: 'Total Calculated Emissions',
         unit: 'kgCO2e',
         totalValue: '1,234.50',
         category: 'calculated',
@@ -95,6 +95,15 @@ describe('buildMetricsSummaryTableRows', () => {
           { activityType: 'GASOLINE', total: 500, unit: 'liters' },
           { activityType: 'DIESEL', total: 100, unit: 'liters' },
         ],
+        activityUsageBreakdown: [
+          { activityType: 'ELECTRICITY', total: 63600, unit: 'kWh' },
+          { activityType: 'NATURAL_GAS', total: 1000, unit: 'm3' },
+          { activityType: 'GASOLINE', total: 500, unit: 'liters' },
+          { activityType: 'DIESEL', total: 100, unit: 'liters' },
+          { activityType: 'AIR_TRAVEL', total: 5000, unit: 'km' },
+          { activityType: 'HOTEL', total: 10, unit: 'nights' },
+          { activityType: 'WATER', total: 100, unit: 'm3', trackedOnly: true },
+        ],
       },
       totalEstimatedEmissionsKgCO2e: 37285,
       recordsIncluded: 9,
@@ -110,7 +119,29 @@ describe('buildMetricsSummaryTableRows', () => {
           activityType: 'ELECTRICITY',
         }),
         expect.objectContaining({
-          metricType: 'Carbon Emissions',
+          metricType: 'Air Travel',
+          unit: 'km',
+          totalValue: '5,000',
+          category: 'input',
+          activityType: 'AIR_TRAVEL',
+        }),
+        expect.objectContaining({
+          metricType: 'Hotel',
+          unit: 'nights',
+          totalValue: '10',
+          category: 'input',
+          activityType: 'HOTEL',
+        }),
+        expect.objectContaining({
+          metricType: 'Water',
+          unit: 'm3',
+          totalValue: '100',
+          category: 'input',
+          activityType: 'WATER',
+          trackedOnly: true,
+        }),
+        expect.objectContaining({
+          metricType: 'Total Calculated Emissions',
           unit: 'kgCO2e',
           totalValue: '37,285',
           category: 'calculated',
@@ -145,7 +176,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          metricType: 'Carbon Emissions',
+          metricType: 'Total Calculated Emissions',
           unit: 'kgCO2e',
           totalValue: '268',
           category: 'calculated',
@@ -234,7 +265,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(
       screen.getByText(/Records exist, but emissions could not be calculated/i),
     ).toBeInTheDocument();
-    expect(screen.getByText('Review Calculation Issues above.')).toBeInTheDocument();
+    expect(screen.getByText('Review Data Quality & Tracked Metrics above.')).toBeInTheDocument();
     expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
   });
 
@@ -403,7 +434,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getAllByText('Gasoline').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Calculation relationship')).toHaveTextContent('↓');
     expect(screen.getByText('Calculated Result')).toBeInTheDocument();
-    expect(screen.getByText('Carbon Emissions')).toBeInTheDocument();
+    expect(screen.getAllByText('Total Calculated Emissions').length).toBeGreaterThan(0);
     expect(screen.getByText('231')).toBeInTheDocument();
     expect(screen.getByText('kgCO2e')).toBeInTheDocument();
     expect(
@@ -627,14 +658,14 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText(/Diesel: 1,710 liters/)).toBeInTheDocument();
     expect(screen.getByText(/Natural Gas: 400 m3/)).toBeInTheDocument();
     expect(screen.queryByText(/L \/ m3/)).not.toBeInTheDocument();
-    expect(screen.getByText('CO₂ Emissions')).toBeInTheDocument();
+    expect(screen.getAllByText('Total Calculated Emissions').length).toBeGreaterThan(0);
     expect(screen.getAllByText('1,234.50 kg CO2e').length).toBeGreaterThan(0);
 
     const table = screen.getByRole('table');
     expect(within(table).queryByText('Count')).not.toBeInTheDocument();
     expect(within(table).getByText('Input Data')).toBeInTheDocument();
     expect(within(table).getByText('Calculated Result')).toBeInTheDocument();
-    expect(within(table).getByText('Carbon Emissions')).toBeInTheDocument();
+    expect(within(table).getByText('Total Calculated Emissions')).toBeInTheDocument();
     expect(within(table).getByText('1,710 liters')).toBeInTheDocument();
     expect(within(table).getByText('Diesel')).toBeInTheDocument();
     expect(within(table).getByText('400 m3')).toBeInTheDocument();
@@ -771,6 +802,8 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByText('Data Quality & Tracked Metrics')).toBeInTheDocument();
+    expect(screen.queryByText('Calculation Issues')).not.toBeInTheDocument();
     expect(screen.getByText('Informational')).toBeInTheDocument();
     expect(screen.getByText('Water / m3 — tracked only')).toBeInTheDocument();
     expect(screen.getByText('Tracked metric only. No emission factor required.')).toBeInTheDocument();
@@ -803,6 +836,8 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByText('Data Quality & Tracked Metrics')).toBeInTheDocument();
+    expect(screen.queryByText('Calculation Issues')).not.toBeInTheDocument();
     expect(screen.getByText('Water / m3 — tracked only')).toBeInTheDocument();
     expect(screen.getAllByText(/2 records/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Informational')).toHaveLength(1);
@@ -1168,11 +1203,9 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     );
 
     expect(await screen.findByText('Calculating metrics...')).toBeInTheDocument();
-    expect(screen.getByText('Loading summary...')).toBeInTheDocument();
-    expect(screen.getByLabelText('Loading Fuel Usage')).toBeInTheDocument();
-    expect(screen.getByLabelText('Loading Electricity')).toBeInTheDocument();
-    expect(screen.getByLabelText('Loading CO₂ Emissions')).toBeInTheDocument();
-    expect(screen.getByLabelText('Loading Records Included in Summary')).toBeInTheDocument();
+    expect(screen.getByText('Loading calculation summary...')).toBeInTheDocument();
+    expect(screen.queryByText('No activity records yet. Import activity data to generate metrics.')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 kg CO2e')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('2025-01-01')).not.toBeDisabled();
     expect(screen.getByDisplayValue('2026-12-31')).not.toBeDisabled();
 

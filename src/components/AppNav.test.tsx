@@ -23,7 +23,7 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('CarbonLite AI')).toBeInTheDocument();
+    expect(screen.getByText('CarbonLite')).toBeInTheDocument();
     expect(screen.getByText('Workspace: KACH CANADA LTD.')).toBeInTheDocument();
     expect(screen.getByText('user@example.com')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /logout/i })).toBeInTheDocument();

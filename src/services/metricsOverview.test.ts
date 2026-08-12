@@ -251,7 +251,7 @@ describe('loadMetricsOverview', () => {
           sourceType: 'AI_EXTRACTION',
           sourceReference: 'activity-records.json',
           sourceDocumentId: 'document-1',
-          notes: 'Imported from AI extraction.',
+          notes: 'Imported from document extraction.',
           factorId: 'factor-electricity-ab',
         },
       ],

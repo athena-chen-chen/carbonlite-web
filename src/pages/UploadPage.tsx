@@ -96,8 +96,19 @@ type EditableParsedActivity = {
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
   sourceTextSnippet?: string | null;
+  matchingStatus?: string | null;
+  reportTreatment?: string | null;
+  scope?: string | null;
+  calculationStatus?: string | null;
+  calculationMessage?: string | null;
   notes: EditableConfidenceField<string>;
 };
+
+export type DraftRowClassification =
+  | 'READY'
+  | 'TRACKED_METRIC'
+  | 'REQUIRES_REVIEW'
+  | 'NOT_IMPORTABLE';
 
 type ImportValidationField =
   | 'activityType'
@@ -181,6 +192,50 @@ export function getDocumentDownloadUrl(documentId: string) {
 function isMissingImportValue(value: unknown) {
   const normalized = String(value ?? '').trim().toLowerCase();
   return !normalized || normalized === 'null' || normalized === 'undefined';
+}
+
+function normalizeClassificationSignal(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+function hasTrackedMetricSignal(row: Pick<
+  EditableParsedActivity,
+  'activityType' | 'matchingStatus' | 'reportTreatment' | 'scope' | 'calculationStatus' | 'calculationMessage'
+>) {
+  const activityType = normalizeCanonicalActivityType(row.activityType.value);
+  const signals = [
+    row.matchingStatus,
+    row.reportTreatment,
+    row.scope,
+    row.calculationStatus,
+  ].map(normalizeClassificationSignal);
+  const message = String(row.calculationMessage ?? '').toLowerCase();
+
+  return (
+    activityType === 'WATER' ||
+    activityType === 'WATER_USAGE' ||
+    signals.includes('TRACKED_ONLY') ||
+    signals.includes('TRACKED_METRIC') ||
+    message.includes('tracked only') ||
+    message.includes('tracked-only')
+  );
+}
+
+export function classifyDraftRow(
+  row: EditableParsedActivity,
+  issues: ImportValidationIssue[] = getImportValidationIssues([row]),
+): DraftRowClassification {
+  if (issues.length > 0) return 'REQUIRES_REVIEW';
+  if (hasTrackedMetricSignal(row)) return 'TRACKED_METRIC';
+  if (normalizeCanonicalActivityType(row.activityType.value)) return 'READY';
+  return 'NOT_IMPORTABLE';
+}
+
+function isImportableDraftRowClassification(classification: DraftRowClassification) {
+  return classification === 'READY' || classification === 'TRACKED_METRIC';
 }
 
 export function getImportValidationIssues(rows: EditableParsedActivity[]) {
@@ -346,7 +401,66 @@ export function formatSourceReference(
     sourceLabel,
   ].filter((part) => String(part).trim());
 
-  return parts.join(' - ') || 'PDF extraction';
+  return parts.join(' - ') || 'Source review required';
+}
+
+function getSourceFileExtension(value?: string | null) {
+  const match = String(value ?? '').trim().toLowerCase().match(/\.([a-z0-9]+)(?:$|[?#])/);
+  return match?.[1] ?? '';
+}
+
+function isSpreadsheetFileName(value?: string | null) {
+  return ['xlsx', 'xls', 'csv'].includes(getSourceFileExtension(value));
+}
+
+function isPdfExtractionLabel(value?: string | null) {
+  return String(value ?? '').trim().toLowerCase() === 'pdf extraction';
+}
+
+export function formatDocumentSourceTypeLabel(input: {
+  fileName?: string | null;
+  type?: string | null;
+}) {
+  const extension = getSourceFileExtension(input.fileName);
+  const type = String(input.type ?? '').trim().toUpperCase();
+
+  if (extension === 'xlsx' || extension === 'xls' || extension === 'csv') {
+    return 'Spreadsheet import';
+  }
+  if (extension === 'pdf') return 'PDF extraction';
+  if (type === 'SPREADSHEET' || type === 'CSV' || type === 'EXCEL') return 'Spreadsheet import';
+  if (type === 'PDF') return 'PDF extraction';
+  if (type === 'MANUAL') return 'Manual entry';
+  return 'Source review required';
+}
+
+function normalizeSourceReferenceForDocument(sourceReference: string, documentFileName: string) {
+  if (isSpreadsheetFileName(documentFileName) && isPdfExtractionLabel(sourceReference)) {
+    return documentFileName;
+  }
+
+  return sourceReference;
+}
+
+function getPreviewSourceSummary(input: {
+  previewDocumentId: string | null;
+  previewDocumentIds: string[];
+  documents: DocumentItem[];
+}) {
+  if (input.previewDocumentIds.length > 1) {
+    return `Files: ${input.previewDocumentIds.length} documents`;
+  }
+
+  const documentId = input.previewDocumentIds[0] ?? input.previewDocumentId;
+  const document = input.documents.find((item) => item.id === documentId);
+
+  if (!document) return 'Source: Review document metadata';
+
+  return [
+    `File: ${document.fileName}`,
+    `Source type: ${formatDocumentSourceTypeLabel(document)}`,
+    `Imported: ${formatDocumentCreatedAt(document.createdAt)}`,
+  ].join(' · ');
 }
 
 function formatDateValue(value: RawExtractionField) {
@@ -465,7 +579,10 @@ export function buildDocumentImportActivityPayload(input: {
   const normalizedUnit = normalizeUnitForDisplay(item.unit.value);
   const quantity = Number(item.quantity.value);
   const recordYear = getDateOnlyYear(item.recordDate.value);
-  const baseNotes = `Imported from AI extraction. Document ID: ${documentId}`;
+  const sourceTypeLabel = formatDocumentSourceTypeLabel({ fileName: sourceFileName });
+  const baseNotes = [`Imported via ${sourceTypeLabel}.`, sourceFileName ? `Source file: ${sourceFileName}.` : '']
+    .filter(Boolean)
+    .join(' ');
   const basePayload = {
     activityType,
     recordDate: item.recordDate.value || null,
@@ -811,7 +928,7 @@ export function UploadPage() {
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
   const [documentMenuPosition, setDocumentMenuPosition] = useState<{
     top: number;
-    left: number;
+    right: number;
   } | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const canImportData = canImportActivityRecords(getCurrentUser());
@@ -829,6 +946,9 @@ export function UploadPage() {
     (issue) => parsedActivities[issue.rowIndex]?.selected,
   );
   const selectedParsedActivitiesCount = parsedActivities.filter((item) => item.selected).length;
+  const draftRowClassifications = parsedActivities.map((item, index) =>
+    classifyDraftRow(item, getRowValidationIssues(index)),
+  );
   const importableParsedActivities = parsedActivities.filter((item, index) =>
     isParsedActivityImportable(index, item),
   );
@@ -836,19 +956,21 @@ export function UploadPage() {
     (item, index) => item.selected && isParsedActivityImportable(index, item),
   );
   const selectedImportableActivitiesCount = selectedImportableActivities.length;
-  const readyImportableCount = importableParsedActivities.filter(
-    (item, index) => getRowReportTreatment(index, item) === 'Included',
+  const readyImportableCount = draftRowClassifications.filter(
+    (classification) => classification === 'READY',
   ).length;
-  const trackedImportableCount = importableParsedActivities.filter(
-    (item, index) => getRowReportTreatment(index, item) === 'Tracked Only',
+  const trackedImportableCount = draftRowClassifications.filter(
+    (classification) => classification === 'TRACKED_METRIC',
   ).length;
-  const selectedReadyImportableCount = selectedImportableActivities.filter(
-    (item) => getRowReportTreatment(parsedActivities.indexOf(item), item) === 'Included',
+  const selectedReadyImportableCount = parsedActivities.filter(
+    (item, index) => item.selected && draftRowClassifications[index] === 'READY',
   ).length;
-  const selectedTrackedImportableCount = selectedImportableActivities.filter(
-    (item) => getRowReportTreatment(parsedActivities.indexOf(item), item) === 'Tracked Only',
+  const selectedTrackedImportableCount = parsedActivities.filter(
+    (item, index) => item.selected && draftRowClassifications[index] === 'TRACKED_METRIC',
   ).length;
-  const rowsRequiringReviewCount = parsedActivities.length - importableParsedActivities.length;
+  const rowsRequiringReviewCount = draftRowClassifications.filter(
+    (classification) => classification === 'REQUIRES_REVIEW',
+  ).length;
   const rowsLeftOutOfImportCount =
     parsedActivities.length - selectedImportableActivitiesCount;
   const hasImportValidationErrors = importValidationIssues.length > 0;
@@ -861,6 +983,11 @@ export function UploadPage() {
   const canConfirmImport =
     canAttemptConfirmImport &&
     selectedImportableActivitiesCount > 0;
+  const previewSourceSummary = getPreviewSourceSummary({
+    previewDocumentId,
+    previewDocumentIds,
+    documents,
+  });
   async function loadDocuments() {
     setLoading(true);
     setError(null);
@@ -1066,6 +1193,10 @@ export function UploadPage() {
       const normalizedActivityType = normalizePreviewActivityType(activityTypeField);
       const normalizedCountry = normalizePreviewCountry(countryField);
       const normalizedProvince = normalizePreviewProvince(provinceField);
+      const sourceReferenceValue = normalizeSourceReferenceForDocument(
+        formatSourceReference(sourceReferenceField, document.fileName),
+        document.fileName,
+      );
       const periodEndDate = formatDateValue(endDateField) || null;
       const draftRow: EditableParsedActivity = {
         selected: true,
@@ -1100,12 +1231,17 @@ export function UploadPage() {
           confidence: normalizedProvince ? 'high' : 'low',
         },
         sourceReference: {
-          value: formatSourceReference(sourceReferenceField, document.fileName),
+          value: sourceReferenceValue,
           confidence: extractFieldConfidence(sourceReferenceField),
         },
         sourcePage: getFieldValue(item.sourcePage, null) as string | number | null,
         sourceRow: getFieldValue(item.sourceRow, null) as string | number | null,
         sourceTextSnippet: formatOptionalExtractionField(item.sourceTextSnippet),
+        matchingStatus: item.matchingStatus ?? null,
+        reportTreatment: item.reportTreatment ?? null,
+        scope: item.scope ?? null,
+        calculationStatus: item.calculationStatus ?? null,
+        calculationMessage: item.calculationMessage ?? null,
         notes: {
           value: formatOptionalExtractionField(item.notes),
           confidence: 'high',
@@ -1584,21 +1720,22 @@ ${sampleRows.join('\n')}`,
     };
   }
 
-  function getDocumentMenuPosition(button: HTMLButtonElement) {
+  function getDocumentMenuPosition(button: HTMLButtonElement, actionCount: number) {
     const rect = button.getBoundingClientRect();
     const menuWidth = 172;
-    const menuHeight = 180;
+    const menuHeight = Math.max(48, actionCount * 40 + 12);
     const margin = 8;
+    const sideOffset = 6;
     const top =
       rect.bottom + menuHeight + margin > window.innerHeight
-        ? Math.max(margin, rect.top - menuHeight - 6)
-        : rect.bottom + 6;
-    const left = Math.min(
-      Math.max(margin, rect.right - menuWidth),
+        ? Math.max(margin, rect.top - menuHeight - sideOffset)
+        : rect.bottom + sideOffset;
+    const right = Math.min(
+      Math.max(margin, window.innerWidth - rect.right),
       Math.max(margin, window.innerWidth - menuWidth - margin),
     );
 
-    return { top, left };
+    return { top, right };
   }
 
   function toggleDocumentMenu(documentId: string, button: HTMLButtonElement) {
@@ -1608,7 +1745,14 @@ ${sampleRows.join('\n')}`,
         return null;
       }
 
-      setDocumentMenuPosition(getDocumentMenuPosition(button));
+      const document = documents.find((item) => item.id === documentId);
+      if (!document) {
+        setDocumentMenuPosition(null);
+        return null;
+      }
+
+      const actionModel = getDocumentActionModelForDoc(document);
+      setDocumentMenuPosition(getDocumentMenuPosition(button, actionModel.menuActions.length));
       return documentId;
     });
   }
@@ -1635,8 +1779,7 @@ ${sampleRows.join('\n')}`,
           ...documentMenuStyle,
           position: 'fixed',
           top: documentMenuPosition.top,
-          left: documentMenuPosition.left,
-          right: 'auto',
+          right: documentMenuPosition.right,
           zIndex: 1000,
         }}
       >
@@ -2356,8 +2499,11 @@ ${sampleRows.join('\n')}`,
     return issue.message;
   }
 
-  function getRowStatusLabel(rowIndex: number) {
+  function getRowStatusLabel(rowIndex: number, item: EditableParsedActivity) {
     const issues = getRowValidationIssues(rowIndex);
+    const classification = classifyDraftRow(item, issues);
+
+    if (classification === 'TRACKED_METRIC') return 'Tracked Metric';
     if (
       issues.some(
         (issue) =>
@@ -2396,20 +2542,19 @@ ${sampleRows.join('\n')}`,
   }
 
   function getRowReportTreatment(rowIndex: number, item: EditableParsedActivity) {
-    const issues = getRowValidationIssues(rowIndex);
-    if (issues.length > 0) return 'Excluded';
-
-    const activityType = normalizeCanonicalActivityType(item.activityType.value);
-    if (activityType === 'WATER' || activityType === 'WATER_USAGE') return 'Tracked Only';
-
-    return 'Included';
+    const classification = classifyDraftRow(item, getRowValidationIssues(rowIndex));
+    if (classification === 'TRACKED_METRIC') return 'Tracked Only';
+    if (classification === 'READY') return 'Included';
+    return 'Excluded';
   }
 
   function isParsedActivityImportable(
     rowIndex: number,
-    _item: EditableParsedActivity,
+    item: EditableParsedActivity,
   ) {
-    return getRowValidationIssues(rowIndex).length === 0;
+    return isImportableDraftRowClassification(
+      classifyDraftRow(item, getRowValidationIssues(rowIndex)),
+    );
   }
 
   function parsedActivityHasValidationIssues(item: EditableParsedActivity) {
@@ -2422,7 +2567,7 @@ ${sampleRows.join('\n')}`,
     if (parsedActivities.length === 0) return 'No importable records found.';
     if (selectedParsedActivitiesCount === 0) {
       return importableParsedActivities.length > 0
-        ? 'Select at least one Ready record to import.'
+        ? 'Select at least one Ready record or tracked metric to import.'
         : 'No importable records found.';
     }
     if (selectedImportableActivitiesCount === 0) {
@@ -3008,7 +3153,7 @@ ${sampleRows.join('\n')}`,
                               documentMenuButtonRefs.current[doc.id] = element;
                             }}
                             type="button"
-                            aria-label={`Open row actions for ${doc.fileName}`}
+                            aria-label={`Open document actions for ${doc.fileName}`}
                             aria-haspopup="menu"
                             aria-expanded={openDocumentMenuId === doc.id}
                             onClick={(event) =>
@@ -3075,9 +3220,7 @@ ${sampleRows.join('\n')}`,
                 Ready: {readyImportableCount} · Tracked metrics: {trackedImportableCount} · Requires review: {rowsRequiringReviewCount} · Selected for import: {selectedImportableActivitiesCount}
               </p>
               <p style={{ marginTop: 8, color: '#999' }}>
-                {previewDocumentIds.length > 1
-                  ? `Documents: ${previewDocumentIds.length}`
-                  : `Document ID: ${previewDocumentId}`}
+                {previewSourceSummary}
               </p>
             </div>
 
@@ -3192,7 +3335,7 @@ ${sampleRows.join('\n')}`,
                   const quantityError = getFieldValidationMessage(index, 'quantity');
                   const unitError = getFieldValidationMessage(index, 'unit');
                   const provinceError = getFieldValidationMessage(index, 'jurisdictionRegion');
-                  const rowStatusLabel = getRowStatusLabel(index);
+                  const rowStatusLabel = getRowStatusLabel(index, item);
                   const rowIssueText = getRowIssueText(index);
                   const rowIssueTitle = getRowIssueTitle(index);
                   const rowHasValidationIssues = getRowValidationIssues(index).length > 0;
@@ -3460,6 +3603,8 @@ ${sampleRows.join('\n')}`,
                         style={
                           rowReportTreatment === 'Included'
                             ? includedTreatmentStyle
+                            : rowReportTreatment === 'Tracked Only'
+                            ? trackedTreatmentStyle
                             : excludedTreatmentStyle
                         }
                       >
@@ -3721,6 +3866,18 @@ const includedTreatmentStyle: React.CSSProperties = {
   fontWeight: 700,
   color: '#047857',
   background: '#d1fae5',
+};
+
+const trackedTreatmentStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  whiteSpace: 'nowrap',
+  borderRadius: 999,
+  padding: '3px 8px',
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#1d4ed8',
+  background: '#dbeafe',
 };
 
 const excludedTreatmentStyle: React.CSSProperties = {
@@ -4101,6 +4258,7 @@ const useSuggestionButtonStyle: React.CSSProperties = {
 
 function rowStatusBadgeStyle(status: string): React.CSSProperties {
   const isReady = status === 'Ready';
+  const isTrackedMetric = status === 'Tracked Metric';
 
   return {
     display: 'inline-flex',
@@ -4113,8 +4271,8 @@ function rowStatusBadgeStyle(status: string): React.CSSProperties {
     padding: '4px 10px',
     fontSize: 12,
     fontWeight: 700,
-    color: isReady ? '#047857' : '#b91c1c',
-    background: isReady ? '#d1fae5' : '#fee2e2',
+    color: isReady ? '#047857' : isTrackedMetric ? '#1d4ed8' : '#b91c1c',
+    background: isReady ? '#d1fae5' : isTrackedMetric ? '#dbeafe' : '#fee2e2',
   };
 }
 
@@ -4244,6 +4402,7 @@ const documentMenuStyle: React.CSSProperties = {
   right: 0,
   top: 40,
   zIndex: 20,
+  width: 172,
   minWidth: 150,
   padding: 6,
   borderRadius: 10,

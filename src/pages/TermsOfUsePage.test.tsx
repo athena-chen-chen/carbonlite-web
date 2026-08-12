@@ -29,10 +29,10 @@ describe('TermsOfUsePage', () => {
   it('sets page-specific SEO metadata', () => {
     const { unmount } = renderTermsPage();
 
-    expect(document.title).toBe('Terms of Use | CarbonLite AI');
+    expect(document.title).toBe('Terms of Use | CarbonLite');
     expect(
       document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content,
-    ).toBe('Terms of Use for CarbonLite AI carbon reporting software.');
+    ).toBe('Terms of Use for CarbonLite emissions data readiness software.');
     expect(
       document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
     ).toBe('https://carbonliteapp.ca/terms');

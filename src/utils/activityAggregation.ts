@@ -17,12 +17,17 @@ export type FuelUsageBreakdownItem = {
   unit: string;
 };
 
+export type ActivityUsageBreakdownItem = FuelUsageBreakdownItem & {
+  trackedOnly?: boolean;
+};
+
 export type ActivityUsageTotals = {
   fuel: number;
   electricity: number;
   fuelUnitLabel: string;
   electricityUnitLabel: string;
   fuelUsageBreakdown: FuelUsageBreakdownItem[];
+  activityUsageBreakdown?: ActivityUsageBreakdownItem[];
   invalidFuelRecordCount?: number;
   invalidElectricityRecordCount?: number;
 };
@@ -39,6 +44,8 @@ const ELECTRICITY_UNIT_TO_KWH: Record<string, number> = {
   kWh: 1,
   MWh: 1000,
 };
+
+const TRACKED_ONLY_ACTIVITY_TYPES = new Set(['WATER']);
 
 function toQuantity(value?: string | number | null) {
   const quantity = Number(value ?? 0);
@@ -95,6 +102,22 @@ export function aggregateActivityUsage(
         }
 
         totals.electricity += quantity * conversionFactor;
+        addActivityUsageBreakdownItem(totals, {
+          activityType,
+          total: quantity * conversionFactor,
+          unit: 'kWh',
+        });
+        return totals;
+      }
+
+      if (hasValidUnit && activityType) {
+        const trackedOnly = TRACKED_ONLY_ACTIVITY_TYPES.has(activityType);
+        addActivityUsageBreakdownItem(totals, {
+          activityType,
+          total: quantity,
+          unit: normalizedUnit.value,
+          ...(trackedOnly ? { trackedOnly } : {}),
+        });
       }
 
       return totals;
@@ -105,6 +128,7 @@ export function aggregateActivityUsage(
       fuelUnitLabel: 'Grouped by type and unit',
       electricityUnitLabel: 'kWh',
       fuelUsageBreakdown: [],
+      activityUsageBreakdown: [],
       invalidFuelRecordCount: 0,
       invalidElectricityRecordCount: 0,
     },
@@ -113,8 +137,53 @@ export function aggregateActivityUsage(
   totals.fuelUsageBreakdown.sort((a, b) =>
     `${a.activityType}:${a.unit}`.localeCompare(`${b.activityType}:${b.unit}`),
   );
+  totals.activityUsageBreakdown?.sort(sortActivityBreakdownItems);
 
   return totals;
+}
+
+function addActivityUsageBreakdownItem(
+  totals: ActivityUsageTotals,
+  item: ActivityUsageBreakdownItem,
+) {
+  const breakdown = totals.activityUsageBreakdown ?? [];
+  totals.activityUsageBreakdown = breakdown;
+  const existing = breakdown.find(
+    (row) =>
+      row.activityType === item.activityType &&
+      row.unit === item.unit &&
+      Boolean(row.trackedOnly) === Boolean(item.trackedOnly),
+  );
+
+  if (existing) {
+    existing.total += item.total;
+    return;
+  }
+
+  breakdown.push({ ...item });
+}
+
+function sortActivityBreakdownItems(
+  a: ActivityUsageBreakdownItem,
+  b: ActivityUsageBreakdownItem,
+) {
+  const order = [
+    'ELECTRICITY',
+    'NATURAL_GAS',
+    'GASOLINE',
+    'DIESEL',
+    'AIR_TRAVEL',
+    'HOTEL',
+    'GROUND_TRANSPORT',
+    'SHIPPING',
+    'WATER',
+  ];
+  const orderA = order.indexOf(a.activityType);
+  const orderB = order.indexOf(b.activityType);
+  const rankA = orderA >= 0 ? orderA : order.length;
+  const rankB = orderB >= 0 ? orderB : order.length;
+
+  return rankA - rankB || `${a.activityType}:${a.unit}`.localeCompare(`${b.activityType}:${b.unit}`);
 }
 
 export function formatActivityUsageValue(total: number, unitLabel: string) {

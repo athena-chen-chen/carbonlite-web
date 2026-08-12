@@ -142,12 +142,41 @@ export function formatReportJurisdiction(
   return `${cleanRegion}, ${cleanCountry}`;
 }
 
-export function isTrackedMetricDetail(detail: Pick<CalculationAuditDetail, 'activityType' | 'status' | 'calculationStatus' | 'matchingStatus'>) {
+export function isTrackedMetricDetail(
+  detail: Pick<
+    CalculationAuditDetail,
+    | 'activityType'
+    | 'status'
+    | 'calculationStatus'
+    | 'matchingStatus'
+    | 'scopeClassification'
+    | 'scopeOverride'
+    | 'reason'
+    | 'notes'
+    | 'matchingMessage'
+  > & {
+    reportTreatment?: string | null;
+    scope?: string | null;
+    message?: string | null;
+  },
+) {
+  const text = [
+    detail.reason,
+    detail.notes,
+    detail.matchingMessage,
+    detail.message,
+  ].join(' ');
+
   return (
     normalizeActivityType(detail.activityType) === 'WATER' ||
     normalizeStatus(detail.status) === 'TRACKED_ONLY' ||
     normalizeStatus(detail.calculationStatus) === 'TRACKED_ONLY' ||
-    normalizeStatus(detail.matchingStatus) === 'TRACKED_ONLY'
+    normalizeStatus(detail.matchingStatus) === 'TRACKED_ONLY' ||
+    normalizeStatus(detail.reportTreatment) === 'TRACKED_ONLY' ||
+    normalizeStatus(detail.scopeClassification) === 'TRACKED_METRIC' ||
+    normalizeStatus(detail.scopeOverride) === 'TRACKED_METRIC' ||
+    normalizeStatus(detail.scope) === 'TRACKED_METRIC' ||
+    /tracked[-\s]?only|tracked metric|no emission factor required/i.test(text)
   );
 }
 
@@ -178,12 +207,12 @@ export function formatReportSourceType(
 ) {
   const value = cleanText(sourceType).toUpperCase();
   const extension = getFileExtension(sourceFileName || sourceReference);
-  const aiAssisted = value === 'DOCUMENT_AI' || value === 'AI_EXTRACTION';
+  const documentExtracted = value === 'DOCUMENT_AI' || value === 'AI_EXTRACTION';
 
   if (value === 'MANUAL') return 'Manual Entry';
 
   if (extension === 'xlsx' || extension === 'xls') {
-    return aiAssisted ? 'AI-assisted Spreadsheet Import' : 'Uploaded Spreadsheet';
+    return documentExtracted ? 'Spreadsheet Import' : 'Uploaded Spreadsheet';
   }
 
   if (extension === 'csv') {
@@ -191,13 +220,16 @@ export function formatReportSourceType(
   }
 
   if (extension === 'pdf') {
-    return aiAssisted ? 'AI-assisted PDF Extraction' : 'Uploaded PDF';
+    return documentExtracted ? 'PDF Extraction' : 'Uploaded PDF';
   }
 
   if (value === 'CSV') return 'Uploaded CSV Import';
   if (value === 'EXCEL' || value === 'SPREADSHEET') return 'Uploaded Spreadsheet';
   if (value === 'PASTE') return 'Pasted Spreadsheet Rows';
-  if (aiAssisted) return 'AI-assisted Import';
+  if (value === 'AI-ASSISTED SPREADSHEET IMPORT') return 'Spreadsheet Import';
+  if (value === 'AI-ASSISTED PDF EXTRACTION') return 'PDF Extraction';
+  if (value === 'AI-ASSISTED IMPORT') return 'Document Import';
+  if (documentExtracted) return 'Document Import';
 
   return sourceType ? cleanText(sourceType) : 'Unknown';
 }
@@ -215,12 +247,12 @@ export function formatReportSourceReference(input: {
   const extension = getFileExtension(sourceFile || reference);
 
   if (sourceLooksLikePdfExtraction(reference) && (extension === 'xlsx' || extension === 'xls')) {
-    return 'AI-assisted import';
+    return 'Spreadsheet import';
   }
 
-  if (sourceType === 'AI-assisted Spreadsheet Import') return 'AI-assisted import';
+  if (sourceType === 'Spreadsheet Import') return 'Spreadsheet import';
   if (sourceType === 'Uploaded CSV Import') return 'CSV import';
-  if (sourceType === 'AI-assisted PDF Extraction') return 'PDF extraction';
+  if (sourceType === 'PDF Extraction') return 'PDF extraction';
 
   if (!reference) return 'Import batch';
 

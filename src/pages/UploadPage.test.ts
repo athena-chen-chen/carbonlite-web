@@ -2,6 +2,7 @@ import {
   FILE_MISSING_EXPLANATION,
   FILE_MISSING_TOOLTIP,
   formatSourceReference,
+  formatDocumentSourceTypeLabel,
   formatDocumentCreatedAt,
   formatDuplicateDocumentMessage,
   getDocumentActionModel,
@@ -92,6 +93,8 @@ describe('document import factor matching metadata', () => {
       calculationMessage: 'Matched factor. Using latest available factor year: 2025.',
     });
     expect(payload.notes).not.toMatch(/Missing Factor|No conversion factor/i);
+    expect(payload.notes).toContain('Imported via PDF extraction. Source file: bc-hydro.pdf.');
+    expect(payload.notes).not.toContain('Document ID');
   });
 
   it('keeps unsupported imported electricity provinces as missing factor metadata', () => {
@@ -263,14 +266,22 @@ describe('formatSourceReference', () => {
     expect(result).not.toContain('[object Object]');
   });
 
-  it('falls back to PDF extraction for object metadata without a filename', () => {
-    expect(formatSourceReference({ value: { page: 2 } })).toBe('PDF extraction');
+  it('falls back to source review when object metadata has no filename', () => {
+    expect(formatSourceReference({ value: { page: 2 } })).toBe('Source review required');
   });
 
   it('uses the uploaded filename when source reference is missing', () => {
     expect(formatSourceReference(undefined, 'uploaded-bill.pdf')).toBe(
       'uploaded-bill.pdf',
     );
+  });
+
+  it('uses source-type labels based on uploaded file extension', () => {
+    expect(formatDocumentSourceTypeLabel({ fileName: 'Golden Test Data.xlsx' })).toBe(
+      'Spreadsheet import',
+    );
+    expect(formatDocumentSourceTypeLabel({ fileName: 'utility.pdf' })).toBe('PDF extraction');
+    expect(formatDocumentSourceTypeLabel({ fileName: '' })).toBe('Source review required');
   });
 });
 

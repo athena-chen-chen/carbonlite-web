@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 const effectiveDate = 'June 9, 2026';
-const defaultTitle = 'CarbonLite AI | Carbon Reporting for SMEs';
+const defaultTitle = 'CarbonLite | Emissions Data Readiness for SMEs';
 const defaultDescription =
-  'Turn invoices, utility bills, and spreadsheets into structured emissions reporting. CarbonLite AI helps SMEs and environmental consultants simplify carbon reporting workflows.';
+  'Turn invoices, utility bills, and spreadsheets into structured emissions data readiness and reporting workflows. CarbonLite helps SMEs and environmental consultants improve factor matching and calculation traceability.';
 
 const sections = [
   {
@@ -12,12 +12,12 @@ const sections = [
     content: (
       <>
         <p>
-          CarbonLite AI is a Canadian software service operated by KACH CANADA LTD.
+          CarbonLite is a Canadian software service operated by KACH CANADA LTD.
           It helps small and medium-sized businesses, environmental consultants, and
           operations teams organize activity data for carbon reporting workflows.
         </p>
         <p>
-          CarbonLite AI is currently in pilot validation. We aim to follow applicable
+          CarbonLite is currently in pilot validation. We aim to follow applicable
           Canadian privacy principles, including collecting only the information
           reasonably needed to provide, secure, evaluate, and improve the service.
         </p>
@@ -212,8 +212,8 @@ export default function PrivacyPolicyPage() {
       document.head.append(canonical);
     }
 
-    document.title = 'Privacy Policy | CarbonLite AI';
-    description.content = 'Privacy Policy for CarbonLite AI';
+    document.title = 'Privacy Policy | CarbonLite';
+    description.content = 'Privacy Policy for CarbonLite';
     canonical.href = 'https://carbonliteapp.ca/privacy';
 
     return () => {
@@ -241,7 +241,7 @@ export default function PrivacyPolicyPage() {
               CL
             </span>
             <span>
-              <span className="block font-bold">CarbonLite AI</span>
+              <span className="block font-bold">CarbonLite</span>
               <span className="block text-xs text-slate-500">Privacy Policy</span>
             </span>
           </Link>
@@ -257,7 +257,7 @@ export default function PrivacyPolicyPage() {
       <main className="mx-auto max-w-4xl px-5 py-12 sm:px-8 sm:py-16">
         <div className="border-b border-slate-200 pb-9">
           <p className="text-sm font-bold uppercase text-emerald-700">
-            CarbonLite AI
+            CarbonLite
           </p>
           <h1 className="mt-3 text-4xl font-black text-slate-950 sm:text-5xl">
             Privacy Policy
@@ -266,7 +266,7 @@ export default function PrivacyPolicyPage() {
             Effective date: {effectiveDate}
           </p>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-600">
-            This policy explains how CarbonLite AI handles information during its
+            This policy explains how CarbonLite handles information during its
             pilot validation stage.
           </p>
         </div>

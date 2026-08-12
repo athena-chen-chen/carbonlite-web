@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { UploadPage } from './UploadPage';
+import { UploadPage, classifyDraftRow } from './UploadPage';
 import { getDocuments } from '../services/documents';
 import { ApiError } from '../services/api';
 import {
@@ -95,6 +95,30 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(calculateMetrics).mockResolvedValue({ count: 0, items: [] });
   });
 
+  it('classifies tracked-only Water rows as importable tracked metrics, not review errors', () => {
+    const row = {
+      selected: true,
+      documentId: 'doc-water',
+      documentFileName: 'pilot-golden-dataset.csv',
+      dateEstimated: false,
+      activityType: { value: 'Water', confidence: 'high' },
+      recordDate: { value: '2026-07-20', confidence: 'high' },
+      quantity: { value: 100, confidence: 'high' },
+      unit: { value: 'm3', confidence: 'high' },
+      jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+      jurisdictionRegion: { value: '', confidence: 'high' },
+      sourceReference: { value: 'pilot-golden-dataset.csv', confidence: 'high' },
+      matchingStatus: 'TRACKED_ONLY',
+      reportTreatment: 'TRACKED_ONLY',
+      scope: 'TRACKED_METRIC',
+      calculationStatus: 'TRACKED_ONLY',
+      calculationMessage: 'Water usage is tracked only and excluded from GHG emissions totals.',
+      notes: { value: 'Water tracked only', confidence: 'high' },
+    } as const;
+
+    expect(classifyDraftRow(row)).toBe('TRACKED_METRIC');
+  });
+
   it('clears Input Review documents when demo data reset is broadcast', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
@@ -156,8 +180,31 @@ describe('UploadPage sample workflow', () => {
       </MemoryRouter>,
     );
 
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 1024,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 768,
+    });
+
     const menuButton = await screen.findByRole('button', {
-      name: /Open row actions for pilot-import.xlsx/i,
+      name: /Open document actions for pilot-import.xlsx/i,
+    });
+    Object.defineProperty(menuButton, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        x: 760,
+        y: 120,
+        top: 120,
+        right: 794,
+        bottom: 154,
+        left: 760,
+        width: 34,
+        height: 34,
+        toJSON: () => {},
+      }),
     });
 
     await userEvent.click(menuButton);
@@ -166,7 +213,12 @@ describe('UploadPage sample workflow', () => {
       name: /More actions for pilot-import.xlsx/i,
     });
     expect(menu).toBeInTheDocument();
-    expect(menu).toHaveStyle({ position: 'fixed', zIndex: '1000' });
+    expect(menu).toHaveStyle({
+      position: 'fixed',
+      top: '160px',
+      right: '230px',
+      zIndex: '1000',
+    });
     expect(within(menu).getByRole('menuitem', { name: 'View' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
 
@@ -546,6 +598,9 @@ describe('UploadPage sample workflow', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
 
     expect(screen.getByText('Extracted rows: 13')).toBeInTheDocument();
+    expect(screen.getByText(/File: mixed-activity-records\.csv/i)).toBeInTheDocument();
+    expect(screen.getByText(/Source type: Spreadsheet import/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Document ID:/i)).not.toBeInTheDocument();
     expect(
       screen.getByText(
         'Ready: 9 · Tracked metrics: 1 · Requires review: 3 · Selected for import: 10',
@@ -560,12 +615,18 @@ describe('UploadPage sample workflow', () => {
     expect(checkboxes.filter((checkbox) => checkbox.checked)).toHaveLength(10);
     expect(checkboxes.slice(10).every((checkbox) => checkbox.disabled && !checkbox.checked)).toBe(true);
 
+    const waterRow = checkboxes[9].closest('tr');
+    expect(waterRow).toBeTruthy();
+    expect(within(waterRow!).getByText('Tracked Metric')).toBeInTheDocument();
+    expect(within(waterRow!).getByText('Tracked Only')).toBeInTheDocument();
+    expect(within(waterRow!).getByRole('checkbox')).toBeChecked();
+
     const confirmButton = screen.getByRole('button', { name: 'Confirm Import' });
     expect(confirmButton).toBeEnabled();
 
     await userEvent.click(screen.getByRole('button', { name: /Clear All/i }));
     expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeDisabled();
-    expect(screen.getByText('Select at least one Ready record to import.')).toBeInTheDocument();
+    expect(screen.getByText('Select at least one Ready record or tracked metric to import.')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /Select All/i }));
     const selectedAfterSelectAll = screen.getAllByLabelText(/Select preview row/i) as HTMLInputElement[];

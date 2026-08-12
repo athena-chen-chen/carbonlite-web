@@ -5,6 +5,7 @@ import {
   FORMAL_REPORT_METHODOLOGY,
   FormalReportPreview,
   buildConversionFactorTraceabilityRows,
+  formatExecutiveSummaryPreview,
   buildReportExecutiveSummary,
   buildSourceEvidenceRows,
 } from './FormalReportPreview';
@@ -51,7 +52,7 @@ describe('FormalReportPreview', () => {
             estimatedEmissionsKgCO2e: 321.6,
             sourceType: 'AI_EXTRACTION',
             sourceReference: 'fuel-invoice.pdf',
-            notes: 'Imported from AI extraction.',
+            notes: 'Imported from document extraction.',
             factorId: 'factor-1',
           },
         ]}
@@ -78,8 +79,8 @@ describe('FormalReportPreview', () => {
             unit: 'L',
             sourceFile: 'fuel-invoice.pdf',
             sourceReference: 'fuel-invoice.pdf · Page 1 · Line item 3',
-            sourceType: 'AI-assisted PDF Extraction',
-            notes: 'Imported from AI extraction.',
+            sourceType: 'PDF Extraction',
+            notes: 'Imported from document extraction.',
           },
         ]}
         calculationDetails={[
@@ -118,7 +119,6 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('Pilot reporting workflow')).toBeInTheDocument();
     expect(screen.getByText('Pilot Emissions Data Readiness Report')).toBeInTheDocument();
     expect(screen.getByText('Prepared for review as part of a pilot emissions data readiness and reporting workflow.')).toBeInTheDocument();
-    expect(screen.queryByText('CarbonLite AI')).not.toBeInTheDocument();
     expect(screen.queryByText('Environmental Reporting Platform')).not.toBeInTheDocument();
     expect(screen.queryByText('Emissions Summary Report')).not.toBeInTheDocument();
     expect(screen.getAllByText('KACH CANADA LTD.').length).toBeGreaterThan(0);
@@ -158,12 +158,12 @@ describe('FormalReportPreview', () => {
 
     const tables = screen.getAllByRole('table');
     const emissionsBreakdownTable = tables.find((table) =>
-      within(table).queryByText('Carbon Emissions'),
+      within(table).queryByText('Total Calculated Emissions'),
     );
     expect(emissionsBreakdownTable).toBeTruthy();
     expect(within(emissionsBreakdownTable!).getAllByText('Input Data').length).toBeGreaterThan(0);
     expect(within(emissionsBreakdownTable!).getByText('Calculated Result')).toBeInTheDocument();
-    expect(within(emissionsBreakdownTable!).getByText('Fuel Usage — Diesel')).toBeInTheDocument();
+    expect(within(emissionsBreakdownTable!).getByText('Diesel')).toBeInTheDocument();
     expect(within(emissionsBreakdownTable!).queryByText('Count')).not.toBeInTheDocument();
   });
 
@@ -312,10 +312,115 @@ describe('Version 1 report presentation data', () => {
       estimatedEmissions: '268 kgCO2e',
       recordsIncluded: 3,
       recordsSkipped: 1,
+      trackedMetrics: 0,
+      recordsRequiringReview: 1,
       primaryActivityTypes: 'Diesel, Electricity',
       missingFactorCount: 1,
       dataQualityCoverage: '75%',
     });
+  });
+
+  it('separates tracked-only Water from records requiring review in preview counts', () => {
+    const summary = buildReportExecutiveSummary({
+      totalEstimatedEmissionsKgCO2e: 37285,
+      countSummary: {
+        totalRecordsFound: 10,
+        processedRecords: 9,
+        skippedRecords: 1,
+        missingFactorRecords: 0,
+      },
+      matchedActivityEmissions: [
+        {
+          activityDataId: 'activity-electricity',
+          activityType: 'ELECTRICITY',
+          quantity: 63600,
+          unit: 'kWh',
+          estimatedEmissionsKgCO2e: 33247,
+          sourceType: 'SPREADSHEET',
+          factorId: 'factor-electricity',
+        },
+      ],
+      calculationDetails: [
+        ...Array.from({ length: 9 }, (_, index) => ({
+          activityDataId: `activity-${index}`,
+          activityType: index === 0 ? 'ELECTRICITY' : 'DIESEL',
+          recordDate: '2026-07-20',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          activityQuantity: 100,
+          activityUnit: index === 0 ? 'kWh' : 'liters',
+          factorSource: 'CarbonLite',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: 100,
+          status: 'CALCULATED' as const,
+          sourceType: 'SPREADSHEET',
+        })),
+        {
+          activityDataId: 'activity-water',
+          activityType: 'WATER',
+          recordDate: '2026-07-20',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          activityQuantity: 100,
+          activityUnit: 'm3',
+          factorSource: 'Tracked metric',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: 0,
+          status: 'TRACKED_ONLY' as const,
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          sourceType: 'SPREADSHEET',
+          notes: 'Tracked metric only. No emission factor required.',
+        },
+      ],
+    });
+
+    expect(summary.recordsIncluded).toBe(9);
+    expect(summary.trackedMetrics).toBe(1);
+    expect(summary.recordsRequiringReview).toBe(0);
+    expect(formatExecutiveSummaryPreview(summary)).toBe(
+      '37,285 kgCO2e · 9 included · 1 tracked metric',
+    );
+    expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 require review');
+    expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 requires review');
+  });
+
+  it('shows singular grammar for one true record requiring review', () => {
+    const summary = buildReportExecutiveSummary({
+      totalEstimatedEmissionsKgCO2e: 37285,
+      countSummary: {
+        totalRecordsFound: 10,
+        processedRecords: 9,
+        skippedRecords: 1,
+        missingFactorRecords: 0,
+      },
+      matchedActivityEmissions: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-missing-province',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-07-20',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          activityQuantity: 100,
+          activityUnit: 'kWh',
+          factorSource: '',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: 0,
+          status: 'MISSING_JURISDICTION',
+          sourceType: 'SPREADSHEET',
+        },
+      ],
+    });
+
+    expect(summary.recordsRequiringReview).toBe(1);
+    expect(summary.trackedMetrics).toBe(0);
+    expect(formatExecutiveSummaryPreview(summary)).toBe(
+      '37,285 kgCO2e · 9 included · 1 requires review',
+    );
   });
 
   it('formats factor traceability fallbacks and review status', () => {
@@ -412,7 +517,7 @@ describe('buildSourceEvidenceRows', () => {
         unit: 'kWh',
         sourceFile: 'utility.pdf',
         sourceReference: 'PDF extraction',
-        sourceType: 'AI-assisted PDF Extraction',
+        sourceType: 'PDF Extraction',
         notes: 'Metered usage 500 kWh',
       },
       {
@@ -445,8 +550,8 @@ describe('buildSourceEvidenceRows', () => {
         quantity: '12,500',
         unit: 'kWh',
         sourceFile: 'Golden Test Data.xlsx',
-        sourceReference: 'AI-assisted import',
-        sourceType: 'AI-assisted Spreadsheet Import',
+        sourceReference: 'Spreadsheet import',
+        sourceType: 'Spreadsheet Import',
         notes: '',
       },
     ]);
@@ -565,7 +670,7 @@ describe('report data quality and source consistency', () => {
       />,
     );
 
-    expect(screen.getByText('Golden Test Data.xlsx · AI-assisted Spreadsheet Import')).toBeInTheDocument();
+    expect(screen.getByText('Golden Test Data.xlsx · Spreadsheet Import')).toBeInTheDocument();
     expect(screen.queryByText('PDF extraction')).not.toBeInTheDocument();
   });
 });
@@ -628,7 +733,7 @@ describe('RecordsRequiringReviewSection', () => {
       />,
     );
 
-    expect(screen.getByText('Golden Test Data.xlsx · AI-assisted Spreadsheet Import')).toBeInTheDocument();
+    expect(screen.getByText('Golden Test Data.xlsx · Spreadsheet Import')).toBeInTheDocument();
     expect(screen.queryByText(/Golden Test Data\.xlsx · PDF extraction/i)).not.toBeInTheDocument();
   });
 });

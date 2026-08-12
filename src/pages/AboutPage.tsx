@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
-const defaultTitle = 'CarbonLite AI | Carbon Reporting for SMEs';
+const defaultTitle = 'CarbonLite | Emissions Data Readiness for SMEs';
 const defaultDescription =
-  'Turn invoices, utility bills, and spreadsheets into structured emissions reporting. CarbonLite AI helps SMEs and environmental consultants simplify carbon reporting workflows.';
+  'Turn invoices, utility bills, and spreadsheets into structured emissions data readiness and reporting workflows. CarbonLite helps SMEs and environmental consultants improve factor matching and calculation traceability.';
 
 const workflowSteps = [
   'Upload invoices, utility bills, spreadsheets, and operational documents.',
@@ -65,9 +65,9 @@ export default function AboutPage() {
       document.head.append(canonical);
     }
 
-    document.title = 'About CarbonLite AI | Carbon Reporting for SMEs';
+    document.title = 'About CarbonLite | Emissions Data Readiness for SMEs';
     description.content =
-      'Learn about CarbonLite AI, a Canadian-built carbon reporting workflow tool for SMEs and environmental consultants.';
+      'Learn about CarbonLite, a Canadian-built emissions data readiness and reporting workflow tool for SMEs and environmental consultants.';
     canonical.href = 'https://carbonliteapp.ca/about';
 
     return () => {
@@ -95,7 +95,7 @@ export default function AboutPage() {
               CL
             </span>
             <span>
-              <span className="block font-bold">CarbonLite AI</span>
+              <span className="block font-bold">CarbonLite</span>
               <span className="block text-xs text-slate-500">About CarbonLite</span>
             </span>
           </Link>
@@ -115,7 +115,7 @@ export default function AboutPage() {
               Canadian-built carbon reporting workflow
             </p>
             <h1 className="mt-4 max-w-3xl text-4xl font-black text-slate-950 sm:text-5xl">
-              About CarbonLite AI
+              About CarbonLite
             </h1>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-600 sm:text-xl">
               A lightweight carbon reporting workflow tool built to help Canadian
@@ -234,7 +234,7 @@ export default function AboutPage() {
                 Pilot-stage validation
               </h2>
               <p className="mt-4 leading-7 text-slate-700">
-                CarbonLite AI is currently in pilot-stage validation with feedback
+                CarbonLite is currently in pilot-stage validation with feedback
                 from environmental reporting professionals. The focus is learning
                 where the workflow saves time, where review controls need improvement,
                 and which document types matter most.
@@ -246,7 +246,7 @@ export default function AboutPage() {
                 Developed by KACH CANADA LTD.
               </h2>
               <p className="mt-4 leading-7 text-slate-700">
-                CarbonLite AI is developed in Canada for practical SME and consultant
+                CarbonLite is developed in Canada for practical SME and consultant
                 reporting workflows.
               </p>
             </div>

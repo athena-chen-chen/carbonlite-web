@@ -50,6 +50,7 @@ export type MetricsSummaryTableRow = {
   totalValue: string;
   category: 'input' | 'calculated';
   activityType?: string;
+  trackedOnly?: boolean;
 };
 
 export type MissingFactorItem = {
@@ -206,29 +207,43 @@ export function buildMetricsSummaryTableRows(input: {
   if (recordsIncluded <= 0) return [];
 
   const rows: MetricsSummaryTableRow[] = [];
+  const activityBreakdown = usageTotals.activityUsageBreakdown ?? [];
 
-  usageTotals.fuelUsageBreakdown.forEach((item) => {
-    rows.push({
-      metricType: `Fuel Usage — ${formatActivityTypeLabel(item.activityType)}`,
-      unit: item.unit,
-      totalValue: formatDisplayNumber(item.total),
-      category: 'input',
-      activityType: item.activityType,
+  if (activityBreakdown.length > 0) {
+    activityBreakdown.forEach((item) => {
+      rows.push({
+        metricType: formatActivityTypeLabel(item.activityType),
+        unit: item.unit,
+        totalValue: formatDisplayNumber(item.total),
+        category: 'input',
+        activityType: item.activityType,
+        trackedOnly: item.trackedOnly,
+      });
     });
-  });
+  } else {
+    usageTotals.fuelUsageBreakdown.forEach((item) => {
+      rows.push({
+        metricType: formatActivityTypeLabel(item.activityType),
+        unit: item.unit,
+        totalValue: formatDisplayNumber(item.total),
+        category: 'input',
+        activityType: item.activityType,
+      });
+    });
 
-  if (Number(usageTotals.electricity) > 0) {
-    rows.push({
-      metricType: 'Electricity',
-      unit: usageTotals.electricityUnitLabel,
-      totalValue: formatDisplayNumber(usageTotals.electricity),
-      category: 'input',
-      activityType: 'ELECTRICITY',
-    });
+    if (Number(usageTotals.electricity) > 0) {
+      rows.push({
+        metricType: 'Electricity',
+        unit: usageTotals.electricityUnitLabel,
+        totalValue: formatDisplayNumber(usageTotals.electricity),
+        category: 'input',
+        activityType: 'ELECTRICITY',
+      });
+    }
   }
 
   rows.push({
-    metricType: 'Carbon Emissions',
+    metricType: 'Total Calculated Emissions',
     unit: 'kgCO2e',
     totalValue: formatEmissionsValue(totalEstimatedEmissionsKgCO2e),
     category: 'calculated',
@@ -298,6 +313,9 @@ export function MetricsSummarySection({
       countSummary.skippedRecords - countSummary.missingFactorRecords,
     ),
   };
+  const hasBlockingCalculationIssues = calculationIssueGroups.length > 0
+    ? calculationIssueGroups.some((group) => group.issueType !== 'informational')
+    : skippedReasons.missingFactor > 0 || skippedReasons.invalidData > 0;
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildScopeSummary(calculationDetails);
   const dataReadiness = buildDataReadinessSummary(calculationDetails);
@@ -359,7 +377,7 @@ export function MetricsSummarySection({
         />
 
         <MetricCard
-          title="CO₂ Emissions"
+          title="Total Calculated Emissions"
           value={`${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kg CO2e`}
           icon="🌱"
           color="#10b981"
@@ -418,7 +436,7 @@ export function MetricsSummarySection({
         {countSummary.skippedRecords > 0 ? (
           <div style={reasonListStyle}>
             <div style={{ fontWeight: 800, color: '#334155' }}>Reasons:</div>
-            {buildSkippedReasonRows(skippedReasons).map((reason) => (
+            {buildSkippedReasonRows(skippedReasons, hasBlockingCalculationIssues).map((reason) => (
               <div key={reason.label} style={reasonRowStyle}>
                 <span>{reason.label}</span>
                 <strong>{reason.count}</strong>
@@ -430,23 +448,28 @@ export function MetricsSummarySection({
         )}
       </div>
 
-      {countSummary.processedRecords > 0 && countSummary.skippedRecords > 0 ? (
+      {countSummary.processedRecords > 0 && countSummary.skippedRecords > 0 && hasBlockingCalculationIssues ? (
         <div style={partialCalculationWarningStyle}>
           Some records require review and were not included in emissions totals.
         </div>
       ) : null}
 
       {calculationIssueGroups.length > 0 ? (
-        <div style={warningStyle}>
+        <div style={hasBlockingCalculationIssues ? warningStyle : informationalNotesStyle}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
-            Calculation Issues
+            {hasBlockingCalculationIssues ? 'Calculation Issues' : 'Data Quality & Tracked Metrics'}
           </div>
           <div style={{ marginBottom: 10 }}>
-            Review the items below to see whether the record needs more data, a conversion factor, or no emissions factor is required.
+            {hasBlockingCalculationIssues
+              ? 'Review the items below to see whether the record needs more data, a conversion factor, or no emissions factor is required.'
+              : 'Tracked metrics are shown for transparency and are excluded from calculated GHG emissions totals.'}
           </div>
           <div style={missingFactorListStyle}>
             {calculationIssueGroups.map((group) => (
-              <div key={`${group.issueType}-${group.activityType}-${group.unit}`} style={missingFactorRowStyle}>
+              <div
+                key={`${group.issueType}-${group.activityType}-${group.unit}`}
+                style={group.issueType === 'informational' ? informationalIssueRowStyle : missingFactorRowStyle}
+              >
                 <div style={missingFactorTextStyle}>
                   <div style={issueHeaderStyle}>
                     <IssueBadge type={group.issueType} />
@@ -1757,7 +1780,7 @@ function CalculationSummaryEmptyState({
         </div>
       ) : null}
       {countSummary.skippedRecords > 0 ? (
-        <div>Review Calculation Issues above.</div>
+        <div>Review Data Quality & Tracked Metrics above.</div>
       ) : null}
     </div>
   );
@@ -1930,6 +1953,7 @@ function MetricRelationshipLabel({ item }: { item: MetricsSummaryTableRow }) {
       <span>
         <strong>{item.totalValue} {item.unit}</strong>{' '}
         {formatActivityTypeLabel(item.activityType)}
+        {item.trackedOnly ? <span style={trackedMetricInlineNoteStyle}> — tracked only</span> : null}
       </span>
     );
   }
@@ -1939,9 +1963,13 @@ function MetricRelationshipLabel({ item }: { item: MetricsSummaryTableRow }) {
 
 function buildSkippedReasonRows(
   skippedReasons: NonNullable<MetricsCountSummary['skippedReasons']>,
+  hasBlockingCalculationIssues = true,
 ) {
   return [
-    { label: 'Calculation issues', count: skippedReasons.missingFactor },
+    {
+      label: hasBlockingCalculationIssues ? 'Calculation issues' : 'Tracked metrics',
+      count: skippedReasons.missingFactor,
+    },
     { label: 'Outside selected date range', count: skippedReasons.outsideDateRange },
     { label: 'Outside selected report scope', count: skippedReasons.outsideScope },
     { label: 'Invalid data', count: skippedReasons.invalidData },
@@ -2787,6 +2815,15 @@ const warningStyle: React.CSSProperties = {
   color: '#9a3412',
 };
 
+const informationalNotesStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1e3a8a',
+};
+
 const missingFactorListStyle: React.CSSProperties = {
   display: 'grid',
   gap: 8,
@@ -2802,6 +2839,12 @@ const missingFactorRowStyle: React.CSSProperties = {
   borderRadius: 10,
   background: '#fff',
   border: '1px solid #fed7aa',
+};
+
+const informationalIssueRowStyle: React.CSSProperties = {
+  ...missingFactorRowStyle,
+  border: '1px solid #bfdbfe',
+  background: '#fff',
 };
 
 const missingFactorTextStyle: React.CSSProperties = {
@@ -2822,6 +2865,11 @@ const missingFactorHintStyle: React.CSSProperties = {
   fontSize: 13,
   lineHeight: 1.5,
   fontWeight: 600,
+};
+
+const trackedMetricInlineNoteStyle: React.CSSProperties = {
+  color: '#2563eb',
+  fontWeight: 700,
 };
 
 const createFactorButtonStyle: React.CSSProperties = {

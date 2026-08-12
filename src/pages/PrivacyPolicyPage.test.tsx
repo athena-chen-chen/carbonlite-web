@@ -30,10 +30,10 @@ describe('PrivacyPolicyPage', () => {
   it('sets page-specific SEO metadata', () => {
     const { unmount } = renderPrivacyPage();
 
-    expect(document.title).toBe('Privacy Policy | CarbonLite AI');
+    expect(document.title).toBe('Privacy Policy | CarbonLite');
     expect(
       document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content,
-    ).toBe('Privacy Policy for CarbonLite AI');
+    ).toBe('Privacy Policy for CarbonLite');
     expect(
       document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
     ).toBe('https://carbonliteapp.ca/privacy');

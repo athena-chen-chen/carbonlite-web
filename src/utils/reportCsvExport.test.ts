@@ -228,8 +228,8 @@ describe('pilot CSV export', () => {
 
     rows.forEach((row) => {
       expect(row['Source File']).toBe('Golden Test Data.xlsx');
-      expect(row['Source Type']).toBe('AI-assisted Spreadsheet Import');
-      expect(row['Source Reference']).toBe('AI-assisted import');
+      expect(row['Source Type']).toBe('Spreadsheet Import');
+      expect(row['Source Reference']).toBe('Spreadsheet import');
     });
   });
 

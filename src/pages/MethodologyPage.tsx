@@ -48,7 +48,7 @@ export default function MethodologyPage() {
 
   return (
     <main style={pageStyle}>
-      <Link to="/" style={backLinkStyle}>CarbonLite AI</Link>
+      <Link to="/" style={backLinkStyle}>CarbonLite</Link>
       <section style={heroStyle}>
         <p style={eyebrowStyle}>{content.subtitle}</p>
         <h1 style={titleStyle}>{content.title}</h1>

@@ -132,7 +132,7 @@ export default function CarbonLiteLandingPage() {
               CL
             </div>
             <div>
-              <div className="text-base font-bold tracking-tight">CarbonLite AI</div>
+              <div className="text-base font-bold tracking-tight">CarbonLite</div>
               <div className="text-xs text-slate-500">
                 Canadian SME emissions workflow
               </div>
@@ -203,7 +203,7 @@ export default function CarbonLiteLandingPage() {
                   href="#demo-video"
                   onClick={() =>
                     trackEvent('DEMO_VIDEO_VIEWED', {
-                      video_name: 'CarbonLite AI demo',
+                      video_name: 'CarbonLite demo',
                       source: 'hero',
                     })
                   }
@@ -322,7 +322,7 @@ export default function CarbonLiteLandingPage() {
                 <iframe
                   className="absolute inset-0 h-full w-full"
                   src={demoVideoEmbedUrl}
-                  title="CarbonLite AI demo video"
+                  title="CarbonLite demo video"
                   loading="lazy"
                   allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen

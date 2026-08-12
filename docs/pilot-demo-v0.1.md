@@ -98,6 +98,10 @@ For the current golden pilot dataset:
 
 Water is tracked-only and excluded from the GHG total.
 
+Ground Transport remains a supported pilot activity type, but it is intentionally
+excluded from the Pilot Demo v0.1 golden dataset so the stable report total
+remains 37,285 kgCO2e.
+
 Golden dataset records:
 
 | Activity | Input | Expected Treatment |
@@ -134,7 +138,7 @@ Use this checklist before each consultant or SME pilot-feedback session.
 - Verify CSV export downloads and opens in a spreadsheet.
 - Verify Factor Source, Factor Version, Verification, and Confidence display in reports.
 - Verify Scope 3 records show Consultant Review Recommended.
-- Verify spreadsheet imports show `AI-assisted Spreadsheet Import`, not `PDF extraction`.
+- Verify spreadsheet imports show `Spreadsheet Import`, not `PDF extraction`.
 - Verify no temporary debug panels or raw API JSON appear.
 - Verify no internal backend wording appears in pilot-facing UI, PDF, or CSV.
 - Verify no database ids appear in the pilot-facing PDF or CSV.

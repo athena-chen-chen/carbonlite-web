@@ -120,6 +120,8 @@ export type ReportExecutiveSummary = {
   estimatedEmissions: string;
   recordsIncluded: number;
   recordsSkipped: number;
+  trackedMetrics: number;
+  recordsRequiringReview: number;
   primaryActivityTypes: string;
   missingFactorCount: number;
   dataQualityCoverage: string;
@@ -224,10 +226,12 @@ export function buildReportExecutiveSummary({
   totalEstimatedEmissionsKgCO2e,
   countSummary,
   matchedActivityEmissions,
+  calculationDetails = [],
 }: {
   totalEstimatedEmissionsKgCO2e: number;
   countSummary: MetricsCountSummary;
   matchedActivityEmissions: FormalActivityEmission[];
+  calculationDetails?: CalculationAuditDetail[];
 }): ReportExecutiveSummary {
   const primaryActivityTypes = Array.from(
     new Set(
@@ -240,17 +244,53 @@ export function buildReportExecutiveSummary({
     countSummary.totalRecordsFound > 0
       ? (countSummary.processedRecords / countSummary.totalRecordsFound) * 100
       : 0;
+  const trackedMetrics = calculationDetails.length > 0
+    ? calculationDetails.filter(isTrackedMetricDetail).length
+    : 0;
+  const recordsRequiringReview = calculationDetails.length > 0
+    ? calculationDetails.filter(isRecordRequiringCorrection).length
+    : countSummary.skippedRecords;
 
   return {
     estimatedEmissions: `${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e`,
     recordsIncluded: countSummary.processedRecords,
     recordsSkipped: countSummary.skippedRecords,
+    trackedMetrics,
+    recordsRequiringReview,
     primaryActivityTypes: primaryActivityTypes.length
       ? primaryActivityTypes.join(', ')
       : 'None included',
     missingFactorCount: countSummary.missingFactorRecords,
     dataQualityCoverage: `${formatPercentage(coverage)}%`,
   };
+}
+
+export function formatExecutiveSummaryPreview(
+  summary: Pick<
+    ReportExecutiveSummary,
+    'estimatedEmissions' | 'recordsIncluded' | 'trackedMetrics' | 'recordsRequiringReview'
+  >,
+) {
+  const parts = [
+    summary.estimatedEmissions,
+    `${summary.recordsIncluded} included`,
+  ];
+
+  if (summary.trackedMetrics > 0) {
+    parts.push(
+      `${summary.trackedMetrics} tracked ${summary.trackedMetrics === 1 ? 'metric' : 'metrics'}`,
+    );
+  }
+
+  if (summary.recordsRequiringReview > 0) {
+    parts.push(
+      `${summary.recordsRequiringReview} ${
+        summary.recordsRequiringReview === 1 ? 'requires' : 'require'
+      } review`,
+    );
+  }
+
+  return parts.join(' · ');
 }
 
 export function buildConversionFactorTraceabilityRows(
@@ -429,6 +469,7 @@ export function FormalReportPreview({
     totalEstimatedEmissionsKgCO2e,
     countSummary: reportCountSummary,
     matchedActivityEmissions,
+    calculationDetails,
   });
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildFormalScopeSummary(calculationDetails);
@@ -512,7 +553,7 @@ export function FormalReportPreview({
         sectionId="executive-summary"
         expanded={expandedSections['executive-summary']}
         onToggle={toggleSection}
-        summary={`${executiveSummary.estimatedEmissions} · ${executiveSummary.recordsIncluded} included · ${executiveSummary.recordsSkipped} require review`}
+        summary={formatExecutiveSummaryPreview(executiveSummary)}
       >
         <ExecutiveSummarySection executiveSummary={executiveSummary} />
       </ReportSection>
