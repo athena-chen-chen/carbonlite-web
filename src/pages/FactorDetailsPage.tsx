@@ -238,8 +238,8 @@ function formatFactorTitle(version: FactorVersion) {
 function singularUnit(unit?: string | null) {
   const value = String(unit ?? '').trim();
   const normalized = value.toLowerCase();
-  if (normalized === 'liters' || normalized === 'litres') return 'liter';
-  if (normalized === 'nights') return 'night';
+  if (normalized === 'liters' || normalized === 'litres' || normalized === 'liter' || normalized === 'litre') return 'liter';
+  if (normalized === 'nights' || normalized === 'night') return 'night';
   if (normalized === 'tonnes') return 'tonne';
   return value || 'unit';
 }
@@ -248,6 +248,11 @@ function formatFactorValueDisplay(version: FactorVersion) {
   if (isWaterTrackedVersion(version)) return 'Tracked only';
   const value = formatNumber(version.factorValue);
   const resultUnit = version.resultUnit || 'kgCO2e';
+  if (resultUnit.includes('/')) {
+    const [resultNumerator, resultDenominator] = resultUnit.split('/');
+    const normalizedDenominator = singularUnit(resultDenominator);
+    return `${value} ${normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator}`;
+  }
   return `${value} ${resultUnit}/${singularUnit(version.inputUnit)}`;
 }
 

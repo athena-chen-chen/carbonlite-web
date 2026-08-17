@@ -19,7 +19,9 @@
     "test:smoke": "playwright test --config apps/web-e2e/playwright.config.ts apps/web-e2e/tests/pilot-demo-smoke.spec.ts",
     "verify:pilot": "pnpm build:pilot && pnpm test:smoke",
     "test:regression": "playwright test --config apps/web-e2e/playwright.config.ts --grep @smoke",
-    "verify:deployment": "pnpm test && pnpm build && pnpm test:regression"
+    "verify:deployment": "pnpm test && pnpm build && pnpm test:regression",
+    "create:pilot-reviewer": "node scripts/create-pilot-reviewer.mjs",
+    "seed:sample-workspace": "pnpm --dir ../carbonlite-api seed:sample-workspace"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

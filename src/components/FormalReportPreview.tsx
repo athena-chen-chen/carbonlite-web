@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  buildDataReadinessSummary,
   buildHotspotAnalysis,
   buildMetricsSummaryTableRows,
   type MetricsCountSummary,
@@ -9,7 +10,7 @@ import {
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 import type { CalculationAuditDetail } from '../services/metrics';
-import { formatFactorValue } from '../utils/calculationTraceability';
+import { formatCalculationStatus, formatFactorValue } from '../utils/calculationTraceability';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
 import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
@@ -19,6 +20,7 @@ import {
   resolveScopeClassification,
 } from '../utils/scopeClassification';
 import { getActivityTypeLabel } from '../utils/activityType';
+import { formatDateOnly } from '../utils/dateOnly';
 import {
   buildSourceEvidenceNote,
   formatReportAssumptions,
@@ -43,7 +45,7 @@ import { SourceEvidenceSection } from './reports/sections/SourceEvidenceSection'
 export { formatFuelUsageBreakdown };
 
 export const FORMAL_REPORT_DISCLAIMER =
-  'CarbonLite does not certify emissions, guarantee compliance, or determine carbon credit eligibility. Users should review source documents, conversion factor traceability, and applicable reporting requirements before relying on this report.';
+  'This report was generated using CarbonLite Pilot Demo v0.1 for emissions data readiness and workflow review purposes only. It is not a certified GHG emissions report and does not constitute regulatory compliance advice, third-party verification, audit assurance, or carbon credit eligibility determination. Emission factors, assumptions, and calculations should be reviewed by qualified sustainability professionals before formal use.';
 
 export const FORMAL_REPORT_METHODOLOGY = [
   'Emissions are calculated from imported or manually entered activity data and configured conversion factors. CarbonLite applies factor matching based on activity type, unit, jurisdiction, and reporting year.',
@@ -57,6 +59,8 @@ const DEFAULT_EXPANDED_REPORT_SECTIONS = new Set([
   'emissions-hotspots',
   'scope-breakdown',
   'calculation-quality',
+  'source-evidence',
+  'methodology',
 ]);
 
 const REPORT_SECTION_IDS = [
@@ -319,16 +323,67 @@ export type SourceEvidenceRow = {
   activityType: string;
   quantity: string;
   unit: string;
+  recordDate: string;
   sourceFile: string;
   sourceReference: string;
   sourceType: string;
+  importMethod: string;
+  matchingStatus: string;
+  reportTreatment: string;
   notes: string;
 };
+
+export type SourceEvidenceSummaryRow = {
+  sourceFile: string;
+  sourceType: string;
+  importMethod: string;
+  sourceReference: string;
+  includedRecords: number;
+  trackedMetrics: number;
+  recordsRequiringReview: number;
+};
+
+export function buildSourceEvidenceSummaryRows(
+  sourceEvidenceRows: SourceEvidenceRow[],
+): SourceEvidenceSummaryRow[] {
+  const summaryBySource = new Map<string, SourceEvidenceSummaryRow>();
+
+  sourceEvidenceRows.forEach((row) => {
+    const sourceFile = row.sourceFile || 'Source Review Required';
+    const sourceType = row.sourceType || 'Source Review Required';
+    const importMethod = row.importMethod || sourceType;
+    const sourceReference =
+      sourceFile && !/^source (file unavailable|review required)$/i.test(sourceFile)
+        ? sourceFile
+        : row.sourceReference || sourceFile;
+    const key = [sourceFile, sourceType, importMethod].join('::');
+
+    if (!summaryBySource.has(key)) {
+      summaryBySource.set(key, {
+        sourceFile,
+        sourceType,
+        importMethod,
+        sourceReference,
+        includedRecords: 0,
+        trackedMetrics: 0,
+        recordsRequiringReview: 0,
+      });
+    }
+
+    const summary = summaryBySource.get(key)!;
+    if (row.reportTreatment === 'Included') summary.includedRecords += 1;
+    else if (row.reportTreatment === 'Tracked Only') summary.trackedMetrics += 1;
+    else if (row.reportTreatment === 'Requires Review') summary.recordsRequiringReview += 1;
+  });
+
+  return Array.from(summaryBySource.values());
+}
 
 export function buildSourceEvidenceRows(
   activities: Array<{
     id?: string | null;
     activityType?: string | null;
+    recordDate?: string | null;
     quantity?: string | number | null;
     unit?: string | null;
     sourceReference?: string | null;
@@ -367,20 +422,46 @@ export function buildSourceEvidenceRows(
           ? '-'
           : formatDisplayNumber(activity.quantity),
       unit: formatSourceEvidenceUnit(detail?.activityUnit ?? activity.unit, detail),
+      recordDate: formatDateOnly(detail?.recordDate ?? activity.recordDate),
       sourceFile:
         activity.sourceFileName?.trim() ||
-        (isManual ? 'Manual entry' : 'Source not specified'),
-      sourceReference: isManual
-        ? 'manual'
-        : formatReportSourceReference({
-            sourceReference: rawSourceReference || activity.sourceReference,
-            sourceType: activity.sourceType,
-            sourceFileName: activity.sourceFileName,
-          }),
+        (isManual ? 'Manual Entry' : 'Source file unavailable'),
+      sourceReference: formatReportSourceReference({
+        sourceReference: rawSourceReference || activity.sourceReference,
+        sourceType: activity.sourceType,
+        sourceFileName: activity.sourceFileName,
+      }),
       sourceType,
+      importMethod: formatSourceEvidenceImportMethod(sourceType),
+      matchingStatus: formatSourceEvidenceStatus(detail),
+      reportTreatment: formatSourceEvidenceTreatment(detail),
       notes: buildSourceEvidenceNote({ activity, detail }),
     };
   });
+}
+
+function formatSourceEvidenceImportMethod(sourceType: string) {
+  if (sourceType === 'Spreadsheet Import') return 'Spreadsheet Import';
+  if (sourceType === 'PDF Extraction') return 'PDF Extraction';
+  if (sourceType === 'Manual Entry') return 'Manual Entry';
+  if (sourceType === 'Document Import') return 'Document Import';
+  if (sourceType === 'Pasted Spreadsheet Rows') return 'Pasted Spreadsheet Rows';
+  return sourceType || 'Source Review Required';
+}
+
+function formatSourceEvidenceStatus(detail?: CalculationAuditDetail) {
+  if (!detail) return 'Source Review Required';
+  if (isTrackedMetricDetail(detail)) return 'Tracked Metric';
+  if (detail.status === 'CALCULATED') return 'Matched';
+  return formatCalculationStatus(detail.matchingStatus || detail.calculationStatus || detail.status);
+}
+
+function formatSourceEvidenceTreatment(detail?: CalculationAuditDetail) {
+  if (!detail) return 'Source Review Required';
+  if (isTrackedMetricDetail(detail)) return 'Tracked Only';
+  if (detail.status === 'CALCULATED') return 'Included';
+  if (isRecordRequiringCorrection(detail)) return 'Requires Review';
+  return 'Excluded';
 }
 
 export function formatReportUnit(
@@ -471,6 +552,7 @@ export function FormalReportPreview({
     matchedActivityEmissions,
     calculationDetails,
   });
+  const dataReadinessSummary = buildDataReadinessSummary(calculationDetails);
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildFormalScopeSummary(calculationDetails);
   const scopeSummaryLine = `Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`;
@@ -543,7 +625,7 @@ export function FormalReportPreview({
           <Fact label="Organization" value={organizationName} />
           <Fact label="Report Period" value={reportPeriod} />
           <Fact label="Scope Mode" value={scopeLabel} />
-          <Fact label="Records Included" value={String(reportCountSummary.processedRecords)} />
+          <Fact label="Records Included in GHG Total" value={String(reportCountSummary.processedRecords)} />
           <Fact label="Generated Date" value={generatedAt} />
         </div>
       </ReportSection>
@@ -594,13 +676,14 @@ export function FormalReportPreview({
         sectionId="calculation-quality"
         expanded={expandedSections['calculation-quality']}
         onToggle={toggleSection}
-        summary={`${reportCountSummary.processedRecords} calculated · ${reportCountSummary.skippedRecords} skipped`}
+        summary={`${reportCountSummary.processedRecords} calculated · ${primarySkippedReasons.trackedOnly} tracked operational metrics · ${executiveSummary.recordsRequiringReview} requiring review`}
       >
         <CalculationQualitySection
           reportCountSummary={reportCountSummary}
           primarySkippedReasons={primarySkippedReasons}
           dataQualityCoverage={executiveSummary.dataQualityCoverage}
-          skippedReasonsLabel={formatSkippedReasons(primarySkippedReasons)}
+          dataReadinessScore={`${formatDisplayNumber(dataReadinessSummary.score)}% (${dataReadinessSummary.level})`}
+          reviewReasonsLabel={formatReviewReasons(primarySkippedReasons)}
         />
       </ReportSection>
 
@@ -661,11 +744,11 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="J. Source Evidence"
+        title="J. Source Evidence Summary"
         sectionId="source-evidence"
         expanded={expandedSections['source-evidence']}
         onToggle={toggleSection}
-        summary={`${sourceEvidenceRows.length} source rows`}
+        summary={`${buildSourceEvidenceSummaryRows(sourceEvidenceRows).length} source files`}
       >
         <SourceEvidenceSection sourceEvidenceRows={sourceEvidenceRows} />
       </ReportSection>
@@ -684,11 +767,11 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="L. Methodology and Disclaimer"
+        title="L. Methodology and Limitations"
         sectionId="methodology"
         expanded={expandedSections.methodology}
         onToggle={toggleSection}
-        summary="Calculation approach and use disclaimer"
+        summary="Calculation approach and pilot-use limitations"
       >
         <MethodologyDisclaimerSection methodology={FORMAL_REPORT_METHODOLOGY} />
       </ReportSection>
@@ -732,12 +815,11 @@ function buildFormalScopeSummary(calculationDetails: CalculationAuditDetail[]) {
   return summary;
 }
 
-export function formatSkippedReasons(reasons: ReportSkippedReasonSummary) {
+export function formatReviewReasons(reasons: ReportSkippedReasonSummary) {
   return [
     ['Missing factor', reasons.missingFactor],
     ['Missing jurisdiction', reasons.missingJurisdiction],
     ['Invalid unit', reasons.invalidUnit],
-    ['Tracked metric', reasons.trackedOnly],
     ['Missing data', reasons.missingData],
     ['Invalid quantity', reasons.invalidQuantity],
     ['Outside date range', reasons.outsideDateRange],
@@ -745,7 +827,7 @@ export function formatSkippedReasons(reasons: ReportSkippedReasonSummary) {
   ]
     .filter(([, count]) => Number(count) > 0)
     .map(([label, count]) => `${label}: ${count}`)
-    .join('; ') || 'Not specified';
+    .join('; ') || 'None';
 }
 
 function ReportSection({
@@ -771,13 +853,19 @@ function ReportSection({
         type="button"
         aria-expanded={expanded}
         aria-controls={contentId}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${title}`}
         onClick={() => onToggle(sectionId)}
         style={reportSectionHeaderButtonStyle}
       >
-        <span aria-hidden="true" style={reportSectionChevronStyle}>
-          {expanded ? '▾' : '▸'}
+        <span style={reportSectionTitleBlockStyle}>
+          <span aria-hidden="true" style={reportSectionChevronStyle}>
+            {expanded ? '▾' : '▸'}
+          </span>
+          <span style={reportSectionTitleStyle}>{title}</span>
         </span>
-        <span style={reportSectionTitleStyle}>{title}</span>
+        <span style={reportSectionToggleLabelStyle}>
+          {expanded ? 'Collapse' : 'Expand'}
+        </span>
       </button>
       {summary ? <div style={reportSectionSummaryStyle}>{summary}</div> : null}
       {expanded ? (
@@ -975,7 +1063,8 @@ const reportSectionHeaderButtonStyle: React.CSSProperties = {
   width: '100%',
   display: 'flex',
   alignItems: 'center',
-  gap: 8,
+  justifyContent: 'space-between',
+  gap: 12,
   padding: 0,
   border: 0,
   background: 'transparent',
@@ -984,11 +1073,30 @@ const reportSectionHeaderButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const reportSectionTitleBlockStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  minWidth: 0,
+};
+
 const reportSectionChevronStyle: React.CSSProperties = {
   width: 18,
   color: '#047857',
   fontSize: 16,
   fontWeight: 900,
+};
+
+const reportSectionToggleLabelStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1px solid #d1d5db',
+  background: '#fff',
+  color: '#334155',
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
 };
 
 const reportSectionTitleStyle: React.CSSProperties = {

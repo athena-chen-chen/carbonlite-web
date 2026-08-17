@@ -1,5 +1,5 @@
 import posthog from 'posthog-js';
-import { getCurrentUser, getOrganizationId, type AuthUser } from './auth';
+import { getAccountType, getCurrentUser, getOrganizationId, getUserRole, type AuthUser } from './auth';
 
 type AnalyticsProperties = Record<string, unknown>;
 
@@ -39,6 +39,8 @@ export function track(
 
   posthog.capture(eventName, {
     ...(organizationId ? { organizationId } : {}),
+    accountType: getAccountType(currentUser),
+    userRole: getUserRole(currentUser),
     ...sanitizeProperties(properties),
   });
 }
@@ -50,6 +52,8 @@ export function identify(user: AuthUser | null) {
   posthog.identify(user.id, {
     email: user.email,
     organizationId: getOrganizationId(user) || undefined,
+    accountType: getAccountType(user),
+    userRole: getUserRole(user),
   });
 }
 

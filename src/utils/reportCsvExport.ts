@@ -17,6 +17,7 @@ import {
   resolveScopeClassification,
 } from './scopeClassification';
 import { formatDateOnly } from './dateOnly';
+import { buildCalculatedFormula } from './calculationTraceability';
 
 export const PILOT_CSV_HEADERS = [
   'Record No.',
@@ -42,11 +43,12 @@ export const PILOT_CSV_HEADERS = [
   'Verification Status',
   'Confidence Level',
   'Consultant Review Recommended',
-  'Calculation Formula',
+  'Formula',
   'Calculated Emissions kgCO2e',
   'Calculated Emissions Display',
   'Source File',
   'Source Type',
+  'Import Method',
   'Source Reference',
   'Review Note',
 ] as const;
@@ -73,10 +75,29 @@ function displayNumber(value?: string | number | null) {
   return numeric.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-function formatLabel(value?: string | null) {
-  const clean = String(value ?? '').trim();
-  if (!clean) return '';
-  return formatCredibilityLabel(clean) || clean.replace(/_/g, ' ');
+const CSV_STATUS_LABELS: Record<string, string> = {
+  CALCULATED: 'Calculated',
+  MATCHED: 'Matched',
+  TRACKED_ONLY: 'Tracked Only',
+  REQUIRES_REVIEW: 'Requires Review',
+  MISSING_FACTOR: 'Missing Factor',
+  MISSING_PROVINCE: 'Missing Province',
+  MISSING_JURISDICTION: 'Missing Province',
+  UNIT_MISMATCH: 'Unit Mismatch',
+  INVALID_UNIT: 'Unit Mismatch',
+  UNSUPPORTED_ACTIVITY: 'Unsupported Activity',
+  NOT_IMPORTABLE: 'Not Importable',
+  EXCLUDED: 'Excluded',
+  INCLUDED: 'Included',
+};
+
+function formatCsvDisplayLabel(value?: string | null) {
+  const normalized = normalizeStatus(value);
+  if (!normalized) return '';
+  return CSV_STATUS_LABELS[normalized] || formatCredibilityLabel(value) || normalized
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function getScopeLabel(detail: CalculationAuditDetail) {
@@ -97,13 +118,13 @@ function getReportTreatment(detail: CalculationAuditDetail) {
 
 function getCalculationStatus(detail: CalculationAuditDetail) {
   if (isTrackedMetricDetail(detail)) return 'Tracked Only';
-  return formatLabel(detail.calculationStatus || detail.status) || 'Not specified';
+  return formatCsvDisplayLabel(detail.calculationStatus || detail.status) || 'Not specified';
 }
 
 function getMatchingStatus(detail: CalculationAuditDetail) {
   if (isTrackedMetricDetail(detail)) return 'Tracked Only';
   if (detail.status === 'CALCULATED') return 'Matched';
-  return formatLabel(detail.matchingStatus || detail.status) || 'Not specified';
+  return formatCsvDisplayLabel(detail.matchingStatus || detail.status) || 'Not specified';
 }
 
 function singularizeFactorDenominator(unit?: string | null) {
@@ -122,7 +143,11 @@ function singularizeFactorDenominator(unit?: string | null) {
 export function formatCsvFactorUnit(detail: CalculationAuditDetail) {
   if (isTrackedMetricDetail(detail)) return 'No emissions factor applied';
   const resultUnit = detail.factorResultUnit || 'kgCO2e';
-  if (resultUnit.includes('/')) return resultUnit;
+  if (resultUnit.includes('/')) {
+    const [resultNumerator, resultDenominator] = resultUnit.split('/');
+    const normalizedDenominator = singularizeFactorDenominator(resultDenominator);
+    return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
+  }
   const inputUnit = singularizeFactorDenominator(detail.factorInputUnit || detail.activityUnit);
   return inputUnit ? `${resultUnit}/${inputUnit}` : resultUnit;
 }
@@ -155,12 +180,7 @@ function getMatchedFactorName(detail: CalculationAuditDetail) {
 function buildRawCalculationFormula(detail: CalculationAuditDetail) {
   if (isTrackedMetricDetail(detail)) return 'Tracked only. Not included in emissions total.';
   if (detail.status !== 'CALCULATED') return formatTraceabilityReviewNote(detail);
-
-  const quantity = csvNumber(detail.activityQuantity);
-  const factorValue = csvNumber(detail.factorValue);
-  const emissions = csvNumber(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission);
-  if (!quantity || !factorValue || !emissions) return '';
-  return `${quantity} x ${factorValue} = ${emissions} kgCO2e`;
+  return buildCalculatedFormula(detail);
 }
 
 function usesPriorYearFactor(detail: CalculationAuditDetail) {
@@ -170,14 +190,17 @@ function usesPriorYearFactor(detail: CalculationAuditDetail) {
 }
 
 function getConsultantReviewRecommended(detail: CalculationAuditDetail) {
-  if (isScope3PilotActivity(detail.activityType)) return 'Yes';
+  if (isTrackedMetricDetail(detail)) return 'Not applicable';
+  if (isScope3PilotActivity(detail.activityType)) return 'Yes - Scope 3 review recommended';
   const verification = formatReportVerification({
     activityType: detail.activityType,
     verified: detail.factorVerified,
     factorStatus: detail.factorStatus,
     verificationStatus: detail.factorVerificationStatus,
   });
-  return /review|pilot|unverified|draft/i.test(verification) ? 'Yes' : 'No';
+  return /review|pilot|unverified|draft/i.test(verification)
+    ? 'Review before formal reporting'
+    : 'No';
 }
 
 function buildCsvReviewNote(detail: CalculationAuditDetail) {
@@ -252,13 +275,14 @@ export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]):
         ? 'Not applicable'
         : formatCredibilityLabel(detail.factorConfidenceLevel) || 'Not specified',
       'Consultant Review Recommended': getConsultantReviewRecommended(detail),
-      'Calculation Formula': buildRawCalculationFormula(detail),
+      Formula: buildRawCalculationFormula(detail),
       'Calculated Emissions kgCO2e': isTrackedMetricDetail(detail) ? 0 : csvNumber(calculatedEmissions),
       'Calculated Emissions Display': isTrackedMetricDetail(detail)
         ? 'Tracked only'
         : `${displayNumber(calculatedEmissions)} kgCO2e`,
       'Source File': getSourceFile(detail),
       'Source Type': sourceType,
+      'Import Method': sourceType,
       'Source Reference': sourceReference,
       'Review Note': buildCsvReviewNote(detail),
     };

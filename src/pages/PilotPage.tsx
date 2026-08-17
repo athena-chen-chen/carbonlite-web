@@ -103,6 +103,12 @@ export default function PilotPage() {
                 >
                   Book Demo
                 </a>
+                <Link
+                  to="/paid-pilot-scope"
+                  className="rounded-2xl border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:text-emerald-700"
+                >
+                  Paid Pilot Scope
+                </Link>
               </div>
             </div>
           </div>

@@ -244,6 +244,7 @@ export type CalculationAuditDetail = {
   activityQuantity: number;
   activityUnit: string;
   quantityUnit?: string | null;
+  normalizedQuantity?: number | null;
   normalizedUnit?: string | null;
   factorId?: string | null;
   factorVersionId?: string | null;

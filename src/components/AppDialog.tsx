@@ -10,6 +10,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
+import { getAppEnv } from '../config/api';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 type DialogVariant = 'default' | 'danger';
 
@@ -63,11 +65,12 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
   const showError = useCallback((options: ErrorDialogOptions | string) => {
     const normalized =
       typeof options === 'string'
-        ? { title: 'Something went wrong', message: options }
+        ? { title: 'Something went wrong', message: getUserFriendlyErrorMessage(options) }
         : {
             title: options.title || 'Something went wrong',
-            message: options.message,
-            technicalDetails: options.technicalDetails,
+            message: getUserFriendlyErrorMessage(options.message),
+            technicalDetails:
+              getAppEnv() === 'local' ? options.technicalDetails : undefined,
           };
 
     previousFocusRef.current = document.activeElement as HTMLElement | null;

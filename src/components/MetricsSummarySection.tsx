@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   formatFuelUsageBreakdown,
@@ -11,6 +11,7 @@ import type { CalculationAuditDetail } from '../services/metrics';
 import {
   buildCalculatedFormula,
   buildCalculatedFromLine,
+  formatFactorValue,
   formatCalculationStatus,
   formatMatchingMethod,
   formatTraceabilitySource,
@@ -26,6 +27,8 @@ import {
 } from '../utils/scopeClassification';
 import { getDateOnlyYear } from '../utils/dateOnly';
 import {
+  formatReportFactorUnit,
+  formatReportVerification,
   isRecordRequiringCorrection,
   isTrackedMetricDetail,
 } from '../utils/reportCredibility';
@@ -73,6 +76,12 @@ type CalculationIssueGroup = MissingFactorGroup & {
   missingField?: 'activityType' | 'unit' | 'quantity' | 'date' | 'jurisdiction';
 };
 
+type CalculationTrailTarget =
+  | { type: 'total'; label: 'Total Calculated Emissions' }
+  | { type: 'scope'; scope: 'SCOPE_1' | 'SCOPE_2' | 'SCOPE_3'; label: string }
+  | { type: 'activity'; activityType: string; label: string }
+  | { type: 'tracked'; label: 'Tracked Metrics' };
+
 export type HotspotAnalysis = {
   totalCalculatedEmissions: number;
   calculatedRecordCount: number;
@@ -110,6 +119,11 @@ export type HotspotAnalysis = {
     relatedActivityType?: string;
   }>;
 };
+
+type HotspotExclusionSummary = Pick<
+  HotspotAnalysis,
+  'excludedCategories' | 'excludedRecordCount'
+>;
 
 export type DataReadinessSummary = {
   score: number;
@@ -272,6 +286,8 @@ export function MetricsSummarySection({
   const navigate = useNavigate();
   const [selectedCalculationDetail, setSelectedCalculationDetail] =
     useState<CalculationAuditDetail | null>(null);
+  const [selectedCalculationTrail, setSelectedCalculationTrail] =
+    useState<CalculationTrailTarget | null>(null);
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
@@ -346,6 +362,10 @@ export function MetricsSummarySection({
     navigate(recordId ? `/activity-records?recordId=${encodeURIComponent(recordId)}` : '/activity-records');
   }
 
+  function openCalculationTrail(target: CalculationTrailTarget) {
+    setSelectedCalculationTrail(target);
+  }
+
   return (
     <>
       <div style={gridStyle}>
@@ -384,12 +404,13 @@ export function MetricsSummarySection({
           highlight
           loading={isLoading}
           traceText={co2TraceText}
-          traceActionLabel={calculatedDetailsCount > 1 ? 'View calculation details' : undefined}
-          onTraceAction={() => {
-            document
-              .getElementById('metrics-calculation-details')
-              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }}
+          traceActionLabel={calculatedDetailsCount > 0 ? 'View Calculation Trail' : undefined}
+          onTraceAction={() =>
+            openCalculationTrail({
+              type: 'total',
+              label: 'Total Calculated Emissions',
+            })
+          }
         />
 
         <MetricCard
@@ -403,11 +424,19 @@ export function MetricsSummarySection({
 
       <DataReadinessCard summary={dataReadiness} />
 
-      <ScopeSummaryCard summary={scopeSummary} />
+      <ScopeSummaryCard
+        summary={scopeSummary}
+        onViewTrail={(scope, label) =>
+          openCalculationTrail({ type: 'scope', scope, label })
+        }
+      />
 
       <HotspotAnalysisSection
         analysis={hotspotAnalysis}
         totalRecordsFound={countSummary.totalRecordsFound}
+        onViewTrail={(activityType, label) =>
+          openCalculationTrail({ type: 'activity', activityType, label })
+        }
       />
 
       <CarbonCreditReadinessPanel assessment={carbonCreditReadiness} />
@@ -481,6 +510,20 @@ export function MetricsSummarySection({
                   <div style={missingFactorHintStyle}>
                     {getCalculationIssueDescription(group)}
                   </div>
+                  {group.issueType === 'informational' ? (
+                    <button
+                      type="button"
+                      style={calculationTrailInlineButtonStyle}
+                      onClick={() =>
+                        openCalculationTrail({
+                          type: 'tracked',
+                          label: 'Tracked Metrics',
+                        })
+                      }
+                    >
+                      View Calculation Trail
+                    </button>
+                  ) : null}
                   {group.issueType === 'missingFactor' && group.availableUnitsForActivityType.length > 0 ? (
                     <div style={missingFactorHintStyle}>
                       A factor exists for {group.activityType} / {group.availableUnitsForActivityType.join(', ')}.
@@ -670,6 +713,14 @@ export function MetricsSummarySection({
           onClose={() => setSelectedCalculationDetail(null)}
         />
       ) : null}
+
+      {selectedCalculationTrail ? (
+        <CalculationTrailModal
+          target={selectedCalculationTrail}
+          calculationDetails={calculationDetails}
+          onClose={() => setSelectedCalculationTrail(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -726,7 +777,15 @@ function CalculationDetailModal({
           />
           <CalculationDetailField label="Factor Source" value={formatTraceabilitySource(detail)} />
           <CalculationDetailField label="Factor Version" value={detail.factorVersion || detail.factorVersionId || 'Not specified'} />
-          <CalculationDetailField label="Verification" value={formatCredibilityLabel(detail.factorVerificationStatus) || 'Not specified'} />
+          <CalculationDetailField
+            label="Verification"
+            value={formatReportVerification({
+              activityType: detail.activityType,
+              verified: detail.factorVerified,
+              factorStatus: detail.factorStatus,
+              verificationStatus: detail.factorVerificationStatus,
+            })}
+          />
           <CalculationDetailField label="Confidence" value={formatCredibilityLabel(detail.factorConfidenceLevel) || 'Not specified'} />
           <CalculationDetailField label="Assumptions" value={detail.factorAssumptions || 'None documented'} fullWidth />
           <CalculationDetailField
@@ -762,6 +821,244 @@ function CalculationDetailField({
   );
 }
 
+function CalculationTrailModal({
+  target,
+  calculationDetails,
+  onClose,
+}: {
+  target: CalculationTrailTarget;
+  calculationDetails: CalculationAuditDetail[];
+  onClose: () => void;
+}) {
+  const trail = buildCalculationTrail(target, calculationDetails);
+
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div style={calculationTrailModalBackdropStyle} onClick={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="calculation-trail-modal-title"
+        aria-describedby="calculation-trail-modal-subtitle"
+        style={calculationTrailModalStyle}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div style={calculationDetailModalHeaderStyle}>
+          <div>
+            <h2 id="calculation-trail-modal-title" style={calculationDetailModalTitleStyle}>
+              {trail.title}
+            </h2>
+            <p id="calculation-trail-modal-subtitle" style={calculationDetailModalSubtitleStyle}>
+              Factor transparency and calculation traceability for review purposes only.
+            </p>
+          </div>
+          <button
+            type="button"
+            style={calculationDetailModalCloseStyle}
+            onClick={onClose}
+            aria-label="Close calculation trail"
+          >
+            ×
+          </button>
+        </div>
+
+        <div
+          role="region"
+          aria-label="Calculation trail content"
+          style={calculationTrailBodyStyle}
+        >
+          <section style={calculationTrailSectionStyle}>
+            <h3 style={calculationTrailSectionTitleStyle}>Calculation Summary</h3>
+            <div style={calculationTrailSummaryGridStyle}>
+              <CalculationDetailField label="Result" value={trail.resultName} />
+              <CalculationDetailField
+                label="Total emissions"
+                value={`${formatEmissionsValue(trail.totalEmissions)} kgCO2e`}
+              />
+              <CalculationDetailField label="Included records" value={trail.includedRecords.length} />
+              <CalculationDetailField label="Tracked metrics" value={trail.trackedMetrics.length} />
+              <CalculationDetailField label="Records requiring review" value={trail.reviewRecords.length} />
+            </div>
+          </section>
+
+          <section style={calculationTrailSectionStyle}>
+            <h3 style={calculationTrailSectionTitleStyle}>Included Activity Records</h3>
+            {trail.includedRecords.length === 0 ? (
+              <div style={calculationTrailEmptyStyle}>
+                No included records are available for this calculation trail.
+              </div>
+            ) : (
+              <div style={calculationTrailRecordListStyle}>
+                {trail.includedRecords.map((detail, index) => (
+                  <CalculationTrailRecordCard
+                    key={`trail-record-${index}`}
+                    detail={detail}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {trail.trackedMetrics.length > 0 ? (
+            <section style={calculationTrailSectionStyle}>
+              <h3 style={calculationTrailSectionTitleStyle}>Tracked Metrics</h3>
+              <div style={calculationTrailRecordListStyle}>
+                {trail.trackedMetrics.map((detail, index) => (
+                  <div key={`tracked-${index}`} style={calculationTrailTrackedCardStyle}>
+                    <strong>
+                      {formatActivityTypeLabel(detail.activityType)} ·{' '}
+                      {formatDisplayNumber(detail.activityQuantity)} {detail.activityUnit}
+                    </strong>
+                    <span>Tracked only. Excluded from GHG total.</span>
+                    <small>Water is tracked as an operational metric and excluded from GHG emissions totals.</small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {trail.reviewRecords.length > 0 ? (
+            <section style={calculationTrailSectionStyle}>
+              <h3 style={calculationTrailSectionTitleStyle}>Records Requiring Review</h3>
+              <div style={calculationTrailRecordListStyle}>
+                {trail.reviewRecords.map((detail, index) => (
+                  <div key={`review-${index}`} style={calculationTrailReviewCardStyle}>
+                    <strong>{formatActivityTypeLabel(detail.activityType)}</strong>
+                    <span>{formatCalculationStatus(detail.status)}</span>
+                    <small>
+                      {detail.status === 'MISSING_FACTOR'
+                        ? 'No matched factor available. Review required.'
+                        : detail.reason || buildCalculatedFormula(detail)}
+                    </small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section style={calculationTrailSectionStyle}>
+            <h3 style={calculationTrailSectionTitleStyle}>Matched Emission Factors</h3>
+            {trail.factorSummaries.length === 0 ? (
+              <div style={calculationTrailEmptyStyle}>
+                No matched factor available. Review required.
+              </div>
+            ) : (
+              <div style={calculationTrailFactorGridStyle}>
+                {trail.factorSummaries.map((factor, index) => (
+                  <div key={`factor-${index}`} style={calculationTrailFactorCardStyle}>
+                    <strong>{factor.name}</strong>
+                    <span>{factor.activityType} · {factor.jurisdiction}</span>
+                    <small>Value: {factor.value}</small>
+                    <small>Source year: {factor.sourceYear}</small>
+                    <small>Version: {factor.version}</small>
+                    <small>Source: {factor.sourceAuthority}</small>
+                    <small>Source document: {factor.sourceDocument}</small>
+                    <small>Confidence: {factor.confidence}</small>
+                    <small>Verification: {factor.verification}</small>
+                    {factor.consultantReviewRecommended ? (
+                      <small style={consultantReviewNoteStyle}>Consultant Review Recommended</small>
+                    ) : null}
+                    <small>Assumptions: {factor.assumptions}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <div style={calculationTrailFooterStyle}>
+          <span style={calculationTrailFooterNoteStyle}>For review purposes only.</span>
+          <button
+            type="button"
+            style={calculationTrailFooterCloseButtonStyle}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail }) {
+  return (
+    <article style={calculationTrailRecordCardStyle}>
+      <div style={calculationTrailRecordHeaderStyle}>
+        <div>
+          <strong>{formatTrailRecordTitle(detail)}</strong>
+          <div style={calculationTrailMutedTextStyle}>
+            {formatDateForTrail(detail.recordDate)} · {formatDetailJurisdiction(detail)}
+            {detail.facilityName ? ` · ${detail.facilityName}` : ''}
+          </div>
+        </div>
+        <span style={calculationTrailEmissionBadgeStyle}>
+          {formatEmissionsValue(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0)} kgCO2e
+        </span>
+      </div>
+
+      <div style={calculationTrailRecordGridStyle}>
+        <CalculationDetailField
+          label="Quantity"
+          value={`${formatDisplayNumber(detail.activityQuantity)} ${detail.activityUnit}`}
+        />
+        <CalculationDetailField
+          label="Converted quantity"
+          value={formatConvertedQuantity(detail)}
+        />
+        <CalculationDetailField
+          label="Matched factor"
+          value={detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'No matched factor available. Review required.'}
+        />
+        <CalculationDetailField
+          label="Factor source year"
+          value={formatSafeValue(detail.sourceYear ?? detail.factorYear)}
+        />
+        <CalculationDetailField
+          label="Verification"
+          value={formatReportVerification({
+            activityType: detail.activityType,
+            verified: detail.factorVerified,
+            factorStatus: detail.factorStatus,
+            verificationStatus: detail.factorVerificationStatus,
+          })}
+        />
+        <CalculationDetailField
+          label="Confidence"
+          value={formatCredibilityLabel(detail.factorConfidenceLevel) || 'Pilot Estimate'}
+        />
+        <CalculationDetailField
+          label="Formula"
+          value={formatTrailFormula(detail)}
+          fullWidth
+        />
+        <CalculationDetailField
+          label="Assumptions / review notes"
+          value={formatTrailAssumptions(detail)}
+          fullWidth
+        />
+      </div>
+    </article>
+  );
+}
+
 function formatCalculationScopeLabel(detail: CalculationAuditDetail) {
   if (detail.status !== 'CALCULATED') return 'Not calculated';
 
@@ -773,6 +1070,189 @@ function formatCalculationScopeLabel(detail: CalculationAuditDetail) {
   });
 
   return `${formatScopeClassification(resolution.scope)} (${formatScopeSource(resolution.source)})`;
+}
+
+function getResolvedScope(detail: CalculationAuditDetail) {
+  return resolveScopeClassification({
+    activityType: detail.activityType,
+    scopeOverride: detail.scopeOverride,
+    factorDefaultScope: detail.factorDefaultScope,
+    factorScope: detail.factorScope,
+  }).scope;
+}
+
+function buildCalculationTrail(
+  target: CalculationTrailTarget,
+  calculationDetails: CalculationAuditDetail[],
+) {
+  const targetDetails = filterCalculationTrailDetails(target, calculationDetails);
+  const includedRecords = targetDetails.filter((detail) => detail.status === 'CALCULATED');
+  const trackedMetrics = targetDetails.filter(isTrackedMetricDetail);
+  const reviewRecords = targetDetails.filter(isRecordRequiringCorrection);
+  const totalEmissions = includedRecords.reduce(
+    (sum, detail) =>
+      sum + Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0),
+    0,
+  );
+
+  return {
+    title: `${target.label} Calculation Trail`,
+    resultName: target.label,
+    totalEmissions,
+    includedRecords,
+    trackedMetrics,
+    reviewRecords,
+    factorSummaries: buildTrailFactorSummaries(includedRecords),
+  };
+}
+
+function filterCalculationTrailDetails(
+  target: CalculationTrailTarget,
+  calculationDetails: CalculationAuditDetail[],
+) {
+  switch (target.type) {
+    case 'total':
+      return calculationDetails.filter((detail) =>
+        detail.status === 'CALCULATED' || isTrackedMetricDetail(detail) || isRecordRequiringCorrection(detail),
+      );
+    case 'scope':
+      return calculationDetails.filter(
+        (detail) => detail.status === 'CALCULATED' && getResolvedScope(detail) === target.scope,
+      );
+    case 'activity':
+      return calculationDetails.filter(
+        (detail) => normalizeActivityKey(detail.activityType) === normalizeActivityKey(target.activityType),
+      );
+    case 'tracked':
+      return calculationDetails.filter(isTrackedMetricDetail);
+    default:
+      return [];
+  }
+}
+
+function normalizeActivityKey(value?: string | null) {
+  return String(value ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+}
+
+function buildTrailFactorSummaries(details: CalculationAuditDetail[]) {
+  const factors = new Map<string, ReturnType<typeof buildTrailFactorSummary>>();
+
+  details.forEach((detail) => {
+    if (detail.status !== 'CALCULATED') return;
+    const key = [
+      detail.factorName || detail.factorDisplayName || detail.activityType,
+      detail.factorValue,
+      detail.factorInputUnit,
+      detail.factorResultUnit,
+      detail.sourceYear ?? detail.factorYear,
+      detail.factorJurisdictionRegion ?? detail.jurisdictionRegion ?? detail.jurisdiction,
+    ].join('|');
+
+    if (!factors.has(key)) {
+      factors.set(key, buildTrailFactorSummary(detail));
+    }
+  });
+
+  return Array.from(factors.values());
+}
+
+function buildTrailFactorSummary(detail: CalculationAuditDetail) {
+  const sourceYear = detail.sourceYear ?? detail.factorYear;
+
+  return {
+    name: detail.factorDisplayName || detail.factorName || `${formatActivityTypeLabel(detail.activityType)} factor`,
+    activityType: formatActivityTypeLabel(detail.activityType),
+    jurisdiction: formatFactorJurisdiction(detail),
+    value:
+      detail.factorValue === null || detail.factorValue === undefined
+        ? 'Source review required'
+        : `${formatFactorValue(detail.factorValue)} ${formatReportFactorUnit(
+            detail.factorResultUnit,
+            detail.factorInputUnit || detail.normalizedUnit || detail.activityUnit,
+          )}`,
+    sourceYear: formatSafeValue(sourceYear),
+    version: formatSafeValue(detail.factorVersion || detail.factorVersionId, 'CarbonLite MVP Default Factors v1.0'),
+    sourceAuthority: formatSafeValue(detail.sourceAuthority || detail.factorSource, 'Source review required'),
+    sourceDocument: formatSafeValue(detail.sourceDocument, 'Source review required'),
+    confidence: formatCredibilityLabel(detail.factorConfidenceLevel) || 'Pilot Estimate',
+    verification: formatReportVerification({
+      activityType: detail.activityType,
+      verified: detail.factorVerified,
+      factorStatus: detail.factorStatus,
+      verificationStatus: detail.factorVerificationStatus,
+    }),
+    assumptions: formatSafeValue(detail.factorAssumptions, 'Pilot-stage factor. Review before formal reporting.'),
+    consultantReviewRecommended: getResolvedScope(detail) === 'SCOPE_3',
+  };
+}
+
+function formatFactorJurisdiction(detail: CalculationAuditDetail) {
+  return (
+    detail.factorJurisdictionRegion ||
+    detail.jurisdictionRegion ||
+    detail.factorJurisdictionCountry ||
+    detail.jurisdictionCountry ||
+    detail.jurisdiction ||
+    'Canada - National'
+  );
+}
+
+function formatSafeValue(value: unknown, fallback = 'Source review required') {
+  const text = String(value ?? '').trim();
+  if (!text || ['null', 'undefined', 'nan'].includes(text.toLowerCase())) return fallback;
+  return text;
+}
+
+function formatDateForTrail(value?: string | null) {
+  return formatSafeValue(value, 'Date not specified');
+}
+
+function formatTrailRecordTitle(detail: CalculationAuditDetail) {
+  const location = detail.jurisdictionRegion || detail.jurisdictionCountry || detail.jurisdiction;
+  return [
+    formatActivityTypeLabel(detail.activityType),
+    location,
+    `${formatDisplayNumber(detail.activityQuantity)} ${detail.activityUnit}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function formatConvertedQuantity(detail: CalculationAuditDetail) {
+  const normalizedUnit = detail.normalizedUnit || detail.factorInputUnit;
+  if (!normalizedUnit || normalizedUnit === detail.activityUnit) return 'No conversion used';
+  const conversion = getDisplayUnitConversion(detail.activityQuantity, detail.activityUnit, normalizedUnit);
+  if (conversion) return conversion;
+  return `${formatDisplayNumber(detail.activityQuantity)} ${detail.activityUnit} converted for factor unit ${normalizedUnit}`;
+}
+
+function formatTrailFormula(detail: CalculationAuditDetail) {
+  return buildCalculatedFormula(detail);
+}
+
+function getDisplayUnitConversion(quantity: number, fromUnit?: string | null, toUnit?: string | null) {
+  const from = String(fromUnit ?? '').trim().toLowerCase();
+  const to = String(toUnit ?? '').trim().toLowerCase();
+
+  if (from === 'mwh' && to === 'kwh') {
+    return `${formatDisplayNumber(quantity)} MWh × 1,000 = ${formatDisplayNumber(quantity * 1000)} kWh`;
+  }
+
+  return null;
+}
+
+function formatTrailAssumptions(detail: CalculationAuditDetail) {
+  const notes = [
+    detail.factorAssumptions,
+    detail.notes,
+    getResolvedScope(detail) === 'SCOPE_3' ? 'Consultant Review Recommended' : null,
+  ]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean);
+
+  return notes.length > 0
+    ? Array.from(new Set(notes)).join(' ')
+    : 'Pilot-stage factor. Internal Review Required before formal reporting.';
 }
 
 function sanitizeIssueValue(value: unknown, fallback = 'Unknown') {
@@ -947,7 +1427,7 @@ function buildHotspotRecommendations(input: {
     recommendations.push({
       priority: 'MEDIUM',
       title: 'Improve data quality before making decisions',
-      message: `${input.excludedRecordCount} records were excluded from emissions totals due to missing factors, invalid units, tracked-only metrics, or records requiring review.`,
+      message: formatHotspotExclusionNote(input),
     });
   }
 
@@ -969,6 +1449,39 @@ function buildHotspotRecommendations(input: {
   }
 
   return recommendations.slice(0, 4);
+}
+
+export function getTrackedOperationalMetricCount(input: HotspotExclusionSummary) {
+  return input.excludedCategories
+    .filter((item) => item.reason === 'TRACKED_ONLY')
+    .reduce((sum, item) => sum + item.excludedRecordCount, 0);
+}
+
+export function getRecordsRequiringReviewCount(input: HotspotExclusionSummary) {
+  return Math.max(0, input.excludedRecordCount - getTrackedOperationalMetricCount(input));
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+export function formatHotspotExclusionNote(input: HotspotExclusionSummary) {
+  const trackedMetrics = getTrackedOperationalMetricCount(input);
+  const reviewRecords = getRecordsRequiringReviewCount(input);
+
+  if (trackedMetrics > 0 && reviewRecords === 0) {
+    return `${pluralize(trackedMetrics, 'tracked operational metric')} ${trackedMetrics === 1 ? 'was' : 'were'} excluded from the calculated GHG emissions total. No records require review for this report scope.`;
+  }
+
+  if (trackedMetrics > 0 && reviewRecords > 0) {
+    return 'Tracked operational metrics are excluded from the calculated GHG emissions total by design. Some additional records require review before they can be included.';
+  }
+
+  if (reviewRecords > 0) {
+    return 'Some records require review before they can be included in the calculated GHG emissions total. See Records Requiring Review for details.';
+  }
+
+  return 'No tracked metrics or records requiring review were identified for this report scope.';
 }
 
 function mapHotspotExcludedReason(
@@ -1400,11 +1913,17 @@ function buildScopeSummary(calculationDetails: CalculationAuditDetail[]) {
   return summary;
 }
 
-function ScopeSummaryCard({ summary }: { summary: ReturnType<typeof buildScopeSummary> }) {
+function ScopeSummaryCard({
+  summary,
+  onViewTrail,
+}: {
+  summary: ReturnType<typeof buildScopeSummary>;
+  onViewTrail: (scope: 'SCOPE_1' | 'SCOPE_2' | 'SCOPE_3', label: string) => void;
+}) {
   const rows = [
-    { label: 'Scope 1', value: summary.SCOPE_1, note: 'Direct fuel emissions' },
-    { label: 'Scope 2', value: summary.SCOPE_2, note: 'Purchased energy' },
-    { label: 'Scope 3', value: summary.SCOPE_3, note: 'Other indirect emissions' },
+    { scope: 'SCOPE_1' as const, label: 'Scope 1', value: summary.SCOPE_1, note: 'Direct fuel emissions' },
+    { scope: 'SCOPE_2' as const, label: 'Scope 2', value: summary.SCOPE_2, note: 'Purchased energy' },
+    { scope: 'SCOPE_3' as const, label: 'Scope 3', value: summary.SCOPE_3, note: 'Other indirect emissions' },
   ];
 
   return (
@@ -1423,6 +1942,13 @@ function ScopeSummaryCard({ summary }: { summary: ReturnType<typeof buildScopeSu
             <span>{row.label}</span>
             <strong>{formatEmissionsValue(row.value)} kg CO2e</strong>
             <small>{row.note}</small>
+            <button
+              type="button"
+              style={calculationTrailButtonStyle}
+              onClick={() => onViewTrail(row.scope, row.label)}
+            >
+              View Calculation Trail
+            </button>
           </div>
         ))}
       </div>
@@ -1557,9 +2083,11 @@ function CarbonCreditReadinessPanel({
 function HotspotAnalysisSection({
   analysis,
   totalRecordsFound,
+  onViewTrail,
 }: {
   analysis: HotspotAnalysis;
   totalRecordsFound: number;
+  onViewTrail: (activityType: string, label: string) => void;
 }) {
   const hasCalculatedHotspots = analysis.categoryHotspots.length > 0;
 
@@ -1621,6 +2149,13 @@ function HotspotAnalysisSection({
                 <div style={hotspotBarPercentStyle}>
                   {formatDisplayNumber(row.percentageOfTotal)}%
                 </div>
+                <button
+                  type="button"
+                  style={calculationTrailInlineButtonStyle}
+                  onClick={() => onViewTrail(row.activityType, row.displayName)}
+                >
+                  View Calculation Trail
+                </button>
               </div>
             ))}
           </div>
@@ -1636,6 +2171,7 @@ function HotspotAnalysisSection({
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Level</th>
                   <th style={thStyle}>Focus message</th>
+                  <th style={thStyle}>Trail</th>
                 </tr>
               </thead>
               <tbody>
@@ -1655,6 +2191,15 @@ function HotspotAnalysisSection({
                       </span>
                     </td>
                     <td style={tdStyle}>{row.focusMessage}</td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        style={calculationDetailsButtonStyle}
+                        onClick={() => onViewTrail(row.activityType, row.displayName)}
+                      >
+                        View Calculation Trail
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -2658,14 +3203,36 @@ const calculationDetailsButtonStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+const calculationTrailButtonStyle: React.CSSProperties = {
+  ...calculationDetailsButtonStyle,
+  marginTop: 8,
+  alignSelf: 'flex-start',
+};
+
+const calculationTrailInlineButtonStyle: React.CSSProperties = {
+  ...calculationDetailsButtonStyle,
+  marginTop: 8,
+  width: 'fit-content',
+};
+
 const calculationDetailModalBackdropStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
-  zIndex: 1000,
+  zIndex: 5000,
   display: 'grid',
   placeItems: 'center',
   padding: 20,
   background: 'rgba(15, 23, 42, 0.38)',
+};
+
+const calculationTrailModalBackdropStyle: React.CSSProperties = {
+  ...calculationDetailModalBackdropStyle,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '48px 24px',
+  overflow: 'hidden',
+  background: 'rgba(15, 23, 42, 0.45)',
 };
 
 const calculationDetailModalStyle: React.CSSProperties = {
@@ -2678,6 +3245,15 @@ const calculationDetailModalStyle: React.CSSProperties = {
   boxShadow: '0 24px 70px rgba(15, 23, 42, 0.22)',
 };
 
+const calculationTrailModalStyle: React.CSSProperties = {
+  ...calculationDetailModalStyle,
+  display: 'flex',
+  flexDirection: 'column',
+  width: 'min(96vw, 1200px)',
+  maxHeight: 'calc(100vh - 96px)',
+  overflow: 'hidden',
+};
+
 const calculationDetailModalHeaderStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
@@ -2685,6 +3261,11 @@ const calculationDetailModalHeaderStyle: React.CSSProperties = {
   gap: 16,
   padding: '18px 20px 14px',
   borderBottom: '1px solid #e2e8f0',
+  flexShrink: 0,
+  background: '#fff',
+  position: 'sticky',
+  top: 0,
+  zIndex: 2,
 };
 
 const calculationDetailModalTitleStyle: React.CSSProperties = {
@@ -2746,6 +3327,163 @@ const calculationDetailValueStyle: React.CSSProperties = {
   fontSize: 14,
   lineHeight: 1.5,
   overflowWrap: 'anywhere',
+};
+
+const calculationTrailBodyStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 16,
+  padding: '20px 24px',
+  flex: 1,
+  minHeight: 0,
+  overflowY: 'auto',
+  overscrollBehavior: 'contain',
+};
+
+const calculationTrailFooterStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  padding: '14px 24px',
+  borderTop: '1px solid #e2e8f0',
+  background: '#fff',
+  flexShrink: 0,
+};
+
+const calculationTrailFooterNoteStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 13,
+  lineHeight: 1.4,
+};
+
+const calculationTrailFooterCloseButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minWidth: 92,
+  padding: '9px 16px',
+  borderRadius: 8,
+  border: '1px solid #0f172a',
+  background: '#0f172a',
+  color: '#fff',
+  fontSize: 14,
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const calculationTrailSectionStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
+};
+
+const calculationTrailSectionTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#0f172a',
+  fontSize: 16,
+};
+
+const calculationTrailSummaryGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+  gap: 10,
+};
+
+const calculationTrailRecordListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 10,
+};
+
+const calculationTrailRecordCardStyle: React.CSSProperties = {
+  border: '1px solid #e2e8f0',
+  borderRadius: 10,
+  background: '#fff',
+  overflow: 'hidden',
+};
+
+const calculationTrailRecordHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  gap: 12,
+  padding: 12,
+  borderBottom: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+
+const calculationTrailMutedTextStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: '#64748b',
+  fontSize: 12,
+};
+
+const calculationTrailEmissionBadgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  padding: '4px 8px',
+  borderRadius: 999,
+  border: '1px solid #bbf7d0',
+  background: '#f0fdf4',
+  color: '#166534',
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
+};
+
+const calculationTrailRecordGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 10,
+  padding: 12,
+};
+
+const calculationTrailFactorGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+  gap: 10,
+};
+
+const calculationTrailFactorCardStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  border: '1px solid #dbeafe',
+  borderRadius: 10,
+  background: '#eff6ff',
+  color: '#1e3a8a',
+  padding: 12,
+  lineHeight: 1.4,
+};
+
+const calculationTrailTrackedCardStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  border: '1px solid #bae6fd',
+  borderRadius: 10,
+  background: '#f0f9ff',
+  color: '#075985',
+  padding: 12,
+  lineHeight: 1.45,
+};
+
+const calculationTrailReviewCardStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  border: '1px solid #fed7aa',
+  borderRadius: 10,
+  background: '#fff7ed',
+  color: '#9a3412',
+  padding: 12,
+  lineHeight: 1.45,
+};
+
+const calculationTrailEmptyStyle: React.CSSProperties = {
+  border: '1px dashed #cbd5e1',
+  borderRadius: 10,
+  padding: 14,
+  color: '#64748b',
+  background: '#f8fafc',
+};
+
+const consultantReviewNoteStyle: React.CSSProperties = {
+  color: '#92400e',
+  fontWeight: 800,
 };
 
 const reconciliationHeaderStyle: React.CSSProperties = {

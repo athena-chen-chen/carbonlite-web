@@ -1,5 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { HotspotAnalysis } from '../../MetricsSummarySection';
+import {
+  formatHotspotExclusionNote,
+  type HotspotAnalysis,
+} from '../../MetricsSummarySection';
 import { formatDisplayNumber, formatEmissionsValue } from '../../../utils/numberFormatting';
 
 type EmissionsHotspotsSectionProps = {
@@ -23,7 +26,7 @@ export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionP
         </p>
         {analysis.excludedRecordCount > 0 ? (
           <div style={qualityReasonStyle}>
-            Some records were excluded from hotspot analysis because they require review or are tracked-only.
+            {formatHotspotExclusionNote(analysis)}
           </div>
         ) : null}
       </div>
@@ -69,7 +72,7 @@ export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionP
       ) : null}
       {analysis.excludedRecordCount > 0 ? (
         <div style={qualityReasonStyle}>
-          {analysis.excludedRecordCount} records were excluded from hotspot totals. See Records Requiring Review for details.
+          {formatHotspotExclusionNote(analysis)}
         </div>
       ) : null}
     </div>

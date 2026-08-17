@@ -824,10 +824,26 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(dialog).getByText('Diesel')).toBeInTheDocument();
     expect(within(dialog).getByText('2026-05-14')).toBeInTheDocument();
     expect(within(dialog).getAllByText('Manual Entry').length).toBeGreaterThan(0);
+    expect(dialog.parentElement).toHaveStyle({ position: 'fixed', zIndex: '5000' });
+    expect(dialog).toHaveStyle({ maxHeight: 'calc(100vh - 96px)', overflow: 'hidden' });
+    expect(within(dialog).queryByText('Record ID')).not.toBeInTheDocument();
 
     await userEvent.click(
       within(dialog).getByRole('button', { name: 'Close activity record details' }),
     );
+
+    expect(screen.queryByRole('dialog', { name: 'Activity Record Details' })).not.toBeInTheDocument();
+  });
+
+  it('closes record details with Escape', async () => {
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-1');
+    await userEvent.click(within(row).getByRole('button', { name: 'View' }));
+
+    expect(screen.getByRole('dialog', { name: 'Activity Record Details' })).toBeInTheDocument();
+
+    await userEvent.keyboard('{Escape}');
 
     expect(screen.queryByRole('dialog', { name: 'Activity Record Details' })).not.toBeInTheDocument();
   });

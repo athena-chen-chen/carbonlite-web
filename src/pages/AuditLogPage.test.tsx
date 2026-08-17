@@ -46,12 +46,14 @@ describe('AuditLogPage', () => {
 
     expect(await screen.findByText('Update Activity Record')).toBeInTheDocument();
     expect(await screen.findByText('pilot@example.com')).toBeInTheDocument();
-    expect(screen.getByText('ActivityData · activity-1')).toBeInTheDocument();
+    expect(screen.getAllByText('ActivityData').length).toBeGreaterThan(0);
+    expect(screen.queryByText('activity-1')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByText('Updated activity record'));
 
     expect(await screen.findByText('Audit Log Detail')).toBeInTheDocument();
     expect(screen.getByText('Pilot Org')).toBeInTheDocument();
+    expect(screen.queryByText(/ActivityData · activity-1/)).not.toBeInTheDocument();
     expect(screen.getByText(/"quantity": "100"/)).toBeInTheDocument();
     expect(screen.getByText(/"quantity": "120"/)).toBeInTheDocument();
   });

@@ -40,7 +40,9 @@ function calculatedDetail(
     sourceYear: input.sourceYear ?? input.factorYear ?? 2025,
     factorVerified: input.factorVerified ?? false,
     factorConfidenceLevel: input.factorConfidenceLevel ?? 'PILOT_ESTIMATE',
-    factorVerificationStatus: input.factorVerificationStatus ?? 'INTERNAL_REVIEW_REQUIRED',
+    factorVerificationStatus:
+      input.factorVerificationStatus ??
+      (input.activityType === 'ELECTRICITY' ? 'DRAFT' : 'INTERNAL_REVIEW_REQUIRED'),
     factorType: input.factorType ?? 'System',
     factorDefaultScope: input.factorDefaultScope ?? null,
     calculatedEmission: input.calculatedEmissionsKgCO2e,
@@ -198,11 +200,40 @@ describe('pilot CSV export', () => {
     expect(rows[0]['Calculated Emissions kgCO2e']).toBe('6625');
     expect(rows[0]['Calculated Emissions Display']).toBe('6,625 kgCO2e');
     expect(rows[7].Quantity).toBe('5000');
-    expect(rows[7]['Calculation Formula']).toBe('5000 x 0.115 = 575 kgCO2e');
+    expect(rows[0]['Calculation Status']).toBe('Calculated');
+    expect(rows[0]['Matching Status']).toBe('Matched');
+    expect(rows[0]['Report Treatment']).toBe('Included');
+    expect(rows[7].Formula).toBe('5,000 km × 0.115 kgCO2e/km = 575 kgCO2e');
+    expect(csv).not.toMatch(/\b(CALCULATED|MATCHED|TRACKED_ONLY|MISSING_FACTOR|UNIT_MISMATCH)\b/);
+  });
+
+  it('shows unit conversion in the MWh electricity formula without changing emissions totals', () => {
+    const rows = buildPilotCsvRows(goldenDetails);
+    const csv = buildPilotCsv(goldenDetails);
+    const mwhElectricity = rows.find((row) => row['Record No.'] === 4);
+    const diesel = rows.find((row) => row['Activity Type'] === 'Diesel');
+
+    expect(mwhElectricity?.['Quantity Display']).toBe('50 MWh');
+    expect(mwhElectricity?.Formula).toBe(
+      '50 MWh × 1,000 = 50,000 kWh; 50,000 kWh × 0.53 kgCO2e/kWh = 26,500 kgCO2e',
+    );
+    expect(mwhElectricity?.['Calculated Emissions kgCO2e']).toBe('26500');
+    expect(csv).toContain(
+      '"50 MWh × 1,000 = 50,000 kWh; 50,000 kWh × 0.53 kgCO2e/kWh = 26,500 kgCO2e"',
+    );
+    expect(csv).not.toContain('50 x 0.53 = 26500');
+    expect(csv).not.toContain('50 × 0.53 = 26,500');
+
+    expect(diesel?.Formula).toBe(
+      '100 liters × 2.68 kgCO2e/liter = 268 kgCO2e',
+    );
+    expect(csv).not.toContain('kgCO2e/liters');
+    expect(csv).not.toContain('kgCO2e/nights');
   });
 
   it('uses professional factor labels, source labels, and review notes', () => {
     const rows = buildPilotCsvRows(goldenDetails);
+    const electricityRows = rows.filter((row) => row['Activity Type'] === 'Electricity');
     const naturalGas = rows.find((row) => row['Activity Type'] === 'Natural Gas');
     const gasoline = rows.find((row) => row['Activity Type'] === 'Gasoline');
     const hotel = rows.find((row) => row['Activity Type'] === 'Hotel');
@@ -217,20 +248,60 @@ describe('pilot CSV export', () => {
     expect(hotel?.['Matched Factor Unit']).toBe('kgCO2e/night');
 
     expect(rows[0]['Review Note']).toContain('Using latest available prior-year factor');
-    expect(airTravel?.['Consultant Review Recommended']).toBe('Yes');
+    expect(airTravel?.['Consultant Review Recommended']).toBe('Yes - Scope 3 review recommended');
     expect(airTravel?.['Review Note']).toContain('Consultant review recommended before formal reporting');
+    electricityRows.forEach((row) => {
+      expect(row['Verification Status']).toBe('Internal Review Required');
+      expect(row['Confidence Level']).toBe('Pilot Estimate');
+      expect(row['Consultant Review Recommended']).toBe('Review before formal reporting');
+    });
 
     expect(water?.Scope).toBe('Tracked Metric');
     expect(water?.['Report Treatment']).toBe('Tracked Only');
+    expect(water?.['Calculation Status']).toBe('Tracked Only');
+    expect(water?.['Matching Status']).toBe('Tracked Only');
     expect(water?.['Matched Factor Name']).toBe('No emissions factor applied');
     expect(water?.['Calculated Emissions kgCO2e']).toBe(0);
+    expect(water?.['Calculated Emissions Display']).toBe('Tracked only');
+    expect(water?.['Consultant Review Recommended']).toBe('Not applicable');
     expect(water?.['Review Note']).toBe('Tracked only. Not included in emissions total.');
 
     rows.forEach((row) => {
       expect(row['Source File']).toBe('Golden Test Data.xlsx');
       expect(row['Source Type']).toBe('Spreadsheet Import');
-      expect(row['Source Reference']).toBe('Spreadsheet import');
+      expect(row['Import Method']).toBe('Spreadsheet Import');
+      expect(row['Source Reference']).toBe('Golden Test Data.xlsx');
     });
+    expect(buildPilotCsv(goldenDetails)).not.toContain('Source Reference: Spreadsheet import');
+    expect(buildPilotCsv(goldenDetails)).not.toContain(',Spreadsheet import,');
+    expect(buildPilotCsv(goldenDetails)).not.toMatch(/\bDraft\b/);
+  });
+
+  it('formats review statuses as user-facing labels instead of raw enum values', () => {
+    const reviewDetail = {
+      ...calculatedDetail({
+        activityDataId: 'cmry-electricity-missing-factor',
+        activityType: 'ELECTRICITY',
+        activityQuantity: 100,
+        activityUnit: 'kWh',
+        jurisdictionRegion: 'Quebec',
+        factorName: 'Electricity - Quebec',
+        factorValue: 0,
+        calculatedEmissionsKgCO2e: 0,
+      }),
+      calculationStatus: 'REQUIRES_REVIEW',
+      matchingStatus: 'MISSING_FACTOR',
+      status: 'MISSING_FACTOR',
+      calculatedEmission: null,
+      calculatedEmissionsKgCO2e: null,
+    } as CalculationAuditDetail;
+    const rows = buildPilotCsvRows([reviewDetail]);
+    const csv = buildPilotCsv([reviewDetail]);
+
+    expect(rows[0]['Report Treatment']).toBe('Excluded');
+    expect(rows[0]['Calculation Status']).toBe('Requires Review');
+    expect(rows[0]['Matching Status']).toBe('Missing Factor');
+    expect(csv).not.toMatch(/\b(REQUIRES_REVIEW|MISSING_FACTOR)\b/);
   });
 
   it('preserves golden dataset scope totals in the export rows', () => {

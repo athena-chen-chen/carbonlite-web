@@ -28,6 +28,10 @@ import TermsOfUsePage from '../pages/TermsOfUsePage';
 import AboutPage from '../pages/AboutPage';
 import MethodologyPage from '../pages/MethodologyPage';
 import DataCollectionGuidePage from '../pages/DataCollectionGuidePage';
+import PaidPilotScopePage from '../pages/PaidPilotScopePage';
+import ForgotPasswordPage from '../pages/ForgotPasswordPage';
+import SetPasswordPage from '../pages/SetPasswordPage';
+import PilotReviewersPage from '../pages/PilotReviewersPage';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -50,11 +54,14 @@ export default function App() {
         <Route path="/" element={<CarbonLiteLandingPage />} />
         <Route path="/pilot" element={<PilotPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/set-password" element={<SetPasswordPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsOfUsePage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/methodology/:slug" element={<MethodologyPage />} />
+        <Route path="/paid-pilot-scope" element={<PaidPilotScopePage />} />
 
         <Route
           path="/data-records"
@@ -151,6 +158,19 @@ export default function App() {
               <AppShell>
                 <ReportingPage />
               </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/pilot-reviewers"
+          element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <AppShell>
+                  <PilotReviewersPage />
+                </AppShell>
+              </AdminRoute>
             </ProtectedRoute>
           }
         />

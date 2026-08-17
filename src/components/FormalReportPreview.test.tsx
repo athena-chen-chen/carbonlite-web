@@ -8,6 +8,7 @@ import {
   formatExecutiveSummaryPreview,
   buildReportExecutiveSummary,
   buildSourceEvidenceRows,
+  buildSourceEvidenceSummaryRows,
 } from './FormalReportPreview';
 import { CalculationTraceabilitySection } from './reports/sections/CalculationTraceabilitySection';
 import { ActivityBreakdownSection } from './reports/sections/ActivityBreakdownSection';
@@ -77,11 +78,15 @@ describe('FormalReportPreview', () => {
             activityType: 'DIESEL',
             quantity: '120',
             unit: 'L',
-            sourceFile: 'fuel-invoice.pdf',
-            sourceReference: 'fuel-invoice.pdf · Page 1 · Line item 3',
-            sourceType: 'PDF Extraction',
-            notes: 'Imported from document extraction.',
-          },
+        sourceFile: 'fuel-invoice.pdf',
+        sourceReference: 'fuel-invoice.pdf · Page 1 · Line item 3',
+        sourceType: 'PDF Extraction',
+        importMethod: 'PDF Extraction',
+        recordDate: '2025-01-31',
+        matchingStatus: 'Matched',
+        reportTreatment: 'Included',
+        notes: 'Imported from document extraction.',
+      },
         ]}
         calculationDetails={[
           {
@@ -136,25 +141,43 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('G. Activity Breakdown')).toBeInTheDocument();
     expect(screen.getByText('H. Emission Factors Used')).toBeInTheDocument();
     expect(screen.getByText('I. Calculation Traceability')).toBeInTheDocument();
-    expect(screen.getByText('J. Source Evidence')).toBeInTheDocument();
+    expect(screen.getByText('J. Source Evidence Summary')).toBeInTheDocument();
+    expect(screen.getByText(/source files and import methods used to create the activity records/i)).toBeInTheDocument();
+    expect(screen.getAllByText('fuel-invoice.pdf').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('PDF Extraction').length).toBeGreaterThan(0);
     expect(screen.getByText('K. Records Requiring Review')).toBeInTheDocument();
-    expect(screen.getByText('L. Methodology and Disclaimer')).toBeInTheDocument();
+    expect(screen.getByText('L. Methodology and Limitations')).toBeInTheDocument();
+    expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
+    expect(FORMAL_REPORT_METHODOLOGY).toContain(FORMAL_REPORT_DISCLAIMER);
+    expect(FORMAL_REPORT_DISCLAIMER).toContain('not a certified GHG emissions report');
+    expect(FORMAL_REPORT_DISCLAIMER).toContain('does not constitute regulatory compliance advice');
+    expect(FORMAL_REPORT_DISCLAIMER).toContain('third-party verification');
+    expect(FORMAL_REPORT_DISCLAIMER).toContain('audit assurance');
+    expect(FORMAL_REPORT_DISCLAIMER).toContain('carbon credit eligibility determination');
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 
     expect(screen.getAllByText('321.60 kgCO2e').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('CarbonLite system defaults').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/CarbonLite system defaults/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
-    expect(screen.getByText('Pilot default factor library')).toBeInTheDocument();
+    expect(screen.getByText(/Pilot default factor library/)).toBeInTheDocument();
     expect(screen.getAllByText('Unverified / user review required').length).toBeGreaterThan(0);
     expect(screen.getAllByText('100%').length).toBeGreaterThan(0);
+    expect(screen.getByText('Data Readiness Score')).toBeInTheDocument();
+    expect(screen.getByText(/Data Quality Coverage reflects the percentage of records/i)).toBeInTheDocument();
+    expect(screen.getByText(/Data Readiness Score is a broader pilot readiness signal/i)).toBeInTheDocument();
+    expect(screen.getByText(/related but not identical/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tracked operational metrics such as Water are retained for review/i)).toBeInTheDocument();
     expect(screen.getAllByText('Diesel').length).toBeGreaterThan(0);
-    expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
-    expect(screen.getByText('100 × 2.68 = 268 kgCO2e')).toBeInTheDocument();
+    expect(screen.getByText('100 liters × 2.68 kgCO2e/liter = 268 kgCO2e')).toBeInTheDocument();
     expect(screen.getAllByText('2.68 kgCO2e/L').length).toBeGreaterThan(0);
     expect(screen.getByText('Source File')).toBeInTheDocument();
+
+    expect(screen.queryByText('fuel-invoice.pdf · Page 1 · Line item 3')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Expand Record-Level Source Evidence' }));
     expect(screen.getByText('fuel-invoice.pdf · Page 1 · Line item 3')).toBeInTheDocument();
+    expect(screen.getByText('Included')).toBeInTheDocument();
 
     const tables = screen.getAllByRole('table');
     const emissionsBreakdownTable = tables.find((table) =>
@@ -195,10 +218,88 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('0.115')).toBeInTheDocument();
     expect(screen.getAllByText('Low').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Pilot Estimate · Consultant Review Recommended').length).toBeGreaterThan(0);
+    expect(screen.getByRole('columnheader', { name: 'Source Year' })).toBeInTheDocument();
     expect(screen.getByText('Factor Details / Assumptions')).toBeInTheDocument();
+    expect(screen.getByText(/Detailed source, version, confidence level, and assumptions/i)).toBeInTheDocument();
     expect(screen.getByText('Pilot-stage estimate. Consultant review recommended before official reporting.')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Source' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Confidence' })).not.toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Assumptions' })).not.toBeInTheDocument();
     expect(screen.queryByText('0.12')).not.toBeInTheDocument();
+  });
+
+  it('uses singular denominators for report factor units', () => {
+    render(
+      <EmissionFactorsUsedSection
+        formatJurisdiction={(jurisdiction) => jurisdiction || 'Canada - National'}
+        conversionFactorsUsed={[
+          {
+            factorId: 'factor-gasoline',
+            activityType: 'GASOLINE',
+            factorName: 'Gasoline - Canada - 2025',
+            factorValue: 2.31,
+            inputUnit: 'liters',
+            resultUnit: 'kgCO2e',
+            jurisdiction: 'Canada - National',
+            sourceAuthority: 'CarbonLite',
+            sourceYear: 2025,
+            factorType: 'System',
+            confidenceLevel: 'MEDIUM',
+            verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+            verified: false,
+          },
+          {
+            factorId: 'factor-hotel',
+            activityType: 'HOTEL',
+            factorName: 'Hotel - Canada - 2025',
+            factorValue: 15,
+            inputUnit: 'nights',
+            resultUnit: 'kgCO2e',
+            jurisdiction: 'Canada - National',
+            sourceAuthority: 'CarbonLite',
+            sourceYear: 2025,
+            factorType: 'System',
+            confidenceLevel: 'LOW',
+            verificationStatus: 'PILOT_ESTIMATE',
+            verified: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText('kgCO2e/liter').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('kgCO2e/night').length).toBeGreaterThan(0);
+    expect(screen.queryByText('kgCO2e/liters')).not.toBeInTheDocument();
+    expect(screen.queryByText('kgCO2e/nights')).not.toBeInTheDocument();
+  });
+
+  it('shows pilot electricity factors under internal review even when stored as draft', () => {
+    render(
+      <EmissionFactorsUsedSection
+        formatJurisdiction={(jurisdiction) => jurisdiction || 'Canada - National'}
+        conversionFactorsUsed={[
+          {
+            factorId: 'factor-electricity-ab',
+            activityType: 'ELECTRICITY',
+            factorName: 'Electricity - Alberta',
+            factorValue: 0.53,
+            inputUnit: 'kWh',
+            resultUnit: 'kgCO2e',
+            jurisdiction: 'Alberta, Canada',
+            sourceAuthority: 'CarbonLite',
+            sourceYear: 2025,
+            factorType: 'System',
+            confidenceLevel: 'PILOT_ESTIMATE',
+            verificationStatus: 'DRAFT',
+            verified: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText('Internal Review Required').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Pilot Estimate').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Draft')).not.toBeInTheDocument();
   });
 
   it('keeps calculation traceability readable with review notes instead of dense factor metadata columns', () => {
@@ -233,7 +334,7 @@ describe('FormalReportPreview', () => {
     );
 
     expect(screen.getByRole('columnheader', { name: 'Review Note' })).toBeInTheDocument();
-    expect(screen.getByText('12,500 × 0.53 = 6,625 kgCO2e')).toBeInTheDocument();
+    expect(screen.getByText('12,500 kWh × 0.53 kgCO2e/kWh = 6,625 kgCO2e')).toBeInTheDocument();
     expect(screen.getByText('Prior-year factor used; review before formal reporting.')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Version' })).not.toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Assumptions' })).not.toBeInTheDocument();
@@ -321,6 +422,41 @@ describe('Version 1 report presentation data', () => {
   });
 
   it('separates tracked-only Water from records requiring review in preview counts', () => {
+    const calculationDetails = [
+      ...Array.from({ length: 9 }, (_, index) => ({
+        activityDataId: `activity-${index}`,
+        activityType: index === 0 ? 'ELECTRICITY' : 'DIESEL',
+        recordDate: '2026-07-20',
+        dateEstimated: false,
+        reportingYear: 2026,
+        jurisdiction: 'Canada',
+        activityQuantity: 100,
+        activityUnit: index === 0 ? 'kWh' : 'liters',
+        factorSource: 'CarbonLite',
+        factorVerified: false,
+        calculatedEmissionsKgCO2e: 100,
+        status: 'CALCULATED' as const,
+        sourceType: 'SPREADSHEET',
+      })),
+      {
+        activityDataId: 'activity-water',
+        activityType: 'WATER',
+        recordDate: '2026-07-20',
+        dateEstimated: false,
+        reportingYear: 2026,
+        jurisdiction: 'Canada',
+        activityQuantity: 100,
+        activityUnit: 'm3',
+        factorSource: 'Tracked metric',
+        factorVerified: false,
+        calculatedEmissionsKgCO2e: 0,
+        status: 'TRACKED_ONLY' as const,
+        calculationStatus: 'TRACKED_ONLY',
+        matchingStatus: 'TRACKED_ONLY',
+        sourceType: 'SPREADSHEET',
+        notes: 'Tracked metric only. No emission factor required.',
+      },
+    ];
     const summary = buildReportExecutiveSummary({
       totalEstimatedEmissionsKgCO2e: 37285,
       countSummary: {
@@ -340,41 +476,7 @@ describe('Version 1 report presentation data', () => {
           factorId: 'factor-electricity',
         },
       ],
-      calculationDetails: [
-        ...Array.from({ length: 9 }, (_, index) => ({
-          activityDataId: `activity-${index}`,
-          activityType: index === 0 ? 'ELECTRICITY' : 'DIESEL',
-          recordDate: '2026-07-20',
-          dateEstimated: false,
-          reportingYear: 2026,
-          jurisdiction: 'Canada',
-          activityQuantity: 100,
-          activityUnit: index === 0 ? 'kWh' : 'liters',
-          factorSource: 'CarbonLite',
-          factorVerified: false,
-          calculatedEmissionsKgCO2e: 100,
-          status: 'CALCULATED' as const,
-          sourceType: 'SPREADSHEET',
-        })),
-        {
-          activityDataId: 'activity-water',
-          activityType: 'WATER',
-          recordDate: '2026-07-20',
-          dateEstimated: false,
-          reportingYear: 2026,
-          jurisdiction: 'Canada',
-          activityQuantity: 100,
-          activityUnit: 'm3',
-          factorSource: 'Tracked metric',
-          factorVerified: false,
-          calculatedEmissionsKgCO2e: 0,
-          status: 'TRACKED_ONLY' as const,
-          calculationStatus: 'TRACKED_ONLY',
-          matchingStatus: 'TRACKED_ONLY',
-          sourceType: 'SPREADSHEET',
-          notes: 'Tracked metric only. No emission factor required.',
-        },
-      ],
+      calculationDetails,
     });
 
     expect(summary.recordsIncluded).toBe(9);
@@ -385,6 +487,35 @@ describe('Version 1 report presentation data', () => {
     );
     expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 require review');
     expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 requires review');
+
+    render(
+      <FormalReportPreview
+        organizationName="KACH CANADA LTD."
+        reportPeriod="2026"
+        scopeLabel="Annual"
+        generatedAt="2026-08-14"
+        usageTotals={usageTotals}
+        totalEstimatedEmissionsKgCO2e={37285}
+        countSummary={{
+          totalRecordsFound: 10,
+          processedRecords: 9,
+          skippedRecords: 1,
+          missingFactorRecords: 0,
+        }}
+        matchedActivityEmissions={[]}
+        conversionFactorsUsed={[]}
+        sourceEvidenceRows={[]}
+        calculationDetails={calculationDetails}
+      />,
+    );
+
+    expect(screen.getAllByText('Records Included in GHG Total').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Tracked Operational Metrics').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Records Requiring Review').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Records Requiring Review')[0].parentElement).toHaveTextContent('0');
+    expect(screen.queryByText('Records Skipped')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Skipped reasons/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Tracked operational metrics are retained for review/i)).toBeInTheDocument();
   });
 
   it('shows singular grammar for one true record requiring review', () => {
@@ -489,6 +620,62 @@ describe('Version 1 report presentation data', () => {
 });
 
 describe('buildSourceEvidenceRows', () => {
+  it('summarizes source evidence by source file and treatment counts', () => {
+    expect(
+      buildSourceEvidenceSummaryRows([
+        {
+          activityType: 'Electricity',
+          quantity: '12,500',
+          unit: 'kWh',
+          recordDate: '2026-07-20',
+          sourceFile: 'Golden Test Data.xlsx',
+          sourceType: 'Spreadsheet Import',
+          importMethod: 'Spreadsheet Import',
+          sourceReference: 'Golden Test Data.xlsx',
+          matchingStatus: 'Matched',
+          reportTreatment: 'Included',
+          notes: '',
+        },
+        {
+          activityType: 'Water',
+          quantity: '100',
+          unit: 'm3',
+          recordDate: '2026-07-20',
+          sourceFile: 'Golden Test Data.xlsx',
+          sourceType: 'Spreadsheet Import',
+          importMethod: 'Spreadsheet Import',
+          sourceReference: 'Golden Test Data.xlsx',
+          matchingStatus: 'Tracked Metric',
+          reportTreatment: 'Tracked Only',
+          notes: '',
+        },
+        {
+          activityType: 'Electricity',
+          quantity: '100',
+          unit: 'kWh',
+          recordDate: '2026-07-20',
+          sourceFile: 'Golden Test Data.xlsx',
+          sourceType: 'Spreadsheet Import',
+          importMethod: 'Spreadsheet Import',
+          sourceReference: 'Golden Test Data.xlsx',
+          matchingStatus: 'Missing Factor',
+          reportTreatment: 'Requires Review',
+          notes: '',
+        },
+      ]),
+    ).toEqual([
+      {
+        sourceFile: 'Golden Test Data.xlsx',
+        sourceType: 'Spreadsheet Import',
+        importMethod: 'Spreadsheet Import',
+        sourceReference: 'Golden Test Data.xlsx',
+        includedRecords: 1,
+        trackedMetrics: 1,
+        recordsRequiringReview: 1,
+      },
+    ]);
+  });
+
   it('keeps source evidence per activity and preserves source references', () => {
     expect(
       buildSourceEvidenceRows([
@@ -502,12 +689,14 @@ describe('buildSourceEvidenceRows', () => {
           sourceRow: 3,
           sourceType: 'AI_EXTRACTION',
           sourceTextSnippet: 'Metered usage 500 kWh',
+          recordDate: '2026-01-31',
         },
         {
           activityType: 'GASOLINE',
           quantity: 100,
           unit: 'L',
           sourceType: 'MANUAL',
+          recordDate: '2026-02-01',
         },
       ]),
     ).toEqual([
@@ -515,18 +704,26 @@ describe('buildSourceEvidenceRows', () => {
         activityType: 'Electricity',
         quantity: '500',
         unit: 'kWh',
+        recordDate: '2026-01-31',
         sourceFile: 'utility.pdf',
-        sourceReference: 'PDF extraction',
+        sourceReference: 'utility.pdf',
         sourceType: 'PDF Extraction',
+        importMethod: 'PDF Extraction',
+        matchingStatus: 'Source Review Required',
+        reportTreatment: 'Source Review Required',
         notes: 'Metered usage 500 kWh',
       },
       {
         activityType: 'Gasoline',
         quantity: '100',
         unit: 'L',
-        sourceFile: 'Manual entry',
-        sourceReference: 'manual',
+        recordDate: '2026-02-01',
+        sourceFile: 'Manual Entry',
+        sourceReference: 'Manual Entry',
         sourceType: 'Manual Entry',
+        importMethod: 'Manual Entry',
+        matchingStatus: 'Source Review Required',
+        reportTreatment: 'Source Review Required',
         notes: '',
       },
     ]);
@@ -542,6 +739,7 @@ describe('buildSourceEvidenceRows', () => {
           sourceFileName: 'Golden Test Data.xlsx',
           sourceReference: 'PDF extraction',
           sourceType: 'AI_EXTRACTION',
+          recordDate: '2026-07-20',
         },
       ]),
     ).toEqual([
@@ -549,12 +747,80 @@ describe('buildSourceEvidenceRows', () => {
         activityType: 'Electricity',
         quantity: '12,500',
         unit: 'kWh',
+        recordDate: '2026-07-20',
         sourceFile: 'Golden Test Data.xlsx',
-        sourceReference: 'Spreadsheet import',
+        sourceReference: 'Golden Test Data.xlsx',
         sourceType: 'Spreadsheet Import',
+        importMethod: 'Spreadsheet Import',
+        matchingStatus: 'Source Review Required',
+        reportTreatment: 'Source Review Required',
         notes: '',
       },
     ]);
+  });
+
+  it('marks tracked-only Water as source evidence without requiring review', () => {
+    const rows = buildSourceEvidenceRows(
+      [
+        {
+          id: 'water-1',
+          activityType: 'WATER',
+          quantity: 100,
+          unit: 'm3',
+          recordDate: '2026-07-20',
+          sourceFileName: 'Golden Test Data.xlsx',
+          sourceReference: 'PDF extraction',
+          sourceType: 'AI_EXTRACTION',
+        },
+      ],
+      [
+        {
+          activityDataId: 'water-1',
+          activityType: 'WATER',
+          recordDate: '2026-07-20',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          activityQuantity: 100,
+          activityUnit: 'm3',
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          status: 'TRACKED_ONLY',
+        },
+      ],
+    );
+
+    expect(rows[0]).toMatchObject({
+      sourceFile: 'Golden Test Data.xlsx',
+      sourceType: 'Spreadsheet Import',
+      importMethod: 'Spreadsheet Import',
+      sourceReference: 'Golden Test Data.xlsx',
+      matchingStatus: 'Tracked Metric',
+      reportTreatment: 'Tracked Only',
+    });
+    expect(rows[0].notes).toContain('Water is tracked as an operational metric');
+    expect(rows[0].notes).toContain('excluded from GHG emissions totals');
+  });
+
+  it('uses a safe fallback when an imported source file is unavailable', () => {
+    const rows = buildSourceEvidenceRows([
+      {
+        activityType: 'ELECTRICITY',
+        quantity: 250,
+        unit: 'kWh',
+        sourceReference: 'Spreadsheet import',
+        sourceType: 'SPREADSHEET',
+        recordDate: '2026-07-20',
+      },
+    ]);
+
+    expect(rows[0]).toMatchObject({
+      sourceFile: 'Source file unavailable',
+      sourceReference: 'Source file unavailable',
+      sourceType: 'Spreadsheet Import',
+      importMethod: 'Spreadsheet Import',
+    });
+    expect(rows[0].sourceReference).not.toMatch(/Spreadsheet import|PDF extraction|cmr|document id/i);
   });
 
   it('uses canonical matched calculation fields instead of stale import notes', () => {

@@ -5,7 +5,9 @@ export function AppErrorFallback() {
     <div style={fallbackStyle}>
       <div style={cardStyle}>
         <h1 style={titleStyle}>Something went wrong.</h1>
-        <p style={textStyle}>Please refresh the page or contact support.</p>
+        <p style={textStyle}>
+          Something went wrong while loading this section. Please refresh the page or contact support if the issue continues.
+        </p>
         <button type="button" onClick={() => window.location.reload()} style={buttonStyle}>
           Refresh page
         </button>

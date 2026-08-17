@@ -1,11 +1,14 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { getAccountType, getOrganizationName } from '../services/auth';
 import {
   submitFeedback,
   type FeedbackType,
 } from '../services/feedback';
+import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 const feedbackTypes: Array<{ value: FeedbackType; label: string }> = [
   { value: 'QUESTION', label: 'Question' },
@@ -22,13 +25,40 @@ const initialForm = {
 };
 
 export function FeedbackWidget() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const pagePath = `${location.pathname}${location.search}${location.hash}`;
+  const workspaceName = getOrganizationName(user);
+  const accountType = getAccountType(user);
+  const appVersion = import.meta.env.VITE_APP_VERSION || 'Not available';
+  const feedbackHref = buildFeedbackMailtoHref({
+    pagePath,
+    userEmail: user?.email,
+    workspaceName,
+    accountType,
+    appVersion,
+  });
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        setForm(initialForm);
+        setError(null);
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
 
   if (!isAuthenticated) return null;
 
@@ -56,8 +86,11 @@ export function FeedbackWidget() {
         intent: form.intent.trim(),
         message: form.message.trim(),
         email: form.email.trim() || undefined,
-        page: location.pathname,
+        page: pagePath,
         url: `${window.location.origin}${location.pathname}${location.search}${location.hash}`,
+        workspaceName,
+        accountType,
+        appVersion,
       });
       setSuccess('Thank you for your feedback.');
       setForm(initialForm);
@@ -65,8 +98,8 @@ export function FeedbackWidget() {
         setIsOpen(false);
         setSuccess(null);
       }, 900);
-    } catch {
-      setError('Unable to submit feedback. Please try again.');
+    } catch (err) {
+      setError(getUserFriendlyErrorMessage(err, 'feedbackSubmission'));
     } finally {
       setIsSubmitting(false);
     }
@@ -77,13 +110,16 @@ export function FeedbackWidget() {
       <button
         type="button"
         onClick={() => {
+          setForm((current) => ({ ...current, email: current.email || user?.email || '' }));
           setIsOpen(true);
           setError(null);
           setSuccess(null);
         }}
         style={floatingButtonStyle}
+        aria-label="Send feedback to CarbonLite"
+        title="Send feedback or report an issue with the CarbonLite pilot."
       >
-        💬 Feedback
+        Send Feedback
       </button>
 
       {isOpen ? (
@@ -92,7 +128,9 @@ export function FeedbackWidget() {
             <div style={modalHeaderStyle}>
               <div>
                 <h2 id="feedback-title" style={titleStyle}>Send Feedback</h2>
-                <p style={subtitleStyle}>Help us improve CarbonLite for real reporting workflows.</p>
+                <p style={subtitleStyle}>
+                  CarbonLite is currently in pilot stage. Your feedback helps improve workflow, factor transparency, and report clarity.
+                </p>
               </div>
               <button
                 type="button"
@@ -106,6 +144,10 @@ export function FeedbackWidget() {
 
             {success ? <div style={successStyle}>{success}</div> : null}
             {error ? <div style={errorStyle}>{error}</div> : null}
+
+            <div style={contextStyle}>
+              Context included: {pagePath} · {getAccountType(user)}
+            </div>
 
             <form onSubmit={handleSubmit} style={formStyle}>
               <label style={labelStyle}>
@@ -167,6 +209,9 @@ export function FeedbackWidget() {
               </label>
 
               <div style={actionsStyle}>
+                <a href={feedbackHref} style={emailButtonStyle}>
+                  Send by email
+                </a>
                 <button type="button" onClick={resetAndClose} style={secondaryButtonStyle}>
                   Cancel
                 </button>
@@ -238,6 +283,17 @@ const subtitleStyle: CSSProperties = {
   fontSize: 14,
 };
 
+const contextStyle: CSSProperties = {
+  margin: '-6px 0 14px',
+  border: '1px solid #e0f2fe',
+  borderRadius: 8,
+  background: '#f0f9ff',
+  color: '#075985',
+  padding: '8px 10px',
+  fontSize: 12,
+  fontWeight: 700,
+};
+
 const closeButtonStyle: CSSProperties = {
   border: '1px solid #d1d5db',
   borderRadius: 8,
@@ -304,6 +360,14 @@ const secondaryButtonStyle: CSSProperties = {
   padding: '10px 16px',
   fontWeight: 700,
   cursor: 'pointer',
+};
+
+const emailButtonStyle: CSSProperties = {
+  ...secondaryButtonStyle,
+  color: '#0369a1',
+  borderColor: '#bae6fd',
+  background: '#f0f9ff',
+  textDecoration: 'none',
 };
 
 const successStyle: CSSProperties = {

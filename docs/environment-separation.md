@@ -147,6 +147,63 @@ Pilot account model:
 - Each reviewer should have a separate company/workspace if they will interact
   with non-demo data.
 
+Pilot reviewer account creation:
+
+- Use `PILOT_REVIEWER` account type and `REVIEWER` or `VIEWER` role.
+- Assign reviewers only to `CarbonLite Sample Workspace` unless a separate
+  sample workspace is intentionally created.
+- `POST /api/admin/pilot-reviewers` automatically ensures the assigned sample
+  workspace contains the `golden-sample-v0.1` dataset before the reviewer logs
+  in.
+- To repair or preload the sample workspace manually from the web repo or API
+  repo, run:
+
+```bash
+pnpm seed:sample-workspace --workspace "CarbonLite Sample Workspace"
+```
+
+- Re-running the sample seed command does not duplicate records. Use `--force`
+  only in local/pilot repair situations; it clears and reseeds sample-owned
+  `Golden Test Data.xlsx` records without deleting users, companies, factors,
+  settings, or non-sample activity data.
+- Do not create reviewer accounts through public signup.
+- Do not grant reviewer accounts admin, owner, factor manager, reset, billing,
+  or user-management permissions.
+- Do not hard-code real reviewer email addresses in source control.
+- Use the guarded admin script with an environment-provided email address:
+
+```bash
+pnpm create:pilot-reviewer --email alexander@example.com --name "Alexander" --workspace "CarbonLite Sample Workspace" --dry-run
+```
+
+To create through the backend admin API, provide an admin token and API URL:
+
+```bash
+APP_ENV=pilot \
+API_BASE_URL=https://pilot-api.example.com/api \
+ADMIN_API_TOKEN=<admin-token> \
+pnpm create:pilot-reviewer --email alexander@example.com --name "Alexander" --workspace "CarbonLite Sample Workspace"
+```
+
+The script sends a `POST /admin/pilot-reviewers` request with:
+
+- `accountType: PILOT_REVIEWER`
+- `role: REVIEWER`
+- `workspace: CarbonLite Sample Workspace`
+- `workspaceName: CarbonLite Sample Workspace`
+- sample-workspace-only access scope
+- read-only permissions for records, factors, users, reset, and imports
+- optional `expires`
+- optional `expiresAt`, defaulting to 30 days from creation
+- `invite.delivery: SETUP_LINK`, `passwordResetRequired: true`, and a
+  time-limited password setup token request, defaulting to 72 hours
+
+Backend persistence requirements for returning a working invite link are documented in
+`docs/pilot-reviewer-invite-backend-contract.md`.
+
+Production creation is blocked unless an admin explicitly sets
+`CONFIRM_PRODUCTION_PILOT_REVIEWER_CREATE=CREATE_PILOT_REVIEWER_IN_PRODUCTION`.
+
 Tenant isolation requirements:
 
 - Every company-scoped query must include the authenticated user's

@@ -3,7 +3,8 @@ import type { CSSProperties } from 'react';
 type ExecutiveSummary = {
   estimatedEmissions: string;
   recordsIncluded: number;
-  recordsSkipped: number;
+  trackedMetrics: number;
+  recordsRequiringReview: number;
   primaryActivityTypes: string;
   missingFactorCount: number;
   dataQualityCoverage: string;
@@ -19,8 +20,9 @@ export function ExecutiveSummarySection({
   return (
     <div style={summaryGridStyle}>
       <Fact label="Estimated Emissions" value={executiveSummary.estimatedEmissions} />
-      <Fact label="Records Included" value={String(executiveSummary.recordsIncluded)} />
-      <Fact label="Records Skipped" value={String(executiveSummary.recordsSkipped)} />
+      <Fact label="Records Included in GHG Total" value={String(executiveSummary.recordsIncluded)} />
+      <Fact label="Tracked Operational Metrics" value={String(executiveSummary.trackedMetrics)} />
+      <Fact label="Records Requiring Review" value={String(executiveSummary.recordsRequiringReview)} />
       <Fact label="Primary Activity Types" value={executiveSummary.primaryActivityTypes} />
       <Fact label="Missing Factor Count" value={String(executiveSummary.missingFactorCount)} />
       <Fact label="Data Quality Coverage" value={executiveSummary.dataQualityCoverage} />

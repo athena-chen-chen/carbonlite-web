@@ -54,6 +54,7 @@ import {
   clearInputReviewBrowserState,
   notifyDemoDataReset,
 } from '../utils/demoDataReset';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { invalidateDemoDataQueries } from '../queryClient';
 
 const PAGE_SIZE = 15;
@@ -199,6 +200,27 @@ const currentUser = getCurrentUser();
 const canEditActivityRecords = canManageActivityRecords(currentUser);
 const canClearActivityRecords = canClearActivityRecordsForUser(currentUser);
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
+
+useEffect(() => {
+  if (!viewedRecord) return undefined;
+
+  const previousOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      setViewedRecord(null);
+    }
+  }
+
+  document.addEventListener('keydown', handleKeyDown);
+
+  return () => {
+    document.body.style.overflow = previousOverflow;
+    document.removeEventListener('keydown', handleKeyDown);
+  };
+}, [viewedRecord]);
+
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
     setLoading(true);
@@ -1082,11 +1104,7 @@ function formatCalculatedEmissionValue(value: unknown) {
     const refreshedItems = await loadItems({ updateState: false });
     reconcileDeletedRowsAfterReload(refreshedItems, idsToDelete);
   } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : 'Unable to delete selected records. Please try again.',
-    );
+    setError(getUserFriendlyErrorMessage(err, 'activityRecords'));
   } finally {
     setBulkDeleting(false);
   }
@@ -1138,11 +1156,7 @@ async function handleBulkApplyProvince() {
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
   } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : 'Unable to apply province to selected electricity records.',
-    );
+    setError(getUserFriendlyErrorMessage(err, 'activityRecords'));
   } finally {
     setBulkApplyingProvince(false);
   }
@@ -1201,7 +1215,7 @@ async function saveEdit() {
     await loadItems();
     setSuccessMessage('Activity record updated.');
   } catch (err) {
-    setError(err instanceof Error ? err.message : 'Update failed');
+    setError(getUserFriendlyErrorMessage(err, 'activityRecords'));
   }
 }
 
@@ -1258,11 +1272,7 @@ async function handleRecalculateActivityRecords() {
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
     window.dispatchEvent(new Event('carbonlite:reports-stale'));
   } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : 'Unable to recalculate activity records. Please try again.',
-    );
+    setError(getUserFriendlyErrorMessage(err, 'activityRecords'));
   } finally {
     setIsRecalculatingRecords(false);
   }
@@ -1546,47 +1556,47 @@ function renderViewedRecordModal() {
           </button>
         </div>
 
-        <div style={detailsModalGridStyle}>
-          <DetailsField label="Status" value={quality.label} />
-          <DetailsField label="Canonical Matching Status" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
-          <DetailsField label="Report Treatment" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
-          <DetailsField label="Calculation Status" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
-          <DetailsField label="Scope" value={formatStoredStatusValue(viewedRecord.scope || inferDefaultScope(normalizedActivityType))} />
-          <DetailsField label="Activity Type" value={formatActivityTypeValue(viewedRecord.activityType)} />
-          <DetailsField label="Quantity" value={formatRequiredRecordValue(viewedRecord.quantity)} />
-          <DetailsField label="Unit" value={formatRecordUnit(viewedRecord.unit)} />
-          <DetailsField label="Date" value={formatRequiredRecordValue(formatDateOnly(viewedRecord.recordDate))} />
-          <DetailsField label="Record Year" value={formatOptionalRecordValue(getActivityRecordYear(viewedRecord))} />
-          <DetailsField label="Country" value={formatOptionalRecordValue(viewedRecord.jurisdictionCountry)} />
-          <DetailsField
-            label="Province"
-            value={formatOptionalRecordValue(normalizeProvinceValue(viewedRecord.jurisdictionRegion))}
-          />
-          <DetailsField label="Facility" value={formatOptionalRecordValue(viewedRecord.facilityId)} />
-          <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord)} />
-          <DetailsField
-            label="Source Reference"
-            value={formatActivitySourceReference(viewedRecord)}
-            fullWidth
-          />
-          <DetailsField label="Matched Factor ID" value={formatOptionalRecordValue(viewedRecord.matchedFactorId ?? matchedFactor?.factor.id)} />
-          <DetailsField label="Matched Factor Name" value={formatOptionalRecordValue(viewedRecord.matchedFactorName ?? (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
-          <DetailsField label="Matched Factor Value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
-          <DetailsField label="Matched Factor Unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
-          <DetailsField label="Matched Factor Source Year" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceYear ?? matchedFactor?.factorYear)} />
-          <DetailsField label="Matched Factor Version" value={formatOptionalRecordValue(viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion)} />
-          <DetailsField label="Source Authority" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceAuthority ?? matchedFactorSnapshot.matchedFactorSourceAuthority)} />
-          <DetailsField label="Source Document" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument)} />
-          <DetailsField label="Verification" value={formatOptionalRecordValue(formatCredibilityLabel(factorVerificationStatus))} />
-          <DetailsField label="Confidence" value={formatOptionalRecordValue(formatCredibilityLabel(factorConfidenceLevel))} />
-          <DetailsField label="Credibility Notes" value={formatOptionalRecordValue(credibilityBadges.join(' · '))} fullWidth />
-          <DetailsField label="Assumptions" value={formatOptionalRecordValue(factorAssumptions)} fullWidth />
-          <DetailsField label="Calculated Emissions" value={formatCalculatedEmissionValue(calculatedEmission)} />
-          <DetailsField label="Calculation Message" value={formatOptionalRecordValue(viewedRecord.calculationMessage)} fullWidth />
-          <DetailsField label="Created At" value={formatOptionalRecordValue(viewedRecord.createdAt)} />
-          <DetailsField label="Updated At" value={formatOptionalRecordValue(viewedRecord.updatedAt)} />
-          <DetailsField label="Notes" value={formatOptionalRecordValue(viewedRecord.notes)} fullWidth />
-          <DetailsField label="Record ID" value={viewedRecord.id} fullWidth />
+        <div style={detailsModalBodyStyle}>
+          <div style={detailsModalGridStyle}>
+            <DetailsField label="Status" value={quality.label} />
+            <DetailsField label="Canonical Matching Status" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
+            <DetailsField label="Report Treatment" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
+            <DetailsField label="Calculation Status" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
+            <DetailsField label="Scope" value={formatStoredStatusValue(viewedRecord.scope || inferDefaultScope(normalizedActivityType))} />
+            <DetailsField label="Activity Type" value={formatActivityTypeValue(viewedRecord.activityType)} />
+            <DetailsField label="Quantity" value={formatRequiredRecordValue(viewedRecord.quantity)} />
+            <DetailsField label="Unit" value={formatRecordUnit(viewedRecord.unit)} />
+            <DetailsField label="Date" value={formatRequiredRecordValue(formatDateOnly(viewedRecord.recordDate))} />
+            <DetailsField label="Record Year" value={formatOptionalRecordValue(getActivityRecordYear(viewedRecord))} />
+            <DetailsField label="Country" value={formatOptionalRecordValue(viewedRecord.jurisdictionCountry)} />
+            <DetailsField
+              label="Province"
+              value={formatOptionalRecordValue(normalizeProvinceValue(viewedRecord.jurisdictionRegion))}
+            />
+            <DetailsField label="Facility" value={formatOptionalRecordValue(viewedRecord.facilityId)} />
+            <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord)} />
+            <DetailsField
+              label="Source Reference"
+              value={formatActivitySourceReference(viewedRecord)}
+              fullWidth
+            />
+            <DetailsField label="Matched Factor Name" value={formatOptionalRecordValue(viewedRecord.matchedFactorName ?? (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
+            <DetailsField label="Matched Factor Value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
+            <DetailsField label="Matched Factor Unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
+            <DetailsField label="Matched Factor Source Year" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceYear ?? matchedFactor?.factorYear)} />
+            <DetailsField label="Matched Factor Version" value={formatOptionalRecordValue(viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion)} />
+            <DetailsField label="Source Authority" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceAuthority ?? matchedFactorSnapshot.matchedFactorSourceAuthority)} />
+            <DetailsField label="Source Document" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument)} />
+            <DetailsField label="Verification" value={formatOptionalRecordValue(formatCredibilityLabel(factorVerificationStatus))} />
+            <DetailsField label="Confidence" value={formatOptionalRecordValue(formatCredibilityLabel(factorConfidenceLevel))} />
+            <DetailsField label="Credibility Notes" value={formatOptionalRecordValue(credibilityBadges.join(' · '))} fullWidth />
+            <DetailsField label="Assumptions" value={formatOptionalRecordValue(factorAssumptions)} fullWidth />
+            <DetailsField label="Calculated Emissions" value={formatCalculatedEmissionValue(calculatedEmission)} />
+            <DetailsField label="Calculation Message" value={formatOptionalRecordValue(viewedRecord.calculationMessage)} fullWidth />
+            <DetailsField label="Created At" value={formatOptionalRecordValue(viewedRecord.createdAt)} />
+            <DetailsField label="Updated At" value={formatOptionalRecordValue(viewedRecord.updatedAt)} />
+            <DetailsField label="Notes" value={formatOptionalRecordValue(viewedRecord.notes)} fullWidth />
+          </div>
         </div>
       </section>
     </div>,
@@ -2280,17 +2290,19 @@ const scrollHintStyle: React.CSSProperties = {
 const detailsModalBackdropStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
-  zIndex: 1000,
+  zIndex: 5000,
   display: 'grid',
   placeItems: 'center',
-  padding: 20,
-  background: 'rgba(15, 23, 42, 0.38)',
+  padding: '48px 20px',
+  background: 'rgba(15, 23, 42, 0.45)',
 };
 
 const detailsModalStyle: React.CSSProperties = {
   width: 'min(760px, 100%)',
-  maxHeight: 'min(720px, calc(100vh - 40px))',
-  overflow: 'auto',
+  maxHeight: 'calc(100vh - 96px)',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
   borderRadius: 14,
   border: '1px solid #cbd5e1',
   background: '#fff',
@@ -2298,12 +2310,17 @@ const detailsModalStyle: React.CSSProperties = {
 };
 
 const detailsModalHeaderStyle: React.CSSProperties = {
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'flex-start',
   gap: 16,
+  flexShrink: 0,
   padding: '18px 20px 14px',
   borderBottom: '1px solid #e2e8f0',
+  background: '#fff',
 };
 
 const detailsModalTitleStyle: React.CSSProperties = {
@@ -2332,6 +2349,12 @@ const detailsModalCloseButtonStyle: React.CSSProperties = {
   fontSize: 22,
   lineHeight: 1,
   cursor: 'pointer',
+};
+
+const detailsModalBodyStyle: React.CSSProperties = {
+  minHeight: 0,
+  flex: 1,
+  overflowY: 'auto',
 };
 
 const detailsModalGridStyle: React.CSSProperties = {

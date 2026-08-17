@@ -36,6 +36,43 @@ function sourceLooksLikePdfExtraction(value?: string | number | null) {
   return /pdf\s+extraction|ai\s+extraction/i.test(cleanText(value));
 }
 
+function getSafeSourceFileName(value?: string | number | null) {
+  const text = cleanText(value);
+  if (!text) return '';
+  if (/^(undefined|null|not specified)$/i.test(text)) return '';
+  if (looksLikeInternalId(text)) return '';
+
+  const fileName = text.split(/[\\/]/).filter(Boolean).pop() ?? text;
+  if (looksLikeInternalId(fileName)) return '';
+
+  const embeddedFileName = fileName.match(/([^\\/·]+?\.(?:xlsx|xls|csv|pdf))(?:\b|$)/i)?.[1]?.trim();
+  if (embeddedFileName && !looksLikeInternalId(embeddedFileName)) {
+    return embeddedFileName;
+  }
+
+  return fileName;
+}
+
+function isGenericSourceReference(value?: string | number | null) {
+  const normalized = cleanText(value)
+    .replace(/[\s_-]+/g, ' ')
+    .toLowerCase();
+
+  return [
+    '',
+    'spreadsheet import',
+    'ai assisted spreadsheet import',
+    'uploaded spreadsheet',
+    'uploaded csv import',
+    'csv import',
+    'pdf extraction',
+    'ai extraction',
+    'ai assisted pdf extraction',
+    'import batch',
+    'document import',
+  ].includes(normalized);
+}
+
 export function looksLikeInternalId(value?: string | number | null) {
   const text = cleanText(value);
   if (!text) return false;
@@ -70,6 +107,20 @@ export function formatReportFactorVersion(input: {
   if (source.includes('carbonlite') && source.includes('default factor')) return 'v1.0';
 
   return 'Not specified';
+}
+
+export function formatReportFactorSource(input: {
+  sourceAuthority?: string | null;
+  sourceDocument?: string | null;
+}) {
+  const sourceDocument = cleanText(input.sourceDocument);
+  const sourceAuthority = cleanText(input.sourceAuthority);
+
+  if (sourceDocument && sourceAuthority && sourceDocument !== sourceAuthority) {
+    return `${sourceDocument} · ${sourceAuthority}`;
+  }
+
+  return sourceDocument || sourceAuthority || 'Source not specified';
 }
 
 export function isScope3PilotActivity(activityType?: string | null) {
@@ -113,6 +164,18 @@ export function formatReportVerification(input: {
   factorStatus?: string | null;
   verificationStatus?: string | null;
 }) {
+  const rawStatus = cleanText(input.factorStatus) || cleanText(input.verificationStatus);
+  const normalizedRawStatus = normalizeStatus(rawStatus);
+
+  if (
+    isElectricityActivity(input.activityType) &&
+    (normalizedRawStatus === 'DRAFT' ||
+      normalizedRawStatus.includes('PLACEHOLDER') ||
+      normalizedRawStatus.includes('PILOT_DEMO'))
+  ) {
+    return 'Internal Review Required';
+  }
+
   const status = input.verified
     ? 'Verified'
     : formatCredibilityLabel(input.factorStatus) ||
@@ -124,6 +187,63 @@ export function formatReportVerification(input: {
   }
 
   return status;
+}
+
+function normalizeFactorDenominator(unit?: string | null) {
+  const clean = cleanText(unit);
+  const normalized = clean.toLowerCase();
+
+  if (normalized === 'liters' || normalized === 'litres' || normalized === 'liter' || normalized === 'litre') {
+    return 'liter';
+  }
+
+  if (normalized === 'nights' || normalized === 'night') {
+    return 'night';
+  }
+
+  if (
+    normalized === 'kilometers' ||
+    normalized === 'kilometres' ||
+    normalized === 'kilometer' ||
+    normalized === 'kilometre'
+  ) {
+    return 'km';
+  }
+
+  if (normalized === 'cubic meters' || normalized === 'cubic metres') {
+    return 'm3';
+  }
+
+  return clean;
+}
+
+export function formatReportFactorUnit(resultUnit?: string | null, inputUnit?: string | null) {
+  const result = cleanText(resultUnit) || 'kgCO2e';
+  const input = normalizeFactorDenominator(inputUnit);
+
+  if (result.includes('/')) {
+    const [resultNumerator, resultDenominator] = result.split('/');
+    const normalizedDenominator = normalizeFactorDenominator(resultDenominator);
+    return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
+  }
+  if (!input) return result;
+
+  return `${result}/${input}`;
+}
+
+export function formatReportFactorSummaryVerification(input: {
+  activityType?: string | null;
+  verified?: boolean | null;
+  factorStatus?: string | null;
+  verificationStatus?: string | null;
+}) {
+  const verification = formatReportVerification(input);
+
+  if (/consultant review recommended/i.test(verification)) {
+    return 'Consultant Review Recommended';
+  }
+
+  return verification;
 }
 
 export function formatReportJurisdiction(
@@ -211,20 +331,16 @@ export function formatReportSourceType(
 
   if (value === 'MANUAL') return 'Manual Entry';
 
-  if (extension === 'xlsx' || extension === 'xls') {
-    return documentExtracted ? 'Spreadsheet Import' : 'Uploaded Spreadsheet';
-  }
+  if (extension === 'xlsx' || extension === 'xls') return 'Spreadsheet Import';
 
-  if (extension === 'csv') {
-    return 'Uploaded CSV Import';
-  }
+  if (extension === 'csv') return 'Spreadsheet Import';
 
   if (extension === 'pdf') {
     return documentExtracted ? 'PDF Extraction' : 'Uploaded PDF';
   }
 
-  if (value === 'CSV') return 'Uploaded CSV Import';
-  if (value === 'EXCEL' || value === 'SPREADSHEET') return 'Uploaded Spreadsheet';
+  if (value === 'CSV') return 'Spreadsheet Import';
+  if (value === 'EXCEL' || value === 'SPREADSHEET') return 'Spreadsheet Import';
   if (value === 'PASTE') return 'Pasted Spreadsheet Rows';
   if (value === 'AI-ASSISTED SPREADSHEET IMPORT') return 'Spreadsheet Import';
   if (value === 'AI-ASSISTED PDF EXTRACTION') return 'PDF Extraction';
@@ -240,23 +356,34 @@ export function formatReportSourceReference(input: {
   sourceFileName?: string | null;
 }) {
   const sourceType = formatReportSourceType(input.sourceType, input.sourceFileName, input.sourceReference);
-  if (sourceType === 'Manual Entry') return 'manual';
+  if (sourceType === 'Manual Entry') return 'Manual Entry';
 
-  const reference = cleanText(input.sourceReference);
-  const sourceFile = cleanText(input.sourceFileName);
+  const reference = getSafeSourceFileName(input.sourceReference);
+  const sourceFile = getSafeSourceFileName(input.sourceFileName);
   const extension = getFileExtension(sourceFile || reference);
 
-  if (sourceLooksLikePdfExtraction(reference) && (extension === 'xlsx' || extension === 'xls')) {
-    return 'Spreadsheet import';
+  if (sourceFile) {
+    return sourceFile;
   }
 
-  if (sourceType === 'Spreadsheet Import') return 'Spreadsheet import';
-  if (sourceType === 'Uploaded CSV Import') return 'CSV import';
-  if (sourceType === 'PDF Extraction') return 'PDF extraction';
+  if (reference && !isGenericSourceReference(reference)) {
+    return reference;
+  }
 
-  if (!reference) return 'Import batch';
+  if (
+    sourceType === 'Spreadsheet Import' ||
+    sourceType === 'PDF Extraction' ||
+    sourceType === 'Uploaded PDF' ||
+    sourceType === 'Uploaded Spreadsheet'
+  ) {
+    return 'Source file unavailable';
+  }
 
-  return reference;
+  if (sourceLooksLikePdfExtraction(input.sourceReference) && (extension === 'xlsx' || extension === 'xls')) {
+    return 'Source file unavailable';
+  }
+
+  return 'Source review required';
 }
 
 export function getDisplaySourceLabel(input: {
@@ -265,12 +392,14 @@ export function getDisplaySourceLabel(input: {
   sourceFileName?: string | null;
 }) {
   const sourceType = formatReportSourceType(input.sourceType, input.sourceFileName, input.sourceReference);
-  const sourceFile = cleanText(input.sourceFileName);
+  const sourceFile = getSafeSourceFileName(input.sourceFileName);
   const reference = formatReportSourceReference(input);
 
   if (sourceType === 'Manual Entry') return 'Manual Entry';
   if (sourceFile) return `${sourceFile} · ${sourceType}`;
-  if (reference && reference !== 'Import batch') return `${reference} · ${sourceType}`;
+  if (reference && !/^source (file unavailable|review required)$/i.test(reference)) {
+    return `${reference} · ${sourceType}`;
+  }
   return sourceType;
 }
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { useToast } from '../components/Toast';
 import { Navigate } from 'react-router-dom';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 export default function Login() {
   const { user, loading, login } = useAuth();
@@ -28,9 +29,8 @@ export default function Login() {
     try {
       await login(email.trim(), password);
       toast('Welcome back 👋');
-    } catch (err: any) {
-      console.error('login error', err);
-      setErrMsg(err?.response?.data?.message || err?.message || 'Login failed');
+    } catch (err) {
+      setErrMsg(getUserFriendlyErrorMessage(err, 'login'));
       toast('Login failed');
     } finally {
       setBusy(false);

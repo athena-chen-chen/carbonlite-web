@@ -32,12 +32,25 @@ describe('feedback service', () => {
       message: 'Import failed',
       page: '/upload',
       url: 'https://carbonliteapp.ca/upload',
+      workspaceName: 'CarbonLite Sample Workspace',
+      accountType: 'PILOT_REVIEWER',
+      appVersion: 'v0.2-test',
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
       `${FALLBACK_API_BASE_URL}/feedback`,
       expect.objectContaining({
         method: 'POST',
+        body: JSON.stringify({
+          type: 'BUG',
+          intent: 'Import records',
+          message: 'Import failed',
+          page: '/upload',
+          url: 'https://carbonliteapp.ca/upload',
+          workspaceName: 'CarbonLite Sample Workspace',
+          accountType: 'PILOT_REVIEWER',
+          appVersion: 'v0.2-test',
+        }),
       }),
     );
   });

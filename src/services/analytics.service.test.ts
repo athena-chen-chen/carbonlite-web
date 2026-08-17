@@ -61,6 +61,8 @@ describe('analytics service', () => {
         id: 'user-1',
         email: 'pilot@example.com',
         organizationId: 'org-1',
+        accountType: 'PILOT_REVIEWER',
+        role: 'REVIEWER',
       }),
     );
     const analytics = await loadAnalytics();
@@ -74,6 +76,8 @@ describe('analytics service', () => {
 
     expect(posthogMock.capture).toHaveBeenCalledWith('REPORT_GENERATED', {
       organizationId: 'org-1',
+      accountType: 'PILOT_REVIEWER',
+      userRole: 'VIEWER',
       reportType: 'emissions',
       recordCount: 4,
     });
@@ -87,12 +91,16 @@ describe('analytics service', () => {
       id: 'user-1',
       email: 'pilot@example.com',
       organizationId: 'org-1',
+      accountType: 'CUSTOMER',
+      role: 'MEMBER',
     });
     analytics.reset();
 
     expect(posthogMock.identify).toHaveBeenCalledWith('user-1', {
       email: 'pilot@example.com',
       organizationId: 'org-1',
+      accountType: 'CUSTOMER',
+      userRole: 'MEMBER',
     });
     expect(posthogMock.reset).toHaveBeenCalledTimes(1);
   });

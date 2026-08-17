@@ -5,7 +5,7 @@ import { AuthProvider } from '../auth/AuthProvider';
 import { AppNav } from './AppNav';
 
 describe('AppNav logout flow', () => {
-  it('shows workspace and user identity when authenticated', () => {
+  it('shows workspace and keeps feedback inside the user menu', async () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
       'currentUser',
@@ -25,8 +25,16 @@ describe('AppNav logout flow', () => {
 
     expect(screen.getByText('CarbonLite')).toBeInTheDocument();
     expect(screen.getByText('Workspace: KACH CANADA LTD.')).toBeInTheDocument();
-    expect(screen.getByText('user@example.com')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /logout/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /user@example.com/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /send feedback/i })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /user@example.com/i }));
+
+    expect(screen.getByRole('menuitem', { name: /send feedback/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('mailto:hello@carbonliteapp.ca'),
+    );
+    expect(screen.getByRole('menuitem', { name: /logout/i })).toBeInTheDocument();
   });
 
   it('keeps the app header above scrolling page content', () => {
@@ -107,6 +115,39 @@ describe('AppNav logout flow', () => {
     expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument();
   });
 
+  it('shows pilot reviewer banner and hides admin navigation for review accounts', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'reviewer@example.com',
+        organizationName: 'CarbonLite Demo Workspace',
+        role: 'ADMIN',
+        accountType: 'PILOT_REVIEWER',
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/reports']}>
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/Pilot review account/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /send feedback/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('CarbonLite%20Pilot%20Feedback'),
+    );
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Input Data' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
+    expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');
+    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
+    expect(screen.queryByRole('button', { name: /admin/i })).not.toBeInTheDocument();
+  });
+
   it('shows admin feedback and activity navigation in a compact dropdown', async () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
@@ -126,17 +167,23 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('button', { name: /admin/i })).toHaveAttribute(
+    const adminButton = screen.getByRole('button', { name: /^Admin\s*▾?$/i });
+
+    expect(adminButton).toHaveAttribute(
       'aria-expanded',
       'false',
     );
     expect(screen.queryByRole('link', { name: 'Feedback' })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /admin/i }));
+    await userEvent.click(adminButton);
 
-    expect(screen.getByRole('button', { name: /admin/i })).toHaveAttribute(
+    expect(adminButton).toHaveAttribute(
       'aria-expanded',
       'true',
+    );
+    expect(screen.getByRole('menuitem', { name: 'Pilot Reviewers' })).toHaveAttribute(
+      'href',
+      '/admin/pilot-reviewers',
     );
     expect(screen.getByRole('menuitem', { name: 'Feedback' })).toHaveAttribute('href', '/feedback');
     expect(screen.getByRole('menuitem', { name: 'Activity' })).toHaveAttribute('href', '/activity');
@@ -167,9 +214,11 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('button', { name: /logout/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /user@example.com/i }));
 
-    await userEvent.click(screen.getByRole('button', { name: /logout/i }));
+    expect(screen.getByRole('menuitem', { name: /logout/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('menuitem', { name: /logout/i }));
 
     expect(localStorage.getItem('accessToken')).toBeNull();
     expect(localStorage.getItem('currentUser')).toBeNull();

@@ -1,6 +1,7 @@
 import { getToken, handleUnauthorized } from './auth';
 import { buildApiUrl } from '../config/api';
 import { captureFrontendException } from '../sentry';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 export type ApiErrorCode =
   | 'FILE_MISSING'
@@ -92,9 +93,9 @@ function getFriendlyApiErrorMessage(code: ApiErrorCode) {
     case 'EXTRACTION_NOT_FOUND':
       return 'Preview data is no longer available. Please extract the document again.';
     case 'EXTRACTION_FAILED':
-      return 'The document could not be processed. Please try again.';
+      return getUserFriendlyErrorMessage(null, 'dataExtraction');
     case 'TIMEOUT':
-      return 'The request took too long. Please retry.';
+      return 'The request took too long. Please try again.';
     case 'PAGE_SIZE_TOO_LARGE':
       return 'Too many records were requested. Please refresh and try again.';
     case 'MISSING_UNIT':
@@ -104,15 +105,15 @@ function getFriendlyApiErrorMessage(code: ApiErrorCode) {
     case 'MISSING_ACTIVITY_TYPE':
       return 'Activity type is required.';
     case 'UNAUTHORIZED':
-      return 'Your session has expired. Please log in again.';
+      return 'Your session has expired. Please sign in again.';
     case 'FORBIDDEN':
       return 'You do not have permission to perform this action.';
     case 'NOT_FOUND':
       return 'The requested information is no longer available.';
     case 'SERVER_ERROR':
-      return 'Something went wrong on our side. Please try again.';
+      return 'Something went wrong while processing your request. Please try again. If the issue continues, contact support.';
     default:
-      return 'Unable to complete the request. Please try again.';
+      return getUserFriendlyErrorMessage(null, 'unknown');
   }
 }
 

@@ -1,4 +1,9 @@
-import { FALLBACK_API_BASE_URL, getContactEmail, isPublicSignupEnabled } from '../config/api';
+import {
+  FALLBACK_API_BASE_URL,
+  getContactEmail,
+  getSupportEmail,
+  isPublicSignupEnabled,
+} from '../config/api';
 
 async function loadApiFetch() {
   vi.resetModules();
@@ -117,13 +122,13 @@ describe('apiFetch authenticated requests', () => {
     );
 
     await expect(apiFetch('/documents')).rejects.toThrow(
-      'Your session has expired. Please log in again.',
+      'Your session has expired. Please sign in again.',
     );
 
     expect(localStorage.getItem('accessToken')).toBeNull();
     expect(localStorage.getItem('currentUser')).toBeNull();
     expect(sessionStorage.getItem('authMessage')).toBe(
-      'Session expired. Please log in again.',
+      'Your session has expired. Please sign in again.',
     );
     expect(window.location.href).toBe('/login');
 
@@ -189,7 +194,24 @@ describe('apiFetch authenticated requests', () => {
     await expect(apiFetch('/document-extraction/extract')).rejects.toMatchObject({
       status: 500,
       code: 'EXTRACTION_FAILED',
-      message: 'The document could not be processed. Please try again.',
+      message: 'We could not extract data from this file. Please check the file format or try uploading it again.',
+    });
+  });
+
+  it('maps generic backend 500 errors to a safe user-facing message', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('PrismaClientKnownRequestError: Foreign key constraint failed', {
+        status: 500,
+      }),
+    );
+
+    await expect(apiFetch('/activity-data')).rejects.toMatchObject({
+      status: 500,
+      code: 'SERVER_ERROR',
+      message:
+        'Something went wrong while processing your request. Please try again. If the issue continues, contact support.',
+      technicalMessage: 'PrismaClientKnownRequestError: Foreign key constraint failed',
     });
   });
 });
@@ -233,4 +255,27 @@ describe('contact email config', () => {
   it('falls back to the legacy CarbonLite email when not configured', () => {
     expect(getContactEmail({})).toBe('help@carbonliteapp.ca');
   });
-})
+});
+
+describe('support email config', () => {
+  it('uses configured support email when present', () => {
+    expect(
+      getSupportEmail({
+        VITE_SUPPORT_EMAIL: 'support@carbonliteapp.ca',
+        VITE_CONTACT_EMAIL: 'contact@carbonliteapp.ca',
+      } as Partial<ImportMetaEnv>),
+    ).toBe('support@carbonliteapp.ca');
+  });
+
+  it('falls back to contact email before the default support address', () => {
+    expect(
+      getSupportEmail({
+        VITE_CONTACT_EMAIL: 'contact@carbonliteapp.ca',
+      } as Partial<ImportMetaEnv>),
+    ).toBe('contact@carbonliteapp.ca');
+  });
+
+  it('falls back to the CarbonLite support email when not configured', () => {
+    expect(getSupportEmail({})).toBe('hello@carbonliteapp.ca');
+  });
+});

@@ -1,11 +1,11 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import {
   createConversionFactor,
   getConversionFactors,
 } from '../services/conversionFactors';
-import { canManageConversionFactors } from '../services/auth';
+import { canManageConversionFactors, isPilotReviewer } from '../services/auth';
 import {
   getFactorTraceability,
   getFactorJurisdiction,
@@ -26,6 +26,7 @@ vi.mock('../services/auth', () => ({
     organizationName: 'KACH CANADA LTD.',
   })),
   getOrganizationName: vi.fn(() => 'KACH CANADA LTD.'),
+  isPilotReviewer: vi.fn(() => false),
 }));
 
 vi.mock('../components/AppDialog', () => ({
@@ -108,6 +109,7 @@ describe('ConversionFactorsPage traceability', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(canManageConversionFactors).mockReturnValue(true);
+    vi.mocked(isPilotReviewer).mockReturnValue(false);
   });
 
   it('uses database traceability values for system factors', () => {
@@ -533,9 +535,18 @@ describe('ConversionFactorsPage traceability', () => {
     expect(within(table).getAllByText('CarbonLite').length).toBeGreaterThan(0);
   });
 
-  it('uses an overflow menu for edit and delete actions', async () => {
+  it('uses an overflow menu for editable custom factor actions', async () => {
     vi.mocked(getConversionFactors).mockResolvedValue({
-      items: [baseFactor],
+      items: [
+        {
+          ...baseFactor,
+          id: 'custom-factor-actions',
+          name: 'Company diesel custom factor',
+          organizationId: 'org-1',
+          factorType: 'CUSTOM',
+          isSystemDefault: false,
+        },
+      ],
       page: 1,
       pageSize: 20,
       total: 1,
@@ -548,15 +559,14 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByTestId('factor-row-factor-1');
+    await screen.findByTestId('factor-row-custom-factor-actions');
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByLabelText('More actions for Diesel default'));
+    await userEvent.click(screen.getByLabelText('More actions for Company diesel custom factor'));
 
-    expect(screen.getByText('System factor')).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeDisabled();
-    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeEnabled();
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeEnabled();
   });
 
   it('sorts conversion factors by factor value', async () => {
@@ -742,13 +752,73 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByText('Consultant factor table')).toBeInTheDocument();
     expect(screen.getByText('Consultant Reviewed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+ Add Custom Factor' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('More actions for Company diesel custom factor')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByLabelText('More actions for Company diesel custom factor'));
-    expect(screen.getByText('Only admins can manage custom factors.')).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeDisabled();
-    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeDisabled();
+    await userEvent.click(screen.getAllByRole('button', { name: 'View' })[1]);
+    expect(screen.getByRole('dialog', { name: /Company diesel custom factor/i })).toBeInTheDocument();
+  });
 
-    vi.mocked(canManageConversionFactors).mockReturnValue(true);
+  it('shows pilot reviewers a read-only factor transparency view', async () => {
+    vi.mocked(canManageConversionFactors).mockReturnValue(false);
+    vi.mocked(isPilotReviewer).mockReturnValue(true);
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        {
+          ...baseFactor,
+          id: 'pilot-review-factor',
+          name: 'Diesel default',
+          sourceAuthority: 'CarbonLite System Defaults',
+          sourceYear: 2025,
+          confidenceLevel: 'Medium (Engineering Estimate)',
+          verificationStatus: 'Internal Review Required',
+          isSystemDefault: true,
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText(/Pilot reviewer accounts can view factor information for transparency/i),
+    ).toBeInTheDocument();
+    expect(await screen.findByTestId('factor-row-pilot-review-factor')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Add Custom Factor' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.parentElement).toHaveStyle({
+      position: 'fixed',
+      zIndex: '5000',
+      overflow: 'hidden',
+    });
+    expect(dialog).toHaveStyle({
+      display: 'flex',
+      maxHeight: 'calc(100vh - 96px)',
+      overflow: 'hidden',
+    });
+    expect(within(dialog).getByRole('region', { name: /Factor transparency content/i })).toHaveStyle({
+      overflowY: 'auto',
+      minHeight: '0',
+    });
+    expect(within(dialog).getByLabelText('Close factor details')).toBeInTheDocument();
+    expect(within(dialog).getByText('Factor Summary')).toBeInTheDocument();
+    expect(within(dialog).getByText('Source & Governance')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: /Save|Delete|Edit/i })).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('requires province for custom electricity factors', async () => {

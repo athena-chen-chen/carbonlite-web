@@ -63,6 +63,7 @@ export function UserActivityPage() {
   const [pagePath, setPagePath] = useState('');
   const [user, setUser] = useState('');
   const [organization, setOrganization] = useState('');
+  const [accountType, setAccountType] = useState('');
   const [hideTestAccounts, setHideTestAccounts] = useState(true);
   const [showActiveUsers, setShowActiveUsers] = useState(false);
   const [activeUsersLoading, setActiveUsersLoading] = useState(false);
@@ -80,10 +81,37 @@ export function UserActivityPage() {
       dateTo,
       activityType,
       pagePath,
-      ...(isAdmin ? { user, organization, hideTestAccounts } : {}),
+      ...(isAdmin ? { user, organization, accountType, hideTestAccounts } : {}),
     }),
-    [activityType, dateFrom, dateTo, hideTestAccounts, isAdmin, organization, pagePath, user],
+    [accountType, activityType, dateFrom, dateTo, hideTestAccounts, isAdmin, organization, pagePath, user],
   );
+
+  const adminActivityQuery = useMemo(
+    () => ({
+      dateFrom,
+      dateTo,
+      activityType,
+      pagePath,
+      user,
+      organization,
+      accountType,
+      hideTestAccounts,
+    }),
+    [accountType, activityType, dateFrom, dateTo, hideTestAccounts, organization, pagePath, user],
+  );
+
+  const visibleActiveUsersCount =
+    isAdmin && showActiveUsers && !activeUsersLoading && !activeUsersError
+      ? activeUsers.length
+      : summary.activeUsers;
+  const visibleOrganizationsCount =
+    isAdmin && showActiveUsers && !activeUsersLoading && !activeUsersError
+      ? new Set(
+          activeUsers
+            .map((item) => item.organizationId || item.organizationName)
+            .filter((value): value is string => Boolean(value)),
+        ).size
+      : summary.organizations ?? 0;
 
   useEffect(() => {
     void loadActivity();
@@ -93,7 +121,7 @@ export function UserActivityPage() {
     if (isAdmin && showActiveUsers) {
       void loadActiveUsers();
     }
-  }, [dateFrom, dateTo, hideTestAccounts, isAdmin, organization, showActiveUsers]);
+  }, [adminActivityQuery, isAdmin, showActiveUsers]);
 
   async function loadActivity() {
     setLoading(true);
@@ -123,10 +151,8 @@ export function UserActivityPage() {
 
     try {
       const response = await getAdminActiveUsers({
-        dateFrom,
-        dateTo,
+        ...adminActivityQuery,
         organizationId: organization,
-        hideTestAccounts,
       });
       setActiveUsers(response.items);
       if (selectedActiveUser && !response.items.some((item) => item.userId === selectedActiveUser.userId)) {
@@ -152,8 +178,7 @@ export function UserActivityPage() {
 
     try {
       const response = await getAdminActivityEvents({
-        dateFrom,
-        dateTo,
+        ...adminActivityQuery,
         user: item.email || item.userId,
         pageSize: 8,
       });
@@ -184,11 +209,11 @@ export function UserActivityPage() {
         <SummaryCard label="Activities This Month" value={summary.thisMonth ?? 0} />
         <SummaryCard
           label="Active Users"
-          value={summary.activeUsers}
+          value={visibleActiveUsersCount}
           onClick={isAdmin ? handleActiveUsersClick : undefined}
           active={showActiveUsers}
         />
-        {isAdmin ? <SummaryCard label="Organizations" value={summary.organizations ?? 0} /> : null}
+        {isAdmin ? <SummaryCard label="Organizations" value={visibleOrganizationsCount} /> : null}
         {isAdmin ? <SummaryCard label="New Users" value={summary.newUsers ?? 0} /> : null}
       </div>
 
@@ -222,6 +247,15 @@ export function UserActivityPage() {
             <label style={labelStyle}>
               Organization
               <input value={organization} onChange={(event) => setOrganization(event.target.value)} placeholder="Organization name or id" style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Account Type
+              <select value={accountType} onChange={(event) => setAccountType(event.target.value)} style={inputStyle}>
+                <option value="">All account types</option>
+                <option value="CUSTOMER">Customer</option>
+                <option value="PILOT_REVIEWER">Pilot Reviewer</option>
+                <option value="INTERNAL_TEST">Internal Test</option>
+              </select>
             </label>
             <label style={checkboxLabelStyle}>
               <input
@@ -262,6 +296,7 @@ export function UserActivityPage() {
                     <th style={thStyle}>User</th>
                     <th style={thStyle}>Organization</th>
                     <th style={thStyle}>Role</th>
+                    <th style={thStyle}>Account Type</th>
                     <th style={thStyle}>Status</th>
                     <th style={thStyle}>Activities</th>
                     <th style={thStyle}>Last Active</th>
@@ -280,6 +315,7 @@ export function UserActivityPage() {
                       </td>
                       <td style={tdStyle}>{item.organizationName || item.organizationId || '-'}</td>
                       <td style={tdStyle}>{item.role ? formatRole(item.role) : '-'}</td>
+                      <td style={tdStyle}>{formatAccountType(item.accountType)}</td>
                       <td style={tdStyle}>
                         <StatusBadge status={getUserStatus(item)} />
                       </td>
@@ -359,6 +395,7 @@ export function UserActivityPage() {
                   <th style={thStyle}>Date</th>
                   <th style={thStyle}>User</th>
                   {isAdmin ? <th style={thStyle}>Organization</th> : null}
+                  {isAdmin ? <th style={thStyle}>Account Type</th> : null}
                   <th style={thStyle}>Event</th>
                   <th style={thStyle}>Page</th>
                   <th style={thStyle}>Entity</th>
@@ -371,6 +408,7 @@ export function UserActivityPage() {
                     <td style={tdStyle}>{formatDate(item.createdAt)}</td>
                     <td style={tdStyle}>{item.userEmail || item.user?.email || item.userName || item.userId || '-'}</td>
                     {isAdmin ? <td style={tdStyle}>{item.organizationName || item.organizationId || '-'}</td> : null}
+                    {isAdmin ? <td style={tdStyle}>{formatAccountType(item.accountType || item.metadata?.accountType)}</td> : null}
                     <td style={tdStyle}>{formatEvent(item.activityType || item.eventName)}</td>
                     <td style={tdStyle}>{item.page || '-'}</td>
                     <td style={tdStyle}>{item.entityType ? `${item.entityType}${item.entityId ? ` · ${item.entityId}` : ''}` : '-'}</td>
@@ -445,6 +483,24 @@ function getUserDisplayName(item: ActiveUserItem) {
 
 function formatRole(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function formatAccountType(value: unknown) {
+  const accountType = String(value ?? '')
+    .trim()
+    .toUpperCase();
+
+  if (!accountType) return 'Customer';
+
+  if (accountType === 'PILOT_REVIEWER') return 'Pilot Reviewer';
+  if (accountType === 'INTERNAL_TEST') return 'Internal Test';
+  if (accountType === 'CUSTOMER') return 'Customer';
+
+  return accountType
+    .toLowerCase()
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function getUserStatus(item: ActiveUserItem): 'New' | 'Active' | 'Idle' | 'Inactive' {

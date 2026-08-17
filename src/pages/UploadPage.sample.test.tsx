@@ -119,6 +119,33 @@ describe('UploadPage sample workflow', () => {
     expect(classifyDraftRow(row)).toBe('TRACKED_METRIC');
   });
 
+  it('shows pilot reviewers a read-only sample review path instead of import tools', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'reviewer@example.com',
+        role: 'VIEWER',
+        accountType: 'PILOT_REVIEWER',
+        organizationId: 'sample-workspace',
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/sample data is already loaded/i)).toBeInTheDocument();
+    expect(screen.getByText(/pilot reviewer accounts use preloaded sample data/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /data records/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /calculation review/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reports/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /upload documents/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /load sample data/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Activity Rows')).not.toBeInTheDocument();
+  });
+
   it('clears Input Review documents when demo data reset is broadcast', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
@@ -227,6 +254,59 @@ describe('UploadPage sample workflow', () => {
     await waitFor(() => {
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
+  });
+
+  it('uses status-aware selected document action labels', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          id: 'doc-ready',
+          fileName: 'ready-upload.xlsx',
+          fileUrl: '',
+          type: 'SPREADSHEET',
+          status: 'REVIEW_REQUIRED',
+          fileSize: 100,
+          createdAt: '2026-07-20T00:00:00.000Z',
+          updatedAt: '2026-07-20T00:00:00.000Z',
+        },
+        {
+          id: 'doc-imported',
+          fileName: 'imported-upload.xlsx',
+          fileUrl: '',
+          type: 'SPREADSHEET',
+          status: 'IMPORTED',
+          fileSize: 100,
+          createdAt: '2026-07-21T00:00:00.000Z',
+          updatedAt: '2026-07-21T00:00:00.000Z',
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 2,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('ready-upload.xlsx')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review Rows' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Imported Records' })).toBeInTheDocument();
+
+    const selectedAction = screen.getByRole('button', { name: 'Review Selected Data' });
+    expect(selectedAction).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText('Select document ready-upload.xlsx'));
+    expect(screen.getByRole('button', { name: 'Review Selected Data' })).toBeEnabled();
+
+    await userEvent.click(screen.getByLabelText('Select document imported-upload.xlsx'));
+    expect(screen.getByRole('button', { name: 'Select Compatible Documents' })).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText('Select document ready-upload.xlsx'));
+    expect(screen.getByRole('button', { name: 'Generate Report' })).toBeEnabled();
   });
 
   it('opens Manual Entry when route state requests manual input focus', async () => {
@@ -816,7 +896,7 @@ describe('UploadPage sample workflow', () => {
 
     expect(extractDocument).toHaveBeenCalledWith('doc-1');
     expect(
-      await screen.findByText('Extraction failed. Please try again or upload the file again.'),
+      await screen.findByText('We could not extract data from this file. Please check the file format or try uploading it again.'),
     ).toBeInTheDocument();
     expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
   });
@@ -852,7 +932,11 @@ describe('UploadPage sample workflow', () => {
       await screen.findByText('This file is no longer available. Please upload it again.'),
     ).toBeInTheDocument();
     expect((await screen.findAllByText('Re-upload Required')).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /Re-upload Required/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Upload Again/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Delete$/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Open document actions for failed-invoice.pdf/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows a friendly error when saved extraction preview is missing', async () => {
@@ -884,7 +968,7 @@ describe('UploadPage sample workflow', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: /Preview Data/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /Review Rows/i }));
 
     expect(getDocumentExtraction).toHaveBeenCalledWith('doc-1');
     expect(

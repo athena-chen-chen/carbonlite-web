@@ -30,6 +30,7 @@ export function CollapsibleReportSection({
           type="button"
           aria-expanded={expanded}
           aria-controls={contentId}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${title}`}
           onClick={onToggle}
           style={toggleButtonStyle}
         >

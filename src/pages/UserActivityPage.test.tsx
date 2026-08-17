@@ -35,7 +35,9 @@ describe('UserActivityPage', () => {
     metadata: {
       fileType: 'PDF',
       fileSize: 1200,
+      accountType: 'PILOT_REVIEWER',
     },
+    accountType: 'PILOT_REVIEWER',
     createdAt: '2026-06-05T12:00:00.000Z',
     user: {
       id: 'user-1',
@@ -90,6 +92,7 @@ describe('UserActivityPage', () => {
           displayName: 'Pilot User',
           email: 'pilot@example.com',
           role: 'USER',
+          accountType: 'PILOT_REVIEWER',
           organizationName: 'Pilot Org',
           activityCount: 5,
           firstSeenAt: new Date().toISOString(),
@@ -158,12 +161,14 @@ describe('UserActivityPage', () => {
 
     await userEvent.type(screen.getByLabelText(/User/i), 'advisor@example.com');
     await userEvent.type(screen.getByLabelText(/Organization/i), 'Client Org');
+    await userEvent.selectOptions(screen.getByLabelText(/Account Type/i), 'PILOT_REVIEWER');
 
     await waitFor(() => {
       expect(getAdminActivityEvents).toHaveBeenLastCalledWith(
         expect.objectContaining({
           user: 'advisor@example.com',
           organization: 'Client Org',
+          accountType: 'PILOT_REVIEWER',
         }),
       );
     });
@@ -185,18 +190,114 @@ describe('UserActivityPage', () => {
     expect(within(panel).getByText('New')).toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: /View 5 activities/i })).toBeInTheDocument();
     expect(within(panel).getByText('Report Generated')).toBeInTheDocument();
-    expect(getAdminActiveUsers).toHaveBeenCalledWith({
-      dateFrom: '',
-      dateTo: '',
-      organizationId: '',
-      hideTestAccounts: true,
-    });
+    expect(getAdminActiveUsers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dateFrom: '',
+        dateTo: '',
+        activityType: '',
+        pagePath: '',
+        user: '',
+        organization: '',
+        organizationId: '',
+        accountType: '',
+        hideTestAccounts: true,
+      }),
+    );
 
     await userEvent.type(screen.getByLabelText(/Date from/i), '2026-06-01');
 
     await waitFor(() => {
       expect(getAdminActiveUsers).toHaveBeenLastCalledWith(
         expect.objectContaining({ dateFrom: '2026-06-01', hideTestAccounts: true }),
+      );
+    });
+  });
+
+  it('keeps active users card count aligned with the active users table', async () => {
+    vi.mocked(getAdminActivityEventSummary).mockResolvedValue({
+      today: 3,
+      thisWeek: 7,
+      thisMonth: 12,
+      activeUsers: 4,
+      organizations: 2,
+      newUsers: 1,
+      documentsUploaded: 4,
+      extractionAttempts: 3,
+      successfulExtractions: 2,
+      reportsGenerated: 1,
+      pdfExports: 1,
+      feedbackSubmitted: 1,
+    });
+    vi.mocked(getAdminActiveUsers).mockResolvedValue({
+      items: [
+        {
+          userId: 'user-1',
+          displayName: 'Pilot User',
+          email: 'pilot@example.com',
+          role: 'USER',
+          accountType: 'PILOT_REVIEWER',
+          organizationName: 'Pilot Org',
+          activityCount: 5,
+          firstSeenAt: new Date().toISOString(),
+          lastActiveAt: '2026-06-05T12:00:00.000Z',
+          mostRecentActivityType: 'REPORT_GENERATED',
+          isTestAccount: false,
+        },
+        {
+          userId: 'user-2',
+          displayName: 'Advisor User',
+          email: 'advisor@example.com',
+          role: 'ADMIN',
+          accountType: 'INTERNAL_TEST',
+          organizationName: 'Pilot Org',
+          activityCount: 3,
+          firstSeenAt: '2026-05-01T12:00:00.000Z',
+          lastActiveAt: '2026-06-05T12:00:00.000Z',
+          mostRecentActivityType: 'DOCUMENT_VIEWED',
+          isTestAccount: false,
+        },
+      ],
+    });
+
+    renderPage('ADMIN');
+
+    await screen.findByText('Document Uploaded');
+    const activeUsersCard = screen.getByRole('button', { name: /Active Users/i });
+    expect(activeUsersCard).toHaveTextContent('4');
+
+    await userEvent.click(activeUsersCard);
+
+    const panel = await screen.findByRole('region', { name: 'Active users' });
+    await waitFor(() => expect(activeUsersCard).toHaveTextContent('2'));
+    expect(screen.getByText('Organizations').parentElement).toHaveTextContent('1');
+    expect(within(panel).getByText('Pilot User')).toBeInTheDocument();
+    expect(within(panel).getByText('Advisor User')).toBeInTheDocument();
+  });
+
+  it('passes all active filters to the active users endpoint', async () => {
+    renderPage('ADMIN');
+
+    await screen.findByText('Document Uploaded');
+    await userEvent.click(screen.getByRole('button', { name: /Active Users/i }));
+    await screen.findByRole('region', { name: 'Active users' });
+
+    await userEvent.selectOptions(screen.getByLabelText(/Activity Type/i), 'REPORT_VIEWED');
+    await userEvent.selectOptions(screen.getByLabelText(/Account Type/i), 'PILOT_REVIEWER');
+    await userEvent.type(screen.getByLabelText(/Page/i), '/reports');
+    await userEvent.type(screen.getByPlaceholderText('Email, name, or user id'), 'pilot@example.com');
+    await userEvent.type(screen.getByPlaceholderText('Organization name or id'), 'Pilot Org');
+
+    await waitFor(() => {
+      expect(getAdminActiveUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          activityType: 'REPORT_VIEWED',
+          pagePath: '/reports',
+          user: 'pilot@example.com',
+          organization: 'Pilot Org',
+          organizationId: 'Pilot Org',
+          accountType: 'PILOT_REVIEWER',
+          hideTestAccounts: true,
+        }),
       );
     });
   });

@@ -47,6 +47,9 @@ export type CreateFeedbackInput = {
   email?: string;
   page?: string;
   url?: string;
+  workspaceName?: string;
+  accountType?: string;
+  appVersion?: string;
 };
 
 export type FeedbackListResponse = {

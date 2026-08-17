@@ -223,6 +223,8 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), quantity);
     await waitFor(() => {
       expect(within(row).getByText('Diesel factor')).toBeInTheDocument();
+      expect(within(row).getByText(/kgCO2e\/liter/)).toBeInTheDocument();
+      expect(within(row).queryByText(/kgCO2e\/liters/)).not.toBeInTheDocument();
     });
     return row;
   }

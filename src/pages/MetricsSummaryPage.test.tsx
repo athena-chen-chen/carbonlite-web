@@ -5,6 +5,7 @@ import {
   buildDataReadinessSummary,
   buildCarbonCreditReadinessAssessment,
   CARBON_CREDIT_READINESS_DISCLAIMER,
+  formatHotspotExclusionNote,
   buildHotspotAnalysis,
   buildMetricsSummaryTableRows,
   groupMissingFactors,
@@ -32,6 +33,202 @@ vi.mock('../services/metricsOverview', async () => {
 afterEach(() => {
   cleanup();
 });
+
+const goldenTrailUsageTotals = {
+  fuel: 3313,
+  electricity: 63600,
+  fuelUnitLabel: 'Grouped by type and unit',
+  electricityUnitLabel: 'kWh',
+  fuelUsageBreakdown: [
+    { activityType: 'NATURAL_GAS', total: 1000, unit: 'm3' },
+    { activityType: 'GASOLINE', total: 500, unit: 'liters' },
+    { activityType: 'DIESEL', total: 100, unit: 'liters' },
+  ],
+  activityUsageBreakdown: [
+    { activityType: 'ELECTRICITY', total: 63600, unit: 'kWh' },
+    { activityType: 'NATURAL_GAS', total: 1000, unit: 'm3' },
+    { activityType: 'GASOLINE', total: 500, unit: 'liters' },
+    { activityType: 'DIESEL', total: 100, unit: 'liters' },
+    { activityType: 'AIR_TRAVEL', total: 5000, unit: 'km' },
+    { activityType: 'HOTEL', total: 10, unit: 'nights' },
+    { activityType: 'WATER', total: 100, unit: 'm3', trackedOnly: true },
+  ],
+};
+
+const goldenTrailCountSummary = {
+  totalRecordsFound: 10,
+  processedRecords: 9,
+  skippedRecords: 1,
+  missingFactorRecords: 0,
+  skippedReasons: {
+    missingFactor: 0,
+    outsideDateRange: 0,
+    outsideScope: 0,
+    invalidData: 0,
+  },
+};
+
+function goldenTrailDetail(overrides: Record<string, unknown>) {
+  return {
+    activityDataId: 'activity-hidden-id',
+    activityType: 'ELECTRICITY',
+    recordDate: '2026-07-20',
+    dateEstimated: false,
+    reportingYear: 2026,
+    jurisdiction: 'Canada',
+    jurisdictionCountry: 'Canada',
+    jurisdictionRegion: 'Canada',
+    activityQuantity: 100,
+    activityUnit: 'kWh',
+    normalizedUnit: 'kWh',
+    factorId: 'factor-hidden-id',
+    factorName: 'CarbonLite factor',
+    factorValue: 1,
+    factorInputUnit: 'kWh',
+    factorResultUnit: 'kgCO2e',
+    factorSource: 'CarbonLite',
+    sourceAuthority: 'CarbonLite',
+    sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+    factorVersion: 'CarbonLite MVP Default Factors v1.0',
+    sourceYear: 2025,
+    factorVerified: false,
+    factorType: 'System',
+    factorConfidenceLevel: 'Pilot Estimate',
+    factorVerificationStatus: 'Internal Review Required',
+    factorAssumptions: 'Pilot-stage default factor. Review before formal reporting.',
+    calculatedEmissionsKgCO2e: 100,
+    status: 'CALCULATED',
+    sourceType: 'UPLOAD',
+    sourceReference: 'pilot-golden-dataset.csv',
+    ...overrides,
+  } as any;
+}
+
+const goldenTrailCalculationDetails = [
+  goldenTrailDetail({
+    activityDataId: 'activity-electricity-ab',
+    factorId: 'factor-electricity-ab-id',
+    factorName: 'Electricity - Alberta',
+    factorVerificationStatus: 'DRAFT',
+    jurisdiction: 'Alberta, Canada',
+    jurisdictionRegion: 'Alberta',
+    factorJurisdictionRegion: 'Alberta',
+    activityQuantity: 12500,
+    activityUnit: 'kWh',
+    factorValue: 0.53,
+    calculatedEmissionsKgCO2e: 6625,
+    factorDefaultScope: 'SCOPE_2',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-electricity-bc',
+    factorName: 'Electricity - British Columbia',
+    jurisdiction: 'British Columbia, Canada',
+    jurisdictionRegion: 'British Columbia',
+    factorJurisdictionRegion: 'British Columbia',
+    activityQuantity: 100,
+    activityUnit: 'kWh',
+    factorValue: 0.02,
+    calculatedEmissionsKgCO2e: 2,
+    factorDefaultScope: 'SCOPE_2',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-electricity-on',
+    factorName: 'Electricity - Ontario',
+    jurisdiction: 'Ontario, Canada',
+    jurisdictionRegion: 'Ontario',
+    factorJurisdictionRegion: 'Ontario',
+    activityQuantity: 1000,
+    activityUnit: 'kWh',
+    factorValue: 0.12,
+    calculatedEmissionsKgCO2e: 120,
+    factorDefaultScope: 'SCOPE_2',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-electricity-mwh',
+    factorName: 'Electricity - Alberta',
+    jurisdiction: 'Alberta, Canada',
+    jurisdictionRegion: 'Alberta',
+    factorJurisdictionRegion: 'Alberta',
+    activityQuantity: 50,
+    activityUnit: 'MWh',
+    normalizedUnit: 'kWh',
+    factorValue: 0.53,
+    calculationFormula: '50,000 × 0.53 = 26,500 kgCO2e',
+    calculatedEmissionsKgCO2e: 26500,
+    factorDefaultScope: 'SCOPE_2',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-natural-gas',
+    activityType: 'NATURAL_GAS',
+    factorName: 'Natural Gas - Canada',
+    factorInputUnit: 'm3',
+    normalizedUnit: 'm3',
+    activityQuantity: 1000,
+    activityUnit: 'm3',
+    factorValue: 1.89,
+    calculatedEmissionsKgCO2e: 1890,
+    factorDefaultScope: 'SCOPE_1',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-gasoline',
+    activityType: 'GASOLINE',
+    factorName: 'Gasoline - Canada',
+    factorInputUnit: 'liters',
+    normalizedUnit: 'liters',
+    activityQuantity: 500,
+    activityUnit: 'liters',
+    factorValue: 2.31,
+    calculatedEmissionsKgCO2e: 1155,
+    factorDefaultScope: 'SCOPE_1',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-diesel',
+    activityType: 'DIESEL',
+    factorName: 'Diesel - Canada',
+    factorInputUnit: 'liters',
+    normalizedUnit: 'liters',
+    activityQuantity: 100,
+    activityUnit: 'liters',
+    factorValue: 2.68,
+    calculatedEmissionsKgCO2e: 268,
+    factorDefaultScope: 'SCOPE_1',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-air-travel',
+    activityType: 'AIR_TRAVEL',
+    factorName: 'Air Travel - Canada',
+    factorInputUnit: 'km',
+    normalizedUnit: 'km',
+    activityQuantity: 5000,
+    activityUnit: 'km',
+    factorValue: 0.115,
+    calculatedEmissionsKgCO2e: 575,
+    factorDefaultScope: 'SCOPE_3',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-hotel',
+    activityType: 'HOTEL',
+    factorName: 'Hotel - Canada',
+    factorInputUnit: 'nights',
+    normalizedUnit: 'nights',
+    activityQuantity: 10,
+    activityUnit: 'nights',
+    factorValue: 15,
+    calculatedEmissionsKgCO2e: 150,
+    factorDefaultScope: 'SCOPE_3',
+  }),
+  goldenTrailDetail({
+    activityDataId: 'activity-water',
+    activityType: 'WATER',
+    factorName: null,
+    factorValue: null,
+    activityQuantity: 100,
+    activityUnit: 'm3',
+    calculatedEmissionsKgCO2e: null,
+    status: 'TRACKED_ONLY',
+    factorDefaultScope: 'TRACKED_METRIC',
+  }),
+];
 
 describe('buildMetricsSummaryTableRows', () => {
   const usageTotals = {
@@ -438,7 +635,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('231')).toBeInTheDocument();
     expect(screen.getByText('kgCO2e')).toBeInTheDocument();
     expect(
-      screen.getByText('Calculated from: 100 liters gasoline × 2.31 kgCO2e/liters'),
+      screen.getByText('Calculated from: 100 liters gasoline × 2.31 kgCO2e/liter'),
     ).toBeInTheDocument();
     expect(screen.getByText('Calculation details and traceability (1 records)')).toBeInTheDocument();
     expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(0);
@@ -458,9 +655,195 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('Factor Source')).toBeInTheDocument();
     expect(within(dialog).getByText('ECCC 2025')).toBeInTheDocument();
     expect(within(dialog).getByText('Formula')).toBeInTheDocument();
-    expect(within(dialog).getByText('100 × 2.31 = 231 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('100 liters × 2.31 kgCO2e/liter = 231 kgCO2e')).toBeInTheDocument();
     expect(within(dialog).getByText('Matching Explanation')).toBeInTheDocument();
     expect(within(dialog).getByText('Matched factor')).toBeInTheDocument();
+  });
+
+  it('opens the Total calculation trail with included records, tracked metrics, factors, and no raw ids', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={goldenTrailUsageTotals}
+          totalEstimatedEmissionsKgCO2e={37285}
+          countSummary={goldenTrailCountSummary}
+          calculationDetails={goldenTrailCalculationDetails}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
+
+    const dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    expect(dialog.parentElement).toHaveStyle({
+      position: 'fixed',
+      zIndex: '5000',
+      overflow: 'hidden',
+    });
+    expect(dialog).toHaveStyle({
+      display: 'flex',
+      maxHeight: 'calc(100vh - 96px)',
+      overflow: 'hidden',
+    });
+    expect(within(dialog).getByRole('region', { name: /Calculation trail content/i })).toHaveStyle({
+      overflowY: 'auto',
+      minHeight: '0',
+    });
+    expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(within(dialog).getByText('37,285 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('9');
+    expect(within(dialog).getByText('Tracked metrics').parentElement).toHaveTextContent('1');
+    expect(within(dialog).getByText('Electricity - Alberta')).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('CarbonLite MVP Default Factors v1.0');
+    expect(within(dialog).getAllByText('Internal Review Required').length).toBeGreaterThan(0);
+    expect(dialog).not.toHaveTextContent(/\bDraft\b/);
+    expect(within(dialog).getByText(/Water is tracked as an operational metric/i)).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('activity-electricity-ab');
+    expect(dialog).not.toHaveTextContent('factor-electricity-ab-id');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i })).not.toBeInTheDocument();
+  });
+
+  it('shows draft-stored pilot electricity verification as internal review in detail modals', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 0,
+            electricity: 100,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [],
+          }}
+          totalEstimatedEmissionsKgCO2e={53}
+          countSummary={{
+            totalRecordsFound: 1,
+            processedRecords: 1,
+            skippedRecords: 0,
+            missingFactorRecords: 0,
+          }}
+          calculationDetails={[
+            goldenTrailDetail({
+              activityDataId: 'activity-electricity-draft-verification',
+              factorName: 'Electricity - Alberta',
+              jurisdiction: 'Alberta, Canada',
+              jurisdictionRegion: 'Alberta',
+              factorJurisdictionRegion: 'Alberta',
+              activityQuantity: 100,
+              activityUnit: 'kWh',
+              factorValue: 0.53,
+              calculatedEmissionsKgCO2e: 53,
+              factorDefaultScope: 'SCOPE_2',
+              factorVerificationStatus: 'DRAFT',
+            }),
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByText('Calculation details and traceability (1 records)'));
+    fireEvent.click(screen.getByRole('button', { name: /View calculation details for Electricity/i }));
+
+    const dialog = screen.getByRole('dialog', { name: /Calculation detail/i });
+    expect(within(dialog).getByText('Verification')).toBeInTheDocument();
+    expect(within(dialog).getByText('Internal Review Required')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent(/\bDraft\b/);
+  });
+
+  it('filters calculation trails by Scope 1, Scope 2, Scope 3, and activity category', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={goldenTrailUsageTotals}
+          totalEstimatedEmissionsKgCO2e={37285}
+          countSummary={goldenTrailCountSummary}
+          calculationDetails={goldenTrailCalculationDetails}
+        />
+      </MemoryRouter>,
+    );
+
+    const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
+    const scopeButtons = within(scopeSection).getAllByRole('button', {
+      name: 'View Calculation Trail',
+    });
+
+    fireEvent.click(scopeButtons[0]);
+    let dialog = screen.getByRole('dialog', { name: /Scope 1 Calculation Trail/i });
+    expect(within(dialog).getByText('3,313 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/Natural Gas · Canada/i).length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText(/Electricity · Alberta · 12,500 kWh/i)).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
+
+    fireEvent.click(scopeButtons[1]);
+    dialog = screen.getByRole('dialog', { name: /Scope 2 Calculation Trail/i });
+    expect(within(dialog).getByText('33,247 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/50 MWh × 1,000 = 50,000 kWh/i).length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText(/Electricity ·/i).length).toBeGreaterThanOrEqual(4);
+    fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
+
+    fireEvent.click(scopeButtons[2]);
+    dialog = screen.getByRole('dialog', { name: /Scope 3 Calculation Trail/i });
+    expect(within(dialog).getByText('725 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/Air Travel · Canada/i).length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText(/Hotel · Canada/i).length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('Consultant Review Recommended').length).toBeGreaterThan(0);
+    fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
+
+    const hotspotSection = screen.getByRole('region', { name: /Emissions Hotspots/i });
+    fireEvent.click(
+      within(hotspotSection).getAllByRole('button', {
+        name: 'View Calculation Trail',
+      })[0],
+    );
+    dialog = screen.getByRole('dialog', { name: /Electricity Calculation Trail/i });
+    expect(within(dialog).getByText('33,247 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('4');
+    expect(within(dialog).queryByText(/Natural Gas/i)).not.toBeInTheDocument();
+  });
+
+  it('shows missing factor records as review required in the calculation trail without crashing', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={goldenTrailUsageTotals}
+          totalEstimatedEmissionsKgCO2e={37285}
+          countSummary={{
+            ...goldenTrailCountSummary,
+            totalRecordsFound: 11,
+            skippedRecords: 2,
+            missingFactorRecords: 1,
+          }}
+          calculationDetails={[
+            ...goldenTrailCalculationDetails,
+            {
+              activityDataId: 'activity-missing-factor',
+              activityType: 'ELECTRICITY',
+              recordDate: '2026-07-20',
+              dateEstimated: false,
+              reportingYear: 2026,
+              jurisdiction: 'Quebec, Canada',
+              jurisdictionCountry: 'Canada',
+              jurisdictionRegion: 'Quebec',
+              activityQuantity: 100,
+              activityUnit: 'kWh',
+              factorSource: '',
+              factorVerified: false,
+              calculatedEmissionsKgCO2e: null,
+              status: 'MISSING_FACTOR',
+              sourceType: 'UPLOAD',
+              sourceReference: 'pilot-golden-dataset.csv',
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
+
+    const dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    expect(within(dialog).getByText('Records Requiring Review')).toBeInTheDocument();
+    expect(within(dialog).getByText('No matched factor available. Review required.')).toBeInTheDocument();
   });
 
   it('shows calculated imported electricity emissions under Scope 2', () => {
@@ -964,6 +1347,31 @@ describe('buildHotspotAnalysis', () => {
     );
   });
 
+  it('formats tracked-only hotspot exclusions without treating Water as review error', () => {
+    const analysis = buildHotspotAnalysis([
+      detail({ activityType: 'ELECTRICITY', calculatedEmissionsKgCO2e: 100 }),
+      detail({ activityType: 'WATER', status: 'TRACKED_ONLY' }),
+    ]);
+
+    expect(formatHotspotExclusionNote(analysis)).toBe(
+      '1 tracked operational metric was excluded from the calculated GHG emissions total. No records require review for this report scope.',
+    );
+    expect(formatHotspotExclusionNote(analysis)).not.toMatch(/1 records|missing factor|invalid unit|requiring review/i);
+    expect(analysis.focusRecommendations.map((item) => item.message).join(' ')).not.toMatch(/1 records were excluded/i);
+  });
+
+  it('formats mixed tracked metrics and review records separately', () => {
+    const analysis = buildHotspotAnalysis([
+      detail({ activityType: 'ELECTRICITY', calculatedEmissionsKgCO2e: 100 }),
+      detail({ activityType: 'WATER', status: 'TRACKED_ONLY' }),
+      detail({ activityType: 'DIESEL', status: 'INVALID_UNIT', calculatedEmissionsKgCO2e: null }),
+    ]);
+
+    expect(formatHotspotExclusionNote(analysis)).toBe(
+      'Tracked operational metrics are excluded from the calculated GHG emissions total by design. Some additional records require review before they can be included.',
+    );
+  });
+
   it('returns no hotspots and a recommendation when no records are calculated', () => {
     const analysis = buildHotspotAnalysis([
       detail({ activityType: 'HOTEL', status: 'MISSING_FACTOR', calculatedEmissionsKgCO2e: null }),
@@ -1051,7 +1459,7 @@ describe('buildCarbonCreditReadinessAssessment', () => {
       sourceDocument: 'CarbonLite MVP Default Factors v1.0',
       factorYear: 2025,
       factorValue: 2.68,
-      calculationFormula: '100 liters × 2.68 kgCO2e/liters = 268 kgCO2e',
+      calculationFormula: '100 liters × 2.68 kgCO2e/liter = 268 kgCO2e',
       calculatedEmissionsKgCO2e: 268,
       status: 'CALCULATED',
       ...overrides,

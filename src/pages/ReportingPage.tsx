@@ -13,19 +13,22 @@ import {
   buildHotspotAnalysis,
   CARBON_CREDIT_READINESS_DISCLAIMER,
   buildMetricsSummaryTableRows,
+  formatHotspotExclusionNote,
   type HotspotAnalysis,
 } from '../components/MetricsSummarySection';
 import {
+  FORMAL_REPORT_DISCLAIMER,
   FORMAL_REPORT_METHODOLOGY,
   FormalReportPreview,
   buildPrimarySkippedReasonSummary,
   buildReportCountSummary,
   buildReportExecutiveSummary,
   buildSourceEvidenceRows,
+  buildSourceEvidenceSummaryRows,
   formatSourceType,
   formatReportJurisdiction,
   formatReportUnit,
-  formatSkippedReasons,
+  formatReviewReasons,
   type FormalActivityEmission,
   type FormalConversionFactorUsed,
 } from '../components/FormalReportPreview';
@@ -33,7 +36,7 @@ import { CollapsibleReportSection } from '../components/reports/CollapsibleRepor
 import { ReportScopeSection } from '../components/reports/sections/ReportScopeSection';
 import { getCurrentUser, getOrganizationName } from '../services/auth';
 import { createClientAuditLog } from '../services/auditLogs';
-import { trackActivityEvent } from '../services/activityEvents';
+import { getActivityEvents, trackActivityEvent, type ActivityEventItem } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
 import { trackEvent } from '../services/ga4.service';
 import type { CalculationAuditDetail } from '../services/metrics';
@@ -55,6 +58,9 @@ import { formatDateOnly } from '../utils/dateOnly';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
 import {
   formatReportAssumptions,
+  formatReportFactorSource,
+  formatReportFactorSummaryVerification,
+  formatReportFactorUnit,
   formatReportFactorVersion,
   formatReportVerification,
   formatTraceabilityReviewNote,
@@ -65,6 +71,7 @@ import {
   isTrackedMetricDetail,
 } from '../utils/reportCredibility';
 import { buildPilotCsv } from '../utils/reportCsvExport';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 type ActivityItem = {
   id: string;
@@ -127,7 +134,26 @@ const REPORT_SECTION_DEFAULTS = {
   activityRecords: false,
 } as const;
 
+type ReportOptions = {
+  includeCarbonCreditReadinessNotes?: boolean;
+};
+
+const DEFAULT_REPORT_OPTIONS: ReportOptions = {
+  includeCarbonCreditReadinessNotes: false,
+};
+
 type ReportSectionId = keyof typeof REPORT_SECTION_DEFAULTS;
+
+const WORKFLOW_AUDIT_EVENT_NAMES = new Set([
+  'FILE_UPLOADED',
+  'DATA_EXTRACTED',
+  'RECORDS_IMPORTED',
+  'REPORT_GENERATED',
+  'CSV_EXPORTED',
+  'PDF_EXPORTED',
+  'REPORT_GENERATION_FAILED',
+  'IMPORT_FAILED',
+]);
 
 export default function ReportingPage() {
   const location = useLocation();
@@ -166,30 +192,48 @@ export default function ReportingPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-const [reloadKey, setReloadKey] = useState(0);
-const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
-const [periodEnd, setPeriodEnd] = useState('2026-12-31');
-const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
-const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
-const [dateRangeReady, setDateRangeReady] = useState(false);
-const [reportScope, setReportScope] = useState<'dateRange' | 'selectedDocuments' | 'selectedRecords'>(
-  initialSelectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
-    ? 'selectedDocuments'
-    : initialSelectedRecordIds.length
-    ? 'selectedRecords'
-    : 'dateRange',
-);
-const [selectedRecordIds] = useState<string[]>(
-  initialSelectedRecordIds,
-);
-const [selectedDocumentIds] = useState<string[]>(
-  initialSelectedDocumentIds,
-);
-const [expandedSections, setExpandedSections] =
-  useState<Record<ReportSectionId, boolean>>(REPORT_SECTION_DEFAULTS);
-const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-const inFlightRequestKeyRef = useRef<string | null>(null);
-const trackedReportViewRef = useRef(false);
+  const [workflowEvents, setWorkflowEvents] = useState<ActivityEventItem[]>([]);
+  const [workflowEventsLoading, setWorkflowEventsLoading] = useState(false);
+  const [isWorkflowAuditOpen, setIsWorkflowAuditOpen] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
+  const [periodEnd, setPeriodEnd] = useState('2026-12-31');
+  const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
+  const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
+  const [dateRangeReady, setDateRangeReady] = useState(false);
+  const [reportScope, setReportScope] = useState<'dateRange' | 'selectedDocuments' | 'selectedRecords'>(
+    initialSelectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
+      ? 'selectedDocuments'
+      : initialSelectedRecordIds.length
+      ? 'selectedRecords'
+      : 'dateRange',
+  );
+  const [selectedRecordIds] = useState<string[]>(
+    initialSelectedRecordIds,
+  );
+  const [selectedDocumentIds] = useState<string[]>(
+    initialSelectedDocumentIds,
+  );
+  const [expandedSections, setExpandedSections] =
+    useState<Record<ReportSectionId, boolean>>(REPORT_SECTION_DEFAULTS);
+  const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const inFlightRequestKeyRef = useRef<string | null>(null);
+  const trackedReportViewRef = useRef(false);
+  async function loadWorkflowEvents() {
+    setWorkflowEventsLoading(true);
+
+    try {
+      const response = await getActivityEvents({ pageSize: 20 });
+      setWorkflowEvents(
+        (response.items ?? []).filter((item) => WORKFLOW_AUDIT_EVENT_NAMES.has(item.eventName)),
+      );
+    } catch {
+      setWorkflowEvents([]);
+    } finally {
+      setWorkflowEventsLoading(false);
+    }
+  }
+
   async function loadReportData() {
     const request = {
       recalculate: true,
@@ -224,18 +268,22 @@ const trackedReportViewRef = useRef(false);
         missingFactorRecords: overview.missingFactorRecords,
         skippedReasons: overview.skippedReasons,
       });
-      track('REPORT_GENERATED', {
-        reportType: 'emissions',
-        reportScope,
-        recordCount: overview.processedRecords,
-      });
-      trackEvent('REPORT_GENERATED', {
-        report_type: 'emissions',
-        report_scope: reportScope,
-        record_count: overview.processedRecords,
-      });
     } catch {
-      setError('Unable to load calculation summary. Please refresh or check backend logs.');
+      void trackActivityEvent({
+        eventName: 'REPORT_GENERATION_FAILED',
+        page: location.pathname,
+        url: window.location.href,
+        entityType: 'REPORT',
+        metadata: {
+          eventLabel: 'Report generation failed',
+          reportScope,
+          reportStatus: 'FAILED',
+          friendlyError: 'Report generation failed: calculation summary could not be loaded.',
+        },
+      }).catch(() => {
+        // Failure audit should not block the user-facing error.
+      });
+      setError(getUserFriendlyErrorMessage(null, 'reportGeneration'));
     } finally {
       if (inFlightRequestKeyRef.current === requestKey) {
         inFlightRequestKeyRef.current = null;
@@ -243,51 +291,52 @@ const trackedReportViewRef = useRef(false);
       setLoading(false);
     }
   }
-useEffect(() => {
-  if (!dateRangeReady) return;
-  loadReportData();
-}, [
-  dateRangeReady,
-  reloadKey,
-  periodStart,
-  periodEnd,
-  reportScope,
-  selectedRecordIds.join('|'),
-  selectedDocumentIds.join('|'),
-]);
-
-useEffect(() => {
-  initializeDateRange();
-
-  return () => {
-    if (dateCommitTimerRef.current) {
-      window.clearTimeout(dateCommitTimerRef.current);
-    }
-  };
-}, []);
-
-useEffect(() => {
-  if (trackedReportViewRef.current) return;
-  trackedReportViewRef.current = true;
-
-  void trackActivityEvent({
-    eventName: 'REPORT_VIEWED',
-    page: location.pathname,
-    url: window.location.href,
-    entityType: 'Report',
-    metadata: {
-      reportScope,
-      selectedRecordCount: selectedRecordIds.length,
-      selectedDocumentCount: selectedDocumentIds.length,
-    },
-  }).catch(() => {
-    // Usage tracking should never block report viewing.
-  });
-  track('REPORT_VIEWED', {
-    reportType: 'emissions',
+  useEffect(() => {
+    if (!dateRangeReady) return;
+    loadReportData();
+  }, [
+    dateRangeReady,
+    reloadKey,
+    periodStart,
+    periodEnd,
     reportScope,
-  });
-}, [location.pathname, reportScope, selectedDocumentIds.length, selectedRecordIds.length]);
+    selectedRecordIds.join('|'),
+    selectedDocumentIds.join('|'),
+  ]);
+
+  useEffect(() => {
+    initializeDateRange();
+    void loadWorkflowEvents();
+
+    return () => {
+      if (dateCommitTimerRef.current) {
+        window.clearTimeout(dateCommitTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (trackedReportViewRef.current) return;
+    trackedReportViewRef.current = true;
+
+    void trackActivityEvent({
+      eventName: 'REPORT_VIEWED',
+      page: location.pathname,
+      url: window.location.href,
+      entityType: 'Report',
+      metadata: {
+        reportScope,
+        selectedRecordCount: selectedRecordIds.length,
+        selectedDocumentCount: selectedDocumentIds.length,
+      },
+    }).catch(() => {
+      // Usage tracking should never block report viewing.
+    });
+    track('REPORT_VIEWED', {
+      reportType: 'emissions',
+      reportScope,
+    });
+  }, [location.pathname, reportScope, selectedDocumentIds.length, selectedRecordIds.length]);
 
 async function initializeDateRange() {
   try {
@@ -405,20 +454,20 @@ const unclassifiedCalculatedRecords = useMemo(
 function handleDownloadCSV() {
   if (!hasReportOutput) return;
 
-    const csv = buildPilotCsv(calculationDetails);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const csv = buildPilotCsv(calculationDetails);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
 
-    link.href = url;
-    link.download = `carbonlite-pilot-report-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
+  link.href = url;
+  link.download = `CarbonLite_Sample_Report_Export_v0.1_${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
 
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 
   URL.revokeObjectURL(url);
 
@@ -434,6 +483,29 @@ function handleDownloadCSV() {
   }).catch(() => {
     // Export should not be blocked by usage tracking.
   });
+  void trackActivityEvent({
+    eventName: 'CSV_EXPORTED',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'REPORT',
+    metadata: {
+      ...buildWorkflowReportSummary({
+        calculationDetails,
+        totalEstimatedEmissionsKgCO2e,
+        countSummary,
+        reportFormat: 'CSV',
+        reportPeriod,
+        reportScopeLabel,
+      }),
+      exportedRecords: calculationDetails.length,
+      exportedAt: new Date().toISOString(),
+      exportStatus: 'EXPORTED',
+    },
+  })
+    .then(() => loadWorkflowEvents())
+    .catch(() => {
+      // CSV audit should not block export.
+    });
 }
  
 function buildScopeNarrative(scopeSummary: Record<string, number>) {
@@ -512,7 +584,7 @@ function formatExcludedReasonForPdf(reason: HotspotAnalysis['excludedCategories'
   const labels = {
     MISSING_FACTOR: 'Missing factor',
     INVALID_UNIT: 'Invalid unit',
-    TRACKED_ONLY: 'Tracked metric',
+    TRACKED_ONLY: 'Tracked operational metric, excluded from GHG total',
     NEEDS_REVIEW: 'Needs review',
     MISSING_JURISDICTION: 'Missing jurisdiction',
   };
@@ -677,13 +749,17 @@ function drawEmissionsHotspotsPdfSection(
     doc.setTextColor(146, 64, 14);
     y = drawPdfTextBlock(
       doc,
-      'Some records were excluded from hotspot analysis because they require review or are tracked-only. See Records Requiring Review for details.',
+      formatHotspotExclusionNote(analysis),
       14,
       y,
     ) + 3;
+    const hasOnlyTrackedMetrics = analysis.excludedCategories.length > 0 &&
+      analysis.excludedCategories.every((item) => item.reason === 'TRACKED_ONLY');
     autoTable(doc, {
       startY: y,
-      head: [['Excluded Category', 'Reason', 'Records']],
+      head: [hasOnlyTrackedMetrics
+        ? ['Operational Metric', 'Treatment', 'Records']
+        : ['Category', 'Treatment / Review Reason', 'Records']],
       body: analysis.excludedCategories.length
         ? analysis.excludedCategories.map((item) => [
             item.displayName,
@@ -735,8 +811,9 @@ function handleDownloadPDF() {
     head: [['Executive Summary', 'Value']],
     body: [
       ['Estimated Emissions', executiveSummary.estimatedEmissions],
-      ['Records Included', executiveSummary.recordsIncluded],
-      ['Records Skipped', executiveSummary.recordsSkipped],
+      ['Records Included in GHG Total', executiveSummary.recordsIncluded],
+      ['Tracked Operational Metrics', executiveSummary.trackedMetrics],
+      ['Records Requiring Review', executiveSummary.recordsRequiringReview],
       ['Primary Activity Types', executiveSummary.primaryActivityTypes],
       ['Missing Factor Count', primarySkippedReasons.missingFactor],
       ['Data Quality Coverage', executiveSummary.dataQualityCoverage],
@@ -754,12 +831,12 @@ function handleDownloadPDF() {
     body: [
       ['Total Records Found', reportCountSummary.totalRecordsFound],
       ['Records Calculated', reportCountSummary.processedRecords],
-      ['Records Skipped', reportCountSummary.skippedRecords],
+      ['Tracked Operational Metrics', primarySkippedReasons.trackedOnly],
+      ['Records Requiring Review', executiveSummary.recordsRequiringReview],
       ['Missing Factors', primarySkippedReasons.missingFactor],
       ['Missing Jurisdiction', primarySkippedReasons.missingJurisdiction],
       ['Invalid Unit', primarySkippedReasons.invalidUnit],
-      ['Tracked Metrics', primarySkippedReasons.trackedOnly],
-      ['Skipped Reasons', formatSkippedReasons(primarySkippedReasons)],
+      ['Review Reasons', formatReviewReasons(primarySkippedReasons)],
       [
         'Data Quality Coverage',
         reportCountSummary.totalRecordsFound > 0
@@ -776,15 +853,35 @@ function handleDownloadPDF() {
   drawPdfSectionTitle(doc, 'Data Quality Notes', nextY);
   autoTable(doc, {
     startY: nextY + 6,
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
     head: [['Readiness Signal', 'Value']],
     body: [
       ['Data Readiness Score', `${formatDisplayNumber(dataReadinessSummary.score)}% (${dataReadinessSummary.level})`],
       ['Calculated Records', dataReadinessSummary.recordsReadyForCalculation],
       ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
-      ['Tracked Metrics', dataReadinessSummary.trackedOnlyCount],
+      ['Tracked Operational Metrics', dataReadinessSummary.trackedOnlyCount],
       ['Missing Factors', dataReadinessSummary.missingFactorCount],
       ['Missing Jurisdiction', dataReadinessSummary.missingJurisdictionCount],
+      [
+        'Data Quality Coverage Meaning',
+        `${reportCountSummary.processedRecords} of ${reportCountSummary.totalRecordsFound} records were calculated as GHG emissions records; ${primarySkippedReasons.trackedOnly} record${primarySkippedReasons.trackedOnly === 1 ? ' was' : 's were'} tracked as operational ${primarySkippedReasons.trackedOnly === 1 ? 'metric' : 'metrics'}.`,
+      ],
+      [
+        'Data Readiness Score Meaning',
+        'Broader pilot readiness signal based on calculation coverage, factor match quality, jurisdiction completeness, source traceability, review status, and tracked operational metrics.',
+      ],
+      [
+        'Coverage vs Readiness',
+        'Data Quality Coverage and Data Readiness Score are related but not identical. Tracked operational metrics such as Water are retained for review and excluded from the calculated GHG emissions total by design.',
+      ],
     ],
+    styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
+    headStyles: { fillColor: [71, 85, 105] },
+    columnStyles: {
+      0: { cellWidth: 58 },
+      1: { cellWidth: 122 },
+    },
   });
 
   nextY = (doc as any).lastAutoTable.finalY + 12;
@@ -866,41 +963,48 @@ function handleDownloadPDF() {
       'Value',
       'Unit',
       'Jurisdiction',
-      'Year',
-      'Source',
+      'Source Year',
       'Verification',
-      'Confidence',
       'Used Records',
     ]],
     body: conversionFactorsUsed.length
       ? conversionFactorsUsed.map((factor) => [
           factor.factorName || getActivityTypeLabel(factor.activityType) || 'Factor not specified',
           formatFactorValue(factor.factorValue),
-          `${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
+          formatReportFactorUnit(factor.resultUnit, factor.inputUnit),
           factor.jurisdiction || 'Not specified',
           factor.factorYear || factor.sourceYear || 'Not specified',
-          factor.sourceAuthority || factor.sourceDocument || 'Source not specified',
-          formatReportVerification(factor),
-          formatCredibilityLabel(factor.confidenceLevel) || 'Not specified',
+          formatReportFactorSummaryVerification(factor),
           factor.usedRecordsCount ?? 1,
         ])
-      : [['No conversion factors found for this report scope.', '', '', '', '', '', '', '', '']],
-    styles: { fontSize: 7.4, cellPadding: 1.7 },
+      : [['No conversion factors found for this report scope.', '', '', '', '', '', '']],
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
+    styles: { fontSize: 7.8, cellPadding: 1.8 },
     headStyles: { fillColor: [15, 23, 42] },
     columnStyles: {
-      0: { cellWidth: 30 },
+      0: { cellWidth: 42 },
       1: { cellWidth: 14 },
-      2: { cellWidth: 20 },
-      3: { cellWidth: 24 },
-      4: { cellWidth: 12 },
-      5: { cellWidth: 22 },
-      6: { cellWidth: 26 },
-      7: { cellWidth: 18 },
-      8: { cellWidth: 12 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 34 },
+      4: { cellWidth: 18 },
+      5: { cellWidth: 38 },
+      6: { cellWidth: 16 },
     },
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  nextY = drawPdfTextBlock(
+    doc,
+    'Detailed source, version, confidence level, and assumptions are provided in the Factor Details / Assumptions section below.',
+    14,
+    nextY + 5,
+    178,
+    4,
+  );
   if (conversionFactorsUsed.length > 0) {
     nextY += 10;
     if (nextY > 235) {
@@ -918,8 +1022,8 @@ function handleDownloadPDF() {
       const factorName = factor.factorName || getActivityTypeLabel(factor.activityType) || 'Factor not specified';
       const factorText = [
         `Factor: ${factorName}`,
-        `Value: ${formatFactorValue(factor.factorValue)} ${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
-        `Source: ${factor.sourceDocument || factor.sourceAuthority || 'Source not specified'}`,
+        `Value: ${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`,
+        `Source: ${formatReportFactorSource(factor)}`,
         `Version: ${formatReportFactorVersion(factor)}`,
         `Verification: ${formatReportVerification(factor)}`,
         `Confidence: ${formatCredibilityLabel(factor.confidenceLevel) || 'Not specified'}`,
@@ -929,14 +1033,13 @@ function handleDownloadPDF() {
     });
   }
 
-  if (nextY > 230) {
-    doc.addPage();
-    nextY = 20;
-  }
+  nextY = ensurePdfSpace(doc, nextY, 58);
 
   drawPdfSectionTitle(doc, 'Calculation Traceability', nextY + 10);
   autoTable(doc, {
     startY: nextY + 16,
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
     head: [[
       'Activity',
       'Quantity',
@@ -976,23 +1079,110 @@ function handleDownloadPDF() {
     nextY = 20;
   }
 
-  doc.setFontSize(14);
-  doc.text('Source Evidence', 14, nextY + 10);
+  const sourceEvidenceSummaryRows = buildSourceEvidenceSummaryRows(sourceEvidenceRows);
+  const sourceEvidenceTrackedCount = sourceEvidenceSummaryRows.reduce(
+    (total, item) => total + item.trackedMetrics,
+    0,
+  );
+
+  drawPdfSectionTitle(doc, 'Source Evidence Summary', nextY + 10);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.setTextColor(71, 85, 105);
+  nextY = drawPdfTextBlock(
+    doc,
+    'This section summarizes the source files and import methods used to create the activity records included in this pilot report. Detailed record-level source evidence is provided in the appendix.',
+    14,
+    nextY + 18,
+    180,
+    4.1,
+  );
 
   autoTable(doc, {
-    startY: nextY + 18,
-    head: [['Activity Type', 'Quantity', 'Unit', 'Source File', 'Source Reference', 'Source Type', 'Notes']],
-    body: sourceEvidenceRows.length
-      ? sourceEvidenceRows.map((item) => [
-          getActivityTypeLabel(item.activityType),
-          item.quantity,
-          item.unit,
+    startY: nextY + 4,
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
+    head: [[
+      'Source File',
+      'Source Type',
+      'Import Method',
+      'Source Reference',
+      'Included GHG Records',
+      'Tracked Metrics',
+      'Review Records',
+    ]],
+    body: sourceEvidenceSummaryRows.length
+      ? sourceEvidenceSummaryRows.map((item) => [
           item.sourceFile,
-          item.sourceReference,
           item.sourceType,
-          item.notes,
+          item.importMethod,
+          item.sourceReference,
+          item.includedRecords,
+          item.trackedMetrics,
+          item.recordsRequiringReview,
         ])
       : [['No source evidence available.', '', '', '', '', '', '']],
+    styles: { fontSize: 7.2, cellPadding: 1.7 },
+    headStyles: { fillColor: [15, 23, 42] },
+    columnStyles: {
+      0: { cellWidth: 34 },
+      1: { cellWidth: 28 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 34 },
+      4: { cellWidth: 20 },
+      5: { cellWidth: 18 },
+      6: { cellWidth: 18 },
+    },
+  });
+
+  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
+  if (sourceEvidenceTrackedCount > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    nextY = drawPdfTextBlock(
+      doc,
+      'Water is tracked as an operational metric and excluded from GHG emissions totals unless a reviewed water emissions factor is provided.',
+      14,
+      nextY + 5,
+      178,
+      4,
+    );
+  }
+  if (nextY > 230) {
+    doc.addPage();
+    nextY = 20;
+  }
+
+  const sourceFiles = Array.from(
+    new Set(sourceEvidenceRows.map((item) => item.sourceFile).filter(Boolean)),
+  );
+  drawPdfSectionTitle(doc, 'Workflow History Summary', nextY + 10);
+  autoTable(doc, {
+    startY: nextY + 18,
+    head: [['Workflow Step', 'Summary']],
+    body: [
+      [
+        'File uploaded',
+        sourceFiles.length
+          ? sourceFiles.join(', ')
+          : 'Source evidence requires review. The original file or source reference was not available.',
+      ],
+      [
+        'Records imported',
+        `${reportCountSummary.processedRecords} included emissions records, ${calculationDetails.filter(isTrackedMetricDetail).length} tracked metric, ${calculationDetails.filter(isRecordRequiringCorrection).length} records requiring review.`,
+      ],
+      [
+        'Report generated',
+        `${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e total for ${reportPeriod}.`,
+      ],
+    ],
+    styles: { fontSize: 7.2, cellPadding: 1.7 },
+    headStyles: { fillColor: [71, 85, 105] },
+    columnStyles: {
+      0: { cellWidth: 42 },
+      1: { cellWidth: 138 },
+    },
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 170;
@@ -1007,6 +1197,8 @@ function handleDownloadPDF() {
   const trackedMetricRows = calculationDetails.filter(isTrackedMetricDetail);
   autoTable(doc, {
     startY: nextY + 18,
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
     head: [['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']],
     body: reviewRows.length
       ? reviewRows.map((item) => [
@@ -1034,6 +1226,8 @@ function handleDownloadPDF() {
     doc.text('Tracked Metrics', 14, nextY + 10);
     autoTable(doc, {
       startY: nextY + 18,
+      rowPageBreak: 'avoid',
+      showHead: 'everyPage',
       head: [['Activity', 'Quantity', 'Unit', 'Status', 'Message', 'Source Reference', 'Action']],
       body: trackedMetricRows.map((item) => [
         getActivityTypeLabel(item.activityType),
@@ -1055,50 +1249,7 @@ function handleDownloadPDF() {
     nextY = 20;
   }
 
-  drawPdfSectionTitle(doc, 'Appendix: Optional Carbon Credit Readiness Notes', nextY + 10);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
-  nextY = drawPdfTextBlock(
-    doc,
-    'This optional section is not a certification or eligibility determination. It is included only as an early screening note and should not be treated as a formal carbon credit assessment.',
-    14,
-    nextY + 18,
-    180,
-    4.3,
-  ) + 4;
-  autoTable(doc, {
-    startY: nextY,
-    head: [['Readiness Signal', 'Value']],
-    body: [
-      ['Readiness Level', formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)],
-      ['Readiness Score', `${carbonCreditReadiness.score}/100`],
-      [
-        'Reduction Detected',
-        carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
-          ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e (${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%)`
-          : 'Not assessed or not detected',
-      ],
-      ['Baseline Data', carbonCreditReadiness.checklist.find((item) => item.key === 'baseline-data')?.status ?? 'Not assessed'],
-      ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
-      ['Tracked Metrics', dataReadinessSummary.trackedOnlyCount],
-      ['Disclaimer', CARBON_CREDIT_READINESS_DISCLAIMER],
-    ],
-    styles: { fontSize: 7.2, cellPadding: 1.7 },
-    headStyles: { fillColor: [71, 85, 105] },
-    columnStyles: {
-      0: { cellWidth: 46 },
-      1: { cellWidth: 134 },
-    },
-  });
-
-  nextY = (doc as any).lastAutoTable?.finalY ?? 170;
-  if (nextY > 230) {
-    doc.addPage();
-    nextY = 20;
-  }
-
-  drawPdfSectionTitle(doc, 'Methodology and Disclaimer', nextY + 10);
+  drawPdfSectionTitle(doc, 'Methodology and Limitations', nextY + 10);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
@@ -1107,6 +1258,111 @@ function handleDownloadPDF() {
     nextY = ensurePdfSpace(doc, nextY, 18);
     nextY = drawPdfTextBlock(doc, paragraph, 14, nextY, 180, 4.4) + 5;
   });
+
+  doc.addPage('landscape');
+  nextY = 18;
+  drawPdfSectionTitle(doc, 'Appendix: Record-Level Source Evidence', nextY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.setTextColor(71, 85, 105);
+  nextY = drawPdfTextBlock(
+    doc,
+    'Detailed record-level source evidence retained for traceability review. The main report body summarizes this information by source file.',
+    14,
+    nextY + 8,
+    268,
+    4.1,
+  );
+  autoTable(doc, {
+    startY: nextY + 4,
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
+    head: [[
+      'Activity Type',
+      'Quantity',
+      'Unit',
+      'Date',
+      'Source File',
+      'Source Type',
+      'Import Method',
+      'Source Reference',
+      'Status',
+      'Treatment',
+      'Review Note',
+    ]],
+    body: sourceEvidenceRows.length
+      ? sourceEvidenceRows.map((item) => [
+          getActivityTypeLabel(item.activityType),
+          item.quantity,
+          item.unit,
+          item.recordDate,
+          item.sourceFile,
+          item.sourceType,
+          item.importMethod,
+          item.sourceReference,
+          item.matchingStatus,
+          item.reportTreatment,
+          item.notes,
+        ])
+      : [['No source evidence available.', '', '', '', '', '', '', '', '', '', '']],
+    styles: { fontSize: 7, cellPadding: 1.5, valign: 'top' },
+    headStyles: { fillColor: [15, 23, 42] },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: 16 },
+      2: { cellWidth: 11 },
+      3: { cellWidth: 16 },
+      4: { cellWidth: 36 },
+      5: { cellWidth: 25 },
+      6: { cellWidth: 25 },
+      7: { cellWidth: 40 },
+      8: { cellWidth: 20 },
+      9: { cellWidth: 22 },
+      10: { cellWidth: 36 },
+    },
+  });
+
+  if (includeCarbonCreditReadinessNotes) {
+    doc.addPage('portrait');
+    nextY = 20;
+
+    drawPdfSectionTitle(doc, 'Optional Appendix: Carbon Credit Readiness Screening Notes', nextY + 10);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    nextY = drawPdfTextBlock(
+      doc,
+      'This optional section is an early screening note only. It is not a certification, verification, eligibility determination, or compliance assessment. CarbonLite does not determine carbon credit eligibility, certify emissions reductions, provide third-party verification, or replace professional advice.',
+      14,
+      nextY + 18,
+      180,
+      4.3,
+    ) + 4;
+    autoTable(doc, {
+      startY: nextY,
+      head: [['Readiness Signal', 'Value']],
+      body: [
+        ['Readiness Level', formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)],
+        ['Readiness Score', `${carbonCreditReadiness.score}/100`],
+        [
+          'Reduction Detected',
+          carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
+            ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e (${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%)`
+            : 'Not assessed or not detected',
+        ],
+        ['Baseline Data', carbonCreditReadiness.checklist.find((item) => item.key === 'baseline-data')?.status ?? 'Not assessed'],
+        ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
+        ['Tracked Operational Metrics', dataReadinessSummary.trackedOnlyCount],
+        ['Disclaimer', CARBON_CREDIT_READINESS_DISCLAIMER],
+      ],
+      styles: { fontSize: 7.2, cellPadding: 1.7 },
+      headStyles: { fillColor: [71, 85, 105] },
+      columnStyles: {
+        0: { cellWidth: 46 },
+        1: { cellWidth: 134 },
+      },
+    });
+  }
 
   doc.save(`carbonlite-pilot-data-readiness-report-${today}.pdf`);
   void createClientAuditLog({
@@ -1129,6 +1385,26 @@ function handleDownloadPDF() {
   }).catch(() => {
     // PDF export should not be blocked by usage tracking.
   });
+  void trackActivityEvent({
+    eventName: 'PDF_EXPORTED',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'REPORT',
+    metadata: buildWorkflowReportSummary({
+      calculationDetails,
+      totalEstimatedEmissionsKgCO2e,
+      countSummary,
+      reportFormat: 'PDF',
+      eventLabel: 'PDF report generated',
+      exportStatus: 'EXPORTED',
+      reportPeriod,
+      reportScopeLabel,
+    }),
+  })
+    .then(() => loadWorkflowEvents())
+    .catch(() => {
+      // PDF audit should not block export.
+    });
   track('REPORT_PDF_EXPORTED', {
     reportType: 'emissions',
     reportScope,
@@ -1238,6 +1514,139 @@ function getFullYearShortcutYears() {
   return [String(currentYear - 1), String(currentYear)];
 }
 
+function buildWorkflowReportSummary(input: {
+  calculationDetails: CalculationAuditDetail[];
+  totalEstimatedEmissionsKgCO2e: number;
+  countSummary: {
+    totalRecordsFound: number;
+    recordsInScope?: number;
+    processedRecords: number;
+    skippedRecords: number;
+    missingFactorRecords: number;
+    skippedReasons?: any;
+  };
+  reportFormat: string;
+  reportPeriod: string;
+  reportScopeLabel: string;
+}) {
+  const reportCounts = buildReportCountSummary(input.countSummary, input.calculationDetails);
+  const scopeTotals = {
+    scope1KgCO2e: 0,
+    scope2KgCO2e: 0,
+    scope3KgCO2e: 0,
+  };
+
+  input.calculationDetails.forEach((detail) => {
+    if (detail.status !== 'CALCULATED') return;
+    const emissions = Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0);
+    if (!Number.isFinite(emissions)) return;
+    const scope = resolveScopeClassification({
+      activityType: detail.activityType,
+      scopeOverride: detail.scopeOverride,
+      factorDefaultScope: detail.factorDefaultScope,
+      factorScope: detail.factorScope,
+    }).scope;
+
+    if (scope === 'SCOPE_1') scopeTotals.scope1KgCO2e += emissions;
+    if (scope === 'SCOPE_2') scopeTotals.scope2KgCO2e += emissions;
+    if (scope === 'SCOPE_3') scopeTotals.scope3KgCO2e += emissions;
+  });
+
+  return {
+    reportName: 'CarbonLite Pilot Emissions Data Readiness Report',
+    reportPeriod: input.reportPeriod,
+    reportScope: input.reportScopeLabel,
+    reportFormat: input.reportFormat,
+    totalKgCO2e: input.totalEstimatedEmissionsKgCO2e,
+    ...scopeTotals,
+    includedRecords: reportCounts.processedRecords,
+    trackedMetrics: input.calculationDetails.filter(isTrackedMetricDetail).length,
+    recordsRequiringReview: input.calculationDetails.filter(isRecordRequiringCorrection).length,
+    reportStatus: 'GENERATED',
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function getWorkflowMetadata(event: ActivityEventItem) {
+  return (event.metadata ?? {}) as Record<string, unknown>;
+}
+
+function formatWorkflowEventTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function formatWorkflowEventActor(event: ActivityEventItem) {
+  return event.userName || event.userEmail || event.user?.email || 'CarbonLite user';
+}
+
+function formatWorkflowEventLabel(event: ActivityEventItem) {
+  const metadata = getWorkflowMetadata(event);
+  const eventLabel = String(metadata.eventLabel ?? '').trim();
+  if (eventLabel) return eventLabel;
+
+  const labels: Record<string, string> = {
+    FILE_UPLOADED: 'File uploaded',
+    DATA_EXTRACTED: 'Draft records created',
+    RECORDS_IMPORTED: 'Records imported',
+    REPORT_GENERATED: 'Report generated',
+    CSV_EXPORTED: 'CSV exported',
+    PDF_EXPORTED: 'PDF report generated',
+    IMPORT_FAILED: 'Import failed',
+    REPORT_GENERATION_FAILED: 'Report generation failed',
+  };
+
+  return labels[event.eventName] ?? event.eventName.replace(/_/g, ' ').toLowerCase();
+}
+
+function formatWorkflowEventSummary(event: ActivityEventItem) {
+  const metadata = getWorkflowMetadata(event);
+  const sourceFile = String(metadata.sourceFileName ?? metadata.entityDisplayName ?? '').trim();
+  const reportName = String(metadata.reportName ?? metadata.entityDisplayName ?? '').trim();
+
+  if (event.eventName === 'FILE_UPLOADED') {
+    return `${sourceFile || 'Source file'} uploaded as ${metadata.sourceType || 'Source Review Required'}.`;
+  }
+
+  if (event.eventName === 'DATA_EXTRACTED') {
+    return `Draft records created${sourceFile ? ` from ${sourceFile}` : ''}: ${metadata.readyCount ?? 0} ready, ${metadata.trackedMetricCount ?? 0} tracked metric, ${metadata.requiresReviewCount ?? 0} requiring review.`;
+  }
+
+  if (event.eventName === 'RECORDS_IMPORTED') {
+    return `Records imported${sourceFile ? ` from ${sourceFile}` : ''}: ${metadata.includedEmissionsRecords ?? 0} included emissions records, ${metadata.trackedOnlyRecords ?? 0} tracked metric, ${metadata.rowsNotImported ?? 0} rows not imported.`;
+  }
+
+  if (event.eventName === 'REPORT_GENERATED') {
+    const total = Number(metadata.totalKgCO2e);
+    const totalText = Number.isFinite(total)
+      ? `${formatEmissionsValue(total)} kgCO2e`
+      : 'report total unavailable';
+    return `${reportName || 'Report'} generated (${metadata.reportFormat || 'Report'}): ${totalText} total, ${metadata.includedRecords ?? 0} included records, ${metadata.trackedMetrics ?? 0} tracked metrics.`;
+  }
+
+  if (event.eventName === 'CSV_EXPORTED') {
+    return `CSV exported: ${metadata.exportedRecords ?? metadata.includedRecords ?? 0} records, ${metadata.trackedMetrics ?? 0} tracked metrics.`;
+  }
+
+  if (event.eventName === 'PDF_EXPORTED') {
+    const total = Number(metadata.totalKgCO2e);
+    const totalText = Number.isFinite(total)
+      ? `${formatEmissionsValue(total)} kgCO2e`
+      : 'report total unavailable';
+    return `PDF report generated: ${totalText} total, ${metadata.includedRecords ?? 0} included records, ${metadata.trackedMetrics ?? 0} tracked metrics.`;
+  }
+
+  if (event.eventName === 'IMPORT_FAILED' || event.eventName === 'REPORT_GENERATION_FAILED') {
+    return String(metadata.friendlyError ?? 'Workflow action failed. Review the source data and try again.');
+  }
+
+  return String(metadata.eventLabel ?? event.description ?? 'Workflow event recorded.');
+}
+
 const organizationName = getOrganizationName(getCurrentUser());
 const generatedAt = new Date().toLocaleString();
 const reportScopeLabel = getReportScopeLabel(
@@ -1256,9 +1665,11 @@ const carbonCreditReadiness = buildCarbonCreditReadinessAssessment(
   calculationDetails,
   dataReadinessSummary,
 );
+const includeCarbonCreditReadinessNotes = DEFAULT_REPORT_OPTIONS.includeCarbonCreditReadinessNotes === true;
 const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails);
 const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
 const sourceEvidenceRows = buildSourceEvidenceRows(activities, calculationDetails);
+const latestWorkflowEvent = workflowEvents[0] ?? null;
 const reportRecordCount = reportCountSummary.processedRecords;
 const hasLoadedSummary = Boolean(summary);
 const hasImportedActivityData = countSummary.totalRecordsFound > 0;
@@ -1311,6 +1722,22 @@ function setAllReportSections(expanded: boolean) {
       <p style={{ color: '#666', marginBottom: 20 }}>
         Polished reporting output for sharing emissions totals, scope summaries, included and excluded record counts, methodology notes, factor source notes, and disclaimers.
       </p>
+
+      <div style={paidPilotScopeCalloutStyle}>
+        <span>Preparing a structured pilot review?</span>
+        <button
+          type="button"
+          onClick={() => navigate('/paid-pilot-scope')}
+          style={secondaryButtonStyle(false)}
+        >
+          View Paid Pilot Scope
+        </button>
+      </div>
+
+      <div style={reportDisclaimerCalloutStyle}>
+        <strong>Important scope note</strong>
+        <p>{FORMAL_REPORT_DISCLAIMER}</p>
+      </div>
 
       <div style={sectionControlsStyle}>
         <button
@@ -1433,7 +1860,7 @@ function setAllReportSections(expanded: boolean) {
           {hasRecordsRequiringReviewOnly ? (
             <div style={reviewOnlyNoticeStyle}>
               No emissions calculated because records require review. Review the
-              calculation issues and skipped records below.
+              calculation issues and records requiring review below.
             </div>
           ) : null}
 
@@ -1503,50 +1930,71 @@ function setAllReportSections(expanded: boolean) {
               <DataQualityNote label="Data Readiness" value={`${formatDisplayNumber(dataReadinessSummary.score)}% · ${dataReadinessSummary.level}`} />
               <DataQualityNote label="Calculated Records" value={dataReadinessSummary.recordsReadyForCalculation} />
               <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
-              <DataQualityNote label="Tracked Metrics" value={dataReadinessSummary.trackedOnlyCount} />
+              <DataQualityNote label="Tracked Operational Metrics" value={dataReadinessSummary.trackedOnlyCount} />
               <DataQualityNote label="Missing Factors" value={dataReadinessSummary.missingFactorCount} />
               <DataQualityNote label="Missing Jurisdiction" value={dataReadinessSummary.missingJurisdictionCount} />
             </div>
-            {reportCountSummary.skippedRecords > 0 ? (
+            <div style={dataQualityExplanationStyle}>
+              <strong>How to read these metrics:</strong>
+              <p>
+                Data Quality Coverage reflects the percentage of records that were successfully calculated as GHG emissions records.
+              </p>
+              <p>
+                Data Readiness Score is a broader pilot readiness signal based on calculation coverage, factor match quality, jurisdiction completeness, source traceability, review status, and tracked operational metrics.
+              </p>
+              <p>
+                Data Quality Coverage and Data Readiness Score are related but not identical. Tracked operational metrics such as Water are retained for review and excluded from the calculated GHG emissions total by design.
+              </p>
+            </div>
+            {dataReadinessSummary.recordsRequiringReview > 0 ? (
               <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
-                Skipped reasons: {formatSkippedReasons(primarySkippedReasons)}.
+                Review reasons: {formatReviewReasons(primarySkippedReasons)}.
+              </p>
+            ) : dataReadinessSummary.trackedOnlyCount > 0 ? (
+              <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
+                Tracked operational metrics are retained for review but excluded from the calculated GHG emissions total.
               </p>
             ) : null}
             <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
               Hotspot analysis is based only on calculated records. Records requiring review are excluded until fixed.
             </p>
           </CollapsibleReportSection>
-          <CollapsibleReportSection
-            id="carbon-credit-readiness-report-section"
-            title="Appendix: Optional Carbon Credit Readiness Notes"
-            summary={`${formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} · ${carbonCreditReadiness.score}/100`}
-            expanded={expandedSections.carbonCreditReadiness}
-            onToggle={() => toggleReportSection('carbonCreditReadiness')}
-          >
-            <p style={{ color: '#64748b', lineHeight: 1.6, margin: '0 0 12px' }}>
-              This optional section is not a certification or eligibility determination. It is included only as an early screening note and should not be treated as a formal carbon credit assessment.
-            </p>
-            <div style={dataQualityNotesGridStyle}>
-              <DataQualityNote label="Readiness Level" value={formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} />
-              <DataQualityNote label="Readiness Score" value={`${carbonCreditReadiness.score}/100`} />
-              <DataQualityNote
-                label="Reduction Detected"
-                value={
-                  carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
-                    ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e · ${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%`
-                    : 'Not assessed or not detected'
-                }
-              />
-              <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
-              <DataQualityNote label="Tracked Metrics" value={dataReadinessSummary.trackedOnlyCount} />
-            </div>
-            <p style={{ color: '#555', lineHeight: 1.7, marginTop: 12 }}>
-              {carbonCreditReadiness.summary}
-            </p>
-            <p style={creditDisclaimerReportStyle}>
-              {CARBON_CREDIT_READINESS_DISCLAIMER}
-            </p>
-          </CollapsibleReportSection>
+          {includeCarbonCreditReadinessNotes ? (
+            <CollapsibleReportSection
+              id="carbon-credit-readiness-report-section"
+              title="Optional Carbon Credit Screening Notes"
+              summary={`${formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} · ${carbonCreditReadiness.score}/100`}
+              expanded={expandedSections.carbonCreditReadiness}
+              onToggle={() => toggleReportSection('carbonCreditReadiness')}
+            >
+              <p style={{ color: '#64748b', lineHeight: 1.6, margin: '0 0 12px' }}>
+                This section is not included in standard pilot reports and does not determine eligibility for carbon credits.
+              </p>
+              <p style={{ color: '#64748b', lineHeight: 1.6, margin: '0 0 12px' }}>
+                This optional section is an early screening note only. It is not a certification, verification, eligibility determination, or compliance assessment.
+              </p>
+              <div style={dataQualityNotesGridStyle}>
+                <DataQualityNote label="Readiness Level" value={formatCarbonCreditReadinessLevel(carbonCreditReadiness.readinessLevel)} />
+                <DataQualityNote label="Readiness Score" value={`${carbonCreditReadiness.score}/100`} />
+                <DataQualityNote
+                  label="Reduction Detected"
+                  value={
+                    carbonCreditReadiness.reductionAmount !== null && carbonCreditReadiness.reductionPercentage !== null
+                      ? `${formatEmissionsValue(carbonCreditReadiness.reductionAmount)} kgCO2e · ${formatDisplayNumber(carbonCreditReadiness.reductionPercentage)}%`
+                      : 'Not assessed or not detected'
+                  }
+                />
+                <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
+                <DataQualityNote label="Tracked Operational Metrics" value={dataReadinessSummary.trackedOnlyCount} />
+              </div>
+              <p style={{ color: '#555', lineHeight: 1.7, marginTop: 12 }}>
+                {carbonCreditReadiness.summary}
+              </p>
+              <p style={creditDisclaimerReportStyle}>
+                {CARBON_CREDIT_READINESS_DISCLAIMER}
+              </p>
+            </CollapsibleReportSection>
+          ) : null}
           <CollapsibleReportSection
             id="scope-breakdown-report-section"
             title="Emissions by Scope"
@@ -1591,7 +2039,107 @@ function setAllReportSections(expanded: boolean) {
           </CollapsibleReportSection>
         </>
       ) : null}
+
+      <WorkflowAuditTrail
+        events={workflowEvents}
+        loading={workflowEventsLoading}
+        isOpen={isWorkflowAuditOpen}
+        latestEvent={latestWorkflowEvent}
+        formatEventLabel={formatWorkflowEventLabel}
+        formatEventTime={formatWorkflowEventTime}
+        formatEventActor={formatWorkflowEventActor}
+        formatEventSummary={formatWorkflowEventSummary}
+        onToggle={() => setIsWorkflowAuditOpen((open) => !open)}
+        onRefresh={loadWorkflowEvents}
+      />
     </div>
+  );
+}
+
+function WorkflowAuditTrail({
+  events,
+  loading,
+  isOpen,
+  latestEvent,
+  formatEventLabel,
+  formatEventTime,
+  formatEventActor,
+  formatEventSummary,
+  onToggle,
+  onRefresh,
+}: {
+  events: ActivityEventItem[];
+  loading: boolean;
+  isOpen: boolean;
+  latestEvent: ActivityEventItem | null;
+  formatEventLabel: (event: ActivityEventItem) => string;
+  formatEventTime: (value: string) => string;
+  formatEventActor: (event: ActivityEventItem) => string;
+  formatEventSummary: (event: ActivityEventItem) => string;
+  onToggle: () => void;
+  onRefresh: () => void;
+}) {
+  const auditContentId = 'workflow-audit-trail-content';
+
+  return (
+    <section style={workflowAuditPanelStyle} aria-label="Audit Trail">
+      <button
+        type="button"
+        onClick={onToggle}
+        style={workflowAuditSummaryButtonStyle}
+        aria-expanded={isOpen}
+        aria-controls={auditContentId}
+        aria-label={`${isOpen ? 'Collapse' : 'Expand'} Audit Trail`}
+      >
+        <span style={workflowAuditTitleBlockStyle}>
+          <span style={workflowAuditTitleStyle}>Audit Trail</span>
+          <span style={workflowAuditSubtitleStyle}>
+            Workflow history for this workspace.
+            {latestEvent ? ` Latest event: ${formatEventLabel(latestEvent)} · ${formatEventTime(latestEvent.createdAt)}` : ''}
+          </span>
+        </span>
+        <span style={workflowAuditToggleStyle}>
+          <span aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
+          <span>{isOpen ? 'Collapse' : 'Expand'}</span>
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div id={auditContentId} style={workflowAuditBodyStyle}>
+          <div style={workflowAuditActionsStyle}>
+            <p style={workflowAuditSubtitleStyle}>
+              Recent import and report workflow events for this workspace.
+            </p>
+            <button
+              type="button"
+              onClick={onRefresh}
+              style={secondaryButtonStyle(loading)}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+          {loading && events.length === 0 ? (
+            <div style={workflowAuditEmptyStyle}>Loading workflow history...</div>
+          ) : events.length === 0 ? (
+            <div style={workflowAuditEmptyStyle}>No workflow audit events recorded yet.</div>
+          ) : (
+            <ol style={workflowAuditListStyle}>
+              {events.slice(0, 8).map((event) => (
+                <li key={event.id} style={workflowAuditItemStyle}>
+                  <div style={workflowAuditTimeStyle}>{formatEventTime(event.createdAt)}</div>
+                  <div style={workflowAuditEventBodyStyle}>
+                    <strong>{formatEventLabel(event)}</strong>
+                    <span>{formatEventActor(event)}</span>
+                    <p>{formatEventSummary(event)}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1776,6 +2324,18 @@ const dataQualityNoteStyle: React.CSSProperties = {
   color: '#334155',
 };
 
+const dataQualityExplanationStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  background: '#f8fafc',
+  border: '1px solid #cbd5e1',
+  color: '#334155',
+  lineHeight: 1.55,
+};
+
 const creditDisclaimerReportStyle: React.CSSProperties = {
   marginTop: 12,
   padding: 12,
@@ -1785,6 +2345,146 @@ const creditDisclaimerReportStyle: React.CSSProperties = {
   color: '#7c2d12',
   lineHeight: 1.6,
   fontWeight: 700,
+};
+
+const reportDisclaimerCalloutStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  margin: '0 0 20px',
+  padding: 14,
+  borderRadius: 12,
+  background: '#f8fafc',
+  border: '1px solid #cbd5e1',
+  color: '#334155',
+  lineHeight: 1.6,
+};
+
+const paidPilotScopeCalloutStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  margin: '0 0 20px',
+  padding: 14,
+  borderRadius: 12,
+  background: '#ecfdf5',
+  border: '1px solid #bbf7d0',
+  color: '#065f46',
+  fontWeight: 800,
+  flexWrap: 'wrap',
+};
+
+const workflowAuditPanelStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 0,
+  marginTop: 24,
+  marginBottom: 24,
+  padding: 0,
+  borderRadius: 14,
+  border: '1px solid #dbe4ea',
+  background: '#fff',
+  overflow: 'hidden',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+};
+
+const workflowAuditSummaryButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 12,
+  width: '100%',
+  border: 0,
+  background: '#fff',
+  padding: 16,
+  textAlign: 'left',
+  cursor: 'pointer',
+};
+
+const workflowAuditTitleBlockStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  minWidth: 0,
+};
+
+const workflowAuditTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#0f172a',
+  fontSize: 18,
+};
+
+const workflowAuditToggleStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  borderRadius: 8,
+  border: '1px solid #d1d5db',
+  padding: '7px 10px',
+  background: '#fff',
+  color: '#334155',
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
+};
+
+const workflowAuditSubtitleStyle: React.CSSProperties = {
+  margin: '4px 0 0',
+  color: '#64748b',
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const workflowAuditBodyStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
+  borderTop: '1px solid #e2e8f0',
+  padding: 16,
+};
+
+const workflowAuditActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+
+const workflowAuditListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  margin: 0,
+  padding: 0,
+  listStyle: 'none',
+};
+
+const workflowAuditItemStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '140px minmax(0, 1fr)',
+  gap: 12,
+  padding: 12,
+  borderRadius: 10,
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+};
+
+const workflowAuditTimeStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const workflowAuditEventBodyStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  minWidth: 0,
+  color: '#334155',
+  lineHeight: 1.45,
+};
+
+const workflowAuditEmptyStyle: React.CSSProperties = {
+  padding: 14,
+  borderRadius: 10,
+  background: '#f8fafc',
+  color: '#64748b',
+  textAlign: 'center',
 };
 
 const sectionControlsStyle: React.CSSProperties = {

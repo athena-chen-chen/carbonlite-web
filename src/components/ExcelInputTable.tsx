@@ -54,6 +54,8 @@ import { StatusBadge } from './shared/StatusBadge';
 import { BulkProvinceToolbar } from './shared/BulkProvinceToolbar';
 import { useToast } from './Toast';
 import { useAppDialog } from './AppDialog';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import { formatReportFactorUnit } from '../utils/reportCredibility';
 
 type Row = {
   id: string;
@@ -951,7 +953,6 @@ function renderFactorCell(row: Row) {
   }
 
   if (row.factorStatus === 'matched') {
-    const normalizedUnit = normalizeUnitForDisplay(row.unit).value || row.unit;
     const factorTitle = row.factorName ?? 'Matched factor';
     const credibilityBadges = getRowCredibilityBadges(row);
 
@@ -959,7 +960,7 @@ function renderFactorCell(row: Row) {
       <div style={factorCellTextStyle}>
         <strong>{factorTitle}</strong>
         <span>
-          kgCO2e/{normalizedUnit} {row.factorSourceYear ? `· ${row.factorSourceYear}` : ''}
+          {formatReportFactorUnit(row.factorResultUnit || 'kgCO2e', row.unit)} {row.factorSourceYear ? `· ${row.factorSourceYear}` : ''}
         </span>
         {row.factorYearFallback && row.factorSourceYear ? (
           <span>Using latest available factor year: {row.factorSourceYear}</span>
@@ -1465,7 +1466,7 @@ async function saveRow(row: Row) {
     onSuccess();
   } catch (err) {
     updateRowStatus(row.id, {
-      errors: [err instanceof Error ? err.message : 'Failed to save row'],
+      errors: [getUserFriendlyErrorMessage(err, 'draftRecordReview')],
       status: 'error',
     });
   }

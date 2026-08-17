@@ -7,6 +7,9 @@ import { getActivityTypeLabel } from '../../../utils/activityType';
 import { formatCredibilityLabel } from '../../../utils/factorCredibility';
 import {
   formatReportAssumptions,
+  formatReportFactorSource,
+  formatReportFactorSummaryVerification,
+  formatReportFactorUnit,
   formatReportFactorVersion,
   formatReportVerification,
 } from '../../../utils/reportCredibility';
@@ -29,25 +32,24 @@ export function EmissionFactorsUsedSection({
           'Value',
           'Unit',
           'Jurisdiction',
-          'Year',
-          'Source',
+          'Source Year',
           'Verification',
-          'Confidence',
           'Used Records',
         ]}
         emptyMessage="No conversion factors found for this report scope."
         rows={conversionFactorsUsed.map((factor) => [
           factor.factorName || getActivityTypeLabel(factor.activityType),
           formatFactorValue(factor.factorValue),
-          `${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`,
+          formatReportFactorUnit(factor.resultUnit, factor.inputUnit),
           formatJurisdiction(factor.jurisdiction),
           factor.factorYear || factor.sourceYear || 'Not specified',
-          factor.sourceAuthority || factor.sourceDocument || 'Source not specified',
-          formatReportVerification(factor),
-          formatCredibilityLabel(factor.confidenceLevel) || 'Not specified',
+          formatReportFactorSummaryVerification(factor),
           factor.usedRecordsCount ?? 1,
         ])}
       />
+      <p style={summaryNoteStyle}>
+        Detailed source, version, confidence level, and assumptions are provided in the Factor Details / Assumptions section below.
+      </p>
 
       {conversionFactorsUsed.length > 0 ? (
         <div style={factorDetailsWrapperStyle}>
@@ -59,8 +61,8 @@ export function EmissionFactorsUsedSection({
                   {factor.factorName || getActivityTypeLabel(factor.activityType)}
                 </div>
                 <dl style={detailListStyle}>
-                  <Detail label="Value" value={`${formatFactorValue(factor.factorValue)} ${factor.resultUnit || 'kgCO2e'}/${factor.inputUnit || '-'}`} />
-                  <Detail label="Source" value={factor.sourceDocument || factor.sourceAuthority || 'Source not specified'} />
+                  <Detail label="Value" value={`${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`} />
+                  <Detail label="Source" value={formatReportFactorSource(factor)} />
                   <Detail label="Version" value={formatReportFactorVersion(factor)} />
                   <Detail label="Verification" value={formatReportVerification(factor)} />
                   <Detail label="Confidence" value={formatCredibilityLabel(factor.confidenceLevel) || 'Not specified'} />
@@ -157,6 +159,13 @@ const subsectionTitleStyle: CSSProperties = {
   margin: '0 0 10px',
   color: '#0f172a',
   fontSize: 14,
+};
+
+const summaryNoteStyle: CSSProperties = {
+  margin: '8px 0 0',
+  color: '#64748b',
+  fontSize: 12,
+  lineHeight: 1.45,
 };
 
 const factorDetailsWrapperStyle: CSSProperties = {

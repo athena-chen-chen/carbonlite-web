@@ -46,3 +46,8 @@ export function getContactEmail(env: Partial<ImportMetaEnv> = import.meta.env) {
   const configuredEmail = String(env.VITE_CONTACT_EMAIL ?? '').trim();
   return configuredEmail || 'help@carbonliteapp.ca';
 }
+
+export function getSupportEmail(env: Partial<ImportMetaEnv> = import.meta.env) {
+  const configuredEmail = String(env.VITE_SUPPORT_EMAIL ?? env.VITE_CONTACT_EMAIL ?? '').trim();
+  return configuredEmail || 'hello@carbonliteapp.ca';
+}

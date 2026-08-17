@@ -9,6 +9,7 @@ import {
   getDocumentStatusLabel,
   getDocumentDownloadUrl,
   getImportValidationIssues,
+  buildDraftRowAuditSummary,
   resolveActivityRecordDate,
   buildDocumentImportActivityPayload,
 } from './UploadPage';
@@ -41,6 +42,47 @@ describe('duplicate document messaging', () => {
 });
 
 describe('document import factor matching metadata', () => {
+  it('builds golden-style import audit summary counts from draft rows', () => {
+    const readyRows = Array.from({ length: 9 }, (_, index) =>
+      buildImportRow({
+        documentId: 'golden-doc',
+        documentFileName: 'Golden Test Data.xlsx',
+        activityType: { value: index === 0 ? 'ELECTRICITY' : 'DIESEL', confidence: 'high' },
+        jurisdictionRegion: { value: index === 0 ? 'Alberta' : '', confidence: 'high' },
+      }),
+    );
+    const trackedMetricRow = buildImportRow({
+      documentId: 'golden-doc',
+      documentFileName: 'Golden Test Data.xlsx',
+      activityType: { value: 'WATER', confidence: 'high' },
+      unit: { value: 'm3', confidence: 'high' },
+      matchingStatus: 'TRACKED_METRIC',
+      reportTreatment: 'TRACKED_ONLY',
+      scope: 'TRACKED_METRIC',
+      calculationStatus: 'TRACKED_METRIC',
+    });
+    const reviewRows = [
+      buildImportRow({
+        activityType: { value: 'ELECTRICITY', confidence: 'high' },
+        jurisdictionRegion: { value: '', confidence: 'high' },
+      }),
+      buildImportRow({
+        activityType: { value: 'CUSTOM', confidence: 'high' },
+      }),
+      buildImportRow({
+        quantity: { value: null, confidence: 'low' },
+      }),
+    ];
+
+    expect(buildDraftRowAuditSummary([...readyRows, trackedMetricRow, ...reviewRows])).toEqual({
+      draftRecordsCreated: 13,
+      readyCount: 9,
+      trackedMetricCount: 1,
+      requiresReviewCount: 3,
+      importableCount: 10,
+    });
+  });
+
   it('matches imported BC electricity with the same canonical metadata as manual entry', () => {
     const payload = buildDocumentImportActivityPayload({
       item: buildImportRow({
@@ -375,7 +417,7 @@ describe('document upload action model', () => {
     expect(model.statusLabel).toBe('Ready for Review');
     expect(model.primaryAction).toMatchObject({
       kind: 'preview',
-      label: 'Preview Data',
+      label: 'Review Rows',
     });
     expect(model.primaryAction.label).not.toBe('Extract');
     expect(model.menuActions.map((action) => action.label)).toEqual([
@@ -396,7 +438,7 @@ describe('document upload action model', () => {
     expect(model.statusLabel).toBe('Imported');
     expect(model.primaryAction).toMatchObject({
       kind: 'viewRecords',
-      label: 'View Records',
+      label: 'View Imported Records',
     });
     expect(model.menuActions.map((action) => action.label)).toEqual([
       'View',
@@ -406,26 +448,25 @@ describe('document upload action model', () => {
     expect(model.menuActions.map((action) => action.label)).not.toContain('Extract');
   });
 
-  it('failed documents show Retry Extract and Delete', () => {
+  it('failed documents show Retry Extraction and Delete', () => {
     const model = getDocumentActionModel({ status: 'EXTRACTION_FAILED' });
 
     expect(model.statusLabel).toBe('Needs Attention');
     expect(model.primaryAction).toMatchObject({
       kind: 'reextract',
-      label: 'Retry Extract',
+      label: 'Retry Extraction',
       title: 'Run extraction again',
     });
     expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
   });
 
-  it('file missing documents require re-upload and disable extraction', () => {
+  it('file missing documents show Upload Again and direct Delete actions', () => {
     const model = getDocumentActionModel({ status: 'FILE_MISSING' });
 
     expect(model.statusLabel).toBe('Re-upload Required');
     expect(model.primaryAction).toMatchObject({
-      kind: 'extract',
-      label: 'Re-upload Required',
-      disabled: true,
+      kind: 'uploadAgain',
+      label: 'Upload Again',
       title: FILE_MISSING_TOOLTIP,
     });
     expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
@@ -436,8 +477,8 @@ describe('document upload action model', () => {
 
     expect(model.statusLabel).toBe('Re-upload Required');
     expect(model.primaryAction).toMatchObject({
-      label: 'Re-upload Required',
-      disabled: true,
+      kind: 'uploadAgain',
+      label: 'Upload Again',
       title: FILE_MISSING_TOOLTIP,
     });
     expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);

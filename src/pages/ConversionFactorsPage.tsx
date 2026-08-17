@@ -14,6 +14,7 @@ import {
   canManageConversionFactors,
   getCurrentUser,
   getOrganizationName,
+  isPilotReviewer,
 } from '../services/auth';
 import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
 import { getActivityTypeLabel, normalizeActivityType } from '../utils/activityType';
@@ -25,6 +26,7 @@ import {
 } from '../utils/province';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
 import { useAppDialog } from '../components/AppDialog';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -253,7 +255,11 @@ function formatFactorResultUnitDisplay(item: ConversionFactorItem) {
 
 function formatFactorUnitDisplay(item: Pick<ConversionFactorItem, 'resultUnit' | 'unit'>) {
   const resultUnit = String(item.resultUnit || 'kgCO2e').trim();
-  if (resultUnit.includes('/')) return resultUnit;
+  if (resultUnit.includes('/')) {
+    const [resultNumerator, resultDenominator] = resultUnit.split('/');
+    const normalizedDenominator = singularUnit(resultDenominator);
+    return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
+  }
 
   return `${resultUnit}/${singularUnit(item.unit)}`;
 }
@@ -261,8 +267,8 @@ function formatFactorUnitDisplay(item: Pick<ConversionFactorItem, 'resultUnit' |
 function singularUnit(unit?: string | null) {
   const value = String(unit ?? '').trim();
   const normalized = value.toLowerCase();
-  if (normalized === 'liters' || normalized === 'litres' || normalized === 'l') return 'liter';
-  if (normalized === 'nights') return 'night';
+  if (normalized === 'liters' || normalized === 'litres' || normalized === 'liter' || normalized === 'litre' || normalized === 'l') return 'liter';
+  if (normalized === 'nights' || normalized === 'night') return 'night';
   if (normalized === 'tonnes') return 'tonne';
   return value || 'unit';
 }
@@ -558,6 +564,7 @@ export function ConversionFactorsPage() {
   const currentUser = getCurrentUser();
   const organizationName = getOrganizationName(currentUser);
   const canManageFactors = canManageConversionFactors(currentUser);
+  const pilotReviewerReadOnly = isPilotReviewer(currentUser);
   const generatedAt = new Date().toLocaleString();
   const [form, setForm] = useState<ConversionFactorInput>(initialForm);
   const [items, setItems] = useState<ConversionFactorItem[]>([]);
@@ -599,7 +606,7 @@ export function ConversionFactorsPage() {
       })) as ConversionFactorListResponse;
       setItems(data.items ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load conversion factors');
+      setError(getUserFriendlyErrorMessage(err, 'conversionFactors'));
     } finally {
       setLoading(false);
     }
@@ -813,13 +820,7 @@ export function ConversionFactorsPage() {
       window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
       window.dispatchEvent(new Event('carbonlite:metrics-stale'));
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : editingId
-          ? 'Failed to update conversion factor'
-          : 'Failed to create conversion factor',
-      );
+      setError(getUserFriendlyErrorMessage(err, 'conversionFactors'));
     } finally {
       setSubmitting(false);
     }
@@ -893,7 +894,7 @@ export function ConversionFactorsPage() {
       window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
       window.dispatchEvent(new Event('carbonlite:metrics-stale'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete conversion factor');
+      setError(getUserFriendlyErrorMessage(err, 'conversionFactors'));
     } finally {
       setDeletingId(null);
     }
@@ -975,7 +976,9 @@ export function ConversionFactorsPage() {
       >
         {isSystemFactor(item) || !canManageFactors ? (
           <div style={lockedMenuLabelStyle}>
-            {isSystemFactor(item)
+            {pilotReviewerReadOnly
+              ? 'Read-only'
+              : isSystemFactor(item)
               ? 'System factor'
               : 'Only admins can manage custom factors.'}
           </div>
@@ -1090,7 +1093,9 @@ export function ConversionFactorsPage() {
 
       {!canManageFactors ? (
         <div className="no-print" style={readOnlyNoticeStyle}>
-          Read-only access: system factors are visible to all authenticated users. Only Owners and Admins can create, edit, or delete company-specific factors.
+          {pilotReviewerReadOnly
+            ? 'Pilot reviewer accounts can view factor information for transparency. Factor editing is disabled.'
+            : 'Read-only access: system factors are visible to all authenticated users. Only Owners and Admins can create, edit, or delete company-specific factors.'}
         </div>
       ) : !showFactorForm ? (
         <div className="no-print" style={collapsedFormStyle}>
@@ -1613,21 +1618,25 @@ export function ConversionFactorsPage() {
                           >
                             View
                           </button>
-                          <div style={overflowMenuWrapperStyle}>
-                            <button
-                              ref={(element) => {
-                                actionMenuButtonRefs.current[item.id] = element;
-                              }}
-                              type="button"
-                              aria-label={`More actions for ${item.name}`}
-                              aria-haspopup="menu"
-                              aria-expanded={openActionMenuId === item.id}
-                              onClick={(event) => toggleActionMenu(item.id, event.currentTarget)}
-                              style={overflowButtonStyle}
-                            >
-                              ⋮
-                            </button>
-                          </div>
+                          {canManageFactors && !isSystemFactor(item) ? (
+                            <div style={overflowMenuWrapperStyle}>
+                              <button
+                                ref={(element) => {
+                                  actionMenuButtonRefs.current[item.id] = element;
+                                }}
+                                type="button"
+                                aria-label={`More actions for ${item.name}`}
+                                aria-haspopup="menu"
+                                aria-expanded={openActionMenuId === item.id}
+                                onClick={(event) => toggleActionMenu(item.id, event.currentTarget)}
+                                style={overflowButtonStyle}
+                              >
+                                ⋮
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={readOnlyActionLabelStyle}>Read-only</span>
+                          )}
                         </td>
                       </tr>
                   );
@@ -1732,6 +1741,24 @@ function FactorDetailsModal({
 }) {
   const traceability = getFactorTraceability(item);
 
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
   return (
     <div className="no-print" style={modalBackdropStyle} role="presentation" onMouseDown={onClose}>
       <div
@@ -1752,82 +1779,88 @@ function FactorDetailsModal({
             ×
           </button>
         </div>
-        <div style={modalBadgeRowStyle}>
+        <div
+          role="region"
+          aria-label="Factor transparency content"
+          style={modalBodyStyle}
+        >
+          <div style={modalBadgeRowStyle}>
+            {isSystemFactor(item) ? (
+              <Badge label={getFactorTypeLabel(item)} color="#1d4ed8" background="#dbeafe" />
+            ) : (
+              <Badge label={getFactorTypeLabel(item)} color="#047857" background="#dcfce7" />
+            )}
+            {traceability.verified ? (
+              <Badge label="Verified" color="#047857" background="#dcfce7" />
+            ) : (
+              <Badge label="Internal Review Required" color="#b45309" background="#fef3c7" />
+            )}
+          </div>
           {isSystemFactor(item) ? (
-            <Badge label={getFactorTypeLabel(item)} color="#1d4ed8" background="#dbeafe" />
-          ) : (
-            <Badge label={getFactorTypeLabel(item)} color="#047857" background="#dcfce7" />
-          )}
-          {traceability.verified ? (
-            <Badge label="Verified" color="#047857" background="#dcfce7" />
-          ) : (
-            <Badge label="Internal Review Required" color="#b45309" background="#fef3c7" />
-          )}
-        </div>
-        {isSystemFactor(item) ? (
-          <div style={systemFactorNoticeStyle}>
-            System factors are managed by CarbonLite and cannot be edited directly.
-            {!traceability.verified
-              ? ' This system factor is included for pilot validation and should be reviewed before regulatory, client-facing, or compliance reporting.'
-              : ''}
-          </div>
-        ) : null}
-        {isPilotDefaultFactor(item) ? (
-          <div style={pilotReviewNoticeStyle}>
-            Pilot-stage default factor. Replace with reviewed official or consultant-approved
-            factor before formal reporting.
-          </div>
-        ) : null}
-        <div style={traceabilityDetailsStyle}>
-          <DetailSection title="Factor Summary">
-            <DetailItem label="Factor Name" value={formatFactorNameDisplay(item)} />
-            <DetailItem label="Activity Type" value={formatActivityTypeDisplay(item.activityType)} />
-            <DetailItem label="Value" value={formatFactorValueDisplay(item)} />
-            <DetailItem label="Activity Unit" value={item.unit} />
-            <DetailItem label="Factor Unit" value={formatFactorResultUnitDisplay(item)} />
-            <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
-            <DetailItem label="Source Year" value={traceability.sourceYear} />
-            <DetailItem label="Version" value={traceability.factorVersion} />
-            <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
-            {isWaterTrackedFactor(item) ? (
-              <DetailItem label="Calculation" value="Not calculated by default" />
-            ) : null}
-          </DetailSection>
+            <div style={systemFactorNoticeStyle}>
+              System factors are managed by CarbonLite and cannot be edited directly.
+              {!traceability.verified
+                ? ' This system factor is included for pilot validation and should be reviewed before regulatory, client-facing, or compliance reporting.'
+                : ''}
+            </div>
+          ) : null}
+          {isPilotDefaultFactor(item) ? (
+            <div style={pilotReviewNoticeStyle}>
+              Pilot-stage default factor. Replace with reviewed official or consultant-approved
+              factor before formal reporting.
+            </div>
+          ) : null}
+          <div style={traceabilityDetailsStyle}>
+            <DetailSection title="Factor Summary">
+              <DetailItem label="Factor Name" value={formatFactorNameDisplay(item)} />
+              <DetailItem label="Activity Type" value={formatActivityTypeDisplay(item.activityType)} />
+              <DetailItem label="Value" value={formatFactorValueDisplay(item)} />
+              <DetailItem label="Activity Unit" value={item.unit} />
+              <DetailItem label="Factor Unit" value={formatFactorResultUnitDisplay(item)} />
+              <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
+              <DetailItem label="Source Year" value={traceability.sourceYear} />
+              <DetailItem label="Version" value={traceability.factorVersion} />
+              <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
+              {isWaterTrackedFactor(item) ? (
+                <DetailItem label="Calculation" value="Not calculated by default" />
+              ) : null}
+            </DetailSection>
 
-          <DetailSection title="Source & Governance">
-            <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
-            <DetailItem label="Source Document" value={traceability.sourceDocument} />
-            <DetailItem label="Verification Status" value={traceability.verificationStatus} />
-            <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
-            <DetailItem
-              label="Consultant Review"
-              value={isScope3Factor(item) || isPilotDefaultFactor(item) ? 'Recommended before formal reporting' : 'Use documented review status'}
-            />
-            <DetailItem label="Factor Type" value={getFactorTypeLabel(item)} />
-            <DetailItem
-              label="Source URL"
-              value={
-                traceability.sourceUrl ? (
-                  <a href={getSourceUrlHref(traceability.sourceUrl)} target="_blank" rel="noopener noreferrer">
-                    {getSourceLinkLabel(traceability.sourceUrl, item)}
-                  </a>
-                ) : null
-              }
-            />
-          </DetailSection>
+            <DetailSection title="Source & Governance">
+              <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
+              <DetailItem label="Source Document" value={traceability.sourceDocument} />
+              <DetailItem label="Verification Status" value={traceability.verificationStatus} />
+              <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
+              <DetailItem
+                label="Consultant Review"
+                value={isScope3Factor(item) || isPilotDefaultFactor(item) ? 'Recommended before formal reporting' : 'Use documented review status'}
+              />
+              <DetailItem label="Factor Type" value={getFactorTypeLabel(item)} />
+              <DetailItem
+                label="Source URL"
+                value={
+                  traceability.sourceUrl ? (
+                    <a href={getSourceUrlHref(traceability.sourceUrl)} target="_blank" rel="noopener noreferrer">
+                      {getSourceLinkLabel(traceability.sourceUrl, item)}
+                    </a>
+                  ) : null
+                }
+              />
+            </DetailSection>
 
-          <DetailSection title="Assumptions / Review Notes">
-            <DetailItem label="Assumptions" value={traceability.assumptions} />
-            <DetailItem label="Review Guidance" value={formatModalReviewGuidance(item)} />
-            <DetailItem label="Methodology Notes" value={formatMethodologyDisplay(item)} />
-            <DetailItem label="Notes" value={formatNotesDisplay(item)} />
-            <DetailItem
-              label="Audit History"
-              value={`Created: ${formatAuditDate(item.createdAt)}\nUpdated: ${formatAuditDate(item.updatedAt)}`}
-            />
-          </DetailSection>
+            <DetailSection title="Assumptions / Review Notes">
+              <DetailItem label="Assumptions" value={traceability.assumptions} />
+              <DetailItem label="Review Guidance" value={formatModalReviewGuidance(item)} />
+              <DetailItem label="Methodology Notes" value={formatMethodologyDisplay(item)} />
+              <DetailItem label="Notes" value={formatNotesDisplay(item)} />
+              <DetailItem
+                label="Audit History"
+                value={`Created: ${formatAuditDate(item.createdAt)}\nUpdated: ${formatAuditDate(item.updatedAt)}`}
+              />
+            </DetailSection>
+          </div>
         </div>
-        <div style={{ marginTop: 20, textAlign: 'right' }}>
+        <div style={modalFooterStyle}>
           <button type="button" onClick={onClose} style={cancelButtonStyle}>Close</button>
         </div>
       </div>
@@ -2241,6 +2274,13 @@ const actionsCellStyle: React.CSSProperties = {
   gap: 8,
 };
 
+const readOnlyActionLabelStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 700,
+  whiteSpace: 'nowrap',
+};
+
 const overflowMenuWrapperStyle: React.CSSProperties = {
   position: 'relative',
   display: 'inline-flex',
@@ -2378,19 +2418,21 @@ const detailValueStyle: React.CSSProperties = {
 const modalBackdropStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
-  zIndex: 1000,
+  zIndex: 5000,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: 20,
-  background: 'rgba(15, 23, 42, 0.48)',
+  padding: '48px 20px',
+  background: 'rgba(15, 23, 42, 0.45)',
+  overflow: 'hidden',
 };
 
 const modalStyle: React.CSSProperties = {
   width: 'min(760px, 100%)',
-  maxHeight: '85vh',
-  overflowY: 'auto',
-  padding: 24,
+  maxHeight: 'calc(100vh - 96px)',
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
   borderRadius: 8,
   background: '#fff',
   boxShadow: '0 24px 70px rgba(15, 23, 42, 0.24)',
@@ -2401,9 +2443,30 @@ const modalHeaderStyle: React.CSSProperties = {
   alignItems: 'flex-start',
   justifyContent: 'space-between',
   gap: 16,
-  marginBottom: 20,
-  paddingBottom: 16,
+  padding: '20px 24px 16px',
   borderBottom: '1px solid #e2e8f0',
+  background: '#fff',
+  flexShrink: 0,
+  position: 'sticky',
+  top: 0,
+  zIndex: 2,
+};
+
+const modalBodyStyle: React.CSSProperties = {
+  minHeight: 0,
+  flex: 1,
+  overflowY: 'auto',
+  padding: 24,
+  overscrollBehavior: 'contain',
+};
+
+const modalFooterStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  flexShrink: 0,
+  padding: '16px 24px',
+  borderTop: '1px solid #e2e8f0',
+  background: '#fff',
 };
 
 const modalCloseStyle: React.CSSProperties = {

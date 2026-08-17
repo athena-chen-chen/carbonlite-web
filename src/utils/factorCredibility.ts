@@ -170,12 +170,46 @@ export function getFactorAssumptionDisclosure(
     : '');
 }
 
+function singularizeFactorDenominator(unit?: string | null) {
+  const clean = String(unit ?? '').trim();
+  const normalized = clean.toLowerCase();
+
+  if (normalized === 'liters' || normalized === 'litres' || normalized === 'liter' || normalized === 'litre') {
+    return 'liter';
+  }
+
+  if (normalized === 'nights' || normalized === 'night') {
+    return 'night';
+  }
+
+  if (
+    normalized === 'kilometers' ||
+    normalized === 'kilometres' ||
+    normalized === 'kilometer' ||
+    normalized === 'kilometre'
+  ) {
+    return 'km';
+  }
+
+  if (normalized === 'cubic meters' || normalized === 'cubic metres') {
+    return 'm3';
+  }
+
+  return clean;
+}
+
 export function buildMatchedFactorSnapshot(match?: ConversionFactorMatch | null): FactorSnapshotFields {
   if (!match) return {};
   const factorValue = Number(getFactorValue(match.factor));
   const inputUnit = getFactorInputUnit(match.factor);
   const resultUnit = getFactorResultUnit(match.factor);
-  const factorUnit = resultUnit.includes('/') ? resultUnit : `${resultUnit}/${inputUnit || 'unit'}`;
+  const factorUnit = resultUnit.includes('/')
+    ? (() => {
+        const [resultNumerator, resultDenominator] = resultUnit.split('/');
+        const normalizedDenominator = singularizeFactorDenominator(resultDenominator);
+        return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
+      })()
+    : `${resultUnit}/${singularizeFactorDenominator(inputUnit) || 'unit'}`;
 
   return {
     matchedFactorValue: Number.isFinite(factorValue) ? factorValue : undefined,

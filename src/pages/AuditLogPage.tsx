@@ -11,6 +11,13 @@ const commonActions = [
   'UPLOAD_DOCUMENT',
   'DELETE_DOCUMENT',
   'EXTRACT_DOCUMENT',
+  'FILE_UPLOADED',
+  'DATA_EXTRACTED',
+  'RECORDS_IMPORTED',
+  'REPORT_GENERATED',
+  'CSV_EXPORTED',
+  'IMPORT_FAILED',
+  'REPORT_GENERATION_FAILED',
   'CREATE_CONVERSION_FACTOR',
   'UPDATE_CONVERSION_FACTOR',
   'DELETE_CONVERSION_FACTOR',
@@ -104,7 +111,7 @@ export function AuditLogPage() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="User, entity id, description"
+            placeholder="User, action, description"
             style={inputStyle}
           />
         </label>
@@ -135,7 +142,7 @@ export function AuditLogPage() {
                     <td style={tdStyle}>{formatDate(item.createdAt)}</td>
                     <td style={tdStyle}>{item.user?.email || item.userId || '-'}</td>
                     <td style={tdStyle}>{formatAction(item.action)}</td>
-                    <td style={tdStyle}>{item.entityType}{item.entityId ? ` · ${item.entityId}` : ''}</td>
+                    <td style={tdStyle}>{item.entityType || '-'}</td>
                     <td style={tdStyle}>{item.description || '-'}</td>
                   </tr>
                 ))}
@@ -157,7 +164,7 @@ export function AuditLogPage() {
               <Detail label="User" value={selected.user?.email || selected.userId || '-'} />
               <Detail label="Organization" value={selected.organization?.name || selected.organizationId || '-'} />
               <Detail label="Action" value={formatAction(selected.action)} />
-              <Detail label="Entity" value={`${selected.entityType}${selected.entityId ? ` · ${selected.entityId}` : ''}`} />
+              <Detail label="Entity" value={selected.entityType || '-'} />
               <Detail label="Description" value={selected.description || '-'} />
             </dl>
             <div style={jsonGridStyle}>

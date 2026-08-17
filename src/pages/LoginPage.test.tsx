@@ -12,6 +12,8 @@ function renderLogin() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/upload" element={<div>Upload page</div>} />
+          <Route path="/reports" element={<div>Reports page</div>} />
+          <Route path="/metrics-summary" element={<div>Calculation Review page</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -21,6 +23,31 @@ function renderLogin() {
 describe('LoginPage', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  it('redirects pilot reviewers to Calculation Review after login', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          accessToken: 'reviewer-token',
+          user: {
+            id: 'user-reviewer',
+            email: 'reviewer@example.com',
+            role: 'VIEWER',
+            accountType: 'PILOT_REVIEWER',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    renderLogin();
+
+    await userEvent.type(screen.getByLabelText(/email/i), 'reviewer@example.com');
+    await userEvent.type(screen.getByLabelText(/password/i), 'Password123!');
+    await userEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    await screen.findByText('Calculation Review page');
   });
 
   it('logs in successfully and redirects to upload', async () => {
@@ -62,6 +89,8 @@ describe('LoginPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Log in to CarbonLite' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /create an account/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /forgot password/i })).toHaveAttribute('href', '/forgot-password');
+    expect(screen.getByRole('link', { name: /set password from invite/i })).toHaveAttribute('href', '/set-password');
     expect(screen.getByText(/pilot access is currently invite-only/i)).toBeInTheDocument();
     expect(screen.getByText(/if you are a pilot reviewer/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'help@carbonliteapp.ca' })).toHaveAttribute(
@@ -108,7 +137,7 @@ describe('LoginPage', () => {
     expect(localStorage.getItem('accessToken')).toBeNull();
   });
 
-  it('shows backend unavailable when the API cannot be reached', async () => {
+  it('shows a connection message when the API cannot be reached', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
 
     renderLogin();
@@ -118,7 +147,7 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/backend unavailable/i)).toBeInTheDocument();
+      expect(screen.getByText(/unable to connect to the server/i)).toBeInTheDocument();
     });
   });
 
@@ -127,7 +156,7 @@ describe('LoginPage', () => {
 
     renderLogin();
 
-    expect(screen.getByText('Session expired. Please log in again.')).toBeInTheDocument();
+    expect(screen.getByText('Your session has expired. Please sign in again.')).toBeInTheDocument();
     expect(sessionStorage.getItem('authMessage')).toBeNull();
   });
 });

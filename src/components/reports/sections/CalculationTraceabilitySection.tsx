@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { CalculationAuditDetail } from '../../../services/metrics';
 import {
@@ -22,14 +23,21 @@ export function CalculationTraceabilitySection({
   formatRecordUnit,
   formatScopeLabel,
 }: CalculationTraceabilitySectionProps) {
+  const [isAuditExpanded, setIsAuditExpanded] = useState(false);
   return (
     <>
       <p style={sectionHelperStyle}>
         Each row shows the activity quantity, matched factor, calculation formula, scope, status, and review note.
       </p>
-      <details>
-        <summary style={detailsSummaryStyle}>
-          Show calculation audit ({calculationDetails.length} records)
+      <details
+        onToggle={(event) => setIsAuditExpanded(event.currentTarget.open)}
+      >
+        <summary
+          aria-label={`${isAuditExpanded ? 'Collapse' : 'Expand'} calculation audit`}
+          style={detailsButtonStyle}
+        >
+          <span aria-hidden="true">{isAuditExpanded ? '▾' : '▸'}</span>
+          <span>{isAuditExpanded ? 'Collapse' : 'Expand'} calculation audit ({calculationDetails.length} records)</span>
         </summary>
         <div style={{ marginTop: 14 }}>
           <SimpleTable
@@ -106,9 +114,16 @@ const sectionHelperStyle: CSSProperties = {
   lineHeight: 1.55,
 };
 
-const detailsSummaryStyle: CSSProperties = {
+const detailsButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1px solid #d1d5db',
+  background: '#fff',
   cursor: 'pointer',
-  color: '#0f766e',
+  color: '#334155',
   fontWeight: 800,
 };
 

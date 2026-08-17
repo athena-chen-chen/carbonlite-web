@@ -3,10 +3,16 @@ import {
   canImportActivityRecords,
   canManageActivityRecords,
   canManageConversionFactors,
+  getAccountType,
   getUserRole,
+  isAccountExpired,
+  isInternalTestAccount,
+  isPilotReviewer,
   isReadOnlyUser,
   login,
+  requestPasswordReset,
   register,
+  setPasswordFromToken,
   type AuthUser,
 } from './auth';
 import { FALLBACK_API_BASE_URL } from '../config/api';
@@ -18,13 +24,39 @@ describe('user role permissions', () => {
     organizationId: 'org-1',
   });
 
-  it('supports Owner, Admin, Member, Viewer, and legacy User roles', () => {
+  it('supports Owner, Admin, Member, Viewer, Reviewer, and legacy User roles', () => {
     expect(getUserRole(user('OWNER'))).toBe('OWNER');
     expect(getUserRole(user('ADMIN'))).toBe('ADMIN');
     expect(getUserRole(user('MEMBER'))).toBe('MEMBER');
     expect(getUserRole(user('VIEWER'))).toBe('VIEWER');
+    expect(getUserRole(user('REVIEWER'))).toBe('VIEWER');
     expect(getUserRole(user('USER'))).toBe('MEMBER');
     expect(getUserRole(null)).toBe('VIEWER');
+  });
+
+  it('normalizes pilot account types and expiration state', () => {
+    const reviewer: AuthUser = {
+      email: 'reviewer@example.com',
+      role: 'REVIEWER',
+      accountType: 'pilot_reviewer',
+      organizationId: 'demo-workspace',
+      expiresAt: '2026-01-01T00:00:00.000Z',
+    };
+    const internal: AuthUser = {
+      email: 'internal@example.com',
+      role: 'ADMIN',
+      accountType: 'INTERNAL_TEST',
+      organizationId: 'demo-workspace',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    };
+
+    expect(getAccountType(reviewer)).toBe('PILOT_REVIEWER');
+    expect(isPilotReviewer(reviewer)).toBe(true);
+    expect(isAccountExpired(reviewer)).toBe(true);
+    expect(getAccountType(internal)).toBe('INTERNAL_TEST');
+    expect(isInternalTestAccount(internal)).toBe(true);
+    expect(isAccountExpired(internal)).toBe(false);
+    expect(getAccountType({ email: 'customer@example.com', accountType: 'unknown' })).toBe('CUSTOMER');
   });
 
   it('fails closed when there is no authenticated company context', () => {
@@ -60,6 +92,29 @@ describe('user role permissions', () => {
     expect(canManageConversionFactors(user('ADMIN'))).toBe(true);
     expect(canClearActivityRecords(user('OWNER'))).toBe(true);
     expect(canManageConversionFactors(user('OWNER'))).toBe(true);
+  });
+
+  it('keeps pilot reviewers read-only even if a role is misconfigured', () => {
+    const reviewer: AuthUser = {
+      email: 'reviewer@example.com',
+      role: 'REVIEWER',
+      accountType: 'PILOT_REVIEWER',
+      organizationId: 'demo-workspace',
+    };
+    const misconfiguredAdminReviewer: AuthUser = {
+      email: 'admin-reviewer@example.com',
+      role: 'ADMIN',
+      accountType: 'PILOT_REVIEWER',
+      organizationId: 'demo-workspace',
+    };
+
+    [reviewer, misconfiguredAdminReviewer].forEach((account) => {
+      expect(canImportActivityRecords(account)).toBe(false);
+      expect(canManageActivityRecords(account)).toBe(false);
+      expect(canClearActivityRecords(account)).toBe(false);
+      expect(canManageConversionFactors(account)).toBe(false);
+      expect(isReadOnlyUser(account)).toBe(true);
+    });
   });
 });
 
@@ -162,6 +217,52 @@ describe('public signup controls', () => {
       login({ email: 'disabled@example.com', password: 'Password123!' }),
     ).rejects.toThrow(
       'This account is disabled. Please contact the CarbonLite team for access.',
+    );
+  });
+});
+
+describe('invite-only password setup controls', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('requests a password reset link without exposing account existence', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', { status: 200 }),
+    );
+
+    await expect(requestPasswordReset({ email: 'reviewer@example.com' })).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/auth/password-reset/request`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ email: 'reviewer@example.com' }),
+      }),
+    );
+  });
+
+  it('sets a password from an invite or reset token', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', { status: 200 }),
+    );
+
+    await expect(
+      setPasswordFromToken({
+        token: 'secure-token',
+        password: 'LongPassword123!',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/auth/password-reset/confirm`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          token: 'secure-token',
+          password: 'LongPassword123!',
+        }),
+      }),
     );
   });
 });

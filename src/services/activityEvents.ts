@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { getAccountType, getCurrentUser, getUserRole } from './auth';
 
 export type ActivityEventMetadata = Record<string, unknown>;
 
@@ -17,6 +18,7 @@ export type ActivityEventItem = {
   entityType?: string | null;
   entityId?: string | null;
   metadata?: ActivityEventMetadata | null;
+  accountType?: string | null;
   userAgent?: string | null;
   createdAt: string;
   user?: {
@@ -36,6 +38,7 @@ export type ActivityEventQuery = {
   user?: string;
   organization?: string;
   organizationId?: string;
+  accountType?: string;
   hideTestAccounts?: boolean;
   page?: number;
   pageSize?: number;
@@ -77,6 +80,7 @@ export type ActiveUserItem = {
   lastActiveAt?: string | null;
   mostRecentActivityType?: string | null;
   isTestAccount?: boolean;
+  accountType?: string | null;
 };
 
 export type ActiveUsersResponse = {
@@ -104,9 +108,18 @@ function buildQuery(query: ActivityEventQuery) {
 }
 
 export function trackActivityEvent(input: TrackActivityEventInput) {
+  const currentUser = getCurrentUser();
+
   return apiFetch<ActivityEventItem>('/activity-events', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      ...input,
+      metadata: {
+        accountType: getAccountType(currentUser),
+        userRole: getUserRole(currentUser),
+        ...(input.metadata ?? {}),
+      },
+    }),
   });
 }
 

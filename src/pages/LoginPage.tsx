@@ -2,9 +2,11 @@ import { FormEvent, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getContactEmail, isPublicSignupEnabled } from '../config/api';
+import { getCurrentUser, isPilotReviewer } from '../services/auth';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 export function LoginPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, user } = useAuth();
   const navigate = useNavigate();
   const publicSignupEnabled = isPublicSignupEnabled();
   const contactEmail = getContactEmail();
@@ -13,12 +15,12 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(() => {
     const message = sessionStorage.getItem('authMessage');
     sessionStorage.removeItem('authMessage');
-    return message;
+    return message ? getUserFriendlyErrorMessage(message, 'login') : null;
   });
   const [submitting, setSubmitting] = useState(false);
 
   if (isAuthenticated) {
-    return <Navigate to="/upload" replace />;
+    return <Navigate to={isPilotReviewer(user) ? '/metrics-summary' : '/upload'} replace />;
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -28,9 +30,9 @@ export function LoginPage() {
 
     try {
       await login(email.trim(), password);
-      navigate('/upload', { replace: true });
+      navigate(isPilotReviewer(getCurrentUser()) ? '/metrics-summary' : '/upload', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid login. Please try again.');
+      setError(getUserFriendlyErrorMessage(err, 'login'));
     } finally {
       setSubmitting(false);
     }
@@ -68,6 +70,12 @@ export function LoginPage() {
         <button type="submit" disabled={submitting} style={primaryButtonStyle(submitting)}>
           {submitting ? 'Logging in...' : 'Log In'}
         </button>
+
+        <div style={authLinksStyle}>
+          <Link to="/forgot-password">Forgot password?</Link>
+          <span aria-hidden="true">·</span>
+          <Link to="/set-password">Set password from invite</Link>
+        </div>
 
         {publicSignupEnabled ? (
           <p style={footerTextStyle}>
@@ -184,6 +192,16 @@ const footerTextStyle: React.CSSProperties = {
 const inviteOnlyTextStyle: React.CSSProperties = {
   ...footerTextStyle,
   lineHeight: 1.5,
+};
+
+const authLinksStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  color: '#64748b',
+  fontSize: 14,
+  fontWeight: 700,
 };
 
 const contactLinkStyle: React.CSSProperties = {

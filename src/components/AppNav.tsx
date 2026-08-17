@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
-import { getOrganizationName, getUserDisplayName } from '../services/auth';
+import { getAccountType, getOrganizationName, getUserDisplayName, isPilotReviewer } from '../services/auth';
+import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
 
 const navItems = [
   { to: '/', label: 'Home' },
@@ -14,6 +15,7 @@ const navItems = [
 ] as const;
 
 const adminNavItems = [
+  { to: '/admin/pilot-reviewers', label: 'Pilot Reviewers' },
   { to: '/feedback', label: 'Feedback' },
   { to: '/activity', label: 'Activity', activePaths: ['/user-activity', '/admin/activity'] },
 ] as const;
@@ -98,9 +100,22 @@ export function AppNav() {
   const location = useLocation();
   const workspaceName = getOrganizationName(user);
   const userLabel = getUserDisplayName(user);
+  const showPilotReviewerBanner = isAuthenticated && isPilotReviewer(user);
+  const visibleNavItems = showPilotReviewerBanner
+    ? navItems.filter((item) => !['/', '/input-data'].includes(item.to))
+    : navItems;
+  const feedbackHref = buildFeedbackMailtoHref({
+    pagePath: `${location.pathname}${location.search}${location.hash}`,
+    userEmail: user?.email,
+    workspaceName,
+    accountType: getAccountType(user),
+  });
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement | null>(null);
   const adminMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const userMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const isAdminSectionActive = adminNavItems.some(
     (item) =>
       location.pathname === item.to ||
@@ -109,27 +124,37 @@ export function AppNav() {
 
   useEffect(() => {
     setIsAdminMenuOpen(false);
+    setIsUserMenuOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!isAdminMenuOpen) return undefined;
+    if (!isAdminMenuOpen && !isUserMenuOpen) return undefined;
 
     function handlePointerDown(event: PointerEvent) {
       const target = event.target as Node | null;
       if (
         target &&
         (adminMenuRef.current?.contains(target) ||
-          adminMenuButtonRef.current?.contains(target))
+          adminMenuButtonRef.current?.contains(target) ||
+          userMenuRef.current?.contains(target) ||
+          userMenuButtonRef.current?.contains(target))
       ) {
         return;
       }
       setIsAdminMenuOpen(false);
+      setIsUserMenuOpen(false);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        const userMenuWasOpen = isUserMenuOpen;
         setIsAdminMenuOpen(false);
-        adminMenuButtonRef.current?.focus();
+        setIsUserMenuOpen(false);
+        if (userMenuWasOpen) {
+          userMenuButtonRef.current?.focus();
+        } else {
+          adminMenuButtonRef.current?.focus();
+        }
       }
     }
 
@@ -139,7 +164,7 @@ export function AppNav() {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isAdminMenuOpen]);
+  }, [isAdminMenuOpen, isUserMenuOpen]);
 
   function handleLogout() {
     logout();
@@ -148,113 +173,172 @@ export function AppNav() {
 
   return (
     <header style={headerStyle}>
-      <div style={containerStyle}>
-        <div style={brandBlockStyle}>
-          <div style={brandStyle}>CarbonLite</div>
-          {isAuthenticated ? (
-            <div style={workspaceStyle}>Workspace: {workspaceName}</div>
-          ) : null}
-        </div>
+      <div>
+        <div style={containerStyle}>
+          <div style={brandBlockStyle}>
+            <div style={brandStyle}>CarbonLite</div>
+            {isAuthenticated ? (
+              <div style={workspaceStyle}>Workspace: {workspaceName}</div>
+            ) : null}
+          </div>
 
-        <div style={headerActionsStyle}>
-          <nav style={navStyle}>
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                style={({ isActive }) =>
-                  getLinkStyle(
-                    isActive ||
-                      Boolean(
-                        'activePaths' in item &&
-                          item.activePaths.includes(location.pathname),
-                      ),
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-            {isAdmin ? (
-              <div style={adminDropdownStyle}>
-                <button
-                  ref={adminMenuButtonRef}
-                  type="button"
-                  onClick={() => setIsAdminMenuOpen((open) => !open)}
-                  style={getAdminButtonStyle(isAdminSectionActive)}
-                  aria-haspopup="menu"
-                  aria-expanded={isAdminMenuOpen}
+          <div style={headerActionsStyle}>
+            <nav style={navStyle}>
+              {visibleNavItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  style={({ isActive }) =>
+                    getLinkStyle(
+                      isActive ||
+                        Boolean(
+                          'activePaths' in item &&
+                            item.activePaths.includes(location.pathname),
+                        ),
+                    )
+                  }
                 >
-                  Admin <span aria-hidden="true">▾</span>
+                  {item.label}
+                </NavLink>
+              ))}
+              {isAdmin ? (
+                <div style={adminDropdownStyle}>
+                  <button
+                    ref={adminMenuButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setIsAdminMenuOpen((open) => !open);
+                      setIsUserMenuOpen(false);
+                    }}
+                    style={getAdminButtonStyle(isAdminSectionActive)}
+                    aria-haspopup="menu"
+                    aria-expanded={isAdminMenuOpen}
+                  >
+                    Admin <span aria-hidden="true">▾</span>
+                  </button>
+                  {isAdminMenuOpen ? (
+                    <div ref={adminMenuRef} role="menu" style={adminMenuStyle}>
+                      {adminNavItems.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          role="menuitem"
+                          style={({ isActive }) =>
+                            getAdminMenuLinkStyle(
+                              isActive ||
+                                Boolean(
+                                  'activePaths' in item &&
+                                    item.activePaths.includes(location.pathname),
+                                ),
+                            )
+                          }
+                        >
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </nav>
+
+            {isAuthenticated ? (
+              <div style={userDropdownStyle}>
+                <button
+                  ref={userMenuButtonRef}
+                  type="button"
+                  onClick={() => {
+                    setIsUserMenuOpen((open) => !open);
+                    setIsAdminMenuOpen(false);
+                  }}
+                  style={userMenuButtonStyle}
+                  title={userLabel || 'Signed in'}
+                  aria-haspopup="menu"
+                  aria-expanded={isUserMenuOpen}
+                >
+                  <span style={userMenuLabelStyle}>{userLabel || 'Signed in'}</span>
+                  <span aria-hidden="true">▾</span>
                 </button>
-                {isAdminMenuOpen ? (
-                  <div ref={adminMenuRef} role="menu" style={adminMenuStyle}>
-                    {adminNavItems.map((item) => (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        role="menuitem"
-                        style={({ isActive }) =>
-                          getAdminMenuLinkStyle(
-                            isActive ||
-                              Boolean(
-                                'activePaths' in item &&
-                                  item.activePaths.includes(location.pathname),
-                              ),
-                          )
-                        }
-                      >
-                        {item.label}
-                      </NavLink>
-                    ))}
+                {isUserMenuOpen ? (
+                  <div ref={userMenuRef} role="menu" style={userMenuStyle}>
+                    <a
+                      href={feedbackHref}
+                      role="menuitem"
+                      style={userMenuLinkStyle}
+                      aria-label="Send feedback to CarbonLite"
+                      title="Send feedback or report an issue with the CarbonLite pilot."
+                    >
+                      Send Feedback
+                    </a>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleLogout}
+                      style={userMenuLogoutStyle}
+                    >
+                      Logout
+                    </button>
                   </div>
                 ) : null}
               </div>
             ) : null}
-          </nav>
-
-          {isAuthenticated ? (
-            <div style={userChipStyle} title={userLabel || 'Signed in'}>
-              {userLabel || 'Signed in'}
-            </div>
-          ) : null}
-
-          {isAuthenticated ? (
-            <button type="button" onClick={handleLogout} style={logoutButtonStyle}>
-              Logout
-            </button>
-          ) : null}
+          </div>
         </div>
+        {showPilotReviewerBanner ? (
+          <div role="status" style={pilotReviewerBannerStyle}>
+            Pilot review account · Sample data only · Not for formal reporting ·{' '}
+            <a href={feedbackHref} style={pilotReviewerBannerLinkStyle}>
+              Send Feedback
+            </a>
+          </div>
+        ) : null}
       </div>
     </header>
   );
 }
 
-const logoutButtonStyle: React.CSSProperties = {
-  padding: '8px 10px',
-  borderRadius: 8,
-  border: '1px solid #dc2626',
-  background: '#fff',
-  color: '#dc2626',
-  fontWeight: 700,
-  fontSize: 14,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
+const userDropdownStyle: React.CSSProperties = {
+  position: 'relative',
   flexShrink: 0,
 };
 
-const userChipStyle: React.CSSProperties = {
+const userMenuButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
   padding: '8px 10px',
   borderRadius: 999,
+  border: '1px solid #bbf7d0',
   background: '#ecfdf5',
   color: '#047857',
   fontSize: 13,
-  fontWeight: 700,
+  fontWeight: 800,
+  cursor: 'pointer',
   whiteSpace: 'nowrap',
-  maxWidth: 150,
+  maxWidth: 190,
+};
+
+const userMenuLabelStyle: React.CSSProperties = {
+  minWidth: 0,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
-  flexShrink: 0,
+};
+
+const pilotReviewerBannerStyle: React.CSSProperties = {
+  borderTop: '1px solid #bae6fd',
+  background: '#f0f9ff',
+  color: '#075985',
+  padding: '8px 24px',
+  textAlign: 'center',
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const pilotReviewerBannerLinkStyle: React.CSSProperties = {
+  color: '#0369a1',
+  fontWeight: 900,
+  textDecoration: 'underline',
+  textUnderlineOffset: 2,
 };
 
 const adminDropdownStyle: React.CSSProperties = {
@@ -286,6 +370,40 @@ const adminMenuStyle: React.CSSProperties = {
   background: '#fff',
   boxShadow: '0 16px 34px rgba(15, 23, 42, 0.16)',
   zIndex: 50,
+};
+
+const userMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 8px)',
+  right: 0,
+  minWidth: 190,
+  padding: 6,
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#fff',
+  boxShadow: '0 16px 34px rgba(15, 23, 42, 0.16)',
+  zIndex: 50,
+};
+
+const userMenuLinkStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  padding: '8px 10px',
+  borderRadius: 8,
+  textDecoration: 'none',
+  color: '#111827',
+  background: 'transparent',
+  fontSize: 14,
+  fontWeight: 700,
+  whiteSpace: 'nowrap',
+};
+
+const userMenuLogoutStyle: React.CSSProperties = {
+  ...userMenuLinkStyle,
+  border: 0,
+  textAlign: 'left',
+  color: '#dc2626',
+  cursor: 'pointer',
 };
 
 function getAdminMenuLinkStyle(isActive: boolean): React.CSSProperties {

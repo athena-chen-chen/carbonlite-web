@@ -6,7 +6,9 @@ const USER_KEY = 'currentUser';
 export type AuthUser = {
   id?: string;
   email: string;
-  role?: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' | 'USER';
+  role?: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' | 'REVIEWER' | 'USER';
+  accountType?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string;
+  expiresAt?: string | null;
   status?: 'ACTIVE' | 'DISABLED' | 'PENDING' | string;
   organizationId?: string;
   organizationName?: string;
@@ -33,12 +35,47 @@ type LoginInput = {
   password: string;
 };
 
+type PasswordResetRequestInput = {
+  email: string;
+};
+
+type SetPasswordInput = {
+  token: string;
+  password: string;
+};
+
 function saveSession(response: AuthResponse, fallbackEmail: string) {
   localStorage.setItem(TOKEN_KEY, response.accessToken);
   localStorage.setItem(
     USER_KEY,
     JSON.stringify(response.user ?? { email: fallbackEmail }),
   );
+}
+
+export function getAccountType(user: AuthUser | null) {
+  const accountType = String(user?.accountType ?? 'CUSTOMER')
+    .trim()
+    .toUpperCase();
+
+  if (accountType === 'INTERNAL_TEST' || accountType === 'PILOT_REVIEWER' || accountType === 'CUSTOMER') {
+    return accountType;
+  }
+
+  return 'CUSTOMER';
+}
+
+export function isPilotReviewer(user: AuthUser | null) {
+  return getAccountType(user) === 'PILOT_REVIEWER';
+}
+
+export function isInternalTestAccount(user: AuthUser | null) {
+  return getAccountType(user) === 'INTERNAL_TEST';
+}
+
+export function isAccountExpired(user: AuthUser | null) {
+  if (!user?.expiresAt) return false;
+  const expiresAt = new Date(user.expiresAt).getTime();
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
 }
 
 function getFriendlyAuthError(response: Response, fallback: string, detail: string) {
@@ -57,7 +94,7 @@ function getFriendlyAuthError(response: Response, fallback: string, detail: stri
   if (normalizedDetail.includes('invalid') || normalizedDetail.includes('password')) {
     return 'Invalid login. Please check your email and password.';
   }
-  if (response.status >= 500) return 'Backend unavailable. Please try again later.';
+  if (response.status >= 500) return 'Unable to connect to the server. Please check your connection and try again.';
   return fallback;
 }
 
@@ -71,7 +108,7 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
       body: JSON.stringify(body),
     });
   } catch {
-    throw new Error('Backend unavailable. Please try again later.');
+    throw new Error('Unable to connect to the server. Please check your connection and try again.');
   }
 
   if (!response.ok) {
@@ -91,7 +128,15 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
   const data = (await response.json()) as AuthResponse;
 
   if (!data.accessToken) {
-    throw new Error('Backend unavailable. Please try again later.');
+    throw new Error('Something went wrong. Please try again. If the issue continues, contact support.');
+  }
+
+  if (data.user?.status && String(data.user.status).toUpperCase() === 'DISABLED') {
+    throw new Error('This account is disabled. Please contact the CarbonLite team for access.');
+  }
+
+  if (isAccountExpired(data.user ?? null)) {
+    throw new Error('This pilot reviewer access has expired. Please contact CarbonLite if you need continued access.');
   }
 
   saveSession(data, body.email);
@@ -108,6 +153,46 @@ export async function register(input: RegisterInput) {
 
 export async function login(input: LoginInput) {
   return authRequest('/auth/login', input);
+}
+
+export async function requestPasswordReset(input: PasswordResetRequestInput) {
+  await passwordRequest('/auth/password-reset/request', {
+    email: input.email.trim(),
+  });
+}
+
+export async function setPasswordFromToken(input: SetPasswordInput) {
+  await passwordRequest('/auth/password-reset/confirm', {
+    token: input.token.trim(),
+    password: input.password,
+  });
+}
+
+async function passwordRequest(path: string, body: PasswordResetRequestInput | SetPasswordInput) {
+  let response: Response;
+
+  try {
+    response = await fetch(buildApiUrl(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('Unable to connect to the server. Please check your connection and try again.');
+  }
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(
+      getFriendlyAuthError(
+        response,
+        path.includes('request')
+          ? 'If an account exists for this email, a password reset link will be sent.'
+          : 'Unable to set password. Please request a new invite or password reset link.',
+        detail,
+      ),
+    );
+  }
 }
 
 export function logout() {
@@ -133,7 +218,7 @@ function auditLogout() {
 export function handleUnauthorized() {
   sessionStorage.setItem(
     'authMessage',
-    'Session expired. Please log in again.',
+    'Your session has expired. Please sign in again.',
   );
   logout();
 
@@ -173,6 +258,7 @@ export function getUserRole(user: AuthUser | null) {
   if (!user) return 'VIEWER';
 
   const role = String(user.role ?? 'MEMBER').toUpperCase();
+  if (role === 'REVIEWER') return 'VIEWER';
   if (role === 'USER') return 'MEMBER';
   if (role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER' || role === 'VIEWER') {
     return role;
@@ -181,10 +267,12 @@ export function getUserRole(user: AuthUser | null) {
 }
 
 export function isAdminUser(user: AuthUser | null) {
+  if (isPilotReviewer(user)) return false;
   return getUserRole(user) === 'ADMIN';
 }
 
 export function isAdminOrOwnerUser(user: AuthUser | null) {
+  if (isPilotReviewer(user)) return false;
   const role = getUserRole(user);
   return role === 'ADMIN' || role === 'OWNER';
 }
@@ -195,6 +283,7 @@ function hasCompanyContext(user: AuthUser | null) {
 
 export function canManageActivityRecords(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
+  if (isPilotReviewer(user)) return false;
 
   const role = getUserRole(user);
   return role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER';
@@ -206,18 +295,20 @@ export function canImportActivityRecords(user: AuthUser | null) {
 
 export function canClearActivityRecords(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
+  if (isPilotReviewer(user)) return false;
 
   return isAdminOrOwnerUser(user);
 }
 
 export function canManageConversionFactors(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
+  if (isPilotReviewer(user)) return false;
 
   return isAdminOrOwnerUser(user);
 }
 
 export function isReadOnlyUser(user: AuthUser | null) {
-  return getUserRole(user) === 'VIEWER';
+  return getUserRole(user) === 'VIEWER' || isPilotReviewer(user);
 }
 
 export function requirePermission(allowed: boolean) {

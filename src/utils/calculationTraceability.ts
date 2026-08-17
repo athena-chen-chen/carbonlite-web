@@ -2,6 +2,7 @@ import type { CalculationAuditDetail } from '../services/metrics';
 import { getDisplaySourceLabel } from './reportCredibility';
 import { formatActivityTypeLabel } from './activityAggregation';
 import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
+import { normalizeUnitForDisplay } from './unitNormalization';
 
 function formatNumber(value?: string | number | null) {
   return formatDisplayNumber(value);
@@ -19,11 +20,74 @@ export function formatFactorValue(value?: string | number | null) {
   });
 }
 
-export function buildCalculatedFormula(detail: CalculationAuditDetail) {
-  if (detail.calculationFormula) {
-    return detail.calculationFormula;
+function formatFormulaUnit(value?: string | number | null) {
+  const normalized = normalizeUnitForDisplay(value);
+  return normalized.status === 'valid' ? normalized.value : String(value ?? '').trim();
+}
+
+function singularizeFactorDenominator(unit?: string | number | null) {
+  const clean = formatFormulaUnit(unit);
+  const normalized = clean.toLowerCase();
+
+  if (normalized === 'liters' || normalized === 'litres') return 'liter';
+  if (normalized === 'liter' || normalized === 'litre') return 'liter';
+  if (normalized === 'nights') return 'night';
+  if (normalized === 'kilometers' || normalized === 'kilometres') return 'km';
+  if (normalized === 'kilometer' || normalized === 'kilometre') return 'km';
+  if (normalized === 'cubic meters' || normalized === 'cubic metres') return 'm3';
+  return clean;
+}
+
+function unitsMatch(left?: string | number | null, right?: string | number | null) {
+  const leftUnit = formatFormulaUnit(left).toLowerCase();
+  const rightUnit = formatFormulaUnit(right).toLowerCase();
+  return Boolean(leftUnit && rightUnit && leftUnit === rightUnit);
+}
+
+function formatFactorUnitForFormula(detail: CalculationAuditDetail) {
+  const resultUnit = detail.factorResultUnit || 'kgCO2e';
+  if (resultUnit.includes('/')) {
+    const [resultNumerator, resultDenominator] = resultUnit.split('/');
+    const normalizedDenominator = singularizeFactorDenominator(resultDenominator);
+    return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
   }
 
+  const inputUnit = singularizeFactorDenominator(detail.factorInputUnit || detail.normalizedUnit || detail.activityUnit);
+  return inputUnit ? `${resultUnit}/${inputUnit}` : resultUnit;
+}
+
+function getConvertedFormulaQuantity(detail: CalculationAuditDetail) {
+  const activityUnit = formatFormulaUnit(detail.activityUnit);
+  const factorInputUnit = formatFormulaUnit(detail.factorInputUnit || detail.normalizedUnit);
+  const activityQuantity = Number(detail.activityQuantity);
+
+  if (!activityUnit || !factorInputUnit || unitsMatch(activityUnit, factorInputUnit)) return null;
+  if (!Number.isFinite(activityQuantity)) return null;
+
+  const normalizedQuantity = Number(detail.normalizedQuantity);
+  if (Number.isFinite(normalizedQuantity) && normalizedQuantity > 0) {
+    const conversionFactor = normalizedQuantity / activityQuantity;
+    if (Number.isFinite(conversionFactor) && conversionFactor > 0) {
+      return {
+        quantity: normalizedQuantity,
+        unit: factorInputUnit,
+        conversionFactor,
+      };
+    }
+  }
+
+  if (activityUnit.toLowerCase() === 'mwh' && factorInputUnit.toLowerCase() === 'kwh') {
+    return {
+      quantity: activityQuantity * 1000,
+      unit: 'kWh',
+      conversionFactor: 1000,
+    };
+  }
+
+  return null;
+}
+
+export function buildCalculatedFormula(detail: CalculationAuditDetail) {
   if (detail.status === 'MISSING_JURISDICTION') {
     return 'Not calculated because province is missing.';
   }
@@ -58,7 +122,18 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
     return 'No factor available for this activity.';
   }
 
-  return `${formatNumber(detail.activityQuantity)} × ${formatFactorValue(detail.factorValue)} = ${formatEmissionsValue(detail.calculatedEmissionsKgCO2e)} kgCO2e`;
+  const activityUnit = formatFormulaUnit(detail.activityUnit);
+  const factorUnit = formatFactorUnitForFormula(detail);
+  const convertedQuantity = getConvertedFormulaQuantity(detail);
+  const emissionsStepQuantity = convertedQuantity?.quantity ?? detail.activityQuantity;
+  const emissionsStepUnit = convertedQuantity?.unit ?? activityUnit;
+  const emissionsStep = `${formatNumber(emissionsStepQuantity)} ${emissionsStepUnit} × ${formatFactorValue(detail.factorValue)} ${factorUnit} = ${formatEmissionsValue(detail.calculatedEmissionsKgCO2e)} kgCO2e`;
+
+  if (convertedQuantity) {
+    return `${formatNumber(detail.activityQuantity)} ${activityUnit} × ${formatNumber(convertedQuantity.conversionFactor)} = ${formatNumber(convertedQuantity.quantity)} ${convertedQuantity.unit}; ${emissionsStep}`;
+  }
+
+  return emissionsStep;
 }
 
 export function buildFormulaInputs(detail: CalculationAuditDetail) {
@@ -95,9 +170,14 @@ export function formatTraceableFactor(detail: CalculationAuditDetail) {
   }
 
   const resultUnit = detail.factorResultUnit || 'kgCO2e';
-  const inputUnit = detail.factorInputUnit || detail.activityUnit;
+  const inputUnit = singularizeFactorDenominator(detail.factorInputUnit || detail.activityUnit);
   if (resultUnit.includes('/')) {
-    return `${formatFactorValue(detail.factorValue)} ${resultUnit}`;
+    const [resultNumerator, resultDenominator] = resultUnit.split('/');
+    const normalizedDenominator = singularizeFactorDenominator(resultDenominator);
+    const normalizedResultUnit = normalizedDenominator
+      ? `${resultNumerator}/${normalizedDenominator}`
+      : resultNumerator;
+    return `${formatFactorValue(detail.factorValue)} ${normalizedResultUnit}`;
   }
 
   return `${formatFactorValue(detail.factorValue)} ${resultUnit}/${inputUnit}`;
