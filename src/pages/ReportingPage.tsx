@@ -1723,7 +1723,7 @@ function setAllReportSections(expanded: boolean) {
         Polished reporting output for sharing emissions totals, scope summaries, included and excluded record counts, methodology notes, factor source notes, and disclaimers.
       </p>
 
-      <div style={paidPilotScopeCalloutStyle}>
+      {/* <div style={paidPilotScopeCalloutStyle}>
         <span>Preparing a structured pilot review?</span>
         <button
           type="button"
@@ -1732,7 +1732,7 @@ function setAllReportSections(expanded: boolean) {
         >
           View Paid Pilot Scope
         </button>
-      </div>
+      </div> */}
 
       <div style={reportDisclaimerCalloutStyle}>
         <strong>Important scope note</strong>
