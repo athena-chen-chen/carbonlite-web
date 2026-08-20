@@ -1,11 +1,18 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PilotReviewersPage from './PilotReviewersPage';
 import { createPilotReviewer } from '../services/pilotReviewers';
 
-vi.mock('../services/pilotReviewers', () => ({
-  createPilotReviewer: vi.fn(),
-}));
+vi.mock('../services/pilotReviewers', async () => {
+  const actual = await vi.importActual<typeof import('../services/pilotReviewers')>(
+    '../services/pilotReviewers',
+  );
+
+  return {
+    ...actual,
+    createPilotReviewer: vi.fn(),
+  };
+});
 
 describe('PilotReviewersPage', () => {
   beforeEach(() => {
@@ -74,5 +81,24 @@ describe('PilotReviewersPage', () => {
     expect(
       await screen.findByText(/did not return a setup link or temporary password/i),
     ).toBeInTheDocument();
+  });
+
+  it('shows a friendly validation error for markdown email values', async () => {
+    render(<PilotReviewersPage />);
+
+    await userEvent.type(screen.getByLabelText(/^name/i), 'Mint');
+    fireEvent.change(screen.getByLabelText(/^email/i), {
+      target: {
+        value: '[mint_pp@hotmail.com](mailto:mint_pp@hotmail.com)',
+      },
+    });
+    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+
+    expect(
+      await screen.findByText(
+        'Please enter a valid email address, for example name@example.com.',
+      ),
+    ).toBeInTheDocument();
+    expect(createPilotReviewer).not.toHaveBeenCalled();
   });
 });

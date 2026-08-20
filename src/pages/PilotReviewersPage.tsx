@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react';
 import {
   createPilotReviewer,
+  normalizePilotReviewerEmail,
   type CreatePilotReviewerResponse,
 } from '../services/pilotReviewers';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
@@ -30,9 +31,11 @@ export default function PilotReviewersPage() {
     setCopyMessage(null);
 
     try {
+      const normalizedEmail = normalizePilotReviewerEmail(email);
+      setEmail(normalizedEmail);
       const response = await createPilotReviewer({
         name,
-        email,
+        email: normalizedEmail,
         workspaceName,
         expiresAt,
       });
@@ -87,9 +90,11 @@ export default function PilotReviewersPage() {
           <label style={labelStyle}>
             Email
             <input
-              type="email"
+              type="text"
+              inputMode="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+              onBlur={(event) => setEmail(event.target.value.trim().toLowerCase())}
               required
               placeholder="alexander@example.com"
               autoComplete="email"

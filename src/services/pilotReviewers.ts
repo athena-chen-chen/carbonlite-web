@@ -2,7 +2,7 @@ import { apiFetch } from './api';
 import { getCurrentUser, isAdminUser, requirePermission } from './auth';
 
 export const PILOT_REVIEWER_EMAIL_VALIDATION_MESSAGE =
-  'Please enter a valid email address, for example alexander@example.com.';
+  'Please enter a valid email address, for example name@example.com.';
 
 export type CreatePilotReviewerInput = {
   name: string;
@@ -31,8 +31,8 @@ export type CreatePilotReviewerResponse = {
 export function normalizePilotReviewerEmail(email: string) {
   const normalized = email.trim().toLowerCase();
   if (
-    /[\[\]()]|mailto:/i.test(normalized) ||
-    !/^[^\s@()[\]]+@[^\s@()[\]]+\.[^\s@()[\]]+$/.test(normalized)
+    /[\[\]()"']|mailto:/i.test(normalized) ||
+    !/^[^\s@()[\]"']+@[^\s@()[\]"']+\.[^\s@()[\]"']+$/.test(normalized)
   ) {
     throw new Error(PILOT_REVIEWER_EMAIL_VALIDATION_MESSAGE);
   }

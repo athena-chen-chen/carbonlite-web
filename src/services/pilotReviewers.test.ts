@@ -110,10 +110,10 @@ describe('pilot reviewer admin service', () => {
     expect(() =>
       createPilotReviewer({
         name: 'Alexander',
-        email: '[alexander@example.com](mailto:alexander@example.com)',
+        email: '[mint_pp@hotmail.com](mailto:mint_pp@hotmail.com)',
         workspaceName: 'CarbonLite Sample Workspace',
       }),
-    ).toThrow('Please enter a valid email address, for example alexander@example.com.');
+    ).toThrow('Please enter a valid email address, for example name@example.com.');
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -121,10 +121,13 @@ describe('pilot reviewer admin service', () => {
   it('normalizes only plain email addresses', () => {
     expect(normalizePilotReviewerEmail(' Alexander@Example.com ')).toBe('alexander@example.com');
     expect(() => normalizePilotReviewerEmail('mailto:alexander@example.com')).toThrow(
-      'Please enter a valid email address, for example alexander@example.com.',
+      'Please enter a valid email address, for example name@example.com.',
     );
     expect(() => normalizePilotReviewerEmail('(alexander@example.com)')).toThrow(
-      'Please enter a valid email address, for example alexander@example.com.',
+      'Please enter a valid email address, for example name@example.com.',
+    );
+    expect(() => normalizePilotReviewerEmail('"alexander@example.com"')).toThrow(
+      'Please enter a valid email address, for example name@example.com.',
     );
   });
 });
