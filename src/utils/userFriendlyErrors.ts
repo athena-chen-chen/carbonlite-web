@@ -29,7 +29,7 @@ const contextMessages: Record<ErrorMessageContext, string> = {
   csvExport: 'We could not export the CSV file. Please try again.',
   pdfExport: 'We could not generate the PDF report. Please try again.',
   feedbackSubmission: 'Your feedback could not be submitted. Please try again or contact support.',
-  login: 'Invalid login. Please check your email and password.',
+  login: 'The email or password is incorrect.',
   permissionDenied: 'You do not have permission to perform this action.',
   network: 'Unable to connect to the server. Please check your connection and try again.',
   unknown: 'Something went wrong. Please try again. If the issue continues, contact support.',

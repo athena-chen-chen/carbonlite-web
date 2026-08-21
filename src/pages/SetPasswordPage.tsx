@@ -1,11 +1,15 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { setPasswordFromToken } from '../services/auth';
+import { getSupportEmail } from '../config/api';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+
+const LOGIN_URL = 'https://www.carbonliteapp.ca/login';
 
 export default function SetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const supportEmail = getSupportEmail();
   const initialToken = useMemo(() => searchParams.get('token') ?? '', [searchParams]);
   const [token, setToken] = useState(initialToken);
   const [password, setPassword] = useState('');
@@ -54,7 +58,7 @@ export default function SetPasswordPage() {
           <label style={labelStyle}>
             Invite or reset token
             <input
-              type="text"
+              type="password"
               value={token}
               onChange={(event) => setToken(event.target.value)}
               required
@@ -101,7 +105,13 @@ export default function SetPasswordPage() {
           Need a new link? <Link to="/forgot-password">Request password reset</Link>
         </p>
         <p style={footerTextStyle}>
-          <Link to="/login">Back to login</Link>
+          Need help?{' '}
+          <a href={`mailto:${supportEmail}`} style={footerLinkStyle}>
+            {supportEmail}
+          </a>
+        </p>
+        <p style={footerTextStyle}>
+          <a href={LOGIN_URL} style={footerLinkStyle}>Back to login</a>
         </p>
       </div>
     </div>
@@ -186,4 +196,9 @@ const footerTextStyle: React.CSSProperties = {
   color: '#64748b',
   textAlign: 'center',
   lineHeight: 1.5,
+};
+
+const footerLinkStyle: React.CSSProperties = {
+  color: '#047857',
+  fontWeight: 800,
 };

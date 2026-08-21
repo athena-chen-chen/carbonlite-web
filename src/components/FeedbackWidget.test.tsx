@@ -20,6 +20,7 @@ describe('FeedbackWidget', () => {
         organizationId: 'org-1',
         organizationName: 'CarbonLite Sample Workspace',
         accountType: 'PILOT_REVIEWER',
+        id: 'user-internal-id',
       }),
     );
   });
@@ -52,16 +53,16 @@ describe('FeedbackWidget', () => {
     renderWidget('/upload');
 
     await userEvent.click(screen.getByRole('button', { name: /Send Feedback/i }));
-    await userEvent.selectOptions(screen.getByLabelText(/Feedback Type/i), 'BUG');
-    await userEvent.type(screen.getByLabelText(/What were you trying to do/i), 'Import records');
-    await userEvent.type(screen.getByLabelText(/What happened/i), 'The import button did not respond');
+    await userEvent.selectOptions(screen.getByLabelText(/Feedback Type/i), 'CALCULATION');
+    await userEvent.selectOptions(screen.getByLabelText(/Rating/i), '4');
+    await userEvent.type(screen.getByLabelText(/^Message$/i), 'The calculation trail was helpful but a label was unclear');
     await userEvent.click(screen.getByRole('button', { name: /^Submit$/i }));
 
     expect(submitFeedback).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'BUG',
-        intent: 'Import records',
-        message: 'The import button did not respond',
+        type: 'OTHER',
+        intent: 'Calculation feedback',
+        message: expect.stringContaining('The calculation trail was helpful but a label was unclear'),
         email: 'pilot@example.com',
         page: '/upload',
         url: expect.stringContaining('/upload'),
@@ -70,13 +71,25 @@ describe('FeedbackWidget', () => {
         appVersion: expect.any(String),
       }),
     );
-    expect(await screen.findByText('Thank you for your feedback.')).toBeInTheDocument();
+    const submittedMessage = vi.mocked(submitFeedback).mock.calls[0][0].message;
+    expect(submittedMessage).toContain('Feedback type: Calculation');
+    expect(submittedMessage).toContain('Rating: 4');
+    expect(submittedMessage).toContain('Page path: /upload');
+    expect(submittedMessage).toContain('User email: pilot@example.com');
+    expect(submittedMessage).toContain('Account type: PILOT_REVIEWER');
+    expect(submittedMessage).toContain('Workspace: CarbonLite Sample Workspace');
+    expect(submittedMessage).not.toContain('user-internal-id');
+    expect(submittedMessage).not.toContain('token');
+    expect(await screen.findByText('Thank you. Your feedback has been submitted.')).toBeInTheDocument();
   });
 
   it('offers a mailto fallback with route and account context', async () => {
     renderWidget('/reports?period=2026');
 
     await userEvent.click(screen.getByRole('button', { name: /Send Feedback/i }));
+    await userEvent.selectOptions(screen.getByLabelText(/Feedback Type/i), 'REPORT');
+    await userEvent.selectOptions(screen.getByLabelText(/Rating/i), '5');
+    await userEvent.type(screen.getByLabelText(/^Message$/i), 'The report wording is clear.');
 
     const emailLink = screen.getByRole('link', { name: /Send by email/i });
     expect(emailLink).toHaveAttribute('href', expect.stringContaining('mailto:hello@carbonliteapp.ca'));
@@ -84,6 +97,9 @@ describe('FeedbackWidget', () => {
     expect(emailLink).toHaveAttribute('href', expect.stringContaining('%2Freports%3Fperiod%3D2026'));
     expect(emailLink).toHaveAttribute('href', expect.stringContaining('PILOT_REVIEWER'));
     expect(emailLink).toHaveAttribute('href', expect.stringContaining('CarbonLite%20Sample%20Workspace'));
+    expect(emailLink).toHaveAttribute('href', expect.stringContaining('Report'));
+    expect(emailLink).toHaveAttribute('href', expect.stringContaining('5'));
+    expect(emailLink).toHaveAttribute('href', expect.stringContaining('The%20report%20wording%20is%20clear'));
     expect(screen.getByText(/Context included: \/reports\?period=2026/)).toBeInTheDocument();
   });
 
@@ -93,13 +109,18 @@ describe('FeedbackWidget', () => {
     renderWidget('/reports');
 
     await userEvent.click(screen.getByRole('button', { name: /Send Feedback/i }));
-    await userEvent.type(screen.getByLabelText(/What were you trying to do/i), 'Generate report');
-    await userEvent.type(screen.getByLabelText(/What happened/i), 'The report failed');
+    await userEvent.type(screen.getByLabelText(/^Message$/i), 'The report failed');
     await userEvent.click(screen.getByRole('button', { name: /^Submit$/i }));
 
     expect(
-      await screen.findByText('Your feedback could not be submitted. Please try again or contact support.'),
+      await screen.findByText(
+        'Your feedback could not be submitted right now. Please try again or contact hello@carbonliteapp.ca.',
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Send by email/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('mailto:hello@carbonliteapp.ca'),
+    );
     await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
   });
 });

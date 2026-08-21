@@ -32,6 +32,7 @@ vi.mock('../services/metricsOverview', async () => {
 
 afterEach(() => {
   cleanup();
+  localStorage.removeItem('currentUser');
 });
 
 const goldenTrailUsageTotals = {
@@ -1567,6 +1568,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+    localStorage.removeItem('currentUser');
     vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({
       startDate: '2025-01-01',
       endDate: '2026-12-31',
@@ -1594,6 +1596,46 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
     expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
+  });
+
+  it('shows a read-only welcome panel for pilot reviewer accounts', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'reviewer@example.com',
+        accountType: 'PILOT_REVIEWER',
+        role: 'REVIEWER',
+        organizationName: 'CarbonLite Sample Workspace',
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByLabelText('How to review CarbonLite')).toHaveTextContent(
+      'How to review CarbonLite',
+    );
+    expect(screen.getByText('This account is read-only and uses sample data only.')).toBeInTheDocument();
+    expect(screen.getByText(/review sample activity data/i)).toBeInTheDocument();
+    expect(screen.getByText(/review emission factor transparency/i)).toBeInTheDocument();
+    expect(screen.getByText(/review totals and calculation trail/i)).toBeInTheDocument();
+    expect(screen.getByText(/review sample report structure and disclaimer/i)).toBeInTheDocument();
+    expect(screen.getByText(/share comments or questions/i)).toBeInTheDocument();
+    expect(screen.getByText(/Have feedback on this page/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
+    expect(screen.getByRole('link', { name: 'Factors' })).toHaveAttribute('href', '/conversion-factors');
+    expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');
+    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
+    const feedbackLinks = screen.getAllByRole('link', { name: 'Send Feedback' });
+    expect(feedbackLinks).toHaveLength(2);
+    feedbackLinks.forEach((link) => {
+      expect(link).toHaveAttribute('href', expect.stringContaining('mailto:'));
+    });
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
   });
 
   it('shows first-load loading state and skeletons', async () => {

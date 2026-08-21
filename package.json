@@ -17,6 +17,7 @@
     "test:e2e": "playwright test --config apps/web-e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test --config apps/web-e2e/playwright.config.ts --ui",
     "test:smoke": "playwright test --config apps/web-e2e/playwright.config.ts apps/web-e2e/tests/pilot-demo-smoke.spec.ts",
+    "test:prod-smoke": "PLAYWRIGHT_BASE_URL=https://www.carbonliteapp.ca playwright test --config apps/web-e2e/playwright.config.ts apps/web-e2e/tests/production-pilot-reviewer-smoke.spec.ts",
     "verify:pilot": "pnpm build:pilot && pnpm test:smoke",
     "test:regression": "playwright test --config apps/web-e2e/playwright.config.ts --grep @smoke",
     "verify:deployment": "pnpm test && pnpm build && pnpm test:regression",

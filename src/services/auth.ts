@@ -2,6 +2,13 @@ import { buildApiUrl, isPublicSignupEnabled } from '../config/api';
 
 const TOKEN_KEY = 'accessToken';
 const USER_KEY = 'currentUser';
+const INVALID_LOGIN_MESSAGE = 'The email or password is incorrect.';
+const EXPIRED_INVITE_MESSAGE =
+  'This invite link has expired. Please contact hello@carbonliteapp.ca for a new link.';
+const USED_INVITE_MESSAGE =
+  'This invite link has already been used. Please log in or contact hello@carbonliteapp.ca.';
+const DEACTIVATED_ACCOUNT_MESSAGE =
+  'This account has been deactivated. Please contact hello@carbonliteapp.ca.';
 
 export type AuthUser = {
   id?: string;
@@ -81,18 +88,28 @@ export function isAccountExpired(user: AuthUser | null) {
 function getFriendlyAuthError(response: Response, fallback: string, detail: string) {
   const normalizedDetail = detail.toLowerCase();
 
-  if (response.status === 401) return 'Invalid login. Please check your email and password.';
+  if (normalizedDetail.includes('invite link has already been used')) {
+    return USED_INVITE_MESSAGE;
+  }
+  if (
+    normalizedDetail.includes('invite link has expired') ||
+    normalizedDetail.includes('invite link is invalid') ||
+    normalizedDetail.includes('invite link is invalid or has expired')
+  ) {
+    return EXPIRED_INVITE_MESSAGE;
+  }
+  if (response.status === 401) return INVALID_LOGIN_MESSAGE;
   if (response.status === 403 && normalizedDetail.includes('signup')) {
     return 'Public signup is currently disabled. CarbonLite pilot access is invite-only.';
   }
-  if (normalizedDetail.includes('disabled')) {
-    return 'This account is disabled. Please contact the CarbonLite team for access.';
+  if (normalizedDetail.includes('disabled') || normalizedDetail.includes('deactivated')) {
+    return DEACTIVATED_ACCOUNT_MESSAGE;
   }
   if (response.status === 409 || normalizedDetail.includes('already')) {
     return 'Email already registered. Please log in instead.';
   }
   if (normalizedDetail.includes('invalid') || normalizedDetail.includes('password')) {
-    return 'Invalid login. Please check your email and password.';
+    return INVALID_LOGIN_MESSAGE;
   }
   if (response.status >= 500) return 'Unable to connect to the server. Please check your connection and try again.';
   return fallback;
@@ -119,7 +136,7 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
         response,
         path.includes('register')
           ? 'Registration failed. Please try again.'
-          : 'Invalid login. Please check your email and password.',
+          : INVALID_LOGIN_MESSAGE,
         detail,
       ),
     );
@@ -132,7 +149,7 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
   }
 
   if (data.user?.status && String(data.user.status).toUpperCase() === 'DISABLED') {
-    throw new Error('This account is disabled. Please contact the CarbonLite team for access.');
+    throw new Error(DEACTIVATED_ACCOUNT_MESSAGE);
   }
 
   if (isAccountExpired(data.user ?? null)) {

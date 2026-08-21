@@ -8,20 +8,31 @@ import {
   type FeedbackType,
 } from '../services/feedback';
 import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
-import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import { getSupportEmail } from '../config/api';
 
-const feedbackTypes: Array<{ value: FeedbackType; label: string }> = [
-  { value: 'QUESTION', label: 'Question' },
-  { value: 'SUGGESTION', label: 'Suggestion' },
-  { value: 'BUG', label: 'Bug' },
-  { value: 'OTHER', label: 'Other' },
+type FeedbackCategory =
+  | 'GENERAL'
+  | 'BUG'
+  | 'CONFUSING_WORDING'
+  | 'REPORT'
+  | 'CALCULATION'
+  | 'FACTOR'
+  | 'OTHER';
+
+const feedbackTypes: Array<{ value: FeedbackCategory; label: string; backendType: FeedbackType }> = [
+  { value: 'GENERAL', label: 'General', backendType: 'SUGGESTION' },
+  { value: 'BUG', label: 'Bug', backendType: 'BUG' },
+  { value: 'CONFUSING_WORDING', label: 'Confusing wording', backendType: 'OTHER' },
+  { value: 'REPORT', label: 'Report', backendType: 'OTHER' },
+  { value: 'CALCULATION', label: 'Calculation', backendType: 'OTHER' },
+  { value: 'FACTOR', label: 'Factor', backendType: 'OTHER' },
+  { value: 'OTHER', label: 'Other', backendType: 'OTHER' },
 ];
 
 const initialForm = {
-  type: 'QUESTION' as FeedbackType,
-  intent: '',
+  type: 'GENERAL' as FeedbackCategory,
   message: '',
-  email: '',
+  rating: '',
 };
 
 export function FeedbackWidget() {
@@ -37,12 +48,16 @@ export function FeedbackWidget() {
   const workspaceName = getOrganizationName(user);
   const accountType = getAccountType(user);
   const appVersion = import.meta.env.VITE_APP_VERSION || 'Not available';
+  const supportEmail = getSupportEmail();
   const feedbackHref = buildFeedbackMailtoHref({
     pagePath,
     userEmail: user?.email,
     workspaceName,
     accountType,
     appVersion,
+    feedbackType: getFeedbackTypeLabel(form.type),
+    message: form.message,
+    rating: form.rating,
   });
 
   useEffect(() => {
@@ -71,8 +86,8 @@ export function FeedbackWidget() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!form.intent.trim() || !form.message.trim()) {
-      setError('Please tell us what you were trying to do and what happened.');
+    if (!form.message.trim()) {
+      setError('Please enter your feedback message.');
       return;
     }
 
@@ -81,25 +96,37 @@ export function FeedbackWidget() {
     setSuccess(null);
 
     try {
+      const timestamp = new Date().toISOString();
+      const feedbackTypeLabel = getFeedbackTypeLabel(form.type);
       await submitFeedback({
-        type: form.type,
-        intent: form.intent.trim(),
-        message: form.message.trim(),
-        email: form.email.trim() || undefined,
+        type: mapFeedbackCategoryToBackendType(form.type),
+        intent: `${feedbackTypeLabel} feedback`,
+        message: buildSafeFeedbackMessage({
+          feedbackTypeLabel,
+          message: form.message.trim(),
+          rating: form.rating,
+          pagePath,
+          userEmail: user?.email,
+          accountType,
+          workspaceName,
+          appVersion,
+          timestamp,
+        }),
+        email: user?.email,
         page: pagePath,
         url: `${window.location.origin}${location.pathname}${location.search}${location.hash}`,
         workspaceName,
         accountType,
         appVersion,
       });
-      setSuccess('Thank you for your feedback.');
+      setSuccess('Thank you. Your feedback has been submitted.');
       setForm(initialForm);
       window.setTimeout(() => {
         setIsOpen(false);
         setSuccess(null);
       }, 900);
-    } catch (err) {
-      setError(getUserFriendlyErrorMessage(err, 'feedbackSubmission'));
+    } catch {
+      setError(`Your feedback could not be submitted right now. Please try again or contact ${supportEmail}.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -110,7 +137,6 @@ export function FeedbackWidget() {
       <button
         type="button"
         onClick={() => {
-          setForm((current) => ({ ...current, email: current.email || user?.email || '' }));
           setIsOpen(true);
           setError(null);
           setSuccess(null);
@@ -157,7 +183,7 @@ export function FeedbackWidget() {
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      type: event.target.value as FeedbackType,
+                      type: event.target.value as FeedbackCategory,
                     }))
                   }
                   style={inputStyle}
@@ -171,20 +197,7 @@ export function FeedbackWidget() {
               </label>
 
               <label style={labelStyle}>
-                What were you trying to do? (required)
-                <textarea
-                  value={form.intent}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, intent: event.target.value }))
-                  }
-                  required
-                  rows={3}
-                  style={textareaStyle}
-                />
-              </label>
-
-              <label style={labelStyle}>
-                What happened? (required)
+                Message
                 <textarea
                   value={form.message}
                   onChange={(event) =>
@@ -197,15 +210,21 @@ export function FeedbackWidget() {
               </label>
 
               <label style={labelStyle}>
-                Email (optional)
-                <input
-                  type="email"
-                  value={form.email}
+                Rating (optional)
+                <select
+                  value={form.rating}
                   onChange={(event) =>
-                    setForm((current) => ({ ...current, email: event.target.value }))
+                    setForm((current) => ({ ...current, rating: event.target.value }))
                   }
                   style={inputStyle}
-                />
+                >
+                  <option value="">No rating</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
               </label>
 
               <div style={actionsStyle}>
@@ -225,6 +244,40 @@ export function FeedbackWidget() {
       ) : null}
     </>
   );
+}
+
+function getFeedbackTypeLabel(value: FeedbackCategory) {
+  return feedbackTypes.find((type) => type.value === value)?.label ?? 'General';
+}
+
+function mapFeedbackCategoryToBackendType(value: FeedbackCategory): FeedbackType {
+  return feedbackTypes.find((type) => type.value === value)?.backendType ?? 'OTHER';
+}
+
+function buildSafeFeedbackMessage(input: {
+  feedbackTypeLabel: string;
+  message: string;
+  rating: string;
+  pagePath: string;
+  userEmail?: string | null;
+  accountType: string;
+  workspaceName: string;
+  appVersion: string;
+  timestamp: string;
+}) {
+  return [
+    input.message,
+    '',
+    'Feedback context:',
+    `Feedback type: ${input.feedbackTypeLabel}`,
+    `Rating: ${input.rating || 'Not provided'}`,
+    `Page path: ${input.pagePath}`,
+    `User email: ${input.userEmail || 'Not provided'}`,
+    `Account type: ${input.accountType}`,
+    `Workspace: ${input.workspaceName}`,
+    `App version: ${input.appVersion}`,
+    `Timestamp: ${input.timestamp}`,
+  ].join('\n');
 }
 
 const floatingButtonStyle: CSSProperties = {

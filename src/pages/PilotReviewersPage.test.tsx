@@ -1,7 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PilotReviewersPage from './PilotReviewersPage';
-import { createPilotReviewer } from '../services/pilotReviewers';
+import {
+  createPilotReviewer,
+  deactivatePilotReviewer,
+  regeneratePilotReviewerInvite,
+} from '../services/pilotReviewers';
 
 vi.mock('../services/pilotReviewers', async () => {
   const actual = await vi.importActual<typeof import('../services/pilotReviewers')>(
@@ -11,12 +15,15 @@ vi.mock('../services/pilotReviewers', async () => {
   return {
     ...actual,
     createPilotReviewer: vi.fn(),
+    deactivatePilotReviewer: vi.fn(),
+    regeneratePilotReviewerInvite: vi.fn(),
   };
 });
 
 describe('PilotReviewersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     Object.assign(navigator, {
       clipboard: {
         writeText: vi.fn().mockResolvedValue(undefined),
@@ -31,6 +38,7 @@ describe('PilotReviewersPage', () => {
       workspaceName: 'CarbonLite Sample Workspace',
       accountType: 'PILOT_REVIEWER',
       role: 'REVIEWER',
+      status: 'Active',
       expiresAt: '2026-09-01',
       inviteLink: 'https://app.example.com/set-password?token=secure-token',
     });
@@ -46,6 +54,7 @@ describe('PilotReviewersPage', () => {
     await userEvent.type(screen.getByLabelText(/optional expiration date/i), '2026-09-01');
     await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
 
+    expect(window.confirm).toHaveBeenCalledWith('Create pilot reviewer for: alexander@example.com');
     expect(createPilotReviewer).toHaveBeenCalledWith({
       name: 'Alexander',
       email: 'alexander@example.com',
@@ -53,6 +62,10 @@ describe('PilotReviewersPage', () => {
       expiresAt: '2026-09-01',
     });
     expect(await screen.findByRole('heading', { name: 'Invite Ready' })).toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(
+      screen.getByText('Copy this link now. For security, it may not be shown again.'),
+    ).toBeInTheDocument();
     expect(screen.getByDisplayValue('https://app.example.com/set-password?token=secure-token')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
@@ -83,6 +96,19 @@ describe('PilotReviewersPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not create a pilot reviewer when confirmation is cancelled', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+
+    render(<PilotReviewersPage />);
+
+    await userEvent.type(screen.getByLabelText(/^name/i), 'Alexander');
+    await userEvent.type(screen.getByLabelText(/^email/i), 'Alexander@Example.com');
+    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith('Create pilot reviewer for: alexander@example.com');
+    expect(createPilotReviewer).not.toHaveBeenCalled();
+  });
+
   it('shows a friendly validation error for markdown email values', async () => {
     render(<PilotReviewersPage />);
 
@@ -100,5 +126,90 @@ describe('PilotReviewersPage', () => {
       ),
     ).toBeInTheDocument();
     expect(createPilotReviewer).not.toHaveBeenCalled();
+  });
+
+  it('shows a friendly validation error for common typo email domains', async () => {
+    render(<PilotReviewersPage />);
+
+    await userEvent.type(screen.getByLabelText(/^name/i), 'Alexander');
+    await userEvent.type(screen.getByLabelText(/^email/i), 'alexander@gamil.com');
+    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+
+    expect(
+      await screen.findByText(
+        'Please enter a valid email address, for example name@example.com.',
+      ),
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(createPilotReviewer).not.toHaveBeenCalled();
+  });
+
+  it('deactivates a pilot reviewer after confirmation and shows status', async () => {
+    vi.mocked(deactivatePilotReviewer).mockResolvedValue({
+      success: true,
+      message: 'This pilot reviewer account has been deactivated.',
+      pilotReviewer: {
+        email: 'alexander@example.com',
+        status: 'Deactivated',
+      },
+    });
+
+    render(<PilotReviewersPage />);
+
+    await userEvent.type(
+      screen.getByLabelText(/pilot reviewer email/i),
+      'Alexander@Example.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /deactivate pilot reviewer/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('alexander@example.com'),
+    );
+    expect(deactivatePilotReviewer).toHaveBeenCalledWith('alexander@example.com');
+    expect(
+      await screen.findByText('This pilot reviewer account has been deactivated.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Status: Deactivated')).toBeInTheDocument();
+  });
+
+  it('regenerates an invite link for an active pilot reviewer', async () => {
+    vi.mocked(regeneratePilotReviewerInvite).mockResolvedValue({
+      success: true,
+      message: 'Invite link regenerated.',
+      inviteLink: 'https://www.carbonliteapp.ca/set-password?token=new-token',
+      pilotReviewer: {
+        email: 'alexander@example.com',
+        workspaceName: 'CarbonLite Sample Workspace',
+        accountType: 'PILOT_REVIEWER',
+        role: 'REVIEWER',
+        status: 'Active',
+      },
+    });
+
+    render(<PilotReviewersPage />);
+
+    await userEvent.type(
+      screen.getByLabelText(/invite regeneration email/i),
+      'Alexander@Example.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /regenerate invite link/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Regenerate invite link for: alexander@example.com',
+    );
+    expect(regeneratePilotReviewerInvite).toHaveBeenCalledWith('alexander@example.com');
+    expect(
+      await screen.findByRole('heading', { name: 'Invite Link Regenerated' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue('https://www.carbonliteapp.ca/set-password?token=new-token'),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /copy regenerated setup link/i }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      'https://www.carbonliteapp.ca/set-password?token=new-token',
+    );
+    expect(screen.getByText('Regenerated setup link copied.')).toBeInTheDocument();
   });
 });

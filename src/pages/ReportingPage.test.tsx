@@ -172,6 +172,36 @@ describe('ReportingPage audit trail', () => {
     expect(screen.getByText(/Records imported from Golden Test Data/i)).toBeInTheDocument();
   });
 
+  it('hides internal workflow audit details for pilot reviewer accounts', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'reviewer@example.com',
+        organizationName: 'CarbonLite Sample Workspace',
+        accountType: 'PILOT_REVIEWER',
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    expect(await screen.findByRole('heading', { name: 'Reports' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Report Scope' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Audit Trail')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Audit Trail/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Have feedback on this page/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Send Feedback' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('mailto:'),
+    );
+    expect(getActivityEvents).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/37,285 kgCO2e|37,285 kg CO2e/i).length).toBeGreaterThan(0);
+  });
+
   it('logs PDF_EXPORTED, not REPORT_GENERATED, when downloading the PDF', async () => {
     render(
       <MemoryRouter>

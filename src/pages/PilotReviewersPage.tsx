@@ -1,8 +1,12 @@
 import { FormEvent, useMemo, useState } from 'react';
 import {
   createPilotReviewer,
+  deactivatePilotReviewer,
   normalizePilotReviewerEmail,
+  regeneratePilotReviewerInvite,
   type CreatePilotReviewerResponse,
+  type DeactivatePilotReviewerResponse,
+  type RegeneratePilotReviewerInviteResponse,
 } from '../services/pilotReviewers';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
@@ -17,10 +21,21 @@ export default function PilotReviewersPage() {
   const [error, setError] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deactivateEmail, setDeactivateEmail] = useState('');
+  const [deactivateResult, setDeactivateResult] =
+    useState<DeactivatePilotReviewerResponse | null>(null);
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
+  const [regenerateEmail, setRegenerateEmail] = useState('');
+  const [regenerateResult, setRegenerateResult] =
+    useState<RegeneratePilotReviewerInviteResponse | null>(null);
+  const [regenerateError, setRegenerateError] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
-  const setupLink = useMemo(
-    () => result?.inviteLink || result?.setupUrl || result?.inviteUrl || '',
-    [result],
+  const setupLink = useMemo(() => getInviteLink(result), [result]);
+  const regeneratedSetupLink = useMemo(
+    () => getInviteLink(regenerateResult),
+    [regenerateResult],
   );
 
   async function handleSubmit(event: FormEvent) {
@@ -33,6 +48,11 @@ export default function PilotReviewersPage() {
     try {
       const normalizedEmail = normalizePilotReviewerEmail(email);
       setEmail(normalizedEmail);
+
+      if (!window.confirm(`Create pilot reviewer for: ${normalizedEmail}`)) {
+        return;
+      }
+
       const response = await createPilotReviewer({
         name,
         email: normalizedEmail,
@@ -53,6 +73,57 @@ export default function PilotReviewersPage() {
       setCopyMessage(`${label} copied.`);
     } catch {
       setCopyMessage(`Unable to copy ${label.toLowerCase()}. Select and copy it manually.`);
+    }
+  }
+
+  async function handleDeactivate(event: FormEvent) {
+    event.preventDefault();
+    setDeactivateError(null);
+    setDeactivateResult(null);
+
+    try {
+      const normalizedEmail = normalizePilotReviewerEmail(deactivateEmail);
+      setDeactivateEmail(normalizedEmail);
+
+      if (
+        !window.confirm(
+          `Deactivate pilot reviewer account ${normalizedEmail}? This will prevent login and will not delete sample workspace data.`,
+        )
+      ) {
+        return;
+      }
+
+      setDeactivating(true);
+      const response = await deactivatePilotReviewer(normalizedEmail);
+      setDeactivateResult(response);
+    } catch (err) {
+      setDeactivateError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setDeactivating(false);
+    }
+  }
+
+  async function handleRegenerateInvite(event: FormEvent) {
+    event.preventDefault();
+    setRegenerateError(null);
+    setRegenerateResult(null);
+    setCopyMessage(null);
+
+    try {
+      const normalizedEmail = normalizePilotReviewerEmail(regenerateEmail);
+      setRegenerateEmail(normalizedEmail);
+
+      if (!window.confirm(`Regenerate invite link for: ${normalizedEmail}`)) {
+        return;
+      }
+
+      setRegenerating(true);
+      const response = await regeneratePilotReviewerInvite(normalizedEmail);
+      setRegenerateResult(response);
+    } catch (err) {
+      setRegenerateError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -147,11 +218,15 @@ export default function PilotReviewersPage() {
             <ResultItem label="Workspace" value={result.workspaceName || result.workspace || workspaceName} />
             <ResultItem label="Account Type" value={result.accountType || 'PILOT_REVIEWER'} />
             <ResultItem label="Role" value={result.role || 'REVIEWER'} />
+            <ResultItem label="Status" value={result.status || 'Active'} />
             <ResultItem label="Expires" value={result.expiresAt || result.expires || expiresAt || 'Not set'} />
           </div>
 
           {setupLink ? (
             <div style={copyBlockStyle}>
+              <div style={warningStyle}>
+                Copy this link now. For security, it may not be shown again.
+              </div>
               <label style={labelStyle}>
                 Password setup link
                 <textarea readOnly value={setupLink} style={textareaStyle} />
@@ -191,8 +266,157 @@ export default function PilotReviewersPage() {
           {copyMessage ? <div style={successStyle}>{copyMessage}</div> : null}
         </section>
       ) : null}
+
+      <form onSubmit={handleRegenerateInvite} style={formCardWithMarginStyle}>
+        <h2 style={sectionTitleStyle}>Regenerate Invite Link</h2>
+        <p style={helperTextStyle}>
+          Generate a new set-password link for an active pilot reviewer. This does not
+          change the reviewer role, account type, workspace, or permissions. Email is
+          not sent automatically.
+        </p>
+
+        <div style={fieldGridStyle}>
+          <label style={labelStyle}>
+            Invite regeneration email
+            <input
+              type="text"
+              inputMode="email"
+              value={regenerateEmail}
+              onChange={(event) => setRegenerateEmail(event.target.value)}
+              onBlur={(event) => setRegenerateEmail(event.target.value.trim().toLowerCase())}
+              required
+              placeholder="name@example.com"
+              autoComplete="email"
+              style={inputStyle}
+            />
+          </label>
+        </div>
+
+        {regenerateError ? <div style={errorStyle}>{regenerateError}</div> : null}
+
+        <button type="submit" disabled={regenerating} style={primaryButtonStyle(regenerating)}>
+          {regenerating ? 'Regenerating...' : 'Regenerate Invite Link'}
+        </button>
+      </form>
+
+      {regenerateResult ? (
+        <section style={resultCardStyle} aria-label="Regenerated pilot reviewer invite">
+          <h2 style={sectionTitleStyle}>Invite Link Regenerated</h2>
+          <div style={resultGridStyle}>
+            <ResultItem
+              label="Email"
+              value={
+                regenerateResult.pilotReviewer?.email ||
+                regenerateResult.email ||
+                regenerateEmail
+              }
+            />
+            <ResultItem
+              label="Workspace"
+              value={
+                regenerateResult.pilotReviewer?.workspaceName ||
+                regenerateResult.workspaceName ||
+                regenerateResult.workspace ||
+                DEFAULT_WORKSPACE
+              }
+            />
+            <ResultItem
+              label="Account Type"
+              value={
+                regenerateResult.pilotReviewer?.accountType ||
+                regenerateResult.accountType ||
+                'PILOT_REVIEWER'
+              }
+            />
+            <ResultItem
+              label="Role"
+              value={
+                regenerateResult.pilotReviewer?.role ||
+                regenerateResult.role ||
+                'REVIEWER'
+              }
+            />
+            <ResultItem
+              label="Status"
+              value={
+                regenerateResult.pilotReviewer?.status ||
+                regenerateResult.status ||
+                'Active'
+              }
+            />
+          </div>
+
+          {regeneratedSetupLink ? (
+            <div style={copyBlockStyle}>
+              <label style={labelStyle}>
+                New password setup link
+                <textarea readOnly value={regeneratedSetupLink} style={textareaStyle} />
+              </label>
+              <button
+                type="button"
+                onClick={() => copyValue(regeneratedSetupLink, 'Regenerated setup link')}
+                style={secondaryButtonStyle}
+              >
+                Copy regenerated setup link
+              </button>
+            </div>
+          ) : (
+            <div style={warningStyle}>
+              The backend regenerated the invite but did not return a setup link.
+              Confirm backend invite configuration before sharing access.
+            </div>
+          )}
+
+          {copyMessage ? <div style={successStyle}>{copyMessage}</div> : null}
+        </section>
+      ) : null}
+
+      <form onSubmit={handleDeactivate} style={deactivateCardStyle}>
+        <h2 style={sectionTitleStyle}>Deactivate Pilot Reviewer</h2>
+        <p style={helperTextStyle}>
+          Deactivation prevents login. It does not delete the reviewer account, admin
+          users, records, reports, factors, or sample workspace data.
+        </p>
+
+        <div style={fieldGridStyle}>
+          <label style={labelStyle}>
+            Pilot reviewer email
+            <input
+              type="text"
+              inputMode="email"
+              value={deactivateEmail}
+              onChange={(event) => setDeactivateEmail(event.target.value)}
+              onBlur={(event) => setDeactivateEmail(event.target.value.trim().toLowerCase())}
+              required
+              placeholder="name@example.com"
+              autoComplete="email"
+              style={inputStyle}
+            />
+          </label>
+        </div>
+
+        {deactivateError ? <div style={errorStyle}>{deactivateError}</div> : null}
+        {deactivateResult ? (
+          <div style={successStyle}>
+            {deactivateResult.message || 'This pilot reviewer account has been deactivated.'}
+            {deactivateResult.pilotReviewer?.status ? (
+              <div>Status: {deactivateResult.pilotReviewer.status}</div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <button type="submit" disabled={deactivating} style={dangerButtonStyle(deactivating)}>
+          {deactivating ? 'Deactivating...' : 'Deactivate Pilot Reviewer'}
+        </button>
+      </form>
     </div>
   );
+}
+
+function getInviteLink(
+  result: CreatePilotReviewerResponse | RegeneratePilotReviewerInviteResponse | null,
+) {
+  return result?.inviteLink || result?.setupUrl || result?.inviteUrl || '';
 }
 
 function ResultItem({ label, value }: { label: string; value: string }) {
@@ -244,6 +468,17 @@ const formCardStyle: React.CSSProperties = {
   border: '1px solid #e2e8f0',
   background: '#fff',
   boxShadow: '0 8px 24px rgba(15, 23, 42, 0.05)',
+};
+
+const deactivateCardStyle: React.CSSProperties = {
+  ...formCardStyle,
+  marginTop: 18,
+  borderColor: '#fecaca',
+};
+
+const formCardWithMarginStyle: React.CSSProperties = {
+  ...formCardStyle,
+  marginTop: 18,
 };
 
 const sectionTitleStyle: React.CSSProperties = {
@@ -323,6 +558,14 @@ function primaryButtonStyle(disabled: boolean): React.CSSProperties {
     color: '#fff',
     fontWeight: 900,
     cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function dangerButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    ...primaryButtonStyle(disabled),
+    border: '1px solid #b91c1c',
+    background: disabled ? '#9ca3af' : '#b91c1c',
   };
 }
 

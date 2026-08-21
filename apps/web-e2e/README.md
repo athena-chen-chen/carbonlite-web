@@ -57,6 +57,20 @@ PLAYWRIGHT_BASE_URL=https://carbonliteapp.ca pnpm test:e2e
 
 The tests mock backend API responses, so they do not modify production data.
 
+## Production Pilot Reviewer Smoke
+
+Use this read-only check for the live pilot reviewer workflow:
+
+```bash
+CARBONLITE_PROD_PILOT_REVIEWER_EMAIL=reviewer@example.com \
+CARBONLITE_PROD_PILOT_REVIEWER_PASSWORD='password' \
+pnpm test:prod-smoke
+```
+
+The production smoke test does not upload, import, edit, delete, reset, generate
+reports, or export files. It allows only login plus read-only API requests and
+fails if the UI attempts an unexpected production mutation.
+
 GitHub Actions runs `pnpm verify:deployment` for pull requests and every push
 to `main`. Configure `CarbonLite Regression Gate` as a required branch check so
 deployment cannot proceed when a critical workflow fails.

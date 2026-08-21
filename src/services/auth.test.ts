@@ -216,7 +216,7 @@ describe('public signup controls', () => {
     await expect(
       login({ email: 'disabled@example.com', password: 'Password123!' }),
     ).rejects.toThrow(
-      'This account is disabled. Please contact the CarbonLite team for access.',
+      'This account has been deactivated. Please contact hello@carbonliteapp.ca.',
     );
   });
 });
@@ -263,6 +263,45 @@ describe('invite-only password setup controls', () => {
           password: 'LongPassword123!',
         }),
       }),
+    );
+  });
+
+  it('shows a friendly message for expired invite links', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ message: 'This invite link is invalid or has expired.' }),
+        { status: 401 },
+      ),
+    );
+
+    await expect(
+      setPasswordFromToken({
+        token: 'bad-token',
+        password: 'LongPassword123!',
+      }),
+    ).rejects.toThrow(
+      'This invite link has expired. Please contact hello@carbonliteapp.ca for a new link.',
+    );
+  });
+
+  it('shows a friendly message for already-used invite links', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message:
+            'This invite link has already been used. Please log in or contact hello@carbonliteapp.ca.',
+        }),
+        { status: 401 },
+      ),
+    );
+
+    await expect(
+      setPasswordFromToken({
+        token: 'used-token',
+        password: 'LongPassword123!',
+      }),
+    ).rejects.toThrow(
+      'This invite link has already been used. Please log in or contact hello@carbonliteapp.ca.',
     );
   });
 });

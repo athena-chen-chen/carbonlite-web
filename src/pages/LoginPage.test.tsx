@@ -132,7 +132,7 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     expect(
-      await screen.findByText(/invalid login/i),
+      await screen.findByText('The email or password is incorrect.'),
     ).toBeInTheDocument();
     expect(localStorage.getItem('accessToken')).toBeNull();
   });

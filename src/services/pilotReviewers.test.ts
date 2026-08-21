@@ -1,5 +1,10 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
-import { createPilotReviewer, normalizePilotReviewerEmail } from './pilotReviewers';
+import {
+  createPilotReviewer,
+  deactivatePilotReviewer,
+  normalizePilotReviewerEmail,
+  regeneratePilotReviewerInvite,
+} from './pilotReviewers';
 
 describe('pilot reviewer admin service', () => {
   beforeEach(() => {
@@ -128,6 +133,87 @@ describe('pilot reviewer admin service', () => {
     );
     expect(() => normalizePilotReviewerEmail('"alexander@example.com"')).toThrow(
       'Please enter a valid email address, for example name@example.com.',
+    );
+    expect(() => normalizePilotReviewerEmail('alexander@gamil.com')).toThrow(
+      'Please enter a valid email address, for example name@example.com.',
+    );
+  });
+
+  it('deactivates a pilot reviewer through the admin endpoint', async () => {
+    localStorage.setItem('accessToken', 'admin-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        organizationId: 'sample-org',
+      }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          message: 'This pilot reviewer account has been deactivated.',
+          pilotReviewer: {
+            email: 'alexander@example.com',
+            status: 'Deactivated',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await deactivatePilotReviewer(' Alexander@Example.com ');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/admin/pilot-reviewers/deactivate`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer admin-token',
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ email: 'alexander@example.com' }),
+      }),
+    );
+  });
+
+  it('regenerates a pilot reviewer invite link through the admin endpoint', async () => {
+    localStorage.setItem('accessToken', 'admin-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        organizationId: 'sample-org',
+      }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          inviteLink: 'https://www.carbonliteapp.ca/set-password?token=new-token',
+          pilotReviewer: {
+            email: 'alexander@example.com',
+            status: 'Active',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await regeneratePilotReviewerInvite(' Alexander@Example.com ');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/admin/pilot-reviewers/regenerate-invite`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer admin-token',
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ email: 'alexander@example.com' }),
+      }),
     );
   });
 });

@@ -45,6 +45,39 @@ describe('SetPasswordPage', () => {
     await waitFor(() => expect(screen.getByText('Login page')).toBeInTheDocument());
   });
 
+  it('shows friendly invite link errors and support links without exposing tokens', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message:
+            'This invite link has already been used. Please log in or contact hello@carbonliteapp.ca.',
+        }),
+        { status: 401 },
+      ),
+    );
+
+    renderPage('/set-password?token=used-secret-token');
+
+    await userEvent.type(screen.getByLabelText(/^new password/i), 'LongPassword123!');
+    await userEvent.type(screen.getByLabelText(/confirm new password/i), 'LongPassword123!');
+    await userEvent.click(screen.getByRole('button', { name: /^set password$/i }));
+
+    expect(
+      await screen.findByText(
+        'This invite link has already been used. Please log in or contact hello@carbonliteapp.ca.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('used-secret-token')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'hello@carbonliteapp.ca' })).toHaveAttribute(
+      'href',
+      'mailto:hello@carbonliteapp.ca',
+    );
+    expect(screen.getByRole('link', { name: /back to login/i })).toHaveAttribute(
+      'href',
+      'https://www.carbonliteapp.ca/login',
+    );
+  });
+
   it('validates password length and matching confirmation before calling the API', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
 

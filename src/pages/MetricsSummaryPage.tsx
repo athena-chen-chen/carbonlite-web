@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -16,12 +16,22 @@ import {
   MetricsSummarySection,
   type MissingFactorItem,
 } from '../components/MetricsSummarySection';
+import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
 import { trackActivityEvent } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
+import {
+  getAccountType,
+  getCurrentUser,
+  getOrganizationName,
+  isPilotReviewer,
+} from '../services/auth';
+import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
 
 
 export function MetricsSummaryPage() {
   const location = useLocation();
+  const currentUser = getCurrentUser();
+  const showPilotReviewerWelcome = isPilotReviewer(currentUser);
   const [summary, setSummary] = useState<any>(null);
   const [activities, setActivities] = useState<ActivityUsageRecord[]>([]);
   const [usageTotals, setUsageTotals] = useState(EMPTY_ACTIVITY_USAGE_TOTALS);
@@ -337,6 +347,14 @@ function handleDownloadPDF() {
   const hasLoadedSummary = lastUpdated !== null || summary !== null;
   const isInitialLoading = !hasLoadedSummary && !error;
   const isRefreshing = loading && hasLoadedSummary;
+  const pilotReviewerFeedbackHref = showPilotReviewerWelcome
+    ? buildFeedbackMailtoHref({
+        pagePath: location.pathname,
+        userEmail: currentUser?.email,
+        workspaceName: getOrganizationName(currentUser),
+        accountType: getAccountType(currentUser),
+      })
+    : '';
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
@@ -345,6 +363,14 @@ function handleDownloadPDF() {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Internal workspace for validating emissions calculations, data quality, included and excluded records, and factor matching issues before generating a shareable report.
       </p>
+
+      {showPilotReviewerWelcome ? (
+        <>
+          <PilotReviewerWelcomePanel feedbackHref={pilotReviewerFeedbackHref} />
+          <PilotReviewerFeedbackPrompt feedbackHref={pilotReviewerFeedbackHref} />
+        </>
+      ) : null}
+
       <div style={filterCardStyle}>
         <div>
           <label style={labelStyle}>Start Date</label>
@@ -456,6 +482,38 @@ function handleDownloadPDF() {
   );
 }
 
+function PilotReviewerWelcomePanel({ feedbackHref }: { feedbackHref: string }) {
+  return (
+    <section aria-label="How to review CarbonLite" style={pilotReviewerPanelStyle}>
+      <h2 style={pilotReviewerTitleStyle}>How to review CarbonLite</h2>
+      <p style={pilotReviewerTextStyle}>This account is read-only and uses sample data only.</p>
+      <p style={pilotReviewerPathLabelStyle}>Suggested review path:</p>
+      <ol style={pilotReviewerListStyle}>
+        <li>
+          <Link to="/data-records" style={pilotReviewerLinkStyle}>Data Records</Link>
+          <span style={pilotReviewerDescriptionStyle}> — review sample activity data</span>
+        </li>
+        <li>
+          <Link to="/conversion-factors" style={pilotReviewerLinkStyle}>Factors</Link>
+          <span style={pilotReviewerDescriptionStyle}> — review emission factor transparency</span>
+        </li>
+        <li>
+          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Calculation Review</Link>
+          <span style={pilotReviewerDescriptionStyle}> — review totals and calculation trail</span>
+        </li>
+        <li>
+          <Link to="/reports" style={pilotReviewerLinkStyle}>Reports</Link>
+          <span style={pilotReviewerDescriptionStyle}> — review sample report structure and disclaimer</span>
+        </li>
+        <li>
+          <a href={feedbackHref} style={pilotReviewerLinkStyle}>Send Feedback</a>
+          <span style={pilotReviewerDescriptionStyle}> — share comments or questions</span>
+        </li>
+      </ol>
+    </section>
+  );
+}
+
 function formatLastUpdated(date: Date) {
   return date.toLocaleTimeString([], {
     hour: '2-digit',
@@ -483,6 +541,49 @@ const warningStyle: React.CSSProperties = {
   border: '1px solid #fed7aa',
   background: '#fff7ed',
   color: '#9a3412',
+};
+
+const pilotReviewerPanelStyle: React.CSSProperties = {
+  marginBottom: 18,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#0f172a',
+};
+
+const pilotReviewerTitleStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 18,
+  lineHeight: 1.35,
+};
+
+const pilotReviewerTextStyle: React.CSSProperties = {
+  margin: '8px 0 0',
+  color: '#334155',
+  lineHeight: 1.5,
+};
+
+const pilotReviewerPathLabelStyle: React.CSSProperties = {
+  margin: '12px 0 6px',
+  color: '#1e3a8a',
+  fontWeight: 800,
+};
+
+const pilotReviewerListStyle: React.CSSProperties = {
+  margin: 0,
+  paddingLeft: 22,
+  color: '#334155',
+  lineHeight: 1.7,
+};
+
+const pilotReviewerLinkStyle: React.CSSProperties = {
+  color: '#0369a1',
+  fontWeight: 800,
+};
+
+const pilotReviewerDescriptionStyle: React.CSSProperties = {
+  color: '#475569',
 };
 
 const filterCardStyle: React.CSSProperties = {

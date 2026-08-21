@@ -21,6 +21,7 @@ export type CreatePilotReviewerResponse = {
   accountType?: string;
   expiresAt?: string | null;
   expires?: string | null;
+  status?: 'Active' | 'Deactivated' | 'Expired' | string;
   inviteLink?: string;
   setupUrl?: string;
   inviteUrl?: string;
@@ -28,16 +29,41 @@ export type CreatePilotReviewerResponse = {
   message?: string;
 };
 
+export type DeactivatePilotReviewerResponse = {
+  success: boolean;
+  message: string;
+  pilotReviewer?: {
+    name?: string;
+    email: string;
+    workspaceName?: string;
+    accountType?: string;
+    role?: string;
+    expiresAt?: string | null;
+    status?: 'Active' | 'Deactivated' | 'Expired' | string;
+  };
+};
+
+export type RegeneratePilotReviewerInviteResponse = Partial<CreatePilotReviewerResponse> & {
+  success?: boolean;
+  pilotReviewer?: DeactivatePilotReviewerResponse['pilotReviewer'];
+};
+
 export function normalizePilotReviewerEmail(email: string) {
   const normalized = email.trim().toLowerCase();
   if (
     /[\[\]()"']|mailto:/i.test(normalized) ||
-    !/^[^\s@()[\]"']+@[^\s@()[\]"']+\.[^\s@()[\]"']+$/.test(normalized)
+    !/^[^\s@()[\]"']+@[^\s@()[\]"']+\.[^\s@()[\]"']+$/.test(normalized) ||
+    isKnownEmailDomainTypo(normalized)
   ) {
     throw new Error(PILOT_REVIEWER_EMAIL_VALIDATION_MESSAGE);
   }
 
   return normalized;
+}
+
+function isKnownEmailDomainTypo(email: string) {
+  const domain = email.split('@')[1] ?? '';
+  return ['gamil.com', 'gmai.com', 'gmial.com'].includes(domain);
 }
 
 export function createPilotReviewer(input: CreatePilotReviewerInput) {
@@ -78,4 +104,27 @@ export function createPilotReviewer(input: CreatePilotReviewerInput) {
       },
     }),
   });
+}
+
+export function deactivatePilotReviewer(emailInput: string) {
+  requirePermission(isAdminUser(getCurrentUser()));
+  const email = normalizePilotReviewerEmail(emailInput);
+
+  return apiFetch<DeactivatePilotReviewerResponse>('/admin/pilot-reviewers/deactivate', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function regeneratePilotReviewerInvite(emailInput: string) {
+  requirePermission(isAdminUser(getCurrentUser()));
+  const email = normalizePilotReviewerEmail(emailInput);
+
+  return apiFetch<RegeneratePilotReviewerInviteResponse>(
+    '/admin/pilot-reviewers/regenerate-invite',
+    {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    },
+  );
 }

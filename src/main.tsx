@@ -7,7 +7,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from './components/Toast';
 import { AppDialogProvider } from './components/AppDialog';
 import { AuthProvider } from './auth/AuthProvider'; // from earlier step
-import { AppErrorFallback } from './components/AppErrorFallback';
+import { AppErrorBoundary, AppErrorFallback } from './components/AppErrorFallback';
 import { initSentry, SentryErrorBoundary } from './sentry';
 import { initAnalytics } from './services/analytics.service';
 import { initGA4 } from './services/ga4.service';
@@ -22,15 +22,17 @@ initGA4();
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <SentryErrorBoundary fallback={<AppErrorFallback />}>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <ToastProvider>
-            <AppDialogProvider>
-              <App />
-            </AppDialogProvider>
-          </ToastProvider>
-        </AuthProvider>
-      </QueryClientProvider>
+      <AppErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <ToastProvider>
+              <AppDialogProvider>
+                <App />
+              </AppDialogProvider>
+            </ToastProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </AppErrorBoundary>
     </SentryErrorBoundary>
   </React.StrictMode>
 );

@@ -87,3 +87,33 @@ The smoke workflow verifies:
 
 Playwright already keeps screenshots, videos, and traces for failed runs through
 `apps/web-e2e/playwright.config.ts`.
+
+## Production Pilot Reviewer Smoke Test
+
+Run the minimal read-only production smoke test with a real pilot reviewer
+account:
+
+```bash
+CARBONLITE_PROD_PILOT_REVIEWER_EMAIL=reviewer@example.com \
+CARBONLITE_PROD_PILOT_REVIEWER_PASSWORD='password' \
+pnpm test:prod-smoke
+```
+
+Optional:
+
+```bash
+CARBONLITE_PRODUCTION_BASE_URL=https://www.carbonliteapp.ca
+```
+
+This smoke test does not upload, import, edit, delete, reset data, generate
+reports, or export files. It verifies the production pilot reviewer workflow:
+
+- login page loads
+- public signup is hidden
+- pilot reviewer login succeeds
+- pilot reviewer banner appears
+- Data Records loads with the 10 golden sample records
+- Calculation Review shows `37,285 kgCO2e`
+- Reports page loads
+- Factors page is read-only
+- Admin menu is hidden for Pilot Reviewer accounts

@@ -34,7 +34,8 @@ import {
 } from '../components/FormalReportPreview';
 import { CollapsibleReportSection } from '../components/reports/CollapsibleReportSection';
 import { ReportScopeSection } from '../components/reports/sections/ReportScopeSection';
-import { getCurrentUser, getOrganizationName } from '../services/auth';
+import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
+import { getAccountType, getCurrentUser, getOrganizationName, isPilotReviewer } from '../services/auth';
 import { createClientAuditLog } from '../services/auditLogs';
 import { getActivityEvents, trackActivityEvent, type ActivityEventItem } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
@@ -53,6 +54,7 @@ import {
   formatScopeSource,
   resolveScopeClassification,
 } from '../utils/scopeClassification';
+import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
 import { getActivityTypeLabel } from '../utils/activityType';
 import { formatDateOnly } from '../utils/dateOnly';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
@@ -158,6 +160,8 @@ const WORKFLOW_AUDIT_EVENT_NAMES = new Set([
 export default function ReportingPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const isPilotReviewerAccount = isPilotReviewer(currentUser);
   const routeState = location.state as {
     reportScope?: string;
     selectedRecordIds?: string[];
@@ -306,14 +310,16 @@ export default function ReportingPage() {
 
   useEffect(() => {
     initializeDateRange();
-    void loadWorkflowEvents();
+    if (!isPilotReviewerAccount) {
+      void loadWorkflowEvents();
+    }
 
     return () => {
       if (dateCommitTimerRef.current) {
         window.clearTimeout(dateCommitTimerRef.current);
       }
     };
-  }, []);
+  }, [isPilotReviewerAccount]);
 
   useEffect(() => {
     if (trackedReportViewRef.current) return;
@@ -1647,7 +1653,15 @@ function formatWorkflowEventSummary(event: ActivityEventItem) {
   return String(metadata.eventLabel ?? event.description ?? 'Workflow event recorded.');
 }
 
-const organizationName = getOrganizationName(getCurrentUser());
+const organizationName = getOrganizationName(currentUser);
+const pilotReviewerFeedbackHref = isPilotReviewerAccount
+  ? buildFeedbackMailtoHref({
+      pagePath: location.pathname,
+      userEmail: currentUser?.email,
+      workspaceName: organizationName,
+      accountType: getAccountType(currentUser),
+    })
+  : '';
 const generatedAt = new Date().toLocaleString();
 const reportScopeLabel = getReportScopeLabel(
   reportScope,
@@ -1723,6 +1737,10 @@ function setAllReportSections(expanded: boolean) {
         Polished reporting output for sharing emissions totals, scope summaries, included and excluded record counts, methodology notes, factor source notes, and disclaimers.
       </p>
 
+      {isPilotReviewerAccount ? (
+        <PilotReviewerFeedbackPrompt feedbackHref={pilotReviewerFeedbackHref} />
+      ) : null}
+
       {/* <div style={paidPilotScopeCalloutStyle}>
         <span>Preparing a structured pilot review?</span>
         <button
@@ -1756,46 +1774,48 @@ function setAllReportSections(expanded: boolean) {
         </button>
       </div>
 
-      <CollapsibleReportSection
-        id="report-scope-report-section"
-        title="Report Scope"
-        summary={reportPeriod}
-        expanded={expandedSections.reportScope}
-        onToggle={() => toggleReportSection('reportScope')}
-      >
-        <ReportScopeSection
-          reportScope={reportScope}
-          selectedDocumentCount={selectedDocumentIds.length}
-          selectedRecordCount={selectedRecordIds.length}
-          draftPeriodStart={draftPeriodStart}
-          draftPeriodEnd={draftPeriodEnd}
-          loading={loading}
-          fullYearShortcutYears={getFullYearShortcutYears()}
-          onReportScopeChange={setReportScope}
-          onStartDateChange={handleStartDateChange}
-          onEndDateChange={handleEndDateChange}
-          onCommitDateRange={commitDateRange}
-          onFullYear={handleFullYear}
-          styles={{
-            filterCard: filterCardStyle,
-            label: labelStyle,
-            scopeToggle: scopeToggleStyle,
-            input: inputStyle,
-            secondaryButton: secondaryButtonStyle,
-            scopeButton: scopeButtonStyle,
-          }}
-        />
-      </CollapsibleReportSection>
-      {reportScope === 'selectedDocuments' ? (
+      {!isPilotReviewerAccount ? (
+        <CollapsibleReportSection
+          id="report-scope-report-section"
+          title="Report Scope"
+          summary={reportPeriod}
+          expanded={expandedSections.reportScope}
+          onToggle={() => toggleReportSection('reportScope')}
+        >
+          <ReportScopeSection
+            reportScope={reportScope}
+            selectedDocumentCount={selectedDocumentIds.length}
+            selectedRecordCount={selectedRecordIds.length}
+            draftPeriodStart={draftPeriodStart}
+            draftPeriodEnd={draftPeriodEnd}
+            loading={loading}
+            fullYearShortcutYears={getFullYearShortcutYears()}
+            onReportScopeChange={setReportScope}
+            onStartDateChange={handleStartDateChange}
+            onEndDateChange={handleEndDateChange}
+            onCommitDateRange={commitDateRange}
+            onFullYear={handleFullYear}
+            styles={{
+              filterCard: filterCardStyle,
+              label: labelStyle,
+              scopeToggle: scopeToggleStyle,
+              input: inputStyle,
+              secondaryButton: secondaryButtonStyle,
+              scopeButton: scopeButtonStyle,
+            }}
+          />
+        </CollapsibleReportSection>
+      ) : null}
+      {!isPilotReviewerAccount && reportScope === 'selectedDocuments' ? (
         <div style={selectionNoticeStyle}>
           Report Scope: Selected Documents ({selectedDocumentIds.length})
         </div>
-      ) : reportScope === 'selectedRecords' ? (
+      ) : !isPilotReviewerAccount && reportScope === 'selectedRecords' ? (
         <div style={selectionNoticeStyle}>
           Report Scope: Selected Records ({selectedRecordIds.length})
         </div>
       ) : null}
-      {reportScope === 'selectedDocuments' && !loading && activities.length === 0 ? (
+      {!isPilotReviewerAccount && reportScope === 'selectedDocuments' && !loading && activities.length === 0 ? (
         <div style={emptyScopeNoticeStyle}>
           No activity records found for selected documents.
         </div>
@@ -2040,18 +2060,20 @@ function setAllReportSections(expanded: boolean) {
         </>
       ) : null}
 
-      <WorkflowAuditTrail
-        events={workflowEvents}
-        loading={workflowEventsLoading}
-        isOpen={isWorkflowAuditOpen}
-        latestEvent={latestWorkflowEvent}
-        formatEventLabel={formatWorkflowEventLabel}
-        formatEventTime={formatWorkflowEventTime}
-        formatEventActor={formatWorkflowEventActor}
-        formatEventSummary={formatWorkflowEventSummary}
-        onToggle={() => setIsWorkflowAuditOpen((open) => !open)}
-        onRefresh={loadWorkflowEvents}
-      />
+      {!isPilotReviewerAccount ? (
+        <WorkflowAuditTrail
+          events={workflowEvents}
+          loading={workflowEventsLoading}
+          isOpen={isWorkflowAuditOpen}
+          latestEvent={latestWorkflowEvent}
+          formatEventLabel={formatWorkflowEventLabel}
+          formatEventTime={formatWorkflowEventTime}
+          formatEventActor={formatWorkflowEventActor}
+          formatEventSummary={formatWorkflowEventSummary}
+          onToggle={() => setIsWorkflowAuditOpen((open) => !open)}
+          onRefresh={loadWorkflowEvents}
+        />
+      ) : null}
     </div>
   );
 }
