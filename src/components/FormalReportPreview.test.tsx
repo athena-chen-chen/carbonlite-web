@@ -132,21 +132,22 @@ describe('FormalReportPreview', () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText('Date Range').length).toBeGreaterThan(0);
     expect(screen.getByText('Prepared by:')).toBeInTheDocument();
-    expect(screen.getByText('A. Report Scope')).toBeInTheDocument();
-    expect(screen.getByText('B. Executive Summary')).toBeInTheDocument();
-    expect(screen.getByText('C. Emissions Hotspots')).toBeInTheDocument();
-    expect(screen.getByText('D. Scope Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('E. Calculation Quality Summary')).toBeInTheDocument();
-    expect(screen.getByText('F. Emissions Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('G. Activity Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('H. Emission Factors Used')).toBeInTheDocument();
-    expect(screen.getByText('I. Calculation Traceability')).toBeInTheDocument();
-    expect(screen.getByText('J. Source Evidence Summary')).toBeInTheDocument();
+    expect(screen.getByText('A. Inventory Boundary')).toBeInTheDocument();
+    expect(screen.getByText('B. Report Scope')).toBeInTheDocument();
+    expect(screen.getByText('C. Executive Summary')).toBeInTheDocument();
+    expect(screen.getByText('D. Emissions Hotspots')).toBeInTheDocument();
+    expect(screen.getByText('E. Scope Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('F. Calculation Quality Summary')).toBeInTheDocument();
+    expect(screen.getByText('G. Emissions Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('H. Activity Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('I. Emission Factors Used')).toBeInTheDocument();
+    expect(screen.getByText('J. Calculation Traceability')).toBeInTheDocument();
+    expect(screen.getByText('K. Source Evidence Summary')).toBeInTheDocument();
     expect(screen.getByText(/source files and import methods used to create the activity records/i)).toBeInTheDocument();
     expect(screen.getAllByText('fuel-invoice.pdf').length).toBeGreaterThan(0);
     expect(screen.getAllByText('PDF Extraction').length).toBeGreaterThan(0);
-    expect(screen.getByText('K. Records Requiring Review')).toBeInTheDocument();
-    expect(screen.getByText('L. Methodology and Limitations')).toBeInTheDocument();
+    expect(screen.getByText('L. Records Requiring Review')).toBeInTheDocument();
+    expect(screen.getByText('M. Methodology and Limitations')).toBeInTheDocument();
     expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
     expect(FORMAL_REPORT_METHODOLOGY).toContain(FORMAL_REPORT_DISCLAIMER);
     expect(FORMAL_REPORT_DISCLAIMER).toContain('not a certified GHG emissions report');
@@ -163,11 +164,11 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText(/Pilot default factor library/)).toBeInTheDocument();
     expect(screen.getAllByText('Unverified / user review required').length).toBeGreaterThan(0);
     expect(screen.getAllByText('100%').length).toBeGreaterThan(0);
-    expect(screen.getByText('Data Readiness Score')).toBeInTheDocument();
-    expect(screen.getByText(/Data Quality Coverage reflects the percentage of records/i)).toBeInTheDocument();
-    expect(screen.getByText(/Data Readiness Score is a broader pilot readiness signal/i)).toBeInTheDocument();
-    expect(screen.getByText(/related but not identical/i)).toBeInTheDocument();
-    expect(screen.getByText(/Tracked operational metrics such as Water are retained for review/i)).toBeInTheDocument();
+    expect(screen.getByText('Import Readiness')).toBeInTheDocument();
+    expect(screen.getByText(/Calculation Coverage is the percentage of imported activity records/i)).toBeInTheDocument();
+    expect(screen.getByText(/Import Readiness is the percentage of draft or imported records/i)).toBeInTheDocument();
+    expect(screen.getByText(/Calculation Coverage and Import Readiness may differ/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tracked-only operational metrics and records missing required data/i)).toBeInTheDocument();
     expect(screen.getAllByText('Diesel').length).toBeGreaterThan(0);
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
     expect(screen.getByText('100 liters × 2.68 kgCO2e/liter = 268 kgCO2e')).toBeInTheDocument();
@@ -251,7 +252,7 @@ describe('FormalReportPreview', () => {
           {
             factorId: 'factor-hotel',
             activityType: 'HOTEL',
-            factorName: 'Hotel - Canada - 2025',
+            factorName: 'Business Travel - Accommodation - Canada - 2025',
             factorValue: 15,
             inputUnit: 'nights',
             resultUnit: 'kgCO2e',

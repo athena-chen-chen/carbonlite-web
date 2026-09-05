@@ -288,6 +288,9 @@ export function MetricsSummarySection({
     useState<CalculationAuditDetail | null>(null);
   const [selectedCalculationTrail, setSelectedCalculationTrail] =
     useState<CalculationTrailTarget | null>(null);
+  const [isHotspotsExpanded, setIsHotspotsExpanded] = useState(false);
+  const [isCarbonCreditExpanded, setIsCarbonCreditExpanded] = useState(false);
+  const [isCalculationSummaryExpanded, setIsCalculationSummaryExpanded] = useState(true);
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
@@ -422,8 +425,6 @@ export function MetricsSummarySection({
         />
       </div>
 
-      <DataReadinessCard summary={dataReadiness} />
-
       <ScopeSummaryCard
         summary={scopeSummary}
         onViewTrail={(scope, label) =>
@@ -431,15 +432,23 @@ export function MetricsSummarySection({
         }
       />
 
+      <DataReadinessCard summary={dataReadiness} />
+
       <HotspotAnalysisSection
         analysis={hotspotAnalysis}
         totalRecordsFound={countSummary.totalRecordsFound}
+        isExpanded={isHotspotsExpanded}
+        onToggle={() => setIsHotspotsExpanded((expanded) => !expanded)}
         onViewTrail={(activityType, label) =>
           openCalculationTrail({ type: 'activity', activityType, label })
         }
       />
 
-      <CarbonCreditReadinessPanel assessment={carbonCreditReadiness} />
+      <CarbonCreditReadinessPanel
+        assessment={carbonCreditReadiness}
+        isExpanded={isCarbonCreditExpanded}
+        onToggle={() => setIsCarbonCreditExpanded((expanded) => !expanded)}
+      />
 
       <div style={reconciliationStyle}>
         <div style={reconciliationHeaderStyle}>
@@ -563,15 +572,32 @@ export function MetricsSummarySection({
         </div>
       ) : null}
 
-      <div style={tableCardStyle}>
-        <div style={{ padding: 16, borderBottom: '1px solid #eee' }}>
-          <h2 style={{ margin: 0 }}>Calculation Summary</h2>
-          <p style={summaryHelperTextStyle}>
-            One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.
-          </p>
+      <section style={tableCardStyle} aria-labelledby="calculation-summary-title">
+        <div style={collapsibleHeaderStyle}>
+          <div>
+            <h2 id="calculation-summary-title" style={{ margin: 0, fontSize: 18 }}>
+              Calculation Summary
+            </h2>
+            <p style={summaryHelperTextStyle}>
+              {isCalculationSummaryExpanded
+                ? 'One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.'
+                : `Total: ${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e · Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-expanded={isCalculationSummaryExpanded}
+            aria-controls="calculation-summary-content"
+            aria-label={`${isCalculationSummaryExpanded ? 'Collapse' : 'Expand'} Calculation Summary section`}
+            onClick={() => setIsCalculationSummaryExpanded((expanded) => !expanded)}
+            style={collapsibleToggleStyle}
+          >
+            {isCalculationSummaryExpanded ? 'Collapse' : 'Expand'}
+          </button>
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        {isCalculationSummaryExpanded ? (
+        <table id="calculation-summary-content" style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#fafafa' }}>
               <th style={thStyle}>Type</th>
@@ -654,7 +680,8 @@ export function MetricsSummarySection({
             ) : null}
           </tbody>
         </table>
-      </div>
+        ) : null}
+      </section>
 
       {calculationDetails.length > 0 ? (
         <details id="metrics-calculation-details" style={sourceDetailsStyle}>
@@ -1923,7 +1950,7 @@ function ScopeSummaryCard({
   const rows = [
     { scope: 'SCOPE_1' as const, label: 'Scope 1', value: summary.SCOPE_1, note: 'Direct fuel emissions' },
     { scope: 'SCOPE_2' as const, label: 'Scope 2', value: summary.SCOPE_2, note: 'Purchased energy' },
-    { scope: 'SCOPE_3' as const, label: 'Scope 3', value: summary.SCOPE_3, note: 'Other indirect emissions' },
+    { scope: 'SCOPE_3' as const, label: 'Scope 3', value: summary.SCOPE_3, note: 'Selected pilot activities' },
   ];
 
   return (
@@ -1933,7 +1960,7 @@ function ScopeSummaryCard({
           Emissions by Scope
         </h2>
         <p style={summaryHelperTextStyle}>
-          Scope totals include calculated records only. Tracked metrics and records requiring review are excluded from emissions totals.
+          Scope totals include calculated records only. Tracked metrics and records requiring review are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
         </p>
       </div>
       <div style={scopeSummaryGridStyle}>
@@ -1972,7 +1999,7 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
       <div style={readinessHeaderStyle}>
         <div>
           <h2 id="data-readiness-title" style={{ margin: 0, fontSize: 18 }}>
-            Data Readiness
+            Import Readiness
           </h2>
           <p style={summaryHelperTextStyle}>
             CarbonLite checks whether records are complete, traceable, and ready for calculation before reports or hotspot analysis are used.
@@ -1984,11 +2011,6 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
         </div>
       </div>
       <p style={readinessMessageStyle}>{summary.message}</p>
-      <p style={summaryHelperTextStyle}>
-        Data readiness score is based on required field completeness, factor match coverage,
-        jurisdiction completeness, source traceability, and optional cost data. It is not
-        the same as the percentage of records calculated.
-      </p>
       <div style={readinessStatsGridStyle}>
         <div><strong>{summary.recordsReadyForCalculation}</strong> ready for calculation</div>
         <div><strong>{summary.recordsRequiringReview}</strong> require review</div>
@@ -1997,44 +2019,80 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
         <div><strong>{summary.missingJurisdictionCount}</strong> missing province</div>
         <div><strong>{summary.trackedOnlyCount}</strong> tracked metric</div>
       </div>
-      <div style={readinessChecklistStyle}>
-        {summary.checks.map((check) => (
-          <div key={check.key} style={readinessCheckStyle}>
-            <span style={readinessCheckBadgeStyle(check.passed)}>
-              {check.passed ? 'Ready' : 'Needs review'}
-            </span>
-            <div>
-              <strong>{check.label}</strong>
-              <div style={missingFactorHintStyle}>
-                {typeof check.count === 'number' && typeof check.total === 'number'
-                  ? `${check.count} of ${check.total} records · `
-                  : ''}
-                {check.message}
+      <details style={readinessDetailsStyle}>
+        <summary style={readinessDetailsSummaryStyle}>View readiness details</summary>
+        <div style={readinessExplanationStyle}>
+          <p>
+            Import Readiness estimates the percentage of draft or imported records that are
+            complete enough to proceed without manual review.
+          </p>
+          <p>
+            Calculation Coverage is the percentage of imported activity records that could
+            be matched to an emissions factor and included in the calculated GHG total.
+            Tracked-only operational metrics and records missing required data are excluded
+            from Calculation Coverage, so the two values may be different.
+          </p>
+        </div>
+        <div style={readinessChecklistStyle}>
+          {summary.checks.map((check) => (
+            <div key={check.key} style={readinessCheckStyle}>
+              <span style={readinessCheckBadgeStyle(check.passed)}>
+                {check.passed ? 'Ready' : 'Needs review'}
+              </span>
+              <div>
+                <strong>{check.label}</strong>
+                <div style={missingFactorHintStyle}>
+                  {typeof check.count === 'number' && typeof check.total === 'number'
+                    ? `${check.count} of ${check.total} records · `
+                    : ''}
+                  {check.message}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </details>
     </section>
   );
 }
 
 function CarbonCreditReadinessPanel({
   assessment,
+  isExpanded,
+  onToggle,
 }: {
   assessment: CarbonCreditReadinessAssessment;
+  isExpanded: boolean;
+  onToggle: () => void;
 }) {
   return (
     <section style={creditReadinessCardStyle} aria-labelledby="carbon-credit-readiness-title">
-      <div style={creditReadinessHeaderStyle}>
+      <div style={collapsibleHeaderStyle}>
         <div>
           <h2 id="carbon-credit-readiness-title" style={{ margin: 0, fontSize: 18 }}>
-            Carbon Credit Readiness
+            Carbon Credit Readiness Notes
           </h2>
           <p style={summaryHelperTextStyle}>
-            Check whether an emissions reduction opportunity may need further professional assessment.
+            {isExpanded
+              ? 'Check whether an emissions reduction opportunity may need further professional assessment.'
+              : 'Optional pilot-stage readiness notes. Not a carbon credit eligibility determination.'}
           </p>
         </div>
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          aria-controls="carbon-credit-readiness-content"
+          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} Carbon Credit Readiness Notes section`}
+          onClick={onToggle}
+          style={collapsibleToggleStyle}
+        >
+          {isExpanded ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+
+      {isExpanded ? (
+      <div id="carbon-credit-readiness-content">
+      <div style={creditReadinessScoreRowStyle}>
         <div style={creditScoreStyle(assessment.readinessLevel)}>
           <span>{formatCreditReadinessLevel(assessment.readinessLevel)}</span>
           <strong>{assessment.score}/100</strong>
@@ -2076,6 +2134,8 @@ function CarbonCreditReadinessPanel({
       </div>
 
       <div style={creditDisclaimerStyle}>{assessment.disclaimer}</div>
+      </div>
+      ) : null}
     </section>
   );
 }
@@ -2083,35 +2143,54 @@ function CarbonCreditReadinessPanel({
 function HotspotAnalysisSection({
   analysis,
   totalRecordsFound,
+  isExpanded,
+  onToggle,
   onViewTrail,
 }: {
   analysis: HotspotAnalysis;
   totalRecordsFound: number;
+  isExpanded: boolean;
+  onToggle: () => void;
   onViewTrail: (activityType: string, label: string) => void;
 }) {
   const hasCalculatedHotspots = analysis.categoryHotspots.length > 0;
 
   return (
     <section style={hotspotCardStyle} aria-labelledby="emissions-hotspots-title">
-      <div style={hotspotHeaderStyle}>
+      <div style={collapsibleHeaderStyle}>
         <div>
           <h2 id="emissions-hotspots-title" style={{ margin: 0, fontSize: 18 }}>
             Emissions Hotspots
           </h2>
           <p style={summaryHelperTextStyle}>
-            Calculated emissions by activity category. Records requiring review are excluded from hotspot totals.
+            {isExpanded
+              ? 'Calculated emissions by activity category. Records requiring review are excluded from hotspot totals.'
+              : 'Top contributing activity areas are available for review.'}
           </p>
         </div>
-        {analysis.topCategory ? (
-          <div style={topHotspotCardStyle}>
-            <div style={topHotspotLabelStyle}>Top Hotspot</div>
-            <strong>{analysis.topCategory.displayName}</strong>
-            <div style={topHotspotValueStyle}>
-              {formatDisplayNumber(analysis.topCategory.percentageOfTotal)}% of calculated emissions
-            </div>
-          </div>
-        ) : null}
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          aria-controls="emissions-hotspots-content"
+          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} Emissions Hotspots section`}
+          onClick={onToggle}
+          style={collapsibleToggleStyle}
+        >
+          {isExpanded ? 'Collapse' : 'Expand'}
+        </button>
       </div>
+
+      {isExpanded ? (
+      <div id="emissions-hotspots-content">
+      {analysis.topCategory ? (
+        <div style={topHotspotCardStyle}>
+          <div style={topHotspotLabelStyle}>Top Hotspot</div>
+          <strong>{analysis.topCategory.displayName}</strong>
+          <div style={topHotspotValueStyle}>
+            {formatDisplayNumber(analysis.topCategory.percentageOfTotal)}% of calculated emissions
+          </div>
+        </div>
+      ) : null}
 
       {!hasCalculatedHotspots ? (
         <div style={hotspotEmptyStyle}>
@@ -2242,6 +2321,8 @@ function HotspotAnalysisSection({
         <div style={hotspotCreditPromptStyle}>
           High-emission categories may be useful starting points for reduction planning. If reductions are later achieved and documented, they may require further professional assessment before any carbon credit discussion.
         </div>
+      ) : null}
+      </div>
       ) : null}
     </section>
   );
@@ -2738,6 +2819,30 @@ const readinessStatsGridStyle: React.CSSProperties = {
   color: '#1e293b',
 };
 
+const readinessDetailsStyle: React.CSSProperties = {
+  marginTop: 14,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #dbeafe',
+  background: '#fff',
+};
+
+const readinessDetailsSummaryStyle: React.CSSProperties = {
+  cursor: 'pointer',
+  color: '#1d4ed8',
+  fontWeight: 800,
+  fontSize: 14,
+};
+
+const readinessExplanationStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  marginTop: 12,
+  color: '#475569',
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
 const readinessChecklistStyle: React.CSSProperties = {
   display: 'grid',
   gap: 10,
@@ -2775,16 +2880,32 @@ const creditReadinessCardStyle: React.CSSProperties = {
   marginBottom: 24,
   padding: 16,
   borderRadius: 12,
-  border: '1px solid #fed7aa',
-  background: '#fff7ed',
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
 };
 
-const creditReadinessHeaderStyle: React.CSSProperties = {
+const collapsibleHeaderStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   gap: 16,
   alignItems: 'flex-start',
   flexWrap: 'wrap',
+};
+
+const collapsibleToggleStyle: React.CSSProperties = {
+  padding: '7px 12px',
+  borderRadius: 8,
+  border: '1px solid #64748b',
+  background: '#fff',
+  color: '#334155',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const creditReadinessScoreRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  marginTop: 14,
 };
 
 function creditScoreStyle(level: CarbonCreditReadinessAssessment['readinessLevel']): React.CSSProperties {
@@ -2912,14 +3033,6 @@ const hotspotCardStyle: React.CSSProperties = {
   borderRadius: 12,
   border: '1px solid #bbf7d0',
   background: '#f0fdf4',
-};
-
-const hotspotHeaderStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  gap: 16,
-  alignItems: 'flex-start',
-  flexWrap: 'wrap',
 };
 
 const topHotspotCardStyle: React.CSSProperties = {

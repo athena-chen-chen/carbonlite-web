@@ -98,8 +98,8 @@ export default function DashboardPage() {
                   Electricity, steam, heating, or cooling purchased for operations.
                 </p>
                 <p>
-                  <strong className="text-[rgb(var(--text))]">Scope 3: Other indirect emissions.</strong>{' '}
-                  Activities such as hotels, travel, shipping, waste, or supplier-related activity. Water is tracked as an operational metric unless a reviewed water emissions factor is enabled.
+                  <strong className="text-[rgb(var(--text))]">Scope 3: Selected indirect pilot estimates.</strong>{' '}
+                  Current pilot Scope 3 coverage focuses on selected business travel and transportation-related records. Water is tracked as an operational metric unless a reviewed water emissions factor is enabled.
                 </p>
               </div>
             </details>
@@ -140,19 +140,19 @@ export default function DashboardPage() {
                   Scope 3
                 </div>
                 <div className="text-[11px] font-semibold text-[rgb(var(--text))]">
-                  Other indirect emissions
+                  Selected pilot estimates
                 </div>
                 <div className="text-xl font-semibold text-[rgb(var(--text))] leading-none">
                   0
                 </div>
                 <div className="text-[11px] text-[rgb(var(--muted))]">
-                  Travel, shipping, waste, suppliers
+                  Selected travel and transport
                 </div>
               </div>
             </div>
 
             <div className="text-[11px] text-[rgb(var(--muted))] pt-2">
-              Scope 3 tracking can be enabled when those activity records are available.
+              Scope 3 coverage in this pilot is limited to selected business travel and transportation-related activity records.
               <button className="ml-1 text-emerald-600 hover:underline text-[11px]">
                 Enable →
               </button>

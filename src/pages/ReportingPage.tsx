@@ -56,7 +56,7 @@ import {
 } from '../utils/scopeClassification';
 import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
 import { getActivityTypeLabel } from '../utils/activityType';
-import { formatDateOnly } from '../utils/dateOnly';
+import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
 import {
   formatReportAssumptions,
@@ -74,6 +74,11 @@ import {
 } from '../utils/reportCredibility';
 import { buildPilotCsv } from '../utils/reportCsvExport';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import {
+  buildInventoryBoundary,
+  summarizeInventoryBoundary,
+  type InventoryBoundary,
+} from '../constants/inventoryBoundary';
 
 type ActivityItem = {
   id: string;
@@ -107,10 +112,10 @@ const SCOPE_HELP = [
   },
   {
     scope: 'Scope 3',
-    label: 'Other indirect emissions',
+    label: 'Selected indirect pilot estimates',
     description:
-      'Other indirect emissions from activities outside direct operations, such as business travel, hotels, shipping, waste, or supplier-related activities.',
-    examples: 'Hotel, air travel, shipping, waste, suppliers',
+      'Selected Scope 3 activity records in this pilot, focused on business travel and transportation-related estimates. This does not represent a complete Scope 3 inventory.',
+    examples: 'Air travel, business travel accommodation, ground transport, shipping',
   },
 ] as const;
 
@@ -199,6 +204,7 @@ export default function ReportingPage() {
   const [workflowEvents, setWorkflowEvents] = useState<ActivityEventItem[]>([]);
   const [workflowEventsLoading, setWorkflowEventsLoading] = useState(false);
   const [isWorkflowAuditOpen, setIsWorkflowAuditOpen] = useState(false);
+  const [isInventoryBoundaryExpanded, setIsInventoryBoundaryExpanded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
   const [periodEnd, setPeriodEnd] = useState('2026-12-31');
@@ -535,7 +541,7 @@ function buildScopeNarrative(scopeSummary: Record<string, number>) {
 
   if (scope3 > 0) {
     lines.push(
-      `Scope 3 emissions are associated with other indirect activities such as freight, waste, travel, hotels, shipping, or third-party services.`
+      `Scope 3 emissions shown here are selected pilot estimates for business travel and transportation-related activity records. They do not represent a complete Scope 3 inventory.`
     );
   }
   if ((scopeSummary.Unclassified ?? 0) > 0) {
@@ -574,6 +580,35 @@ function drawPdfTextBlock(
   const lines = doc.splitTextToSize(text, maxWidth);
   doc.text(lines, x, y);
   return y + lines.length * lineHeight;
+}
+
+function drawInventoryBoundaryPdfSection(
+  doc: jsPDF,
+  boundary: InventoryBoundary,
+  startY: number,
+) {
+  drawPdfSectionTitle(doc, 'Inventory Boundary', startY);
+  autoTable(doc, {
+    startY: startY + 6,
+    head: [['Boundary Field', 'Description']],
+    body: [
+      ['Organization / Workspace', boundary.organizationWorkspace],
+      ['Reporting period', boundary.reportingPeriod],
+      ['Geographic boundary', boundary.geographicBoundary],
+      ['Included facilities or locations', boundary.includedFacilitiesOrLocations],
+      ['Included scopes', boundary.includedScopes],
+      ['Scope 3 coverage note', boundary.scope3CoverageNote],
+      ['Exclusions / limitations', boundary.exclusionsLimitations],
+    ],
+    styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
+    headStyles: { fillColor: [4, 120, 87] },
+    columnStyles: {
+      0: { cellWidth: 54 },
+      1: { cellWidth: 126 },
+    },
+  });
+
+  return ((doc as any).lastAutoTable?.finalY ?? startY) + 8;
 }
 
 function formatHotspotLevelForPdf(level: HotspotAnalysis['categoryHotspots'][number]['hotspotLevel']) {
@@ -811,9 +846,12 @@ function handleDownloadPDF() {
   });
 
   doc.addPage();
-  drawPdfSectionTitle(doc, 'Executive Summary', 18);
+  let nextY = drawInventoryBoundaryPdfSection(doc, inventoryBoundary, 18);
+
+  nextY = ensurePdfSpace(doc, nextY + 4, 48);
+  drawPdfSectionTitle(doc, 'Executive Summary', nextY);
   autoTable(doc, {
-    startY: 24,
+    startY: nextY + 6,
     head: [['Executive Summary', 'Value']],
     body: [
       ['Estimated Emissions', executiveSummary.estimatedEmissions],
@@ -822,11 +860,11 @@ function handleDownloadPDF() {
       ['Records Requiring Review', executiveSummary.recordsRequiringReview],
       ['Primary Activity Types', executiveSummary.primaryActivityTypes],
       ['Missing Factor Count', primarySkippedReasons.missingFactor],
-      ['Data Quality Coverage', executiveSummary.dataQualityCoverage],
+      ['Calculation Coverage', executiveSummary.dataQualityCoverage],
     ],
   });
 
-  let nextY = (doc as any).lastAutoTable.finalY + 12;
+  nextY = (doc as any).lastAutoTable.finalY + 12;
   nextY = drawEmissionsHotspotsPdfSection(doc, hotspotAnalysis, nextY);
 
   nextY = ensurePdfSpace(doc, nextY, 52);
@@ -844,7 +882,7 @@ function handleDownloadPDF() {
       ['Invalid Unit', primarySkippedReasons.invalidUnit],
       ['Review Reasons', formatReviewReasons(primarySkippedReasons)],
       [
-        'Data Quality Coverage',
+        'Calculation Coverage',
         reportCountSummary.totalRecordsFound > 0
           ? `${Math.round(
               (reportCountSummary.processedRecords / reportCountSummary.totalRecordsFound) *
@@ -863,23 +901,23 @@ function handleDownloadPDF() {
     showHead: 'everyPage',
     head: [['Readiness Signal', 'Value']],
     body: [
-      ['Data Readiness Score', `${formatDisplayNumber(dataReadinessSummary.score)}% (${dataReadinessSummary.level})`],
+      ['Import Readiness', `${formatDisplayNumber(dataReadinessSummary.score)}% (${dataReadinessSummary.level})`],
       ['Calculated Records', dataReadinessSummary.recordsReadyForCalculation],
       ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
       ['Tracked Operational Metrics', dataReadinessSummary.trackedOnlyCount],
       ['Missing Factors', dataReadinessSummary.missingFactorCount],
       ['Missing Jurisdiction', dataReadinessSummary.missingJurisdictionCount],
       [
-        'Data Quality Coverage Meaning',
-        `${reportCountSummary.processedRecords} of ${reportCountSummary.totalRecordsFound} records were calculated as GHG emissions records; ${primarySkippedReasons.trackedOnly} record${primarySkippedReasons.trackedOnly === 1 ? ' was' : 's were'} tracked as operational ${primarySkippedReasons.trackedOnly === 1 ? 'metric' : 'metrics'}.`,
+        'Calculation Coverage Meaning',
+        `Percentage of imported activity records that could be matched to an emissions factor and included in the calculated GHG total. ${reportCountSummary.processedRecords} of ${reportCountSummary.totalRecordsFound} records were calculated as GHG emissions records; ${primarySkippedReasons.trackedOnly} record${primarySkippedReasons.trackedOnly === 1 ? ' was' : 's were'} tracked as operational ${primarySkippedReasons.trackedOnly === 1 ? 'metric' : 'metrics'}.`,
       ],
       [
-        'Data Readiness Score Meaning',
-        'Broader pilot readiness signal based on calculation coverage, factor match quality, jurisdiction completeness, source traceability, review status, and tracked operational metrics.',
+        'Import Readiness Meaning',
+        'Percentage of draft or imported records that are complete enough to proceed without manual review.',
       ],
       [
         'Coverage vs Readiness',
-        'Data Quality Coverage and Data Readiness Score are related but not identical. Tracked operational metrics such as Water are retained for review and excluded from the calculated GHG emissions total by design.',
+        'Calculation Coverage and Import Readiness may differ. Tracked-only operational metrics and records missing required data are excluded from Calculation Coverage. Water is retained for review and excluded from the calculated GHG emissions total by design.',
       ],
     ],
     styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
@@ -1487,7 +1525,7 @@ function drawPdfSectionTitle(doc: jsPDF, title: string, y: number) {
 function getScopeDescription(scope: string) {
   if (scope === 'Scope 1') return 'Direct fuel emissions';
   if (scope === 'Scope 2') return 'Purchased electricity';
-  if (scope === 'Scope 3') return 'Other indirect emissions';
+  if (scope === 'Scope 3') return 'Selected Scope 3 pilot estimates';
   return 'Unclassified';
 }
 
@@ -1674,6 +1712,11 @@ const reportPeriod =
     : reportScope === 'selectedDocuments'
     ? 'Selected documents'
     : 'Selected records';
+const inventoryBoundary = buildInventoryBoundary(organizationName, reportPeriod);
+const inventoryBoundarySummary = summarizeInventoryBoundary(
+  inventoryBoundary,
+  `${getDateOnlyYear(periodEnd) ?? 2026} reporting period`,
+);
 const dataReadinessSummary = buildDataReadinessSummary(calculationDetails);
 const carbonCreditReadiness = buildCarbonCreditReadinessAssessment(
   calculationDetails,
@@ -1756,6 +1799,13 @@ function setAllReportSections(expanded: boolean) {
         <strong>Important scope note</strong>
         <p>{FORMAL_REPORT_DISCLAIMER}</p>
       </div>
+
+      <InventoryBoundaryPanel
+        boundary={inventoryBoundary}
+        summary={inventoryBoundarySummary}
+        expanded={isInventoryBoundaryExpanded}
+        onToggle={() => setIsInventoryBoundaryExpanded((expanded) => !expanded)}
+      />
 
       <div style={sectionControlsStyle}>
         <button
@@ -1947,7 +1997,7 @@ function setAllReportSections(expanded: boolean) {
             onToggle={() => toggleReportSection('dataQualityNotes')}
           >
             <div style={dataQualityNotesGridStyle}>
-              <DataQualityNote label="Data Readiness" value={`${formatDisplayNumber(dataReadinessSummary.score)}% · ${dataReadinessSummary.level}`} />
+              <DataQualityNote label="Import Readiness" value={`${formatDisplayNumber(dataReadinessSummary.score)}% · ${dataReadinessSummary.level}`} />
               <DataQualityNote label="Calculated Records" value={dataReadinessSummary.recordsReadyForCalculation} />
               <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
               <DataQualityNote label="Tracked Operational Metrics" value={dataReadinessSummary.trackedOnlyCount} />
@@ -1957,13 +2007,16 @@ function setAllReportSections(expanded: boolean) {
             <div style={dataQualityExplanationStyle}>
               <strong>How to read these metrics:</strong>
               <p>
-                Data Quality Coverage reflects the percentage of records that were successfully calculated as GHG emissions records.
+                Calculation Coverage is the percentage of imported activity records that could be matched to an emissions factor and included in the calculated GHG total. Tracked-only operational metrics and records missing required data are excluded from this calculation.
               </p>
               <p>
-                Data Readiness Score is a broader pilot readiness signal based on calculation coverage, factor match quality, jurisdiction completeness, source traceability, review status, and tracked operational metrics.
+                Import Readiness is the percentage of draft or imported records that are complete enough to proceed without manual review.
               </p>
               <p>
-                Data Quality Coverage and Data Readiness Score are related but not identical. Tracked operational metrics such as Water are retained for review and excluded from the calculated GHG emissions total by design.
+                Calculation Coverage and Import Readiness may differ. Tracked-only operational metrics such as Water are retained for review and excluded from the calculated GHG emissions total by design.
+              </p>
+              <p>
+                Accommodation estimates are treated as selected business-travel-related Scope 3 activity records in this pilot.
               </p>
             </div>
             {dataReadinessSummary.recordsRequiringReview > 0 ? (
@@ -2226,6 +2279,51 @@ function DataQualityNote({
   );
 }
 
+function InventoryBoundaryPanel({
+  boundary,
+  summary,
+  expanded,
+  onToggle,
+}: {
+  boundary: InventoryBoundary;
+  summary: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <section style={inventoryBoundaryPanelStyle} aria-labelledby="report-inventory-boundary-title">
+      <div style={inventoryBoundaryHeaderStyle}>
+        <div>
+          <h2 id="report-inventory-boundary-title" style={inventoryBoundaryTitleStyle}>
+            Inventory Boundary
+          </h2>
+          <p style={inventoryBoundarySummaryStyle}>{summary}</p>
+        </div>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls="report-inventory-boundary-content"
+          onClick={onToggle}
+          style={inventoryBoundaryToggleStyle}
+        >
+          {expanded ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+      {expanded ? (
+        <div id="report-inventory-boundary-content" style={inventoryBoundaryGridStyle}>
+          <DataQualityNote label="Organization / Workspace" value={boundary.organizationWorkspace} />
+          <DataQualityNote label="Reporting period" value={boundary.reportingPeriod} />
+          <DataQualityNote label="Geographic boundary" value={boundary.geographicBoundary} />
+          <DataQualityNote label="Included facilities or locations" value={boundary.includedFacilitiesOrLocations} />
+          <DataQualityNote label="Included scopes" value={boundary.includedScopes} />
+          <DataQualityNote label="Scope 3 coverage note" value={boundary.scope3CoverageNote} />
+          <DataQualityNote label="Exclusions / limitations" value={boundary.exclusionsLimitations} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function formatCarbonCreditReadinessLevel(level: string) {
   const labels: Record<string, string> = {
     NOT_READY: 'Not ready',
@@ -2334,6 +2432,54 @@ const dataQualityNotesGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
   gap: 10,
+};
+
+const inventoryBoundaryPanelStyle: React.CSSProperties = {
+  display: 'grid',
+  margin: '0 0 20px',
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #d1fae5',
+  background: '#f0fdf4',
+  color: '#0f172a',
+};
+
+const inventoryBoundaryHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 14,
+  flexWrap: 'wrap',
+};
+
+const inventoryBoundaryTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#064e3b',
+  fontSize: 18,
+};
+
+const inventoryBoundarySummaryStyle: React.CSSProperties = {
+  margin: '6px 0 0',
+  color: '#475569',
+  fontSize: 14,
+  lineHeight: 1.45,
+};
+
+const inventoryBoundaryToggleStyle: React.CSSProperties = {
+  padding: '7px 12px',
+  borderRadius: 8,
+  border: '1px solid #047857',
+  background: '#fff',
+  color: '#047857',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const inventoryBoundaryGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 10,
+  marginTop: 14,
 };
 
 const dataQualityNoteStyle: React.CSSProperties = {

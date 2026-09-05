@@ -47,20 +47,20 @@ const dataCategories = [
     note: 'Waste records often need extra context such as disposal method before emissions can be calculated reliably.',
   },
   {
-    title: 'Travel, Hotel, Shipping',
+    title: 'Travel, Accommodation, Shipping',
     documents: 'Travel exports, hotel invoices, shipping or freight invoices',
     required: ['Activity type', 'Quantity', 'Unit', 'Date'],
     optional: ['Route', 'Vendor', 'Facility or department', 'Cost'],
     units: 'nights, km, ton-km when supported',
     status: 'Calculable when matching factors exist',
-    note: 'These records are useful for consultant review even when factors are not yet configured.',
+    note: 'Current pilot Scope 3 coverage focuses on selected business travel and transportation-related records. These records are useful for consultant review even when factors are not yet configured.',
   },
 ];
 
 const checklist = [
   {
     label: 'Activity type is selected',
-    why: 'CarbonLite needs to know whether the record is diesel, electricity, natural gas, water, hotel, or another activity.',
+    why: 'CarbonLite needs to know whether the record is diesel, electricity, natural gas, water, business travel accommodation, or another activity.',
   },
   {
     label: 'Quantity is present',
@@ -139,7 +139,7 @@ export default function DataCollectionGuidePage() {
             Download SME Data Template
           </button>
           <Link to="/input-data" style={secondaryLinkStyle}>Go to Input Data</Link>
-          <Link to="/metrics-summary" style={secondaryLinkStyle}>View Data Readiness</Link>
+          <Link to="/metrics-summary" style={secondaryLinkStyle}>View Calculation Review</Link>
         </div>
       </section>
 
@@ -176,6 +176,9 @@ export default function DataCollectionGuidePage() {
         <h2 style={sectionTitleStyle}>How to Organize Spreadsheet Data</h2>
         <p style={bodyTextStyle}>
           Use one row per activity record. These columns work well with CarbonLite’s upload and review workflow.
+        </p>
+        <p style={unitNoteStyle}>
+          CarbonLite currently supports selected pilot units. Additional unit conversion support will be expanded in future versions.
         </p>
         <div style={columnsGridStyle}>
           {templateColumns.map((column) => (
@@ -339,6 +342,16 @@ const sectionTitleStyle: React.CSSProperties = {
 const bodyTextStyle: React.CSSProperties = {
   color: '#334155',
   lineHeight: 1.6,
+};
+
+const unitNoteStyle: React.CSSProperties = {
+  ...bodyTextStyle,
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 10,
+  border: '1px solid #cbd5e1',
+  background: '#f8fafc',
+  fontSize: 14,
 };
 
 const categoryGridStyle: React.CSSProperties = {

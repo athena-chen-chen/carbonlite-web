@@ -27,6 +27,7 @@ describe('activity type helpers', () => {
   it('formats canonical labels for display', () => {
     expect(getActivityTypeLabel('NATURAL_GAS')).toBe('Natural Gas');
     expect(getActivityTypeLabel('AIR_TRAVEL')).toBe('Air Travel');
+    expect(getActivityTypeLabel('HOTEL')).toBe('Business Travel - Accommodation');
     expect(getActivityTypeLabel(null)).toBe('Not specified');
   });
 });

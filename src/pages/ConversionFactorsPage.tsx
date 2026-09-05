@@ -75,6 +75,24 @@ const JURISDICTION_FILTER_OPTIONS = [
   { value: '', label: 'All jurisdictions' },
   ...JURISDICTION_OPTIONS,
 ] as const;
+type FactorValueSort = 'none' | 'asc' | 'desc';
+type FactorFilterState = {
+  activityType: string;
+  jurisdiction: string;
+  sourceYear: string;
+  minFactorValue: string;
+  maxFactorValue: string;
+  factorValueSort: FactorValueSort;
+};
+
+const emptyFactorFilters: FactorFilterState = {
+  activityType: '',
+  jurisdiction: '',
+  sourceYear: '',
+  minFactorValue: '',
+  maxFactorValue: '',
+  factorValueSort: 'none',
+};
 
 export function getFactorJurisdiction(item: ConversionFactorItem) {
   const region = item.jurisdiction?.trim() || item.region?.trim() || '';
@@ -328,7 +346,7 @@ function formatJurisdictionDisplay(region?: string | null, country?: string | nu
 }
 
 function isNationalJurisdiction(region?: string | null, country?: string | null) {
-  const cleanRegion = String(region ?? '').trim().toLowerCase();
+  const cleanRegion = normalizeNationalJurisdictionKey(region);
   const cleanCountry = String(country ?? '').trim().toLowerCase();
 
   return (
@@ -336,9 +354,17 @@ function isNationalJurisdiction(region?: string | null, country?: string | null)
     cleanRegion === 'national' ||
     cleanRegion === 'canada' ||
     cleanRegion === 'ca' ||
+    cleanRegion === 'canadanational' ||
     cleanRegion === NATIONAL_JURISDICTION.toLowerCase() ||
     (!cleanRegion && ['canada', 'ca'].includes(cleanCountry))
   );
+}
+
+function normalizeNationalJurisdictionKey(value?: string | null) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s-]+/g, '');
 }
 
 function defaultScopeForFactor(item: ConversionFactorItem) {
@@ -502,7 +528,7 @@ function getJurisdictionSelectValue(region?: string | null, country?: string | n
 
 function getJurisdictionFilterParam(value: string) {
   if (!value) return undefined;
-  if (value === NATIONAL_JURISDICTION) return 'Canada';
+  if (value === NATIONAL_JURISDICTION) return NATIONAL_JURISDICTION_LABEL;
   return value;
 }
 
@@ -514,6 +540,10 @@ function getPayloadJurisdiction(value?: string | null) {
 
 function factorMatchesJurisdictionFilter(item: ConversionFactorItem, filterValue: string) {
   if (!filterValue) return true;
+
+  if (filterValue === NATIONAL_JURISDICTION) {
+    return isNationalJurisdiction(item.jurisdiction ?? item.region, item.country);
+  }
 
   return getJurisdictionSelectValue(item.jurisdiction ?? item.region, item.country) === filterValue;
 }
@@ -557,6 +587,27 @@ function getSourceLinkLabel(sourceUrl?: string | null, item?: ConversionFactorIt
   return 'View methodology';
 }
 
+function areFactorFiltersEqual(a: FactorFilterState, b: FactorFilterState) {
+  return (
+    a.activityType === b.activityType &&
+    a.jurisdiction === b.jurisdiction &&
+    a.sourceYear === b.sourceYear &&
+    a.minFactorValue === b.minFactorValue &&
+    a.maxFactorValue === b.maxFactorValue &&
+    a.factorValueSort === b.factorValueSort
+  );
+}
+
+function hasAppliedFactorFilters(filters: FactorFilterState) {
+  return Boolean(
+    filters.activityType ||
+      filters.jurisdiction ||
+      filters.sourceYear ||
+      filters.minFactorValue.trim() ||
+      filters.maxFactorValue.trim(),
+  );
+}
+
 export function ConversionFactorsPage() {
   const location = useLocation();
   const { confirm } = useAppDialog();
@@ -574,12 +625,8 @@ export function ConversionFactorsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFactorForm, setShowFactorForm] = useState(false);
   const [selectedFactor, setSelectedFactor] = useState<ConversionFactorItem | null>(null);
-  const [activityTypeFilter, setActivityTypeFilter] = useState('');
-  const [jurisdictionFilter, setJurisdictionFilter] = useState('');
-  const [sourceYearFilter, setSourceYearFilter] = useState('');
-  const [minFactorValueFilter, setMinFactorValueFilter] = useState('');
-  const [maxFactorValueFilter, setMaxFactorValueFilter] = useState('');
-  const [factorValueSort, setFactorValueSort] = useState<'none' | 'asc' | 'desc'>('none');
+  const [pendingFilters, setPendingFilters] = useState<FactorFilterState>(emptyFactorFilters);
+  const [appliedFilters, setAppliedFilters] = useState<FactorFilterState>(emptyFactorFilters);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -587,21 +634,16 @@ export function ConversionFactorsPage() {
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  async function loadItems(filters?: {
-    activityType?: string;
-    jurisdiction?: string;
-    sourceYear?: string;
-  }) {
+  async function loadItems(filters: FactorFilterState = appliedFilters) {
     setLoading(true);
     setError(null);
 
     try {
       const data = (await getConversionFactors({
-        activityType:
-          (filters?.activityType ?? activityTypeFilter) || undefined,
-        jurisdiction: getJurisdictionFilterParam(filters?.jurisdiction ?? jurisdictionFilter),
-        sourceYear: (filters?.sourceYear ?? sourceYearFilter)
-          ? Number(filters?.sourceYear ?? sourceYearFilter)
+        activityType: filters.activityType || undefined,
+        jurisdiction: getJurisdictionFilterParam(filters.jurisdiction),
+        sourceYear: filters.sourceYear
+          ? Number(filters.sourceYear)
           : undefined,
       })) as ConversionFactorListResponse;
       setItems(data.items ?? []);
@@ -613,7 +655,7 @@ export function ConversionFactorsPage() {
   }
 
   useEffect(() => {
-    loadItems();
+    loadItems(emptyFactorFilters);
   }, []);
 
   useEffect(() => {
@@ -712,17 +754,19 @@ export function ConversionFactorsPage() {
     () => items.length - visibleFactorItems.length,
     [items, visibleFactorItems],
   );
+  const hasActiveFilters = hasAppliedFactorFilters(appliedFilters);
+  const hasUnappliedFilterChanges = !areFactorFiltersEqual(pendingFilters, appliedFilters);
 
   const displayedItems = useMemo(() => {
-    const minValue = minFactorValueFilter.trim() === ''
+    const minValue = appliedFilters.minFactorValue.trim() === ''
       ? null
-      : Number(minFactorValueFilter);
-    const maxValue = maxFactorValueFilter.trim() === ''
+      : Number(appliedFilters.minFactorValue);
+    const maxValue = appliedFilters.maxFactorValue.trim() === ''
       ? null
-      : Number(maxFactorValueFilter);
+      : Number(appliedFilters.maxFactorValue);
 
     const filtered = visibleFactorItems.filter((item) => {
-      if (!factorMatchesJurisdictionFilter(item, jurisdictionFilter)) return false;
+      if (!factorMatchesJurisdictionFilter(item, appliedFilters.jurisdiction)) return false;
 
       const value = Number(item.factorValue);
 
@@ -741,7 +785,7 @@ export function ConversionFactorsPage() {
       return true;
     });
 
-    if (factorValueSort === 'none') return filtered;
+    if (appliedFilters.factorValueSort === 'none') return filtered;
 
     return [...filtered].sort((a, b) => {
       const aValue = Number(a.factorValue);
@@ -751,9 +795,9 @@ export function ConversionFactorsPage() {
       if (!Number.isFinite(aValue)) return 1;
       if (!Number.isFinite(bValue)) return -1;
 
-      return factorValueSort === 'asc' ? aValue - bValue : bValue - aValue;
+      return appliedFilters.factorValueSort === 'asc' ? aValue - bValue : bValue - aValue;
     });
-  }, [factorValueSort, jurisdictionFilter, maxFactorValueFilter, minFactorValueFilter, visibleFactorItems]);
+  }, [appliedFilters, visibleFactorItems]);
 
   function updateField<K extends keyof ConversionFactorInput>(
     key: K,
@@ -1420,13 +1464,17 @@ export function ConversionFactorsPage() {
           style={filterBarStyle}
           onSubmit={(event) => {
             event.preventDefault();
-            void loadItems();
+            setAppliedFilters(pendingFilters);
+            void loadItems(pendingFilters);
           }}
         >
           <Field label="Activity Type">
             <select
-              value={activityTypeFilter}
-              onChange={(event) => setActivityTypeFilter(event.target.value)}
+              value={pendingFilters.activityType}
+              onChange={(event) => setPendingFilters((prev) => ({
+                ...prev,
+                activityType: event.target.value,
+              }))}
               style={inputStyle}
             >
               <option value="">All activity types</option>
@@ -1437,8 +1485,11 @@ export function ConversionFactorsPage() {
           </Field>
           <Field label="Jurisdiction">
             <select
-              value={jurisdictionFilter}
-              onChange={(event) => setJurisdictionFilter(event.target.value)}
+              value={pendingFilters.jurisdiction}
+              onChange={(event) => setPendingFilters((prev) => ({
+                ...prev,
+                jurisdiction: event.target.value,
+              }))}
               style={inputStyle}
             >
               {JURISDICTION_FILTER_OPTIONS.map((option) => (
@@ -1453,8 +1504,11 @@ export function ConversionFactorsPage() {
               type="number"
               min="1900"
               max="2100"
-              value={sourceYearFilter}
-              onChange={(event) => setSourceYearFilter(event.target.value)}
+              value={pendingFilters.sourceYear}
+              onChange={(event) => setPendingFilters((prev) => ({
+                ...prev,
+                sourceYear: event.target.value,
+              }))}
               style={inputStyle}
               placeholder="e.g. 2025"
             />
@@ -1463,8 +1517,11 @@ export function ConversionFactorsPage() {
             <input
               type="number"
               step="any"
-              value={minFactorValueFilter}
-              onChange={(event) => setMinFactorValueFilter(event.target.value)}
+              value={pendingFilters.minFactorValue}
+              onChange={(event) => setPendingFilters((prev) => ({
+                ...prev,
+                minFactorValue: event.target.value,
+              }))}
               style={inputStyle}
               placeholder="e.g. 0.5"
             />
@@ -1473,16 +1530,22 @@ export function ConversionFactorsPage() {
             <input
               type="number"
               step="any"
-              value={maxFactorValueFilter}
-              onChange={(event) => setMaxFactorValueFilter(event.target.value)}
+              value={pendingFilters.maxFactorValue}
+              onChange={(event) => setPendingFilters((prev) => ({
+                ...prev,
+                maxFactorValue: event.target.value,
+              }))}
               style={inputStyle}
               placeholder="e.g. 3"
             />
           </Field>
           <Field label="Sort by Factor Value">
             <select
-              value={factorValueSort}
-              onChange={(event) => setFactorValueSort(event.target.value as 'none' | 'asc' | 'desc')}
+              value={pendingFilters.factorValueSort}
+              onChange={(event) => setPendingFilters((prev) => ({
+                ...prev,
+                factorValueSort: event.target.value as FactorValueSort,
+              }))}
               style={inputStyle}
             >
               <option value="none">Default order</option>
@@ -1498,23 +1561,20 @@ export function ConversionFactorsPage() {
               type="button"
               style={filterClearButtonStyle}
               onClick={() => {
-                setActivityTypeFilter('');
-                setJurisdictionFilter('');
-                setSourceYearFilter('');
-                setMinFactorValueFilter('');
-                setMaxFactorValueFilter('');
-                setFactorValueSort('none');
-                void loadItems({
-                  activityType: '',
-                  jurisdiction: '',
-                  sourceYear: '',
-                });
+                setPendingFilters(emptyFactorFilters);
+                setAppliedFilters(emptyFactorFilters);
+                void loadItems(emptyFactorFilters);
               }}
             >
               Clear
             </button>
           </div>
         </form>
+        {hasUnappliedFilterChanges ? (
+          <div className="no-print" style={filterHintStyle}>
+            You have unapplied filter changes.
+          </div>
+        ) : null}
 
         {loading ? (
           <div style={{ padding: 16 }}>Loading conversion factors...</div>
@@ -1561,7 +1621,14 @@ export function ConversionFactorsPage() {
               {displayedItems.length === 0 ? (
                 <tr>
                   <td colSpan={14} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
-                    No conversion factors yet.
+                    {hasActiveFilters ? (
+                      <>
+                        <div>No factors match the selected filters.</div>
+                        <div>Try clearing filters or choosing different filter values.</div>
+                      </>
+                    ) : (
+                      'No conversion factors yet.'
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -2017,6 +2084,14 @@ const filterActionsStyle: React.CSSProperties = {
   gridColumn: '1 / -1',
   justifySelf: 'start',
   whiteSpace: 'nowrap',
+};
+
+const filterHintStyle: React.CSSProperties = {
+  padding: '0 16px 12px',
+  color: '#64748b',
+  fontSize: 13,
+  background: '#f8fafc',
+  borderBottom: '1px solid #e5e7eb',
 };
 
 const pilotDisclaimerStyle: React.CSSProperties = {

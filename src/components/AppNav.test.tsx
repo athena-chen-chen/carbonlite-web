@@ -142,6 +142,10 @@ describe('AppNav logout flow', () => {
     );
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Input Data' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review Guide' })).toHaveAttribute(
+      'href',
+      '/pilot-review-instructions',
+    );
     expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
     expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
@@ -184,6 +188,10 @@ describe('AppNav logout flow', () => {
     expect(screen.getByRole('menuitem', { name: 'Pilot Reviewers' })).toHaveAttribute(
       'href',
       '/admin/pilot-reviewers',
+    );
+    expect(screen.getByRole('menuitem', { name: 'Review Instructions' })).toHaveAttribute(
+      'href',
+      '/pilot-review-instructions',
     );
     expect(screen.getByRole('menuitem', { name: 'Feedback' })).toHaveAttribute('href', '/feedback');
     expect(screen.getByRole('menuitem', { name: 'Activity' })).toHaveAttribute('href', '/activity');

@@ -46,21 +46,21 @@ export function CalculationQualitySection({
         <Fact label="Missing Factors" value={String(primarySkippedReasons.missingFactor)} />
         <Fact label="Missing Jurisdiction" value={String(primarySkippedReasons.missingJurisdiction)} />
         <Fact label="Invalid Unit" value={String(primarySkippedReasons.invalidUnit)} />
-        <Fact label="Data Quality Coverage" value={dataQualityCoverage} />
+        <Fact label="Calculation Coverage" value={dataQualityCoverage} />
         {dataReadinessScore ? (
-          <Fact label="Data Readiness Score" value={dataReadinessScore} />
+          <Fact label="Import Readiness" value={dataReadinessScore} />
         ) : null}
       </div>
       <div style={qualityExplanationStyle}>
         <strong>How to read these metrics:</strong>
         <p>
-          Data Quality Coverage reflects the percentage of records that were successfully calculated as GHG emissions records.
+          Calculation Coverage is the percentage of imported activity records that could be matched to an emissions factor and included in the calculated GHG total.
         </p>
         <p>
-          Data Readiness Score is a broader pilot readiness signal that also considers factor match quality, jurisdiction completeness, source traceability, review status, and tracked operational metrics.
+          Import Readiness is the percentage of draft or imported records that are complete enough to proceed without manual review.
         </p>
         <p>
-          Data Quality Coverage and Data Readiness Score are related but not identical. Tracked operational metrics such as Water are retained for review and excluded from the calculated GHG emissions total by design.
+          Calculation Coverage and Import Readiness may differ. Tracked-only operational metrics and records missing required data are excluded from Calculation Coverage.
         </p>
       </div>
       {recordsRequiringReview > 0 ? (

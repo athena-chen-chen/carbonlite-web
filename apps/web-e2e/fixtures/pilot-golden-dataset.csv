@@ -6,6 +6,6 @@ Natural Gas,2026-07-20,1000,m3,Canada,,pilot-golden-dataset.csv,Building natural
 Gasoline,2026-07-20,500,liters,Canada,,pilot-golden-dataset.csv,Fleet gasoline usage
 Diesel,2026-07-20,100,liters,Canada,,pilot-golden-dataset.csv,Fleet diesel usage
 Air Travel,2026-07-20,5000,km,Canada,,pilot-golden-dataset.csv,Business travel flight distance
-Hotel,2026-07-20,10,nights,Canada,,pilot-golden-dataset.csv,Business travel hotel stays
+Business Travel - Accommodation,2026-07-20,10,nights,Canada,,pilot-golden-dataset.csv,Business travel accommodation stays
 Water,2026-07-20,100,m3,Canada,,pilot-golden-dataset.csv,Water tracked only
 Electricity,2026-07-20,50,MWh,Canada,Alberta,pilot-golden-dataset.csv,Alberta electricity usage in MWh

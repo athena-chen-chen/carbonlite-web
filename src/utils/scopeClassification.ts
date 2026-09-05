@@ -123,7 +123,7 @@ export function getScopeDescription(scope?: string | null): string {
     case 'SCOPE_2':
       return 'Purchased energy';
     case 'SCOPE_3':
-      return 'Other indirect emissions';
+      return 'Selected indirect pilot estimates';
     case 'TRACKED_METRIC':
       return 'Operational metric';
     case 'UNCLASSIFIED':

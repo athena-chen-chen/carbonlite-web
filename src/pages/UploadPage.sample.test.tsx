@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { UploadPage, classifyDraftRow } from './UploadPage';
 import { getDocuments } from '../services/documents';
 import { ApiError } from '../services/api';
@@ -136,6 +136,16 @@ describe('UploadPage sample workflow', () => {
       </MemoryRouter>,
     );
 
+    const workflow = screen.getByLabelText(/CarbonLite input workflow/i);
+    expect(workflow).toHaveTextContent('Upload / Manual Entry');
+    expect(workflow).toHaveTextContent('Review extracted rows');
+    expect(workflow).toHaveTextContent('Confirm activity records');
+    expect(workflow).toHaveTextContent('Match emission factors');
+    expect(workflow).toHaveTextContent('Review calculations');
+    expect(workflow).toHaveTextContent('Generate report');
+    expect(workflow).toHaveTextContent(
+      'This reviewer account uses preloaded sample data and is read-only. Upload and import actions are disabled.',
+    );
     expect(await screen.findByText(/sample data is already loaded/i)).toBeInTheDocument();
     expect(screen.getByText(/pilot reviewer accounts use preloaded sample data/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /data records/i })).toBeInTheDocument();
@@ -656,7 +666,7 @@ describe('UploadPage sample workflow', () => {
         { activityType: 'Gasoline', amount: 500, unit: 'liters', country: 'Canada', startDate: '2026-07-20' },
         { activityType: 'Diesel', amount: 100, unit: 'liters', country: 'Canada', startDate: '2026-07-20' },
         { activityType: 'Air Travel', amount: 5000, unit: 'km', country: 'Canada', startDate: '2026-07-20' },
-        { activityType: 'Hotel', amount: 10, unit: 'nights', country: 'Canada', startDate: '2026-07-20' },
+        { activityType: 'Business Travel - Accommodation', amount: 10, unit: 'nights', country: 'Canada', startDate: '2026-07-20' },
         { activityType: 'Shipping', amount: 50, unit: 'kg', country: 'Canada', startDate: '2026-07-20', dateEstimated: true },
         { activityType: 'Water', amount: 100, unit: 'm3', country: 'Canada', startDate: '2026-07-20' },
         { activityType: 'CUSTOM', amount: 25, unit: 'widgets', country: 'Canada', startDate: '2026-07-20' },
@@ -800,6 +810,69 @@ describe('UploadPage sample workflow', () => {
       recordDate: uploadDate,
       dateEstimated: true,
     });
+  });
+
+  it('shows completion, clears draft review, and redirects after a full successful import', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'complete-import-doc',
+          fileName: 'complete-import.csv',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'complete-import-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'Natural Gas',
+          amount: 100,
+          unit: 'm3',
+          country: 'Canada',
+          startDate: '2026-07-20',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/input-data']}>
+        <Routes>
+          <Route path="/input-data" element={<UploadPage />} />
+          <Route path="/calculation-review" element={<div>Calculation Review route</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    expect(screen.getByText('Draft Records Review')).toBeInTheDocument();
+    expect(screen.getByText('Extracted rows: 1')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
+
+    expect(
+      await screen.findByText(
+        'Import completed successfully. The selected records have been saved as Data Records. 1 record imported. 0 records require review. Redirecting to Calculation Review...',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Draft Records Review')).not.toBeInTheDocument();
+    expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
+    expect(calculateMetrics).toHaveBeenCalledWith(['created-1']);
+
+    await waitFor(() => {
+      expect(screen.getByText('Calculation Review route')).toBeInTheDocument();
+    }, { timeout: 2500 });
   });
 
   it('clears preview row selection when an edit makes the row invalid', async () => {

@@ -74,7 +74,7 @@ Supported calculated GHG activity types:
 - Gasoline, Scope 1.
 - Diesel, Scope 1.
 - Air Travel, Scope 3.
-- Hotel, Scope 3.
+- Business Travel - Accommodation, selected Scope 3 pilot activity.
 - Ground Transport, Scope 3.
 - Shipping, Scope 3 if present in configured factors.
 
@@ -114,7 +114,7 @@ Golden dataset records:
 | Gasoline | 500 liters | 1,155 kgCO2e, Scope 1 |
 | Diesel | 100 liters | 268 kgCO2e, Scope 1 |
 | Air Travel | 5,000 km | 575 kgCO2e, Scope 3 |
-| Hotel | 10 nights | 150 kgCO2e, Scope 3 |
+| Business Travel - Accommodation | 10 nights | 150 kgCO2e, selected Scope 3 pilot activity |
 | Water | 100 m3 | Tracked only, excluded from GHG total |
 
 ## Smoke Test Checklist

@@ -78,7 +78,7 @@ describe('pilot golden dataset fixture', () => {
       expect.objectContaining({ activityType: 'Gasoline', quantity: 500, unit: 'liters' }),
       expect.objectContaining({ activityType: 'Diesel', quantity: 100, unit: 'liters' }),
       expect.objectContaining({ activityType: 'Air Travel', quantity: 5000, unit: 'km' }),
-      expect.objectContaining({ activityType: 'Hotel', quantity: 10, unit: 'nights' }),
+      expect.objectContaining({ activityType: 'Business Travel - Accommodation', quantity: 10, unit: 'nights' }),
       expect.objectContaining({ activityType: 'Water', quantity: 100, unit: 'm3' }),
       expect.objectContaining({ activityType: 'Electricity', quantity: 50, unit: 'MWh', province: 'Alberta' }),
     ]);

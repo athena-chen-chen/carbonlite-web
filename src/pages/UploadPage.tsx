@@ -153,6 +153,14 @@ export const FILE_MISSING_TOOLTIP =
   'The original uploaded file is no longer available. Please upload it again.';
 const UNSUPPORTED_ACTIVITY_TYPE_MESSAGE =
   'Unsupported Activity Type: This activity type is not supported in the current CarbonLite pilot.';
+const inputWorkflowSteps = [
+  { title: 'Upload / Manual Entry', detail: 'Add source activity data' },
+  { title: 'Review extracted rows', detail: 'Check draft rows before import' },
+  { title: 'Confirm activity records', detail: 'Save clean records' },
+  { title: 'Match emission factors', detail: 'Apply traceable factors' },
+  { title: 'Review calculations', detail: 'Inspect totals and trail' },
+  { title: 'Generate report', detail: 'Export pilot-stage outputs' },
+];
 
 function getRouteInputMethod(state: unknown): InputMethod | null {
   const focusInputMethod = (state as UploadRouteState | null)?.focusInputMethod;
@@ -995,6 +1003,7 @@ export function UploadPage() {
   const uploadDragDepthRef = useRef(0);
   const documentMenuRef = useRef<HTMLDivElement | null>(null);
   const documentMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const importRedirectTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
   const hasMissingFiles = documents.some((doc) => isMissingFileStatus(doc.status));
   const selectedDocuments = documents.filter((document) =>
@@ -1112,6 +1121,12 @@ export function UploadPage() {
 
   useEffect(() => {
     loadDocuments();
+  }, []);
+
+  useEffect(() => () => {
+    if (importRedirectTimerRef.current) {
+      window.clearTimeout(importRedirectTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -2539,8 +2554,11 @@ ${sampleRows.join('\n')}`,
         setSuccessMessage(
           rowsLeftForReview > 0
             ? `Imported ${importedCount} sample activity record(s). ${rowsLeftForReview} row${rowsLeftForReview === 1 ? '' : 's'} were left in draft because they require review.`
-            : `Imported ${importedCount} sample activity record(s). You can continue with the normal workflow.`,
+            : getImportCompletedMessage(importedCount, selectedImportSummary.trackedMetricCount),
         );
+        if (rowsLeftForReview === 0) {
+          scheduleCalculationReviewRedirect();
+        }
         trackWorkflowEvent({
           eventName: 'RECORDS_IMPORTED',
           entityType: 'IMPORT_BATCH',
@@ -2654,10 +2672,8 @@ ${sampleRows.join('\n')}`,
           setPreviewDocumentId(null);
           setPreviewDocumentIds([]);
           setParsedActivities([]);
-          setSuccessMessage(
-            `Imported ${importedCount} activity record(s). Generated emissions metrics. Redirecting to Calculation Review...`,
-          );
-          navigate('/metrics-summary');
+          setSuccessMessage(getImportCompletedMessage(importedCount, selectedImportSummary.trackedMetricCount));
+          scheduleCalculationReviewRedirect();
         } else {
           setParsedActivities(remainingRows);
           setPreviewDocumentIds(remainingDocumentIds);
@@ -2723,9 +2739,7 @@ ${sampleRows.join('\n')}`,
       setError(
         err instanceof DuplicateDocumentImportError
           ? 'This document has already been imported.'
-          : err instanceof Error
-          ? err.message
-          : 'Confirm import failed',
+          : 'Import could not be completed. Please review the records and try again.',
       );
     } finally {
       setConfirmingId(null);
@@ -2898,6 +2912,36 @@ ${sampleRows.join('\n')}`,
     }
 
     return getConfirmImportDisabledReason() ?? '';
+  }
+
+  function getImportCompletedMessage(importedCount: number, trackedMetricCount: number) {
+    const detailParts = [
+      `${importedCount} record${importedCount === 1 ? '' : 's'} imported`,
+    ];
+
+    if (trackedMetricCount > 0) {
+      detailParts.push(
+        `${trackedMetricCount} tracked operational metric${
+          trackedMetricCount === 1 ? '' : 's'
+        } included as tracked-only`,
+      );
+    }
+
+    detailParts.push('0 records require review');
+
+    return `Import completed successfully. The selected records have been saved as Data Records. ${detailParts.join(
+      '. ',
+    )}. Redirecting to Calculation Review...`;
+  }
+
+  function scheduleCalculationReviewRedirect() {
+    if (importRedirectTimerRef.current) {
+      window.clearTimeout(importRedirectTimerRef.current);
+    }
+
+    importRedirectTimerRef.current = window.setTimeout(() => {
+      navigate('/calculation-review');
+    }, 1200);
   }
 
   function isUnsupportedPilotProvinceIssue(message?: string) {
@@ -3097,6 +3141,36 @@ ${sampleRows.join('\n')}`,
       <p style={{ color: '#666', marginBottom: 16 }}>
         Add emissions-related activity data from documents, spreadsheets, or manual entry. New records can be reviewed before they are included in emissions calculations.
       </p>
+
+      <section
+        style={workflowCardStyle}
+        aria-label="CarbonLite input workflow: Input Data to Input Review to Save Records to Data Records to Calculation Review to Reports"
+      >
+        <div style={workflowHeaderStyle}>
+          <h2 style={workflowTitleStyle}>How activity data moves through CarbonLite</h2>
+          <p style={workflowTextStyle}>
+            CarbonLite helps organize activity data, review records, match emission factors,
+            trace calculations, and generate pilot-stage reports.
+          </p>
+          {pilotReviewerReadOnly ? (
+            <p style={workflowReviewerNoteStyle}>
+              This reviewer account uses preloaded sample data and is read-only. Upload and import actions are disabled.
+            </p>
+          ) : null}
+        </div>
+        <ol style={workflowStepsStyle}>
+          {inputWorkflowSteps.map((step, index) => (
+            <li key={step.title} style={workflowStepStyle}>
+              <span style={workflowStepNumberStyle}>{index + 1}</span>
+              <span style={workflowStepContentStyle}>
+                <strong>{step.title}</strong>
+                <span>{step.detail}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       {!canImportData ? (
         <div style={readOnlyNoticeStyle}>
           {pilotReviewerReadOnly
@@ -3126,10 +3200,6 @@ ${sampleRows.join('\n')}`,
           </div>
         </div>
       ) : null}
-
-      <div style={stepBarStyle}>
-        Input Data → Input Review → Save Records → Data Records → Calculation Review → Reports
-      </div>
 
       {!pilotReviewerReadOnly ? <div style={methodTabsStyle} role="tablist" aria-label="Input data methods">
         {[
@@ -4042,14 +4112,83 @@ ${sampleRows.join('\n')}`,
   );
 }
 
-const stepBarStyle: React.CSSProperties = {
-  marginBottom: 24,
-  padding: 12,
+const workflowCardStyle: React.CSSProperties = {
+  marginBottom: 20,
+  padding: 16,
   borderRadius: 12,
+  border: '1px solid #dbe3ec',
+  background: '#fff',
+  boxShadow: '0 8px 20px rgba(15, 23, 42, 0.04)',
+};
+
+const workflowHeaderStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  marginBottom: 14,
+};
+
+const workflowTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#0f172a',
+  fontSize: 18,
+};
+
+const workflowTextStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#475569',
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const workflowReviewerNoteStyle: React.CSSProperties = {
+  ...workflowTextStyle,
+  padding: '8px 10px',
+  borderRadius: 8,
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+};
+
+const workflowStepsStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+  gap: 10,
+  margin: 0,
+  padding: 0,
+  listStyle: 'none',
+};
+
+const workflowStepStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '28px 1fr',
+  gap: 8,
+  alignItems: 'start',
+  minWidth: 0,
+  padding: 10,
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+
+const workflowStepNumberStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 24,
+  height: 24,
+  borderRadius: 999,
   background: '#ecfdf5',
-  border: '1px solid #a7f3d0',
   color: '#047857',
-  fontWeight: 600,
+  fontSize: 12,
+  fontWeight: 900,
+};
+
+const workflowStepContentStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 3,
+  minWidth: 0,
+  color: '#0f172a',
+  fontSize: 13,
+  lineHeight: 1.35,
 };
 
 const readOnlyNoticeStyle: React.CSSProperties = {

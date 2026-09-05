@@ -67,7 +67,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
   },
   {
     value: 'HOTEL',
-    label: 'Hotel',
+    label: 'Business Travel - Accommodation',
     defaultScope: 'SCOPE_3',
     reportTreatment: 'Included',
     provinceRequired: false,

@@ -156,7 +156,7 @@ describe('ExcelInputTable empty activity row UX', () => {
         },
         {
           id: 'factor-hotel',
-          name: 'Hotel stay factor',
+          name: 'Business Travel - Accommodation factor',
           type: 'EMISSION',
           activityType: 'HOTEL',
           inputUnit: 'nights',
@@ -376,7 +376,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     ['GASOLINE', '', 'Scope 1', 'Gasoline factor'],
     ['DIESEL', '', 'Scope 1', 'Diesel factor'],
     ['AIR_TRAVEL', '', 'Scope 3', 'Business travel flight factor'],
-    ['HOTEL', '', 'Scope 3', 'Hotel stay factor'],
+    ['HOTEL', '', 'Scope 3', 'Business Travel - Accommodation factor'],
     ['GROUND_TRANSPORT', '', 'Scope 3', 'Ground Transport - Canada - 2025'],
   ])('assigns scope and matched status for %s rows', async (activityType, province, scopeLabel, factorName) => {
     renderTable();

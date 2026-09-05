@@ -20,7 +20,7 @@ import {
   resolveScopeClassification,
 } from '../utils/scopeClassification';
 import { getActivityTypeLabel } from '../utils/activityType';
-import { formatDateOnly } from '../utils/dateOnly';
+import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
 import {
   buildSourceEvidenceNote,
   formatReportAssumptions,
@@ -41,6 +41,10 @@ import { MethodologyDisclaimerSection } from './reports/sections/MethodologyDisc
 import { RecordsRequiringReviewSection } from './reports/sections/RecordsRequiringReviewSection';
 import { ScopeBreakdownSection } from './reports/sections/ScopeBreakdownSection';
 import { SourceEvidenceSection } from './reports/sections/SourceEvidenceSection';
+import {
+  buildInventoryBoundary,
+  summarizeInventoryBoundary,
+} from '../constants/inventoryBoundary';
 
 export { formatFuelUsageBreakdown };
 
@@ -64,6 +68,7 @@ const DEFAULT_EXPANDED_REPORT_SECTIONS = new Set([
 ]);
 
 const REPORT_SECTION_IDS = [
+  'inventory-boundary',
   'report-scope',
   'executive-summary',
   'emissions-hotspots',
@@ -556,6 +561,11 @@ export function FormalReportPreview({
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildFormalScopeSummary(calculationDetails);
   const scopeSummaryLine = `Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`;
+  const inventoryBoundary = buildInventoryBoundary(organizationName, reportPeriod);
+  const inventoryBoundarySummary = summarizeInventoryBoundary(
+    inventoryBoundary,
+    `${getDateOnlyYear(reportPeriod) ?? 2026} reporting period`,
+  );
   const electricityRecordCount = calculationDetails.filter((item) => item.activityType === 'ELECTRICITY').length;
   const calculatedElectricityCount = calculationDetails.filter(
     (item) => item.activityType === 'ELECTRICITY' && item.status === 'CALCULATED',
@@ -615,7 +625,25 @@ export function FormalReportPreview({
       </div>
 
       <ReportSection
-        title="A. Report Scope"
+        title="A. Inventory Boundary"
+        sectionId="inventory-boundary"
+        expanded={expandedSections['inventory-boundary']}
+        onToggle={toggleSection}
+        summary={inventoryBoundarySummary}
+      >
+        <div style={factsGridStyle}>
+          <Fact label="Organization / Workspace" value={inventoryBoundary.organizationWorkspace} />
+          <Fact label="Reporting period" value={inventoryBoundary.reportingPeriod} />
+          <Fact label="Geographic boundary" value={inventoryBoundary.geographicBoundary} />
+          <Fact label="Included facilities or locations" value={inventoryBoundary.includedFacilitiesOrLocations} />
+          <Fact label="Included scopes" value={inventoryBoundary.includedScopes} />
+          <Fact label="Scope 3 coverage note" value={inventoryBoundary.scope3CoverageNote} />
+          <Fact label="Exclusions / limitations" value={inventoryBoundary.exclusionsLimitations} />
+        </div>
+      </ReportSection>
+
+      <ReportSection
+        title="B. Report Scope"
         sectionId="report-scope"
         expanded={expandedSections['report-scope']}
         onToggle={toggleSection}
@@ -631,7 +659,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="B. Executive Summary"
+        title="C. Executive Summary"
         sectionId="executive-summary"
         expanded={expandedSections['executive-summary']}
         onToggle={toggleSection}
@@ -641,7 +669,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="C. Emissions Hotspots"
+        title="D. Emissions Hotspots"
         sectionId="emissions-hotspots"
         expanded={expandedSections['emissions-hotspots']}
         onToggle={toggleSection}
@@ -655,7 +683,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="D. Scope Breakdown"
+        title="E. Scope Breakdown"
         sectionId="scope-breakdown"
         expanded={expandedSections['scope-breakdown']}
         onToggle={toggleSection}
@@ -672,7 +700,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="E. Calculation Quality Summary"
+        title="F. Calculation Quality Summary"
         sectionId="calculation-quality"
         expanded={expandedSections['calculation-quality']}
         onToggle={toggleSection}
@@ -688,7 +716,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="F. Emissions Breakdown"
+        title="G. Emissions Breakdown"
         sectionId="emissions-breakdown"
         expanded={expandedSections['emissions-breakdown']}
         onToggle={toggleSection}
@@ -707,7 +735,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="G. Activity Breakdown"
+        title="H. Activity Breakdown"
         sectionId="activity-breakdown"
         expanded={expandedSections['activity-breakdown']}
         onToggle={toggleSection}
@@ -717,7 +745,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="H. Emission Factors Used"
+        title="I. Emission Factors Used"
         sectionId="emission-factors"
         expanded={expandedSections['emission-factors']}
         onToggle={toggleSection}
@@ -730,7 +758,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="I. Calculation Traceability"
+        title="J. Calculation Traceability"
         sectionId="calculation-traceability"
         expanded={expandedSections['calculation-traceability']}
         onToggle={toggleSection}
@@ -744,7 +772,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="J. Source Evidence Summary"
+        title="K. Source Evidence Summary"
         sectionId="source-evidence"
         expanded={expandedSections['source-evidence']}
         onToggle={toggleSection}
@@ -754,7 +782,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="K. Records Requiring Review"
+        title="L. Records Requiring Review"
         sectionId="records-review"
         expanded={expandedSections['records-review']}
         onToggle={toggleSection}
@@ -767,7 +795,7 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="L. Methodology and Limitations"
+        title="M. Methodology and Limitations"
         sectionId="methodology"
         expanded={expandedSections.methodology}
         onToggle={toggleSection}

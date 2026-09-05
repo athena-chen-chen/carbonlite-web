@@ -269,7 +269,7 @@ const goldenRecords: GoldenRecord[] = [
   },
   {
     activityType: 'HOTEL',
-    label: 'Hotel',
+    label: 'Business Travel - Accommodation',
     recordDate: '2026-07-20',
     quantity: 10,
     unit: 'nights',
@@ -277,7 +277,7 @@ const goldenRecords: GoldenRecord[] = [
     province: '',
     scope: 'SCOPE_3',
     factorId: 'pilot-hotel-canada-2025',
-    factorName: 'Hotel - Canada - 2025',
+    factorName: 'Business Travel - Accommodation - Canada - 2025',
     factorValue: 15,
     factorInputUnit: 'nights',
     factorResultUnit: 'kgCO2e/night',

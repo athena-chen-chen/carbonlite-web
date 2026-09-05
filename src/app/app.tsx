@@ -21,6 +21,7 @@ import { UserActivityPage } from '../pages/UserActivityPage';
 import { FactorSourcesPage } from '../pages/FactorSourcesPage';
 import { FactorDetailsPage } from '../pages/FactorDetailsPage';
 import { AdminRoute } from '../auth/AdminRoute';
+import { PilotReviewInstructionsRoute } from '../auth/PilotReviewInstructionsRoute';
 import { AnalyticsRouteTracker } from '../components/AnalyticsRouteTracker';
 import { GA4RouteTracker } from '../components/GA4RouteTracker';
 import PrivacyPolicyPage from '../pages/PrivacyPolicyPage';
@@ -32,6 +33,7 @@ import PaidPilotScopePage from '../pages/PaidPilotScopePage';
 import ForgotPasswordPage from '../pages/ForgotPasswordPage';
 import SetPasswordPage from '../pages/SetPasswordPage';
 import PilotReviewersPage from '../pages/PilotReviewersPage';
+import PilotReviewInstructionsPage from '../pages/PilotReviewInstructionsPage';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -130,6 +132,17 @@ export default function App() {
         />
 
         <Route
+          path="/calculation-review"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <MetricsSummaryPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/input-data"
           element={
             <ProtectedRoute>
@@ -171,6 +184,19 @@ export default function App() {
                   <PilotReviewersPage />
                 </AppShell>
               </AdminRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/pilot-review-instructions"
+          element={
+            <ProtectedRoute>
+              <PilotReviewInstructionsRoute>
+                <AppShell>
+                  <PilotReviewInstructionsPage />
+                </AppShell>
+              </PilotReviewInstructionsRoute>
             </ProtectedRoute>
           }
         />

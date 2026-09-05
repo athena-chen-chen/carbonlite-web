@@ -17,6 +17,9 @@ const ACTIVITY_TYPE_ALIASES: Record<string, string> = {
   HOTEL: 'HOTEL',
   HOTELS: 'HOTEL',
   HOTEL_STAY: 'HOTEL',
+  BUSINESS_TRAVEL_ACCOMMODATION: 'HOTEL',
+  BUSINESS_TRAVEL_HOTEL: 'HOTEL',
+  BUSINESS_TRAVEL_HOTEL_STAY: 'HOTEL',
   ACCOMMODATION: 'HOTEL',
   LODGING: 'HOTEL',
   AIR_TRAVEL: 'AIR_TRAVEL',
@@ -103,6 +106,13 @@ function normalizeActivityTypeBySubstring(value: string) {
   if (value.includes('AIR_TRAVEL')) return 'AIR_TRAVEL';
   if (value.includes('FLIGHT')) return 'AIR_TRAVEL';
   if (
+    value.includes('HOTEL') ||
+    value.includes('ACCOMMODATION') ||
+    value.includes('LODGING')
+  ) {
+    return 'HOTEL';
+  }
+  if (
     value.includes('GROUND_TRANSPORT') ||
     value.includes('TAXI') ||
     value.includes('RIDESHARE') ||
@@ -121,13 +131,5 @@ function normalizeActivityTypeBySubstring(value: string) {
   if (value.includes('PURCHASED_COOLING') || value.includes('DISTRICT_COOLING')) {
     return 'PURCHASED_COOLING';
   }
-  if (
-    value.includes('HOTEL') ||
-    value.includes('ACCOMMODATION') ||
-    value.includes('LODGING')
-  ) {
-    return 'HOTEL';
-  }
-
   return null;
 }

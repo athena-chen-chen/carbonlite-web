@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 import {
@@ -209,7 +210,7 @@ const goldenTrailCalculationDetails = [
   goldenTrailDetail({
     activityDataId: 'activity-hotel',
     activityType: 'HOTEL',
-    factorName: 'Hotel - Canada',
+    factorName: 'Business Travel - Accommodation - Canada',
     factorInputUnit: 'nights',
     normalizedUnit: 'nights',
     activityQuantity: 10,
@@ -324,7 +325,7 @@ describe('buildMetricsSummaryTableRows', () => {
           activityType: 'AIR_TRAVEL',
         }),
         expect.objectContaining({
-          metricType: 'Hotel',
+          metricType: 'Business Travel - Accommodation',
           unit: 'nights',
           totalValue: '10',
           category: 'input',
@@ -787,11 +788,12 @@ describe('buildMetricsSummaryTableRows', () => {
     dialog = screen.getByRole('dialog', { name: /Scope 3 Calculation Trail/i });
     expect(within(dialog).getByText('725 kgCO2e')).toBeInTheDocument();
     expect(within(dialog).getAllByText(/Air Travel · Canada/i).length).toBeGreaterThan(0);
-    expect(within(dialog).getAllByText(/Hotel · Canada/i).length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText(/Business Travel - Accommodation · Canada/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText('Consultant Review Recommended').length).toBeGreaterThan(0);
     fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
 
     const hotspotSection = screen.getByRole('region', { name: /Emissions Hotspots/i });
+    fireEvent.click(within(hotspotSection).getByRole('button', { name: /Expand Emissions Hotspots section/i }));
     fireEvent.click(
       within(hotspotSection).getAllByRole('button', {
         name: 'View Calculation Trail',
@@ -801,6 +803,66 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('33,247 kgCO2e')).toBeInTheDocument();
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('4');
     expect(within(dialog).queryByText(/Natural Gas/i)).not.toBeInTheDocument();
+  });
+
+  it('collapses secondary Calculation Review sections by default and keeps Calculation Summary expanded', () => {
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={goldenTrailUsageTotals}
+          totalEstimatedEmissionsKgCO2e={37285}
+          countSummary={goldenTrailCountSummary}
+          calculationDetails={goldenTrailCalculationDetails}
+        />
+      </MemoryRouter>,
+    );
+
+    const hotspotSection = screen.getByRole('region', { name: /Emissions Hotspots/i });
+    const hotspotToggle = within(hotspotSection).getByRole('button', {
+      name: /Expand Emissions Hotspots section/i,
+    });
+    expect(hotspotToggle).toHaveTextContent('Expand');
+    expect(hotspotToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(hotspotSection).toHaveTextContent('Top contributing activity areas are available for review.');
+    expect(within(hotspotSection).queryByText('Top Emission Categories')).not.toBeInTheDocument();
+
+    fireEvent.click(hotspotToggle);
+    expect(hotspotToggle).toHaveTextContent('Collapse');
+    expect(hotspotToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(hotspotSection).getByText('Top Emission Categories')).toBeInTheDocument();
+
+    const creditSection = screen.getByRole('region', { name: /Carbon Credit Readiness Notes/i });
+    const creditToggle = within(creditSection).getByRole('button', {
+      name: /Expand Carbon Credit Readiness Notes section/i,
+    });
+    expect(creditToggle).toHaveTextContent('Expand');
+    expect(creditToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(creditSection).toHaveTextContent(
+      'Optional pilot-stage readiness notes. Not a carbon credit eligibility determination.',
+    );
+    expect(creditSection).not.toHaveTextContent(CARBON_CREDIT_READINESS_DISCLAIMER);
+
+    fireEvent.click(creditToggle);
+    expect(creditToggle).toHaveTextContent('Collapse');
+    expect(creditToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(creditSection).toHaveTextContent(CARBON_CREDIT_READINESS_DISCLAIMER);
+
+    const summarySection = screen.getByRole('region', { name: 'Calculation Summary' });
+    const summaryToggle = within(summarySection).getByRole('button', {
+      name: /Collapse Calculation Summary section/i,
+    });
+    expect(summaryToggle).toHaveTextContent('Collapse');
+    expect(summaryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(summarySection).getByText('Input Data')).toBeInTheDocument();
+    expect(summarySection).toHaveTextContent('37,285');
+
+    fireEvent.click(summaryToggle);
+    expect(summaryToggle).toHaveTextContent('Expand');
+    expect(summaryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(summarySection).toHaveTextContent(
+      'Total: 37,285 kgCO2e · Scope 1: 3,313 · Scope 2: 33,247 · Scope 3: 725',
+    );
+    expect(within(summarySection).queryByText('Input Data')).not.toBeInTheDocument();
   });
 
   it('shows missing factor records as review required in the calculation trail without crashing', () => {
@@ -1625,6 +1687,23 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(screen.getByText(/review sample report structure and disclaimer/i)).toBeInTheDocument();
     expect(screen.getByText(/share comments or questions/i)).toBeInTheDocument();
     expect(screen.getByText(/Have feedback on this page/i)).toBeInTheDocument();
+    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    expect(boundarySection).toHaveTextContent(
+      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
+    );
+    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand' });
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
+    await userEvent.click(boundaryToggle);
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(boundaryToggle).toHaveTextContent('Collapse');
+    expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
+    await userEvent.click(boundaryToggle);
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(boundaryToggle).toHaveTextContent('Expand');
+    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
+    expect(await screen.findByText('View readiness details')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
     expect(screen.getByRole('link', { name: 'Factors' })).toHaveAttribute('href', '/conversion-factors');
     expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');

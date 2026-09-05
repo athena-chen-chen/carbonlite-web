@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -441,34 +441,71 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getAllByTestId(/factor-row-pilot-electricity-/)).toHaveLength(3);
 
     await userEvent.selectOptions(jurisdictionFilter, 'AB');
+    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-pilot-electricity-bc-2026')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-pilot-electricity-on-2026')).toBeInTheDocument();
+
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
 
-    expect(getConversionFactors).toHaveBeenLastCalledWith({
-      activityType: undefined,
-      jurisdiction: 'AB',
-      sourceYear: undefined,
+    await waitFor(() => {
+      expect(getConversionFactors).toHaveBeenLastCalledWith({
+        activityType: undefined,
+        jurisdiction: 'AB',
+        sourceYear: undefined,
+      });
     });
+    expect(screen.queryByText('You have unapplied filter changes.')).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-bc-2026')).not.toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-on-2026')).not.toBeInTheDocument();
 
     await userEvent.selectOptions(jurisdictionFilter, 'BC');
+    expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
+    expect(screen.queryByTestId('factor-row-pilot-electricity-bc-2026')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
-    expect(screen.getByTestId('factor-row-pilot-electricity-bc-2026')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('factor-row-pilot-electricity-bc-2026')).toBeInTheDocument();
+    });
     expect(screen.queryByTestId('factor-row-pilot-electricity-ab-2026')).not.toBeInTheDocument();
 
     await userEvent.selectOptions(jurisdictionFilter, 'ON');
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
-    expect(screen.getByTestId('factor-row-pilot-electricity-on-2026')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('factor-row-pilot-electricity-on-2026')).toBeInTheDocument();
+    });
     expect(screen.queryByTestId('factor-row-pilot-electricity-bc-2026')).not.toBeInTheDocument();
   });
 
   it('filters Canada - National factors separately from province-specific factors', async () => {
     vi.mocked(getConversionFactors).mockResolvedValue({
-      items: [baseFactor, ...pilotElectricityFactors],
+      items: [
+        baseFactor,
+        {
+          ...baseFactor,
+          id: 'factor-national-label',
+          name: 'Natural gas national default',
+          activityType: 'NATURAL_GAS',
+          jurisdiction: 'Canada - National',
+          region: 'Canada - National',
+          country: 'Canada',
+          unit: 'm3',
+        },
+        {
+          ...baseFactor,
+          id: 'factor-national-code',
+          name: 'Gasoline national default',
+          activityType: 'GASOLINE',
+          jurisdiction: 'CANADA_NATIONAL',
+          region: 'CANADA_NATIONAL',
+          country: 'Canada',
+          unit: 'liters',
+        },
+        ...pilotElectricityFactors,
+      ],
       page: 1,
       pageSize: 20,
-      total: 4,
+      total: 6,
       totalPages: 1,
     });
 
@@ -480,18 +517,60 @@ describe('ConversionFactorsPage traceability', () => {
 
     const jurisdictionFilter = await screen.findByLabelText('Jurisdiction');
     await userEvent.selectOptions(jurisdictionFilter, 'NATIONAL');
+    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
+
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
 
-    expect(getConversionFactors).toHaveBeenLastCalledWith({
-      activityType: undefined,
-      jurisdiction: 'Canada',
-      sourceYear: undefined,
+    await waitFor(() => {
+      expect(getConversionFactors).toHaveBeenLastCalledWith({
+        activityType: undefined,
+        jurisdiction: 'Canada - National',
+        sourceYear: undefined,
+      });
     });
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-national-label')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-national-code')).toBeInTheDocument();
     expect(screen.getAllByText('Canada - National').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('factor-row-pilot-electricity-ab-2026')).not.toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-bc-2026')).not.toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-on-2026')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await waitFor(() => {
+      expect(screen.queryByText('You have unapplied filter changes.')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-national-label')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-national-code')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-pilot-electricity-bc-2026')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-pilot-electricity-on-2026')).toBeInTheDocument();
+  });
+
+  it('shows a factor-specific empty state when filters match no factors', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('No conversion factors yet.');
+    await userEvent.selectOptions(screen.getByLabelText('Jurisdiction'), 'NATIONAL');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+
+    expect(await screen.findByText('No factors match the selected filters.')).toBeInTheDocument();
+    expect(screen.getByText('Try clearing filters or choosing different filter values.')).toBeInTheDocument();
+    expect(screen.queryByText(/No activities/i)).not.toBeInTheDocument();
   });
 
   it('renders consultant-friendly activity, factor, and source labels in the table', async () => {
@@ -605,6 +684,15 @@ describe('ConversionFactorsPage traceability', () => {
     await screen.findByTestId('factor-row-factor-1');
     await userEvent.selectOptions(screen.getByLabelText('Sort by Factor Value'), 'asc');
 
+    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
+      '2.68 kgCO2e/liter',
+      '0.53 kgCO2e/kWh',
+      '1.89 kgCO2e/m3',
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
       '0.53 kgCO2e/kWh',
       '1.89 kgCO2e/m3',
@@ -641,6 +729,12 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByTestId('factor-row-factor-2')).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('Min Factor Value'), '2');
+
+    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-2')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
 
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-factor-2')).not.toBeInTheDocument();

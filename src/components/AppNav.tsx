@@ -16,6 +16,7 @@ const navItems = [
 
 const adminNavItems = [
   { to: '/admin/pilot-reviewers', label: 'Pilot Reviewers' },
+  { to: '/pilot-review-instructions', label: 'Review Instructions' },
   { to: '/feedback', label: 'Feedback' },
   { to: '/activity', label: 'Activity', activePaths: ['/user-activity', '/admin/activity'] },
 ] as const;
@@ -201,6 +202,14 @@ export function AppNav() {
                   {item.label}
                 </NavLink>
               ))}
+              {showPilotReviewerBanner ? (
+                <NavLink
+                  to="/pilot-review-instructions"
+                  style={({ isActive }) => getLinkStyle(isActive)}
+                >
+                  Review Guide
+                </NavLink>
+              ) : null}
               {isAdmin ? (
                 <div style={adminDropdownStyle}>
                   <button

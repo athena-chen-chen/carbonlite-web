@@ -25,7 +25,7 @@ export function ExecutiveSummarySection({
       <Fact label="Records Requiring Review" value={String(executiveSummary.recordsRequiringReview)} />
       <Fact label="Primary Activity Types" value={executiveSummary.primaryActivityTypes} />
       <Fact label="Missing Factor Count" value={String(executiveSummary.missingFactorCount)} />
-      <Fact label="Data Quality Coverage" value={executiveSummary.dataQualityCoverage} />
+      <Fact label="Calculation Coverage" value={executiveSummary.dataQualityCoverage} />
     </div>
   );
 }

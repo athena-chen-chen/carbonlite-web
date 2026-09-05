@@ -87,7 +87,7 @@ export const pilotConversionFactors: MatchableConversionFactor[] = [
   },
   {
     id: 'factor-hotel',
-    name: 'Hotel Stay - 2026',
+    name: 'Business Travel - Accommodation - 2026',
     type: 'EMISSION',
     activityType: 'HOTEL',
     inputUnit: 'nights',

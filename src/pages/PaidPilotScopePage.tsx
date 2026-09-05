@@ -49,7 +49,7 @@ export const PAID_PILOT_SCOPE_SECTIONS: PaidPilotSection[] = [
     items: [
       'Electricity for supported Canadian pilot jurisdictions: AB, BC, and ON.',
       'Natural Gas, Gasoline, and Diesel as Scope 1 pilot activity types.',
-      'Air Travel, Hotel, Ground Transport, and Shipping as supported Scope 3 pilot activity types where factors are available.',
+      'Air Travel, Business Travel - Accommodation, Ground Transport, and Shipping as supported selected Scope 3 pilot activity types where factors are available.',
       'Water as a tracked operational metric only, excluded from GHG totals.',
       'Rows with missing province, missing factor, unsupported activity, invalid quantity, or unit mismatch are flagged for review and excluded from calculated emissions totals.',
     ],

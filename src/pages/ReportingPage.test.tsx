@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import autoTable from 'jspdf-autotable';
@@ -190,6 +190,22 @@ describe('ReportingPage audit trail', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     expect(await screen.findByRole('heading', { name: 'Reports' })).toBeInTheDocument();
+    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    expect(boundarySection).toHaveTextContent(
+      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
+    );
+    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand' });
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
+    await userEvent.click(boundaryToggle);
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(boundaryToggle).toHaveTextContent('Collapse');
+    expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
+    await userEvent.click(boundaryToggle);
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(boundaryToggle).toHaveTextContent('Expand');
+    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Report Scope' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Audit Trail')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Audit Trail/i })).not.toBeInTheDocument();
@@ -213,7 +229,7 @@ describe('ReportingPage audit trail', () => {
     vi.mocked(trackActivityEvent).mockClear();
 
     const pdfButton = screen.getByRole('button', { name: /Download PDF/i });
-    expect(pdfButton).toBeEnabled();
+    await waitFor(() => expect(pdfButton).toBeEnabled());
     await userEvent.click(pdfButton);
 
     await waitFor(() => {
@@ -275,7 +291,7 @@ describe('ReportingPage audit trail', () => {
     const dataQualityNotesCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return headers.includes('Readiness Signal') && body.some((row) => row[0] === 'Data Readiness Score');
+      return headers.includes('Readiness Signal') && body.some((row) => row[0] === 'Import Readiness');
     });
     const carbonCreditReadinessCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
@@ -325,12 +341,12 @@ describe('ReportingPage audit trail', () => {
     const dataQualityNotesBody = JSON.stringify(
       (dataQualityNotesCall?.[1] as { body?: unknown[][] } | undefined)?.body,
     );
-    expect(dataQualityNotesBody).toContain('Data Quality Coverage Meaning');
-    expect(dataQualityNotesBody).toContain('calculated as GHG emissions records');
-    expect(dataQualityNotesBody).toContain('Data Readiness Score Meaning');
-    expect(dataQualityNotesBody).toContain('Broader pilot readiness signal');
+    expect(dataQualityNotesBody).toContain('Calculation Coverage Meaning');
+    expect(dataQualityNotesBody).toContain('matched to an emissions factor and included in the calculated GHG total');
+    expect(dataQualityNotesBody).toContain('Import Readiness Meaning');
+    expect(dataQualityNotesBody).toContain('complete enough to proceed without manual review');
     expect(dataQualityNotesBody).toContain('Coverage vs Readiness');
-    expect(dataQualityNotesBody).toContain('related but not identical');
+    expect(dataQualityNotesBody).toContain('may differ');
     expect(dataQualityNotesCall?.[1]).toMatchObject({
       rowPageBreak: 'avoid',
       showHead: 'everyPage',

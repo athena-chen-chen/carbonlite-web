@@ -175,7 +175,7 @@ const goldenDetails: CalculationAuditDetail[] = [
     activityQuantity: 10,
     activityUnit: 'nights',
     jurisdictionRegion: null,
-    factorName: 'Hotel - Canada',
+    factorName: 'Business Travel - Accommodation - Canada',
     factorValue: 15,
     factorInputUnit: 'nights',
     calculatedEmissionsKgCO2e: 150,
@@ -236,7 +236,7 @@ describe('pilot CSV export', () => {
     const electricityRows = rows.filter((row) => row['Activity Type'] === 'Electricity');
     const naturalGas = rows.find((row) => row['Activity Type'] === 'Natural Gas');
     const gasoline = rows.find((row) => row['Activity Type'] === 'Gasoline');
-    const hotel = rows.find((row) => row['Activity Type'] === 'Hotel');
+    const hotel = rows.find((row) => row['Activity Type'] === 'Business Travel - Accommodation');
     const airTravel = rows.find((row) => row['Activity Type'] === 'Air Travel');
     const water = rows.find((row) => row['Activity Type'] === 'Water');
 

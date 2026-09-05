@@ -50,7 +50,7 @@ This pass added a small stable pilot fixture and focused tests around the most i
 - Pilot fixture data for expected Scope 1, Scope 2, Scope 3, and total emissions.
 - Electricity factor matching for the supported pilot provinces: AB / BC / ON.
 - Electricity missing-factor behavior for unsupported pilot provinces: QC / SK.
-- Scope classification for Natural Gas, Gasoline, Diesel, Electricity, Flight, Hotel Stay, Ground Transport, and Water Usage.
+- Scope classification for Natural Gas, Gasoline, Diesel, Electricity, Flight, Business Travel - Accommodation, Ground Transport, and Water Usage.
 - Manual entry happy path for valid Alberta electricity as Scope 2.
 - JSON upload preview behavior for unsupported electricity province rows.
 - Metrics reconciliation asserting Total Emissions equals Scope 1 + Scope 2 + Scope 3.
@@ -105,7 +105,7 @@ High-value coverage still missing:
    - QC / SK electricity Missing Factor.
    - Missing Province for electricity.
    - Natural Gas, Gasoline, and Diesel Scope 1 calculation.
-   - Flight, Hotel Stay, and Ground Transport Scope 3 calculation.
+   - Flight, Business Travel - Accommodation, and Ground Transport selected Scope 3 calculation.
    - Water Usage tracked-only exclusion.
    - Metrics summary reconciliation.
    - Admin-only current-company record clearing.

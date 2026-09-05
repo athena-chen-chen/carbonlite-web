@@ -26,6 +26,11 @@ import {
   isPilotReviewer,
 } from '../services/auth';
 import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
+import {
+  buildInventoryBoundary,
+  summarizeInventoryBoundary,
+} from '../constants/inventoryBoundary';
+import { getDateOnlyYear } from '../utils/dateOnly';
 
 
 export function MetricsSummaryPage() {
@@ -61,6 +66,7 @@ export function MetricsSummaryPage() {
   const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
   const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
   const [dateRangeReady, setDateRangeReady] = useState(false);
+  const [isInventoryBoundaryExpanded, setIsInventoryBoundaryExpanded] = useState(false);
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestSequenceRef = useRef(0);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -355,6 +361,14 @@ function handleDownloadPDF() {
         accountType: getAccountType(currentUser),
       })
     : '';
+  const inventoryBoundary = buildInventoryBoundary(
+    getOrganizationName(currentUser),
+    'Pilot sample reporting period',
+  );
+  const inventoryBoundarySummary = summarizeInventoryBoundary(
+    inventoryBoundary,
+    `${getDateOnlyYear(periodEnd) ?? 2026} reporting period`,
+  );
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
@@ -370,6 +384,37 @@ function handleDownloadPDF() {
           <PilotReviewerFeedbackPrompt feedbackHref={pilotReviewerFeedbackHref} />
         </>
       ) : null}
+
+      <section style={inventoryBoundaryCardStyle} aria-labelledby="inventory-boundary-title">
+        <div style={inventoryBoundaryHeaderStyle}>
+          <div>
+            <h2 id="inventory-boundary-title" style={inventoryBoundaryTitleStyle}>
+              Inventory Boundary
+            </h2>
+            <p style={inventoryBoundarySummaryStyle}>{inventoryBoundarySummary}</p>
+          </div>
+          <button
+            type="button"
+            aria-expanded={isInventoryBoundaryExpanded}
+            aria-controls="inventory-boundary-content"
+            onClick={() => setIsInventoryBoundaryExpanded((expanded) => !expanded)}
+            style={inventoryBoundaryToggleStyle}
+          >
+            {isInventoryBoundaryExpanded ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+        {isInventoryBoundaryExpanded ? (
+          <div id="inventory-boundary-content" style={inventoryBoundaryGridStyle}>
+            <BoundaryField label="Organization / Workspace" value={inventoryBoundary.organizationWorkspace} />
+            <BoundaryField label="Reporting period" value={inventoryBoundary.reportingPeriod} />
+            <BoundaryField label="Geographic boundary" value={inventoryBoundary.geographicBoundary} />
+            <BoundaryField label="Included facilities or locations" value={inventoryBoundary.includedFacilitiesOrLocations} />
+            <BoundaryField label="Included scopes" value={inventoryBoundary.includedScopes} />
+            <BoundaryField label="Scope 3 coverage note" value={inventoryBoundary.scope3CoverageNote} />
+            <BoundaryField label="Exclusions / limitations" value={inventoryBoundary.exclusionsLimitations} />
+          </div>
+        ) : null}
+      </section>
 
       <div style={filterCardStyle}>
         <div>
@@ -482,6 +527,15 @@ function handleDownloadPDF() {
   );
 }
 
+function BoundaryField({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={inventoryBoundaryFieldStyle}>
+      <span style={inventoryBoundaryLabelStyle}>{label}</span>
+      <span style={inventoryBoundaryValueStyle}>{value}</span>
+    </div>
+  );
+}
+
 function PilotReviewerWelcomePanel({ feedbackHref }: { feedbackHref: string }) {
   return (
     <section aria-label="How to review CarbonLite" style={pilotReviewerPanelStyle}>
@@ -584,6 +638,77 @@ const pilotReviewerLinkStyle: React.CSSProperties = {
 
 const pilotReviewerDescriptionStyle: React.CSSProperties = {
   color: '#475569',
+};
+
+const inventoryBoundaryCardStyle: React.CSSProperties = {
+  marginBottom: 18,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #d1fae5',
+  background: '#f0fdf4',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+};
+
+const inventoryBoundaryHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 14,
+  flexWrap: 'wrap',
+};
+
+const inventoryBoundaryTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#064e3b',
+  fontSize: 18,
+};
+
+const inventoryBoundarySummaryStyle: React.CSSProperties = {
+  margin: '6px 0 0',
+  color: '#475569',
+  fontSize: 14,
+  lineHeight: 1.45,
+};
+
+const inventoryBoundaryToggleStyle: React.CSSProperties = {
+  padding: '7px 12px',
+  borderRadius: 8,
+  border: '1px solid #047857',
+  background: '#fff',
+  color: '#047857',
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const inventoryBoundaryGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+  gap: 10,
+  marginTop: 14,
+};
+
+const inventoryBoundaryFieldStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bbf7d0',
+  background: '#fff',
+};
+
+const inventoryBoundaryLabelStyle: React.CSSProperties = {
+  display: 'block',
+  marginBottom: 5,
+  color: '#047857',
+  fontSize: 12,
+  fontWeight: 900,
+  textTransform: 'uppercase',
+  letterSpacing: 0,
+};
+
+const inventoryBoundaryValueStyle: React.CSSProperties = {
+  display: 'block',
+  color: '#0f172a',
+  fontWeight: 650,
+  lineHeight: 1.45,
 };
 
 const filterCardStyle: React.CSSProperties = {
