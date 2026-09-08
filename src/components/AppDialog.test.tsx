@@ -38,7 +38,7 @@ describe('AppDialog error handling', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Show error' }));
 
     expect(
-      screen.getByText('Something went wrong. Please try again. If the issue continues, contact support.'),
+      screen.getByText('Something went wrong. Please try again. If the issue continues, contact hello@carbonliteapp.ca.'),
     ).toBeInTheDocument();
     expect(screen.queryByText('Technical details')).not.toBeInTheDocument();
     expect(screen.queryByText(/PrismaClientKnownRequestError/i)).not.toBeInTheDocument();

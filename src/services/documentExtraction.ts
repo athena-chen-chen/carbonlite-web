@@ -1,6 +1,7 @@
 import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
-import { canImportActivityRecords, getCurrentUser, requirePermission } from './auth';
+import { canImportActivityRecords, requirePermission } from '../utils/permissions';
+import { getCurrentUser } from './auth';
 
 export type ParsedActivity = {
   activityType: string;

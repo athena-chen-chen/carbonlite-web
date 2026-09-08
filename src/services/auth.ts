@@ -1,4 +1,33 @@
 import { buildApiUrl, isPublicSignupEnabled } from '../config/api';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+export {
+  canClearActivityRecords,
+  canDeleteActivityRecords,
+  canEditActivityRecords,
+  canEditFactors,
+  canEditWorkspace,
+  canImportActivityRecords,
+  canImportData,
+  canManageActivityRecords,
+  canManageConversionFactors,
+  canManageUsers,
+  canResetWorkspaceData,
+  canViewAdmin,
+  canViewCalculationReview,
+  canViewDataRecords,
+  canViewFactors,
+  canViewReports,
+  getAccountType,
+  getUserRole,
+  isAdmin,
+  isAdminOrOwner,
+  isAdminOrOwnerUser,
+  isAdminUser,
+  isInternalTestAccount,
+  isPilotReviewer,
+  isReadOnlyUser,
+  requirePermission,
+} from '../utils/permissions';
 
 const TOKEN_KEY = 'accessToken';
 const USER_KEY = 'currentUser';
@@ -15,6 +44,7 @@ export type AuthUser = {
   email: string;
   role?: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' | 'REVIEWER' | 'USER';
   accountType?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string;
+  account_type?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string;
   expiresAt?: string | null;
   status?: 'ACTIVE' | 'DISABLED' | 'PENDING' | string;
   organizationId?: string;
@@ -59,26 +89,6 @@ function saveSession(response: AuthResponse, fallbackEmail: string) {
   );
 }
 
-export function getAccountType(user: AuthUser | null) {
-  const accountType = String(user?.accountType ?? 'CUSTOMER')
-    .trim()
-    .toUpperCase();
-
-  if (accountType === 'INTERNAL_TEST' || accountType === 'PILOT_REVIEWER' || accountType === 'CUSTOMER') {
-    return accountType;
-  }
-
-  return 'CUSTOMER';
-}
-
-export function isPilotReviewer(user: AuthUser | null) {
-  return getAccountType(user) === 'PILOT_REVIEWER';
-}
-
-export function isInternalTestAccount(user: AuthUser | null) {
-  return getAccountType(user) === 'INTERNAL_TEST';
-}
-
 export function isAccountExpired(user: AuthUser | null) {
   if (!user?.expiresAt) return false;
   const expiresAt = new Date(user.expiresAt).getTime();
@@ -111,7 +121,7 @@ function getFriendlyAuthError(response: Response, fallback: string, detail: stri
   if (normalizedDetail.includes('invalid') || normalizedDetail.includes('password')) {
     return INVALID_LOGIN_MESSAGE;
   }
-  if (response.status >= 500) return 'Unable to connect to the server. Please check your connection and try again.';
+  if (response.status >= 500) return getUserFriendlyErrorMessage(null, 'unknown');
   return fallback;
 }
 
@@ -125,7 +135,7 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
       body: JSON.stringify(body),
     });
   } catch {
-    throw new Error('Unable to connect to the server. Please check your connection and try again.');
+    throw new Error(getUserFriendlyErrorMessage(null, 'network'));
   }
 
   if (!response.ok) {
@@ -145,7 +155,7 @@ async function authRequest(path: string, body: LoginInput | RegisterInput) {
   const data = (await response.json()) as AuthResponse;
 
   if (!data.accessToken) {
-    throw new Error('Something went wrong. Please try again. If the issue continues, contact support.');
+    throw new Error(getUserFriendlyErrorMessage(null, 'unknown'));
   }
 
   if (data.user?.status && String(data.user.status).toUpperCase() === 'DISABLED') {
@@ -195,7 +205,7 @@ async function passwordRequest(path: string, body: PasswordResetRequestInput | S
       body: JSON.stringify(body),
     });
   } catch {
-    throw new Error('Unable to connect to the server. Please check your connection and try again.');
+    throw new Error(getUserFriendlyErrorMessage(null, 'network'));
   }
 
   if (!response.ok) {
@@ -269,67 +279,4 @@ export function getOrganizationId(user: AuthUser | null) {
 
 export function getUserDisplayName(user: AuthUser | null) {
   return user?.name || user?.email || '';
-}
-
-export function getUserRole(user: AuthUser | null) {
-  if (!user) return 'VIEWER';
-
-  const role = String(user.role ?? 'MEMBER').toUpperCase();
-  if (role === 'REVIEWER') return 'VIEWER';
-  if (role === 'USER') return 'MEMBER';
-  if (role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER' || role === 'VIEWER') {
-    return role;
-  }
-  return 'MEMBER';
-}
-
-export function isAdminUser(user: AuthUser | null) {
-  if (isPilotReviewer(user)) return false;
-  return getUserRole(user) === 'ADMIN';
-}
-
-export function isAdminOrOwnerUser(user: AuthUser | null) {
-  if (isPilotReviewer(user)) return false;
-  const role = getUserRole(user);
-  return role === 'ADMIN' || role === 'OWNER';
-}
-
-function hasCompanyContext(user: AuthUser | null) {
-  return Boolean(user && getOrganizationId(user));
-}
-
-export function canManageActivityRecords(user: AuthUser | null) {
-  if (!hasCompanyContext(user)) return false;
-  if (isPilotReviewer(user)) return false;
-
-  const role = getUserRole(user);
-  return role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER';
-}
-
-export function canImportActivityRecords(user: AuthUser | null) {
-  return canManageActivityRecords(user);
-}
-
-export function canClearActivityRecords(user: AuthUser | null) {
-  if (!hasCompanyContext(user)) return false;
-  if (isPilotReviewer(user)) return false;
-
-  return isAdminOrOwnerUser(user);
-}
-
-export function canManageConversionFactors(user: AuthUser | null) {
-  if (!hasCompanyContext(user)) return false;
-  if (isPilotReviewer(user)) return false;
-
-  return isAdminOrOwnerUser(user);
-}
-
-export function isReadOnlyUser(user: AuthUser | null) {
-  return getUserRole(user) === 'VIEWER' || isPilotReviewer(user);
-}
-
-export function requirePermission(allowed: boolean) {
-  if (!allowed) {
-    throw new Error('You do not have permission to perform this action.');
-  }
 }

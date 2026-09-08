@@ -210,8 +210,33 @@ describe('apiFetch authenticated requests', () => {
       status: 500,
       code: 'SERVER_ERROR',
       message:
-        'Something went wrong while processing your request. Please try again. If the issue continues, contact support.',
+        'Something went wrong. Please try again. If the issue continues, contact hello@carbonliteapp.ca.',
       technicalMessage: 'PrismaClientKnownRequestError: Foreign key constraint failed',
+    });
+  });
+
+  it('maps failed network requests to the shared connection message', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED localhost:3333'));
+
+    await expect(apiFetch('/activity-data')).rejects.toMatchObject({
+      status: 0,
+      code: 'REQUEST_FAILED',
+      message: 'CarbonLite could not connect to the server. Please check your connection and try again.',
+      technicalMessage: 'ECONNREFUSED localhost:3333',
+    });
+  });
+
+  it('maps pilot reviewer forbidden responses to the read-only message', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Pilot reviewer accounts are read-only', { status: 403 }),
+    );
+
+    await expect(apiFetch('/activity-data/record-1')).rejects.toMatchObject({
+      status: 403,
+      code: 'FORBIDDEN',
+      message: 'This account is read-only for pilot review. Editing actions are disabled.',
     });
   });
 });

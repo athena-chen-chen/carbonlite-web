@@ -18,6 +18,10 @@ import {
   loadMetricsOverview,
 } from '../services/metricsOverview';
 import { pilotExpectedEmissions } from '../test/pilotEmissionsFixture';
+import {
+  loadOrganizationProfile,
+  saveOrganizationProfile,
+} from '../services/organizationProfile';
 
 vi.mock('../services/metricsOverview', async () => {
   const actual = await vi.importActual<typeof import('../services/metricsOverview')>(
@@ -1660,7 +1664,52 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
   });
 
-  it('shows a read-only welcome panel for pilot reviewer accounts', async () => {
+  it('uses saved organization profile values in the Inventory Boundary', async () => {
+    const adminUser = {
+      email: 'admin@example.com',
+      role: 'ADMIN' as const,
+      organizationId: 'custom-boundary-workspace',
+      organizationName: 'KACH CANADA LTD.',
+    };
+    localStorage.setItem('currentUser', JSON.stringify(adminUser));
+    saveOrganizationProfile(
+      {
+        ...loadOrganizationProfile(adminUser),
+        organizationName: 'KACH CANADA LTD.',
+        industry: 'Technology',
+        country: 'Canada',
+        provinceOrState: 'Alberta',
+        city: 'Calgary',
+        geographicBoundary: 'Calgary office and Ontario distribution activity records',
+        includedFacilitiesOrLocations: 'Calgary office; Ontario distribution partner',
+        excludedFacilitiesOrLocations: 'Supplier locations outside the pilot boundary',
+        includedScopes: 'Scope 1, Scope 2, and selected Scope 3 pilot categories',
+        scope3CoverageNote: 'Scope 3 includes selected travel records only.',
+        exclusionsAndLimitations: 'Excluded leased assets and supplier categories.',
+      },
+      adminUser,
+    );
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
+
+    expect(within(boundarySection).getByText('KACH CANADA LTD.')).toBeInTheDocument();
+    expect(
+      within(boundarySection).getByText('Calgary office and Ontario distribution activity records'),
+    ).toBeInTheDocument();
+    expect(
+      within(boundarySection).getByText('Supplier locations outside the pilot boundary'),
+    ).toBeInTheDocument();
+    expect(within(boundarySection).getByText('Scope 3 includes selected travel records only.')).toBeInTheDocument();
+  });
+
+  it('renders Calculation Review for pilot reviewer without mutation controls', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -1677,42 +1726,17 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByLabelText('How to review CarbonLite')).toHaveTextContent(
-      'How to review CarbonLite',
-    );
-    expect(screen.getByText('This account is read-only and uses sample data only.')).toBeInTheDocument();
-    expect(screen.getByText(/review sample activity data/i)).toBeInTheDocument();
-    expect(screen.getByText(/review emission factor transparency/i)).toBeInTheDocument();
-    expect(screen.getByText(/review totals and calculation trail/i)).toBeInTheDocument();
-    expect(screen.getByText(/review sample report structure and disclaimer/i)).toBeInTheDocument();
-    expect(screen.getByText(/share comments or questions/i)).toBeInTheDocument();
-    expect(screen.getByText(/Have feedback on this page/i)).toBeInTheDocument();
-    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
-    expect(boundarySection).toHaveTextContent(
-      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
-    );
-    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand' });
-    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
-    await userEvent.click(boundaryToggle);
-    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(boundaryToggle).toHaveTextContent('Collapse');
-    expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
-    expect(within(boundarySection).getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
-    await userEvent.click(boundaryToggle);
-    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(boundaryToggle).toHaveTextContent('Expand');
-    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
-    expect(await screen.findByText('View readiness details')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
-    expect(screen.getByRole('link', { name: 'Factors' })).toHaveAttribute('href', '/conversion-factors');
-    expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');
-    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
-    const feedbackLinks = screen.getAllByRole('link', { name: 'Send Feedback' });
-    expect(feedbackLinks).toHaveLength(2);
-    feedbackLinks.forEach((link) => {
-      expect(link).toHaveAttribute('href', expect.stringContaining('mailto:'));
-    });
+    expect(await screen.findByRole('heading', { name: /Calculation Review/i })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Inventory Boundary' })).toBeInTheDocument();
+    expect(await screen.findByText(/View readiness details/i)).toBeInTheDocument();
+
+    expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upload/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Import/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Edit\b/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Delete\b/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Manage Users/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Admin/i })).not.toBeInTheDocument();
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
   });

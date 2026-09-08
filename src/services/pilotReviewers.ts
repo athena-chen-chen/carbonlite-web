@@ -1,5 +1,6 @@
 import { apiFetch } from './api';
-import { getCurrentUser, isAdminUser, requirePermission } from './auth';
+import { isAdminUser, requirePermission } from '../utils/permissions';
+import { getCurrentUser } from './auth';
 
 export const PILOT_REVIEWER_EMAIL_VALIDATION_MESSAGE =
   'Please enter a valid email address, for example name@example.com.';

@@ -6,11 +6,10 @@ import {
   normalizeProvince,
 } from '../utils/province';
 import { normalizeActivityType } from '../utils/activityType';
+import { canManageConversionFactors, requirePermission } from '../utils/permissions';
 import {
-  canManageConversionFactors,
   getCurrentUser,
   getOrganizationId,
-  requirePermission,
 } from './auth';
 
 export type ConversionFactorInput = {

@@ -5,9 +5,11 @@ import { formatDateOnly } from '../utils/dateOnly';
 import {
   canClearActivityRecords,
   canManageActivityRecords,
+  requirePermission,
+} from '../utils/permissions';
+import {
   getCurrentUser,
   getOrganizationId,
-  requirePermission,
 } from './auth';
 
 export type ActivityDataInput = {

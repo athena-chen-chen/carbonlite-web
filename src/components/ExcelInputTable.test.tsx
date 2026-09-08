@@ -21,12 +21,15 @@ vi.mock('../services/facilities', () => ({
 }));
 
 vi.mock('../services/auth', () => ({
-  canImportActivityRecords: vi.fn(() => true),
   getCurrentUser: vi.fn(() => ({
     id: 'user-1',
     organizationId: 'org-1',
   })),
   getOrganizationId: vi.fn(() => 'org-1'),
+}));
+
+vi.mock('../utils/permissions', () => ({
+  canImportActivityRecords: vi.fn(() => true),
 }));
 
 describe('ExcelInputTable empty activity row UX', () => {

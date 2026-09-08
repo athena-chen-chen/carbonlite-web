@@ -33,6 +33,7 @@ import {
   isTrackedMetricDetail,
 } from '../utils/reportCredibility';
 import { IssueBadge as SharedIssueBadge } from './shared/StatusBadge';
+import { CollapsibleSection } from './common/CollapsibleSection';
 
 export type MetricsCountSummary = {
   totalRecordsFound: number;
@@ -572,32 +573,21 @@ export function MetricsSummarySection({
         </div>
       ) : null}
 
-      <section style={tableCardStyle} aria-labelledby="calculation-summary-title">
-        <div style={collapsibleHeaderStyle}>
-          <div>
-            <h2 id="calculation-summary-title" style={{ margin: 0, fontSize: 18 }}>
-              Calculation Summary
-            </h2>
-            <p style={summaryHelperTextStyle}>
-              {isCalculationSummaryExpanded
-                ? 'One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.'
-                : `Total: ${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e · Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`}
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-expanded={isCalculationSummaryExpanded}
-            aria-controls="calculation-summary-content"
-            aria-label={`${isCalculationSummaryExpanded ? 'Collapse' : 'Expand'} Calculation Summary section`}
-            onClick={() => setIsCalculationSummaryExpanded((expanded) => !expanded)}
-            style={collapsibleToggleStyle}
-          >
-            {isCalculationSummaryExpanded ? 'Collapse' : 'Expand'}
-          </button>
-        </div>
-
-        {isCalculationSummaryExpanded ? (
-        <table id="calculation-summary-content" style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <CollapsibleSection
+        id="calculation-summary"
+        title="Calculation Summary"
+        summary={
+          isCalculationSummaryExpanded
+            ? 'One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.'
+            : `Total: ${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e · Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`
+        }
+        expanded={isCalculationSummaryExpanded}
+        onToggle={() => setIsCalculationSummaryExpanded((expanded) => !expanded)}
+        style={tableCardStyle}
+        contentStyle={{ marginTop: 14, overflowX: 'auto' }}
+        toggleAriaLabelTitle="Calculation Summary section"
+      >
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#fafafa' }}>
               <th style={thStyle}>Type</th>
@@ -680,8 +670,7 @@ export function MetricsSummarySection({
             ) : null}
           </tbody>
         </table>
-        ) : null}
-      </section>
+      </CollapsibleSection>
 
       {calculationDetails.length > 0 ? (
         <details id="metrics-calculation-details" style={sourceDetailsStyle}>
@@ -2066,32 +2055,19 @@ function CarbonCreditReadinessPanel({
   onToggle: () => void;
 }) {
   return (
-    <section style={creditReadinessCardStyle} aria-labelledby="carbon-credit-readiness-title">
-      <div style={collapsibleHeaderStyle}>
-        <div>
-          <h2 id="carbon-credit-readiness-title" style={{ margin: 0, fontSize: 18 }}>
-            Carbon Credit Readiness Notes
-          </h2>
-          <p style={summaryHelperTextStyle}>
-            {isExpanded
-              ? 'Check whether an emissions reduction opportunity may need further professional assessment.'
-              : 'Optional pilot-stage readiness notes. Not a carbon credit eligibility determination.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          aria-controls="carbon-credit-readiness-content"
-          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} Carbon Credit Readiness Notes section`}
-          onClick={onToggle}
-          style={collapsibleToggleStyle}
-        >
-          {isExpanded ? 'Collapse' : 'Expand'}
-        </button>
-      </div>
-
-      {isExpanded ? (
-      <div id="carbon-credit-readiness-content">
+    <CollapsibleSection
+      id="carbon-credit-readiness"
+      title="Carbon Credit Readiness Notes"
+      summary={
+        isExpanded
+          ? 'Check whether an emissions reduction opportunity may need further professional assessment.'
+          : 'Optional pilot-stage readiness notes. Not a carbon credit eligibility determination.'
+      }
+      expanded={isExpanded}
+      onToggle={onToggle}
+      style={creditReadinessCardStyle}
+      toggleAriaLabelTitle="Carbon Credit Readiness Notes section"
+    >
       <div style={creditReadinessScoreRowStyle}>
         <div style={creditScoreStyle(assessment.readinessLevel)}>
           <span>{formatCreditReadinessLevel(assessment.readinessLevel)}</span>
@@ -2134,9 +2110,7 @@ function CarbonCreditReadinessPanel({
       </div>
 
       <div style={creditDisclaimerStyle}>{assessment.disclaimer}</div>
-      </div>
-      ) : null}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -2156,32 +2130,19 @@ function HotspotAnalysisSection({
   const hasCalculatedHotspots = analysis.categoryHotspots.length > 0;
 
   return (
-    <section style={hotspotCardStyle} aria-labelledby="emissions-hotspots-title">
-      <div style={collapsibleHeaderStyle}>
-        <div>
-          <h2 id="emissions-hotspots-title" style={{ margin: 0, fontSize: 18 }}>
-            Emissions Hotspots
-          </h2>
-          <p style={summaryHelperTextStyle}>
-            {isExpanded
-              ? 'Calculated emissions by activity category. Records requiring review are excluded from hotspot totals.'
-              : 'Top contributing activity areas are available for review.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          aria-controls="emissions-hotspots-content"
-          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} Emissions Hotspots section`}
-          onClick={onToggle}
-          style={collapsibleToggleStyle}
-        >
-          {isExpanded ? 'Collapse' : 'Expand'}
-        </button>
-      </div>
-
-      {isExpanded ? (
-      <div id="emissions-hotspots-content">
+    <CollapsibleSection
+      id="emissions-hotspots"
+      title="Emissions Hotspots"
+      summary={
+        isExpanded
+          ? 'Calculated emissions by activity category. Records requiring review are excluded from hotspot totals.'
+          : 'Top contributing activity areas are available for review.'
+      }
+      expanded={isExpanded}
+      onToggle={onToggle}
+      style={hotspotCardStyle}
+      toggleAriaLabelTitle="Emissions Hotspots section"
+    >
       {analysis.topCategory ? (
         <div style={topHotspotCardStyle}>
           <div style={topHotspotLabelStyle}>Top Hotspot</div>
@@ -2322,9 +2283,7 @@ function HotspotAnalysisSection({
           High-emission categories may be useful starting points for reduction planning. If reductions are later achieved and documented, they may require further professional assessment before any carbon credit discussion.
         </div>
       ) : null}
-      </div>
-      ) : null}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -2882,24 +2841,6 @@ const creditReadinessCardStyle: React.CSSProperties = {
   borderRadius: 12,
   border: '1px solid #e2e8f0',
   background: '#f8fafc',
-};
-
-const collapsibleHeaderStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  gap: 16,
-  alignItems: 'flex-start',
-  flexWrap: 'wrap',
-};
-
-const collapsibleToggleStyle: React.CSSProperties = {
-  padding: '7px 12px',
-  borderRadius: 8,
-  border: '1px solid #64748b',
-  background: '#fff',
-  color: '#334155',
-  fontWeight: 800,
-  cursor: 'pointer',
 };
 
 const creditReadinessScoreRowStyle: React.CSSProperties = {

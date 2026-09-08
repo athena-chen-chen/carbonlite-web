@@ -2,7 +2,8 @@ import { FormEvent, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getContactEmail, isPublicSignupEnabled } from '../config/api';
-import { getCurrentUser, isPilotReviewer } from '../services/auth';
+import { getCurrentUser } from '../services/auth';
+import { isPilotReviewer } from '../utils/permissions';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 export function LoginPage() {

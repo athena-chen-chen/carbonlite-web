@@ -32,10 +32,12 @@ import {
   type FormalActivityEmission,
   type FormalConversionFactorUsed,
 } from '../components/FormalReportPreview';
+import { CollapsibleSection } from '../components/common/CollapsibleSection';
 import { CollapsibleReportSection } from '../components/reports/CollapsibleReportSection';
 import { ReportScopeSection } from '../components/reports/sections/ReportScopeSection';
 import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
-import { getAccountType, getCurrentUser, getOrganizationName, isPilotReviewer } from '../services/auth';
+import { getCurrentUser, getOrganizationName } from '../services/auth';
+import { getAccountType, isPilotReviewer } from '../utils/permissions';
 import { createClientAuditLog } from '../services/auditLogs';
 import { getActivityEvents, trackActivityEvent, type ActivityEventItem } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
@@ -75,10 +77,16 @@ import {
 import { buildPilotCsv } from '../utils/reportCsvExport';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import {
-  buildInventoryBoundary,
   summarizeInventoryBoundary,
   type InventoryBoundary,
 } from '../constants/inventoryBoundary';
+import {
+  fetchOrganizationProfile,
+  hasBackendOrganizationProfileSession,
+  loadOrganizationProfile,
+  ORGANIZATION_PROFILE_UPDATED_EVENT,
+  profileToInventoryBoundary,
+} from '../services/organizationProfile';
 
 type ActivityItem = {
   id: string;
@@ -167,6 +175,7 @@ export default function ReportingPage() {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
   const isPilotReviewerAccount = isPilotReviewer(currentUser);
+  const canViewWorkflowHistory = !isPilotReviewerAccount;
   const routeState = location.state as {
     reportScope?: string;
     selectedRecordIds?: string[];
@@ -211,6 +220,9 @@ export default function ReportingPage() {
   const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
   const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
   const [dateRangeReady, setDateRangeReady] = useState(false);
+  const [organizationProfile, setOrganizationProfile] = useState(() =>
+    loadOrganizationProfile(getCurrentUser()),
+  );
   const [reportScope, setReportScope] = useState<'dateRange' | 'selectedDocuments' | 'selectedRecords'>(
     initialSelectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
       ? 'selectedDocuments'
@@ -230,6 +242,12 @@ export default function ReportingPage() {
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const trackedReportViewRef = useRef(false);
   async function loadWorkflowEvents() {
+    if (!canViewWorkflowHistory) {
+      setWorkflowEvents([]);
+      setWorkflowEventsLoading(false);
+      return;
+    }
+
     setWorkflowEventsLoading(true);
 
     try {
@@ -316,7 +334,7 @@ export default function ReportingPage() {
 
   useEffect(() => {
     initializeDateRange();
-    if (!isPilotReviewerAccount) {
+    if (canViewWorkflowHistory) {
       void loadWorkflowEvents();
     }
 
@@ -325,7 +343,7 @@ export default function ReportingPage() {
         window.clearTimeout(dateCommitTimerRef.current);
       }
     };
-  }, [isPilotReviewerAccount]);
+  }, [canViewWorkflowHistory]);
 
   useEffect(() => {
     if (trackedReportViewRef.current) return;
@@ -349,6 +367,30 @@ export default function ReportingPage() {
       reportScope,
     });
   }, [location.pathname, reportScope, selectedDocumentIds.length, selectedRecordIds.length]);
+
+  useEffect(() => {
+    function refreshOrganizationProfile() {
+      setOrganizationProfile(loadOrganizationProfile(getCurrentUser()));
+    }
+
+    window.addEventListener(ORGANIZATION_PROFILE_UPDATED_EVENT, refreshOrganizationProfile);
+    window.addEventListener('storage', refreshOrganizationProfile);
+
+    return () => {
+      window.removeEventListener(ORGANIZATION_PROFILE_UPDATED_EVENT, refreshOrganizationProfile);
+      window.removeEventListener('storage', refreshOrganizationProfile);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasBackendOrganizationProfileSession()) return;
+
+    fetchOrganizationProfile(currentUser)
+      .then(setOrganizationProfile)
+      .catch(() => {
+        setOrganizationProfile(loadOrganizationProfile(currentUser));
+      });
+  }, [currentUser?.id, currentUser?.organizationId, currentUser?.email]);
 
 async function initializeDateRange() {
   try {
@@ -593,12 +635,20 @@ function drawInventoryBoundaryPdfSection(
     head: [['Boundary Field', 'Description']],
     body: [
       ['Organization / Workspace', boundary.organizationWorkspace],
+      ...(boundary.industry ? [['Industry', boundary.industry]] : []),
+      ...(boundary.country ? [['Country', boundary.country]] : []),
+      ...(boundary.provinceOrTerritory ? [['Province / Territory', boundary.provinceOrTerritory]] : []),
+      ...(boundary.city ? [['City', boundary.city]] : []),
       ['Reporting period', boundary.reportingPeriod],
       ['Geographic boundary', boundary.geographicBoundary],
       ['Included facilities or locations', boundary.includedFacilitiesOrLocations],
+      ...(boundary.excludedFacilitiesOrLocations
+        ? [['Excluded facilities or locations', boundary.excludedFacilitiesOrLocations]]
+        : []),
       ['Included scopes', boundary.includedScopes],
       ['Scope 3 coverage note', boundary.scope3CoverageNote],
       ['Exclusions / limitations', boundary.exclusionsLimitations],
+      ...(boundary.boundaryNotes ? [['Boundary notes', boundary.boundaryNotes]] : []),
     ],
     styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
     headStyles: { fillColor: [4, 120, 87] },
@@ -1712,7 +1762,7 @@ const reportPeriod =
     : reportScope === 'selectedDocuments'
     ? 'Selected documents'
     : 'Selected records';
-const inventoryBoundary = buildInventoryBoundary(organizationName, reportPeriod);
+const inventoryBoundary = profileToInventoryBoundary(organizationProfile, reportPeriod);
 const inventoryBoundarySummary = summarizeInventoryBoundary(
   inventoryBoundary,
   `${getDateOnlyYear(periodEnd) ?? 2026} reporting period`,
@@ -1824,14 +1874,19 @@ function setAllReportSections(expanded: boolean) {
         </button>
       </div>
 
-      {!isPilotReviewerAccount ? (
-        <CollapsibleReportSection
-          id="report-scope-report-section"
-          title="Report Scope"
-          summary={reportPeriod}
-          expanded={expandedSections.reportScope}
-          onToggle={() => toggleReportSection('reportScope')}
-        >
+      <CollapsibleReportSection
+        id="report-scope-report-section"
+        title="Report Scope"
+        summary={reportPeriod}
+        expanded={expandedSections.reportScope}
+        onToggle={() => toggleReportSection('reportScope')}
+      >
+        {isPilotReviewerAccount ? (
+          <ReadOnlyReportScopeSummary
+            reportPeriod={reportPeriod}
+            reportScopeLabel={reportScopeLabel}
+          />
+        ) : (
           <ReportScopeSection
             reportScope={reportScope}
             selectedDocumentCount={selectedDocumentIds.length}
@@ -1854,8 +1909,8 @@ function setAllReportSections(expanded: boolean) {
               scopeButton: scopeButtonStyle,
             }}
           />
-        </CollapsibleReportSection>
-      ) : null}
+        )}
+      </CollapsibleReportSection>
       {!isPilotReviewerAccount && reportScope === 'selectedDocuments' ? (
         <div style={selectionNoticeStyle}>
           Report Scope: Selected Documents ({selectedDocumentIds.length})
@@ -1939,6 +1994,7 @@ function setAllReportSections(expanded: boolean) {
             reportPeriod={reportPeriod}
             scopeLabel={reportScopeLabel}
             generatedAt={generatedAt}
+            inventoryBoundary={inventoryBoundary}
             usageTotals={usageTotals}
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}
@@ -2113,7 +2169,7 @@ function setAllReportSections(expanded: boolean) {
         </>
       ) : null}
 
-      {!isPilotReviewerAccount ? (
+      {canViewWorkflowHistory ? (
         <WorkflowAuditTrail
           events={workflowEvents}
           loading={workflowEventsLoading}
@@ -2154,33 +2210,16 @@ function WorkflowAuditTrail({
   onToggle: () => void;
   onRefresh: () => void;
 }) {
-  const auditContentId = 'workflow-audit-trail-content';
-
   return (
-    <section style={workflowAuditPanelStyle} aria-label="Audit Trail">
-      <button
-        type="button"
-        onClick={onToggle}
-        style={workflowAuditSummaryButtonStyle}
-        aria-expanded={isOpen}
-        aria-controls={auditContentId}
-        aria-label={`${isOpen ? 'Collapse' : 'Expand'} Audit Trail`}
-      >
-        <span style={workflowAuditTitleBlockStyle}>
-          <span style={workflowAuditTitleStyle}>Audit Trail</span>
-          <span style={workflowAuditSubtitleStyle}>
-            Workflow history for this workspace.
-            {latestEvent ? ` Latest event: ${formatEventLabel(latestEvent)} · ${formatEventTime(latestEvent.createdAt)}` : ''}
-          </span>
-        </span>
-        <span style={workflowAuditToggleStyle}>
-          <span aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
-          <span>{isOpen ? 'Collapse' : 'Expand'}</span>
-        </span>
-      </button>
-
-      {isOpen ? (
-        <div id={auditContentId} style={workflowAuditBodyStyle}>
+    <CollapsibleSection
+      id="workflow-audit-trail"
+      title="Audit Trail"
+      summary={`Workflow history for this workspace.${latestEvent ? ` Latest event: ${formatEventLabel(latestEvent)} · ${formatEventTime(latestEvent.createdAt)}` : ''}`}
+      expanded={isOpen}
+      onToggle={onToggle}
+      style={workflowAuditPanelStyle}
+      contentStyle={workflowAuditBodyStyle}
+    >
           <div style={workflowAuditActionsStyle}>
             <p style={workflowAuditSubtitleStyle}>
               Recent import and report workflow events for this workspace.
@@ -2212,9 +2251,7 @@ function WorkflowAuditTrail({
               ))}
             </ol>
           )}
-        </div>
-      ) : null}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -2291,36 +2328,62 @@ function InventoryBoundaryPanel({
   onToggle: () => void;
 }) {
   return (
-    <section style={inventoryBoundaryPanelStyle} aria-labelledby="report-inventory-boundary-title">
-      <div style={inventoryBoundaryHeaderStyle}>
-        <div>
-          <h2 id="report-inventory-boundary-title" style={inventoryBoundaryTitleStyle}>
-            Inventory Boundary
-          </h2>
-          <p style={inventoryBoundarySummaryStyle}>{summary}</p>
-        </div>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls="report-inventory-boundary-content"
-          onClick={onToggle}
-          style={inventoryBoundaryToggleStyle}
-        >
-          {expanded ? 'Collapse' : 'Expand'}
-        </button>
-      </div>
-      {expanded ? (
-        <div id="report-inventory-boundary-content" style={inventoryBoundaryGridStyle}>
-          <DataQualityNote label="Organization / Workspace" value={boundary.organizationWorkspace} />
-          <DataQualityNote label="Reporting period" value={boundary.reportingPeriod} />
-          <DataQualityNote label="Geographic boundary" value={boundary.geographicBoundary} />
-          <DataQualityNote label="Included facilities or locations" value={boundary.includedFacilitiesOrLocations} />
-          <DataQualityNote label="Included scopes" value={boundary.includedScopes} />
-          <DataQualityNote label="Scope 3 coverage note" value={boundary.scope3CoverageNote} />
-          <DataQualityNote label="Exclusions / limitations" value={boundary.exclusionsLimitations} />
-        </div>
+    <CollapsibleSection
+      id="report-inventory-boundary"
+      title="Inventory Boundary"
+      summary={summary}
+      expanded={expanded}
+      onToggle={onToggle}
+      style={inventoryBoundaryPanelStyle}
+      contentStyle={inventoryBoundaryGridStyle}
+    >
+      <DataQualityNote label="Organization / Workspace" value={boundary.organizationWorkspace} />
+      {boundary.industry ? (
+        <DataQualityNote label="Industry" value={boundary.industry} />
       ) : null}
-    </section>
+      {boundary.country ? (
+        <DataQualityNote label="Country" value={boundary.country} />
+      ) : null}
+      {boundary.provinceOrTerritory ? (
+        <DataQualityNote label="Province / Territory" value={boundary.provinceOrTerritory} />
+      ) : null}
+      {boundary.city ? (
+        <DataQualityNote label="City" value={boundary.city} />
+      ) : null}
+      <DataQualityNote label="Reporting period" value={boundary.reportingPeriod} />
+      <DataQualityNote label="Geographic boundary" value={boundary.geographicBoundary} />
+      <DataQualityNote label="Included facilities or locations" value={boundary.includedFacilitiesOrLocations} />
+      {boundary.excludedFacilitiesOrLocations ? (
+        <DataQualityNote
+          label="Excluded facilities or locations"
+          value={boundary.excludedFacilitiesOrLocations}
+        />
+      ) : null}
+      <DataQualityNote label="Included scopes" value={boundary.includedScopes} />
+      <DataQualityNote label="Scope 3 coverage note" value={boundary.scope3CoverageNote} />
+      <DataQualityNote label="Exclusions / limitations" value={boundary.exclusionsLimitations} />
+      {boundary.boundaryNotes ? (
+        <DataQualityNote label="Boundary notes" value={boundary.boundaryNotes} />
+      ) : null}
+    </CollapsibleSection>
+  );
+}
+
+function ReadOnlyReportScopeSummary({
+  reportPeriod,
+  reportScopeLabel,
+}: {
+  reportPeriod: string;
+  reportScopeLabel: string;
+}) {
+  return (
+    <div style={readOnlyReportScopeStyle}>
+      <DataQualityNote label="Report scope" value={reportScopeLabel} />
+      <DataQualityNote label="Reporting period" value={reportPeriod} />
+      <p style={readOnlyReportScopeNoteStyle}>
+        Pilot reviewer accounts can view report context but cannot change report settings.
+      </p>
+    </div>
   );
 }
 
@@ -2444,42 +2507,23 @@ const inventoryBoundaryPanelStyle: React.CSSProperties = {
   color: '#0f172a',
 };
 
-const inventoryBoundaryHeaderStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 14,
-  flexWrap: 'wrap',
-};
-
-const inventoryBoundaryTitleStyle: React.CSSProperties = {
-  margin: 0,
-  color: '#064e3b',
-  fontSize: 18,
-};
-
-const inventoryBoundarySummaryStyle: React.CSSProperties = {
-  margin: '6px 0 0',
-  color: '#475569',
-  fontSize: 14,
-  lineHeight: 1.45,
-};
-
-const inventoryBoundaryToggleStyle: React.CSSProperties = {
-  padding: '7px 12px',
-  borderRadius: 8,
-  border: '1px solid #047857',
-  background: '#fff',
-  color: '#047857',
-  fontWeight: 800,
-  cursor: 'pointer',
-};
-
 const inventoryBoundaryGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
   gap: 10,
   marginTop: 14,
+};
+
+const readOnlyReportScopeStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
+};
+
+const readOnlyReportScopeNoteStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#64748b',
+  fontSize: 13,
+  lineHeight: 1.5,
 };
 
 const dataQualityNoteStyle: React.CSSProperties = {
@@ -2547,50 +2591,12 @@ const workflowAuditPanelStyle: React.CSSProperties = {
   gap: 0,
   marginTop: 24,
   marginBottom: 24,
-  padding: 0,
+  padding: 16,
   borderRadius: 14,
   border: '1px solid #dbe4ea',
   background: '#fff',
   overflow: 'hidden',
   boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
-};
-
-const workflowAuditSummaryButtonStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  gap: 12,
-  width: '100%',
-  border: 0,
-  background: '#fff',
-  padding: 16,
-  textAlign: 'left',
-  cursor: 'pointer',
-};
-
-const workflowAuditTitleBlockStyle: React.CSSProperties = {
-  display: 'grid',
-  gap: 4,
-  minWidth: 0,
-};
-
-const workflowAuditTitleStyle: React.CSSProperties = {
-  margin: 0,
-  color: '#0f172a',
-  fontSize: 18,
-};
-
-const workflowAuditToggleStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  borderRadius: 8,
-  border: '1px solid #d1d5db',
-  padding: '7px 10px',
-  background: '#fff',
-  color: '#334155',
-  fontWeight: 800,
-  whiteSpace: 'nowrap',
 };
 
 const workflowAuditSubtitleStyle: React.CSSProperties = {

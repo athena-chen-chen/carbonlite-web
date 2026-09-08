@@ -5,7 +5,7 @@ import {
   createConversionFactor,
   getConversionFactors,
 } from '../services/conversionFactors';
-import { canManageConversionFactors, isPilotReviewer } from '../services/auth';
+import { canManageConversionFactors, isPilotReviewer } from '../utils/permissions';
 import {
   getFactorTraceability,
   getFactorJurisdiction,
@@ -20,12 +20,15 @@ vi.mock('../services/conversionFactors', () => ({
 }));
 
 vi.mock('../services/auth', () => ({
-  canManageConversionFactors: vi.fn(() => true),
   getCurrentUser: vi.fn(() => ({
     email: 'consultant@example.com',
     organizationName: 'KACH CANADA LTD.',
   })),
   getOrganizationName: vi.fn(() => 'KACH CANADA LTD.'),
+}));
+
+vi.mock('../utils/permissions', () => ({
+  canManageConversionFactors: vi.fn(() => true),
   isPilotReviewer: vi.fn(() => false),
 }));
 

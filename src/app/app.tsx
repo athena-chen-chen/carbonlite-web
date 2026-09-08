@@ -34,6 +34,7 @@ import ForgotPasswordPage from '../pages/ForgotPasswordPage';
 import SetPasswordPage from '../pages/SetPasswordPage';
 import PilotReviewersPage from '../pages/PilotReviewersPage';
 import PilotReviewInstructionsPage from '../pages/PilotReviewInstructionsPage';
+import { OrganizationProfilePage } from '../pages/OrganizationProfilePage';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -137,6 +138,17 @@ export default function App() {
             <ProtectedRoute>
               <AppShell>
                 <MetricsSummaryPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/organization-profile"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <OrganizationProfilePage />
               </AppShell>
             </ProtectedRoute>
           }

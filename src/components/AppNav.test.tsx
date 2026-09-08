@@ -90,6 +90,41 @@ describe('AppNav logout flow', () => {
     expect(screen.queryByRole('button', { name: /exit demo/i })).not.toBeInTheDocument();
   });
 
+  it('places Organization & Boundary under Settings instead of Admin user management', async () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        organizationName: 'KACH CANADA LTD.',
+        role: 'ADMIN',
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/data-records']}>
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Organization & Boundary' })).not.toBeInTheDocument();
+
+    const settingsButton = screen.getByRole('button', { name: /^Settings\s*▾?$/i });
+    await userEvent.click(settingsButton);
+
+    expect(screen.getByRole('menuitem', { name: 'Organization & Boundary' })).toHaveAttribute(
+      'href',
+      '/organization-profile',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /^Admin\s*▾?$/i }));
+
+    expect(screen.queryByRole('menuitem', { name: 'Organization & Boundary' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Pilot Reviewers' })).toBeInTheDocument();
+  });
+
   it('hides internal navigation from normal users', () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
@@ -149,6 +184,7 @@ describe('AppNav logout flow', () => {
     expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
     expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
+    expect(screen.getByRole('button', { name: /^Settings\s*▾?$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /admin/i })).not.toBeInTheDocument();
   });
 

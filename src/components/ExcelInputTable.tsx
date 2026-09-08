@@ -24,8 +24,8 @@ import {
   getFactorCredibilityBadges,
   getFactorVersionLabel,
 } from '../utils/factorCredibility';
+import { canImportActivityRecords } from '../utils/permissions';
 import {
-  canImportActivityRecords,
   getCurrentUser,
   getOrganizationId,
 } from '../services/auth';

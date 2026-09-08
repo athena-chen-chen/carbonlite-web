@@ -42,10 +42,12 @@ import { buildApiUrl } from '../config/api';
 import { ApiError } from '../services/api';
 import {
   canImportActivityRecords,
+  isPilotReviewer,
+} from '../utils/permissions';
+import {
   getCurrentUser,
   getOrganizationId,
   getToken,
-  isPilotReviewer,
 } from '../services/auth';
 import { track } from '../services/analytics.service';
 import { trackActivityEvent } from '../services/activityEvents';

@@ -86,7 +86,7 @@ function getApiErrorCode(
   return 'REQUEST_FAILED';
 }
 
-function getFriendlyApiErrorMessage(code: ApiErrorCode) {
+function getFriendlyApiErrorMessage(code: ApiErrorCode, backendMessage = '') {
   switch (code) {
     case 'FILE_MISSING':
       return 'The original file is no longer available. Please upload it again.';
@@ -107,13 +107,15 @@ function getFriendlyApiErrorMessage(code: ApiErrorCode) {
     case 'UNAUTHORIZED':
       return 'Your session has expired. Please sign in again.';
     case 'FORBIDDEN':
-      return 'You do not have permission to perform this action.';
+      return getUserFriendlyErrorMessage(backendMessage, 'permissionDenied');
     case 'NOT_FOUND':
       return 'The requested information is no longer available.';
     case 'SERVER_ERROR':
-      return 'Something went wrong while processing your request. Please try again. If the issue continues, contact support.';
-    default:
       return getUserFriendlyErrorMessage(null, 'unknown');
+    default:
+      return code === 'REQUEST_FAILED'
+        ? getUserFriendlyErrorMessage(null, 'network')
+        : getUserFriendlyErrorMessage(null, 'unknown');
   }
 }
 
@@ -178,7 +180,7 @@ export async function apiFetch<T>(
     const code = getApiErrorCode(response.status, path, backendMessage);
     const apiError = new ApiError(
       response.status,
-      getFriendlyApiErrorMessage(code),
+      getFriendlyApiErrorMessage(code, backendMessage),
       parsedBody,
       code,
       backendMessage,

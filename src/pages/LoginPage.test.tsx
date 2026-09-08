@@ -147,7 +147,7 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/unable to connect to the server/i)).toBeInTheDocument();
+      expect(screen.getByText(/CarbonLite could not connect to the server/i)).toBeInTheDocument();
     });
   });
 

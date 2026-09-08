@@ -44,6 +44,7 @@ import { SourceEvidenceSection } from './reports/sections/SourceEvidenceSection'
 import {
   buildInventoryBoundary,
   summarizeInventoryBoundary,
+  type InventoryBoundary,
 } from '../constants/inventoryBoundary';
 
 export { formatFuelUsageBreakdown };
@@ -517,6 +518,7 @@ export function FormalReportPreview({
   reportPeriod,
   scopeLabel,
   generatedAt,
+  inventoryBoundary: providedInventoryBoundary,
   usageTotals,
   totalEstimatedEmissionsKgCO2e,
   countSummary,
@@ -529,6 +531,7 @@ export function FormalReportPreview({
   reportPeriod: string;
   scopeLabel: string;
   generatedAt: string;
+  inventoryBoundary?: InventoryBoundary;
   usageTotals: ActivityUsageTotals;
   totalEstimatedEmissionsKgCO2e: number;
   countSummary: MetricsCountSummary;
@@ -561,7 +564,8 @@ export function FormalReportPreview({
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildFormalScopeSummary(calculationDetails);
   const scopeSummaryLine = `Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`;
-  const inventoryBoundary = buildInventoryBoundary(organizationName, reportPeriod);
+  const inventoryBoundary =
+    providedInventoryBoundary ?? buildInventoryBoundary(organizationName, reportPeriod);
   const inventoryBoundarySummary = summarizeInventoryBoundary(
     inventoryBoundary,
     `${getDateOnlyYear(reportPeriod) ?? 2026} reporting period`,
@@ -633,12 +637,33 @@ export function FormalReportPreview({
       >
         <div style={factsGridStyle}>
           <Fact label="Organization / Workspace" value={inventoryBoundary.organizationWorkspace} />
+          {inventoryBoundary.industry ? (
+            <Fact label="Industry" value={inventoryBoundary.industry} />
+          ) : null}
+          {inventoryBoundary.country ? (
+            <Fact label="Country" value={inventoryBoundary.country} />
+          ) : null}
+          {inventoryBoundary.provinceOrTerritory ? (
+            <Fact label="Province / Territory" value={inventoryBoundary.provinceOrTerritory} />
+          ) : null}
+          {inventoryBoundary.city ? (
+            <Fact label="City" value={inventoryBoundary.city} />
+          ) : null}
           <Fact label="Reporting period" value={inventoryBoundary.reportingPeriod} />
           <Fact label="Geographic boundary" value={inventoryBoundary.geographicBoundary} />
           <Fact label="Included facilities or locations" value={inventoryBoundary.includedFacilitiesOrLocations} />
+          {inventoryBoundary.excludedFacilitiesOrLocations ? (
+            <Fact
+              label="Excluded facilities or locations"
+              value={inventoryBoundary.excludedFacilitiesOrLocations}
+            />
+          ) : null}
           <Fact label="Included scopes" value={inventoryBoundary.includedScopes} />
           <Fact label="Scope 3 coverage note" value={inventoryBoundary.scope3CoverageNote} />
           <Fact label="Exclusions / limitations" value={inventoryBoundary.exclusionsLimitations} />
+          {inventoryBoundary.boundaryNotes ? (
+            <Fact label="Boundary notes" value={inventoryBoundary.boundaryNotes} />
+          ) : null}
         </div>
       </ReportSection>
 

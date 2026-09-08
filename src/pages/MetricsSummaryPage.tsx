@@ -16,21 +16,27 @@ import {
   MetricsSummarySection,
   type MissingFactorItem,
 } from '../components/MetricsSummarySection';
+import { CollapsibleSection } from '../components/common/CollapsibleSection';
 import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
 import { trackActivityEvent } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
 import {
-  getAccountType,
   getCurrentUser,
   getOrganizationName,
-  isPilotReviewer,
 } from '../services/auth';
+import { getAccountType, isPilotReviewer } from '../utils/permissions';
 import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
 import {
-  buildInventoryBoundary,
   summarizeInventoryBoundary,
 } from '../constants/inventoryBoundary';
 import { getDateOnlyYear } from '../utils/dateOnly';
+import {
+  fetchOrganizationProfile,
+  hasBackendOrganizationProfileSession,
+  loadOrganizationProfile,
+  ORGANIZATION_PROFILE_UPDATED_EVENT,
+  profileToInventoryBoundary,
+} from '../services/organizationProfile';
 
 
 export function MetricsSummaryPage() {
@@ -67,6 +73,9 @@ export function MetricsSummaryPage() {
   const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
   const [dateRangeReady, setDateRangeReady] = useState(false);
   const [isInventoryBoundaryExpanded, setIsInventoryBoundaryExpanded] = useState(false);
+  const [organizationProfile, setOrganizationProfile] = useState(() =>
+    loadOrganizationProfile(currentUser),
+  );
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestSequenceRef = useRef(0);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -103,6 +112,30 @@ export function MetricsSummaryPage() {
       page: 'Calculation Review',
     });
   }, [location.pathname]);
+
+  useEffect(() => {
+    function refreshOrganizationProfile() {
+      setOrganizationProfile(loadOrganizationProfile(getCurrentUser()));
+    }
+
+    window.addEventListener(ORGANIZATION_PROFILE_UPDATED_EVENT, refreshOrganizationProfile);
+    window.addEventListener('storage', refreshOrganizationProfile);
+
+    return () => {
+      window.removeEventListener(ORGANIZATION_PROFILE_UPDATED_EVENT, refreshOrganizationProfile);
+      window.removeEventListener('storage', refreshOrganizationProfile);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasBackendOrganizationProfileSession()) return;
+
+    fetchOrganizationProfile(currentUser)
+      .then(setOrganizationProfile)
+      .catch(() => {
+        setOrganizationProfile(loadOrganizationProfile(currentUser));
+      });
+  }, [currentUser?.id, currentUser?.organizationId, currentUser?.email]);
 
   useEffect(() => {
     function refreshMetrics() {
@@ -361,8 +394,8 @@ function handleDownloadPDF() {
         accountType: getAccountType(currentUser),
       })
     : '';
-  const inventoryBoundary = buildInventoryBoundary(
-    getOrganizationName(currentUser),
+  const inventoryBoundary = profileToInventoryBoundary(
+    organizationProfile,
     'Pilot sample reporting period',
   );
   const inventoryBoundarySummary = summarizeInventoryBoundary(
@@ -371,7 +404,12 @@ function handleDownloadPDF() {
   );
 
   return (
-    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+    <div
+      role={showPilotReviewerWelcome ? 'region' : undefined}
+      aria-label={showPilotReviewerWelcome ? 'Pilot reviewer welcome panel' : undefined}
+      data-testid={showPilotReviewerWelcome ? 'pilot-reviewer-welcome-panel' : undefined}
+      style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}
+    >
       <h1 style={{ marginBottom: 8 }}>Calculation Review</h1>
 
       <p style={{ color: '#666', marginBottom: 24 }}>
@@ -385,36 +423,44 @@ function handleDownloadPDF() {
         </>
       ) : null}
 
-      <section style={inventoryBoundaryCardStyle} aria-labelledby="inventory-boundary-title">
-        <div style={inventoryBoundaryHeaderStyle}>
-          <div>
-            <h2 id="inventory-boundary-title" style={inventoryBoundaryTitleStyle}>
-              Inventory Boundary
-            </h2>
-            <p style={inventoryBoundarySummaryStyle}>{inventoryBoundarySummary}</p>
-          </div>
-          <button
-            type="button"
-            aria-expanded={isInventoryBoundaryExpanded}
-            aria-controls="inventory-boundary-content"
-            onClick={() => setIsInventoryBoundaryExpanded((expanded) => !expanded)}
-            style={inventoryBoundaryToggleStyle}
-          >
-            {isInventoryBoundaryExpanded ? 'Collapse' : 'Expand'}
-          </button>
-        </div>
-        {isInventoryBoundaryExpanded ? (
-          <div id="inventory-boundary-content" style={inventoryBoundaryGridStyle}>
-            <BoundaryField label="Organization / Workspace" value={inventoryBoundary.organizationWorkspace} />
-            <BoundaryField label="Reporting period" value={inventoryBoundary.reportingPeriod} />
-            <BoundaryField label="Geographic boundary" value={inventoryBoundary.geographicBoundary} />
-            <BoundaryField label="Included facilities or locations" value={inventoryBoundary.includedFacilitiesOrLocations} />
-            <BoundaryField label="Included scopes" value={inventoryBoundary.includedScopes} />
-            <BoundaryField label="Scope 3 coverage note" value={inventoryBoundary.scope3CoverageNote} />
-            <BoundaryField label="Exclusions / limitations" value={inventoryBoundary.exclusionsLimitations} />
-          </div>
+      <CollapsibleSection
+        id="inventory-boundary"
+        title="Inventory Boundary"
+        summary={inventoryBoundarySummary}
+        expanded={isInventoryBoundaryExpanded}
+        onToggle={() => setIsInventoryBoundaryExpanded((expanded) => !expanded)}
+        style={inventoryBoundaryCardStyle}
+        contentStyle={inventoryBoundaryGridStyle}
+      >
+        <BoundaryField label="Organization / Workspace" value={inventoryBoundary.organizationWorkspace} />
+        {inventoryBoundary.industry ? (
+          <BoundaryField label="Industry" value={inventoryBoundary.industry} />
         ) : null}
-      </section>
+        {inventoryBoundary.country ? (
+          <BoundaryField label="Country" value={inventoryBoundary.country} />
+        ) : null}
+        {inventoryBoundary.provinceOrTerritory ? (
+          <BoundaryField label="Province / Territory" value={inventoryBoundary.provinceOrTerritory} />
+        ) : null}
+        {inventoryBoundary.city ? (
+          <BoundaryField label="City" value={inventoryBoundary.city} />
+        ) : null}
+        <BoundaryField label="Reporting period" value={inventoryBoundary.reportingPeriod} />
+        <BoundaryField label="Geographic boundary" value={inventoryBoundary.geographicBoundary} />
+        <BoundaryField label="Included facilities or locations" value={inventoryBoundary.includedFacilitiesOrLocations} />
+        {inventoryBoundary.excludedFacilitiesOrLocations ? (
+          <BoundaryField
+            label="Excluded facilities or locations"
+            value={inventoryBoundary.excludedFacilitiesOrLocations}
+          />
+        ) : null}
+        <BoundaryField label="Included scopes" value={inventoryBoundary.includedScopes} />
+        <BoundaryField label="Scope 3 coverage note" value={inventoryBoundary.scope3CoverageNote} />
+        <BoundaryField label="Exclusions / limitations" value={inventoryBoundary.exclusionsLimitations} />
+        {inventoryBoundary.boundaryNotes ? (
+          <BoundaryField label="Boundary notes" value={inventoryBoundary.boundaryNotes} />
+        ) : null}
+      </CollapsibleSection>
 
       <div style={filterCardStyle}>
         <div>
@@ -647,37 +693,6 @@ const inventoryBoundaryCardStyle: React.CSSProperties = {
   border: '1px solid #d1fae5',
   background: '#f0fdf4',
   boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
-};
-
-const inventoryBoundaryHeaderStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 14,
-  flexWrap: 'wrap',
-};
-
-const inventoryBoundaryTitleStyle: React.CSSProperties = {
-  margin: 0,
-  color: '#064e3b',
-  fontSize: 18,
-};
-
-const inventoryBoundarySummaryStyle: React.CSSProperties = {
-  margin: '6px 0 0',
-  color: '#475569',
-  fontSize: 14,
-  lineHeight: 1.45,
-};
-
-const inventoryBoundaryToggleStyle: React.CSSProperties = {
-  padding: '7px 12px',
-  borderRadius: 8,
-  border: '1px solid #047857',
-  background: '#fff',
-  color: '#047857',
-  fontWeight: 800,
-  cursor: 'pointer',
 };
 
 const inventoryBoundaryGridStyle: React.CSSProperties = {

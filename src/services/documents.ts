@@ -1,11 +1,10 @@
 import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
 import { trackEvent } from './ga4.service';
+import { canImportActivityRecords, requirePermission } from '../utils/permissions';
 import {
-  canImportActivityRecords,
   getCurrentUser,
   getOrganizationId,
-  requirePermission,
 } from './auth';
 
 export type UploadDocumentInput = {

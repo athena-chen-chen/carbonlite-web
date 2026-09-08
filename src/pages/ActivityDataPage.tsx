@@ -14,6 +14,8 @@ import {
 import {
   canClearActivityRecords as canClearActivityRecordsForUser,
   canManageActivityRecords,
+} from '../utils/permissions';
+import {
   getCurrentUser,
   getOrganizationId,
 } from '../services/auth';

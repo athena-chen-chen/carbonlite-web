@@ -19,9 +19,9 @@ describe('AppErrorFallback', () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Something went wrong\. Please refresh the page or contact/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/hello@carbonliteapp.ca/i).closest('p')).toHaveTextContent(
+      'Something went wrong while loading this page. Please refresh the page or contact hello@carbonliteapp.ca if the issue continues.',
+    );
     expect(screen.getByRole('link', { name: 'hello@carbonliteapp.ca' })).toHaveAttribute(
       'href',
       'mailto:hello@carbonliteapp.ca',

@@ -1,5 +1,7 @@
 import { Component, type CSSProperties, type ErrorInfo, type ReactNode } from 'react';
+import { getSupportEmail } from '../config/api';
 import { captureFrontendException } from '../sentry';
+import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 type AppErrorFallbackProps = {
   error?: Error | null;
@@ -58,17 +60,24 @@ export function AppErrorFallback({
   showTechnicalDetails = import.meta.env.DEV,
 }: AppErrorFallbackProps) {
   const shouldShowTechnicalDetails = Boolean(showTechnicalDetails && (error || componentStack));
+  const supportEmail = getSupportEmail();
+  const friendlyMessage = getUserFriendlyErrorMessage(null, 'pageLoad');
+  const [messageBeforeEmail, messageAfterEmail] = friendlyMessage.split(supportEmail);
 
   return (
     <div style={fallbackStyle}>
       <div style={cardStyle}>
         <h1 style={titleStyle}>Something went wrong.</h1>
         <p style={textStyle}>
-          Something went wrong. Please refresh the page or contact{' '}
-          <a href="mailto:hello@carbonliteapp.ca" style={linkStyle}>
-            hello@carbonliteapp.ca
-          </a>
-          .
+          {messageBeforeEmail}
+          {friendlyMessage.includes(supportEmail) ? (
+            <>
+              <a href={`mailto:${supportEmail}`} style={linkStyle}>
+                {supportEmail}
+              </a>
+              {messageAfterEmail}
+            </>
+          ) : null}
         </p>
         <button type="button" onClick={onRefresh} style={buttonStyle}>
           Refresh page

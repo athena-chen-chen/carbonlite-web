@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
-import { getAccountType, getOrganizationName, getUserDisplayName, isPilotReviewer } from '../services/auth';
+import { getOrganizationName, getUserDisplayName } from '../services/auth';
+import { canViewAdmin, getAccountType, isPilotReviewer } from '../utils/permissions';
 import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
 
 const navItems = [
@@ -12,6 +13,10 @@ const navItems = [
   { to: '/conversion-factors', label: 'Factors' },
   { to: '/metrics-summary', label: 'Calculation Review' },
   { to: '/reports', label: 'Reports' },
+] as const;
+
+const settingsNavItems = [
+  { to: '/organization-profile', label: 'Organization & Boundary' },
 ] as const;
 
 const adminNavItems = [
@@ -112,11 +117,17 @@ export function AppNav() {
     accountType: getAccountType(user),
   });
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement | null>(null);
   const adminMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+  const settingsMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const userMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const isSettingsSectionActive = settingsNavItems.some(
+    (item) => location.pathname === item.to,
+  );
   const isAdminSectionActive = adminNavItems.some(
     (item) =>
       location.pathname === item.to ||
@@ -125,11 +136,12 @@ export function AppNav() {
 
   useEffect(() => {
     setIsAdminMenuOpen(false);
+    setIsSettingsMenuOpen(false);
     setIsUserMenuOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!isAdminMenuOpen && !isUserMenuOpen) return undefined;
+    if (!isAdminMenuOpen && !isSettingsMenuOpen && !isUserMenuOpen) return undefined;
 
     function handlePointerDown(event: PointerEvent) {
       const target = event.target as Node | null;
@@ -137,6 +149,8 @@ export function AppNav() {
         target &&
         (adminMenuRef.current?.contains(target) ||
           adminMenuButtonRef.current?.contains(target) ||
+          settingsMenuRef.current?.contains(target) ||
+          settingsMenuButtonRef.current?.contains(target) ||
           userMenuRef.current?.contains(target) ||
           userMenuButtonRef.current?.contains(target))
       ) {
@@ -149,10 +163,14 @@ export function AppNav() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         const userMenuWasOpen = isUserMenuOpen;
+        const settingsMenuWasOpen = isSettingsMenuOpen;
         setIsAdminMenuOpen(false);
+        setIsSettingsMenuOpen(false);
         setIsUserMenuOpen(false);
         if (userMenuWasOpen) {
           userMenuButtonRef.current?.focus();
+        } else if (settingsMenuWasOpen) {
+          settingsMenuButtonRef.current?.focus();
         } else {
           adminMenuButtonRef.current?.focus();
         }
@@ -165,7 +183,7 @@ export function AppNav() {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isAdminMenuOpen, isUserMenuOpen]);
+  }, [isAdminMenuOpen, isSettingsMenuOpen, isUserMenuOpen]);
 
   function handleLogout() {
     logout();
@@ -210,13 +228,46 @@ export function AppNav() {
                   Review Guide
                 </NavLink>
               ) : null}
-              {isAdmin ? (
+              {isAuthenticated ? (
+                <div style={adminDropdownStyle}>
+                  <button
+                    ref={settingsMenuButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setIsSettingsMenuOpen((open) => !open);
+                      setIsAdminMenuOpen(false);
+                      setIsUserMenuOpen(false);
+                    }}
+                    style={getAdminButtonStyle(isSettingsSectionActive)}
+                    aria-haspopup="menu"
+                    aria-expanded={isSettingsMenuOpen}
+                  >
+                    Settings <span aria-hidden="true">▾</span>
+                  </button>
+                  {isSettingsMenuOpen ? (
+                    <div ref={settingsMenuRef} role="menu" style={adminMenuStyle}>
+                      {settingsNavItems.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          role="menuitem"
+                          style={({ isActive }) => getAdminMenuLinkStyle(isActive)}
+                        >
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {isAdmin && canViewAdmin(user) ? (
                 <div style={adminDropdownStyle}>
                   <button
                     ref={adminMenuButtonRef}
                     type="button"
                     onClick={() => {
                       setIsAdminMenuOpen((open) => !open);
+                      setIsSettingsMenuOpen(false);
                       setIsUserMenuOpen(false);
                     }}
                     style={getAdminButtonStyle(isAdminSectionActive)}
@@ -259,6 +310,7 @@ export function AppNav() {
                   onClick={() => {
                     setIsUserMenuOpen((open) => !open);
                     setIsAdminMenuOpen(false);
+                    setIsSettingsMenuOpen(false);
                   }}
                   style={userMenuButtonStyle}
                   title={userLabel || 'Signed in'}

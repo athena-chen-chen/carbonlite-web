@@ -11,11 +11,10 @@ import {
 } from '../services/conversionFactors';
 import { activityTypes } from '../constants/activityTypes';
 import {
-  canManageConversionFactors,
   getCurrentUser,
   getOrganizationName,
-  isPilotReviewer,
 } from '../services/auth';
+import { canManageConversionFactors, isPilotReviewer } from '../utils/permissions';
 import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
 import { getActivityTypeLabel, normalizeActivityType } from '../utils/activityType';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
