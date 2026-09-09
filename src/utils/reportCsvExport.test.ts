@@ -244,6 +244,7 @@ describe('pilot CSV export', () => {
     expect(gasoline?.['Factor Jurisdiction']).toBe('Canada (Generic)');
     expect(airTravel?.['Factor Jurisdiction']).toBe('Canada (Generic)');
     expect(hotel?.['Factor Jurisdiction']).toBe('Canada (Generic)');
+    expect(hotel?.['Matched Factor Name']).toBe('Business Travel - Accommodation - Canada');
     expect(gasoline?.['Matched Factor Unit']).toBe('kgCO2e/liter');
     expect(hotel?.['Matched Factor Unit']).toBe('kgCO2e/night');
 
@@ -275,6 +276,44 @@ describe('pilot CSV export', () => {
     expect(buildPilotCsv(goldenDetails)).not.toContain('Source Reference: Spreadsheet import');
     expect(buildPilotCsv(goldenDetails)).not.toContain(',Spreadsheet import,');
     expect(buildPilotCsv(goldenDetails)).not.toMatch(/\bDraft\b/);
+  });
+
+  it('uses accommodation wording for raw hotel activity and factor names', () => {
+    const rows = buildPilotCsvRows([
+      calculatedDetail({
+        activityDataId: 'cmry-hotel-raw',
+        activityType: 'HOTEL',
+        activityQuantity: 10,
+        activityUnit: 'nights',
+        jurisdictionRegion: null,
+        factorName: 'Hotel - Canada - 2025',
+        factorValue: 15,
+        factorInputUnit: 'nights',
+        calculatedEmissionsKgCO2e: 150,
+        factorDefaultScope: 'SCOPE_3',
+      }),
+    ]);
+    const csv = buildPilotCsv([
+      calculatedDetail({
+        activityDataId: 'cmry-hotel-raw',
+        activityType: 'HOTEL',
+        activityQuantity: 10,
+        activityUnit: 'nights',
+        jurisdictionRegion: null,
+        factorName: 'Hotel - Canada - 2025',
+        factorValue: 15,
+        factorInputUnit: 'nights',
+        calculatedEmissionsKgCO2e: 150,
+        factorDefaultScope: 'SCOPE_3',
+      }),
+    ]);
+
+    expect(rows[0]['Activity Type']).toBe('Business Travel - Accommodation');
+    expect(rows[0]['Matched Factor Name']).toBe(
+      'Business Travel - Accommodation - Canada - 2025',
+    );
+    expect(csv).toContain('Business Travel - Accommodation');
+    expect(csv).not.toContain('Hotel - Canada - 2025');
   });
 
   it('formats review statuses as user-facing labels instead of raw enum values', () => {

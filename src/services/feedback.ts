@@ -2,6 +2,8 @@ import { apiFetch } from './api';
 import { track } from './analytics.service';
 
 export type FeedbackType = 'BUG' | 'SUGGESTION' | 'QUESTION' | 'OTHER';
+export const FEEDBACK_EMAIL_VALIDATION_MESSAGE =
+  'Please enter a valid email address.';
 export type FeedbackStatus =
   | 'NEW'
   | 'REVIEWED'
@@ -61,9 +63,10 @@ export type FeedbackListResponse = {
 };
 
 export async function submitFeedback(input: CreateFeedbackInput) {
+  const body = buildCreateFeedbackBody(input);
   const feedback = await apiFetch<FeedbackItem>('/feedback', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   });
 
   track('FEEDBACK_SUBMITTED', {
@@ -72,6 +75,35 @@ export async function submitFeedback(input: CreateFeedbackInput) {
   });
 
   return feedback;
+}
+
+function buildCreateFeedbackBody(input: CreateFeedbackInput) {
+  const email = normalizeOptionalFeedbackEmail(input.email);
+
+  return {
+    type: input.type,
+    intent: input.intent,
+    message: input.message,
+    ...(email ? { email } : {}),
+    ...(input.page?.trim() ? { page: input.page.trim() } : {}),
+    ...(input.url?.trim() ? { url: input.url.trim() } : {}),
+  };
+}
+
+function normalizeOptionalFeedbackEmail(email?: string) {
+  const trimmed = email?.trim() ?? '';
+  if (!trimmed) return undefined;
+
+  if (!isValidFeedbackEmail(trimmed)) {
+    throw new Error(FEEDBACK_EMAIL_VALIDATION_MESSAGE);
+  }
+
+  return trimmed.toLowerCase();
+}
+
+function isValidFeedbackEmail(email: string) {
+  if (/[\s[\]()]/.test(email) || /mailto:/i.test(email)) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export function getFeedbackList(status?: FeedbackStatus) {

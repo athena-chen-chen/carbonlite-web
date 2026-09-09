@@ -592,6 +592,55 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
+  it('shows accommodation wording for hotel records in pilot reviewer data records', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'reviewer@example.com',
+        role: 'VIEWER',
+        accountType: 'PILOT_REVIEWER',
+        organizationId: 'org-1',
+      }),
+    );
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([] as any);
+    mockActivityRecords([
+      {
+        id: 'activity-hotel',
+        activityType: 'HOTEL',
+        recordDate: '2026-07-20',
+        quantity: 10,
+        unit: 'nights',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: null,
+        sourceType: 'UPLOAD',
+        sourceReference: 'pilot-golden-dataset.csv',
+        matchingStatus: 'MATCHED',
+        calculationStatus: 'CALCULATED',
+        reportTreatment: 'INCLUDED',
+        scope: 'SCOPE_3',
+        matchedFactorId: 'factor-hotel-canada-2025',
+        matchedFactorName: 'Hotel - Canada - 2025',
+        matchedFactorSourceYear: 2025,
+        matchedFactorValue: 15,
+        matchedFactorUnit: 'kgCO2e/night',
+        calculatedEmissionsKgCO2e: 150,
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-hotel');
+    expect(within(row).getByText('Business Travel - Accommodation')).toBeInTheDocument();
+    expect(within(row).queryByText(/^Hotel$/i)).not.toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('button', { name: /^View$/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /Activity Record Details/i });
+    expect(within(dialog).getAllByText('Business Travel - Accommodation').length).toBeGreaterThan(0);
+    expect(within(dialog).getByText('Business Travel - Accommodation - Canada - 2025')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/^Hotel$/i)).not.toBeInTheDocument();
+  });
+
   it('shows identical BC electricity records with the same matched status even when one has stale saved metadata', async () => {
     mockActivityRecords([
       {

@@ -4,11 +4,13 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getAccountType, getOrganizationName } from '../services/auth';
 import {
+  FEEDBACK_EMAIL_VALIDATION_MESSAGE,
   submitFeedback,
   type FeedbackType,
 } from '../services/feedback';
 import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
 import { getSupportEmail } from '../config/api';
+import { OPEN_FEEDBACK_OVERLAY_EVENT } from '../utils/feedbackOverlay';
 
 type FeedbackCategory =
   | 'GENERAL'
@@ -59,6 +61,21 @@ export function FeedbackWidget() {
     message: form.message,
     rating: form.rating,
   });
+
+  function openFeedbackModal() {
+    setIsOpen(true);
+    setError(null);
+    setSuccess(null);
+  }
+
+  useEffect(() => {
+    function handleOpenFeedbackOverlay() {
+      openFeedbackModal();
+    }
+
+    window.addEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, handleOpenFeedbackOverlay);
+    return () => window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, handleOpenFeedbackOverlay);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -125,8 +142,12 @@ export function FeedbackWidget() {
         setIsOpen(false);
         setSuccess(null);
       }, 900);
-    } catch {
-      setError(`Your feedback could not be submitted right now. Please try again or contact ${supportEmail}.`);
+    } catch (error) {
+      setError(
+        error instanceof Error && error.message === FEEDBACK_EMAIL_VALIDATION_MESSAGE
+          ? FEEDBACK_EMAIL_VALIDATION_MESSAGE
+          : `Your feedback could not be submitted right now. Please try again or contact ${supportEmail}.`,
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -136,11 +157,7 @@ export function FeedbackWidget() {
     <>
       <button
         type="button"
-        onClick={() => {
-          setIsOpen(true);
-          setError(null);
-          setSuccess(null);
-        }}
+        onClick={openFeedbackModal}
         style={floatingButtonStyle}
         aria-label="Send feedback to CarbonLite"
         title="Send feedback or report an issue with the CarbonLite pilot."

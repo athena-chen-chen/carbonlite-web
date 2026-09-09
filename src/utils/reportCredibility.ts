@@ -1,5 +1,5 @@
 import type { CalculationAuditDetail } from '../services/metrics';
-import { getActivityTypeLabel, normalizeActivityType } from './activityType';
+import { getActivityTypeLabel, getFactorDisplayName, normalizeActivityType } from './activityType';
 import { formatCredibilityLabel } from './factorCredibility';
 
 export const ELECTRICITY_PILOT_ASSUMPTION =
@@ -459,7 +459,7 @@ export function buildSourceEvidenceNote(input: {
   const calculationStatus = normalizeStatus(detail.calculationStatus);
   const matchingStatus = normalizeStatus(detail.matchingStatus);
   const hasEmissions = Number.isFinite(Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission));
-  const factorName = cleanText(detail.factorDisplayName || detail.factorName);
+  const factorName = cleanText(getFactorDisplayName(detail.factorDisplayName || detail.factorName));
   const recordYear = Number(detail.recordYear ?? detail.reportingYear);
   const factorYear = Number(detail.factorYear ?? detail.sourceYear);
   const usedPriorYear =

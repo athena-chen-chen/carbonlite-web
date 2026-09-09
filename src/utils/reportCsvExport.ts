@@ -1,5 +1,5 @@
 import type { CalculationAuditDetail } from '../services/metrics';
-import { getActivityTypeLabel } from './activityType';
+import { getActivityTypeLabel, getFactorDisplayName } from './activityType';
 import { formatCredibilityLabel } from './factorCredibility';
 import {
   formatReportFactorVersion,
@@ -174,7 +174,7 @@ export function formatCsvFactorJurisdiction(detail: CalculationAuditDetail) {
 
 function getMatchedFactorName(detail: CalculationAuditDetail) {
   if (isTrackedMetricDetail(detail)) return 'No emissions factor applied';
-  return detail.factorDisplayName || detail.factorName || 'Not specified';
+  return getFactorDisplayName(detail.factorDisplayName || detail.factorName) || 'Not specified';
 }
 
 function buildRawCalculationFormula(detail: CalculationAuditDetail) {

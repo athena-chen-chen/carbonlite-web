@@ -1,5 +1,6 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
+  FEEDBACK_EMAIL_VALIDATION_MESSAGE,
   getAdminFeedbackList,
   submitFeedback,
   updateAdminFeedbackStatus,
@@ -30,6 +31,7 @@ describe('feedback service', () => {
       type: 'BUG',
       intent: 'Import records',
       message: 'Import failed',
+      email: '  Pilot@Example.com  ',
       page: '/upload',
       url: 'https://carbonliteapp.ca/upload',
       workspaceName: 'CarbonLite Sample Workspace',
@@ -45,14 +47,62 @@ describe('feedback service', () => {
           type: 'BUG',
           intent: 'Import records',
           message: 'Import failed',
+          email: 'pilot@example.com',
           page: '/upload',
           url: 'https://carbonliteapp.ca/upload',
-          workspaceName: 'CarbonLite Sample Workspace',
-          accountType: 'PILOT_REVIEWER',
-          appVersion: 'v0.2-test',
         }),
       }),
     );
+  });
+
+  it('omits blank optional feedback email from the backend payload', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'feedback-1',
+          type: 'QUESTION',
+          intent: 'Ask question',
+          message: 'Can email be blank?',
+          status: 'NEW',
+          createdAt: '2026-06-29T12:00:00.000Z',
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await submitFeedback({
+      type: 'QUESTION',
+      intent: 'Ask question',
+      message: 'Can email be blank?',
+      email: '   ',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/feedback`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'QUESTION',
+          intent: 'Ask question',
+          message: 'Can email be blank?',
+        }),
+      }),
+    );
+  });
+
+  it('rejects invalid feedback emails before submitting', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(
+      submitFeedback({
+        type: 'BUG',
+        intent: 'Report feedback issue',
+        message: 'The feedback form failed.',
+        email: '[pilot@example.com](mailto:pilot@example.com)',
+      }),
+    ).rejects.toThrow(FEEDBACK_EMAIL_VALIDATION_MESSAGE);
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('loads admin feedback from the admin-wide endpoint', async () => {

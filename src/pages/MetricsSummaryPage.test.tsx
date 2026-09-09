@@ -1727,7 +1727,26 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     );
 
     expect(await screen.findByRole('heading', { name: /Calculation Review/i })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Inventory Boundary' })).toBeInTheDocument();
+    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    expect(boundarySection).toBeInTheDocument();
+    expect(boundarySection).toHaveTextContent(
+      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
+    );
+    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' });
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
+
+    await userEvent.click(boundaryToggle);
+
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(boundaryToggle).toHaveTextContent('Collapse');
+    expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
+
+    await userEvent.click(boundaryToggle);
+
+    expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
     expect(await screen.findByText(/View readiness details/i)).toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();

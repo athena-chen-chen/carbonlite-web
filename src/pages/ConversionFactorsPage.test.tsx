@@ -115,6 +115,36 @@ describe('ConversionFactorsPage traceability', () => {
     vi.mocked(isPilotReviewer).mockReturnValue(false);
   });
 
+  it('shows a loading indication while conversion factors are loading', async () => {
+    let resolveFactors!: (value: Awaited<ReturnType<typeof getConversionFactors>>) => void;
+    vi.mocked(getConversionFactors).mockReturnValue(
+      new Promise((resolve) => {
+        resolveFactors = resolve;
+      }) as ReturnType<typeof getConversionFactors>,
+    );
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Loading conversion factors...');
+    expect(screen.queryByText('No conversion factors yet.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No factors match the selected filters.')).not.toBeInTheDocument();
+
+    resolveFactors({
+      items: [baseFactor],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('uses database traceability values for system factors', () => {
     expect(
       getFactorTraceability({

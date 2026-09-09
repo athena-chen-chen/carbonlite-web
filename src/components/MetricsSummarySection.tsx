@@ -7,6 +7,7 @@ import {
   formatInvalidActivityRecordNote,
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
+import { getFactorDisplayName } from '../utils/activityType';
 import type { CalculationAuditDetail } from '../services/metrics';
 import {
   buildCalculatedFormula,
@@ -1156,7 +1157,7 @@ function buildTrailFactorSummaries(details: CalculationAuditDetail[]) {
   details.forEach((detail) => {
     if (detail.status !== 'CALCULATED') return;
     const key = [
-      detail.factorName || detail.factorDisplayName || detail.activityType,
+      getFactorDisplayName(detail.factorName || detail.factorDisplayName) || detail.activityType,
       detail.factorValue,
       detail.factorInputUnit,
       detail.factorResultUnit,
@@ -1176,7 +1177,9 @@ function buildTrailFactorSummary(detail: CalculationAuditDetail) {
   const sourceYear = detail.sourceYear ?? detail.factorYear;
 
   return {
-    name: detail.factorDisplayName || detail.factorName || `${formatActivityTypeLabel(detail.activityType)} factor`,
+    name:
+      getFactorDisplayName(detail.factorDisplayName || detail.factorName) ||
+      `${formatActivityTypeLabel(detail.activityType)} factor`,
     activityType: formatActivityTypeLabel(detail.activityType),
     jurisdiction: formatFactorJurisdiction(detail),
     value:

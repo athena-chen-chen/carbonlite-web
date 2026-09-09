@@ -20,12 +20,9 @@ import { CollapsibleSection } from '../components/common/CollapsibleSection';
 import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
 import { trackActivityEvent } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
-import {
-  getCurrentUser,
-  getOrganizationName,
-} from '../services/auth';
-import { getAccountType, isPilotReviewer } from '../utils/permissions';
-import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
+import { getCurrentUser } from '../services/auth';
+import { isPilotReviewer } from '../utils/permissions';
+import { openFeedbackOverlay } from '../utils/feedbackOverlay';
 import {
   summarizeInventoryBoundary,
 } from '../constants/inventoryBoundary';
@@ -386,14 +383,6 @@ function handleDownloadPDF() {
   const hasLoadedSummary = lastUpdated !== null || summary !== null;
   const isInitialLoading = !hasLoadedSummary && !error;
   const isRefreshing = loading && hasLoadedSummary;
-  const pilotReviewerFeedbackHref = showPilotReviewerWelcome
-    ? buildFeedbackMailtoHref({
-        pagePath: location.pathname,
-        userEmail: currentUser?.email,
-        workspaceName: getOrganizationName(currentUser),
-        accountType: getAccountType(currentUser),
-      })
-    : '';
   const inventoryBoundary = profileToInventoryBoundary(
     organizationProfile,
     'Pilot sample reporting period',
@@ -418,8 +407,8 @@ function handleDownloadPDF() {
 
       {showPilotReviewerWelcome ? (
         <>
-          <PilotReviewerWelcomePanel feedbackHref={pilotReviewerFeedbackHref} />
-          <PilotReviewerFeedbackPrompt feedbackHref={pilotReviewerFeedbackHref} />
+          <PilotReviewerWelcomePanel />
+          <PilotReviewerFeedbackPrompt />
         </>
       ) : null}
 
@@ -582,7 +571,7 @@ function BoundaryField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PilotReviewerWelcomePanel({ feedbackHref }: { feedbackHref: string }) {
+function PilotReviewerWelcomePanel() {
   return (
     <section aria-label="How to review CarbonLite" style={pilotReviewerPanelStyle}>
       <h2 style={pilotReviewerTitleStyle}>How to review CarbonLite</h2>
@@ -606,7 +595,9 @@ function PilotReviewerWelcomePanel({ feedbackHref }: { feedbackHref: string }) {
           <span style={pilotReviewerDescriptionStyle}> — review sample report structure and disclaimer</span>
         </li>
         <li>
-          <a href={feedbackHref} style={pilotReviewerLinkStyle}>Send Feedback</a>
+          <button type="button" onClick={openFeedbackOverlay} style={pilotReviewerFeedbackLinkStyle}>
+            Send Feedback
+          </button>
           <span style={pilotReviewerDescriptionStyle}> — share comments or questions</span>
         </li>
       </ol>
@@ -680,6 +671,17 @@ const pilotReviewerListStyle: React.CSSProperties = {
 const pilotReviewerLinkStyle: React.CSSProperties = {
   color: '#0369a1',
   fontWeight: 800,
+};
+
+const pilotReviewerFeedbackLinkStyle: React.CSSProperties = {
+  ...pilotReviewerLinkStyle,
+  border: 0,
+  background: 'transparent',
+  padding: 0,
+  cursor: 'pointer',
+  font: 'inherit',
+  textDecoration: 'underline',
+  textUnderlineOffset: 2,
 };
 
 const pilotReviewerDescriptionStyle: React.CSSProperties = {

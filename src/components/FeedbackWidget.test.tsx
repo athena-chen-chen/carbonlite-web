@@ -1,11 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
 import { submitFeedback } from '../services/feedback';
+import { openFeedbackOverlay } from '../utils/feedbackOverlay';
 import { FeedbackWidget } from './FeedbackWidget';
 
 vi.mock('../services/feedback', () => ({
+  FEEDBACK_EMAIL_VALIDATION_MESSAGE: 'Please enter a valid email address.',
   submitFeedback: vi.fn(),
 }));
 
@@ -103,6 +105,22 @@ describe('FeedbackWidget', () => {
     expect(screen.getByText(/Context included: \/reports\?period=2026/)).toBeInTheDocument();
   });
 
+  it('opens the same feedback overlay from the shared feedback event', async () => {
+    renderWidget('/reports');
+
+    expect(screen.queryByRole('dialog', { name: /Send Feedback/i })).not.toBeInTheDocument();
+
+    act(() => {
+      openFeedbackOverlay();
+    });
+
+    expect(screen.getByRole('dialog', { name: /Send Feedback/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Send by email/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('mailto:hello@carbonliteapp.ca'),
+    );
+  });
+
   it('shows a friendly error if submission fails', async () => {
     vi.mocked(submitFeedback).mockRejectedValue(new Error('User not authorized to read feedback'));
 
@@ -122,5 +140,17 @@ describe('FeedbackWidget', () => {
       expect.stringContaining('mailto:hello@carbonliteapp.ca'),
     );
     await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows a friendly validation error for invalid feedback email', async () => {
+    vi.mocked(submitFeedback).mockRejectedValue(new Error('Please enter a valid email address.'));
+
+    renderWidget('/reports');
+
+    await userEvent.click(screen.getByRole('button', { name: /Send Feedback/i }));
+    await userEvent.type(screen.getByLabelText(/^Message$/i), 'The report failed');
+    await userEvent.click(screen.getByRole('button', { name: /^Submit$/i }));
+
+    expect(await screen.findByText('Please enter a valid email address.')).toBeInTheDocument();
   });
 });

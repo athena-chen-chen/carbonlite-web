@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getActivityTypeLabel, normalizeActivityType } from './activityType';
+import { getActivityTypeLabel, getFactorDisplayName, normalizeActivityType } from './activityType';
 
 describe('activity type helpers', () => {
   it.each([
@@ -29,5 +29,15 @@ describe('activity type helpers', () => {
     expect(getActivityTypeLabel('AIR_TRAVEL')).toBe('Air Travel');
     expect(getActivityTypeLabel('HOTEL')).toBe('Business Travel - Accommodation');
     expect(getActivityTypeLabel(null)).toBe('Not specified');
+  });
+
+  it('formats hotel factor names for pilot-facing display without changing internal activity values', () => {
+    expect(getFactorDisplayName('Hotel - Canada - 2025')).toBe(
+      'Business Travel - Accommodation - Canada - 2025',
+    );
+    expect(getFactorDisplayName('HOTEL - Canada')).toBe(
+      'Business Travel - Accommodation - Canada',
+    );
+    expect(getFactorDisplayName('Electricity - Alberta')).toBe('Electricity - Alberta');
   });
 });

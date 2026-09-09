@@ -13,6 +13,7 @@ export function LoginPage() {
   const contactEmail = getContactEmail();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(() => {
     const message = sessionStorage.getItem('authMessage');
     sessionStorage.removeItem('authMessage');
@@ -56,14 +57,24 @@ export function LoginPage() {
 
         <label style={labelStyle}>
           Password
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            autoComplete="current-password"
-            style={inputStyle}
-          />
+          <div style={passwordInputWrapperStyle}>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              autoComplete="current-password"
+              style={passwordInputStyle}
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              onClick={() => setShowPassword((visible) => !visible)}
+              style={passwordToggleStyle}
+            >
+              {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+            </button>
+          </div>
         </label>
 
         {error ? <div style={errorStyle}>{error}</div> : null}
@@ -96,6 +107,46 @@ export function LoginPage() {
         )}
       </form>
     </AuthPageShell>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6A2 2 0 0 0 12 14a2 2 0 0 0 1.4-.6" />
+      <path d="M9.9 4.2A10.5 10.5 0 0 1 12 4c6.5 0 10 8 10 8a17.8 17.8 0 0 1-3.1 4.3" />
+      <path d="M6.1 6.1C3.4 7.9 2 12 2 12s3.5 8 10 8a9.8 9.8 0 0 0 5.1-1.4" />
+    </svg>
   );
 }
 
@@ -162,6 +213,36 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 10,
   border: '1px solid #cbd5e1',
   fontSize: 15,
+};
+
+const passwordInputWrapperStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
+};
+
+const passwordInputStyle: React.CSSProperties = {
+  ...inputStyle,
+  width: '100%',
+  paddingRight: 46,
+  boxSizing: 'border-box',
+};
+
+const passwordToggleStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 8,
+  top: '50%',
+  transform: 'translateY(-50%)',
+  width: 34,
+  height: 34,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 0,
+  borderRadius: 8,
+  background: 'transparent',
+  color: '#475569',
+  cursor: 'pointer',
 };
 
 const errorStyle: React.CSSProperties = {

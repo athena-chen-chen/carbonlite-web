@@ -80,6 +80,16 @@ export function getActivityTypeLabel(activityType?: string | null): string {
     .join(' ');
 }
 
+export function getFactorDisplayName(factorName?: string | null): string {
+  const trimmed = String(factorName ?? '').trim();
+  if (!trimmed) return '';
+
+  return trimmed.replace(
+    /^hotel(?=\s*(?:-|–|—|$))/i,
+    getActivityTypeLabel('HOTEL'),
+  );
+}
+
 function normalizeActivityTypeKey(value?: string | null) {
   return String(value ?? '')
     .trim()

@@ -16,7 +16,7 @@ import {
 } from '../services/auth';
 import { canManageConversionFactors, isPilotReviewer } from '../utils/permissions';
 import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
-import { getActivityTypeLabel, normalizeActivityType } from '../utils/activityType';
+import { getActivityTypeLabel, getFactorDisplayName, normalizeActivityType } from '../utils/activityType';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
   PILOT_PROVINCE_COVERAGE_HELPER_TEXT,
@@ -310,7 +310,7 @@ function formatActivityTypeDisplay(value?: string | null) {
 }
 
 function formatFactorNameDisplay(item: ConversionFactorItem) {
-  if (!isSystemFactor(item) && item.name) return item.name;
+  if (!isSystemFactor(item) && item.name) return getFactorDisplayName(item.name);
 
   if (isElectricityFactor(item)) {
     const jurisdiction = getFactorJurisdiction(item);
@@ -325,7 +325,7 @@ function formatFactorNameDisplay(item: ConversionFactorItem) {
 
   const activityTypeLabel = item.activityType ? formatActivityTypeDisplay(item.activityType) : '';
 
-  return activityTypeLabel || item.name;
+  return activityTypeLabel || getFactorDisplayName(item.name) || '-';
 }
 
 function formatJurisdictionDisplay(region?: string | null, country?: string | null) {
@@ -1576,7 +1576,9 @@ export function ConversionFactorsPage() {
         ) : null}
 
         {loading ? (
-          <div style={{ padding: 16 }}>Loading conversion factors...</div>
+          <div role="status" aria-live="polite" style={{ padding: 16 }}>
+            Loading conversion factors...
+          </div>
         ) : (
           <>
           <div style={tableScrollHintStyle}>Scroll horizontally to view all columns →</div>

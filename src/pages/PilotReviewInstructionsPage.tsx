@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { openFeedbackOverlay } from '../utils/feedbackOverlay';
 
 const reviewPath = [
   { label: 'Data Records', to: '/data-records' },
@@ -39,7 +40,9 @@ export default function PilotReviewInstructionsPage() {
           {reviewPath.map((item) => (
             <li key={item.label} style={listItemStyle}>
               {item.to === 'feedback' ? (
-                <span>{item.label}</span>
+                <button type="button" onClick={openFeedbackOverlay} style={feedbackButtonStyle}>
+                  {item.label}
+                </button>
               ) : (
                 <Link to={item.to} style={linkStyle}>
                   {item.label}
@@ -151,6 +154,17 @@ const linkStyle: CSSProperties = {
   color: '#047857',
   fontWeight: 850,
   textDecoration: 'none',
+};
+
+const feedbackButtonStyle: CSSProperties = {
+  ...linkStyle,
+  border: 0,
+  background: 'transparent',
+  padding: 0,
+  cursor: 'pointer',
+  font: 'inherit',
+  textDecoration: 'underline',
+  textUnderlineOffset: 2,
 };
 
 const reminderStyle: CSSProperties = {

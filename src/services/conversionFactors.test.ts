@@ -190,6 +190,17 @@ describe('conversion factor traceability API payloads', () => {
       'Ground Transport - Canada - 2025',
     ]);
 
+    for (const jurisdiction of ['Canada-national', 'CANADA_NATIONAL', 'CA National']) {
+      const response = await getConversionFactors({
+        activityType: 'GROUND_TRANSPORT',
+        jurisdiction,
+        sourceYear: 2025,
+      });
+      expect(response.items.map((item) => item.name)).toEqual([
+        'Ground Transport - Canada - 2025',
+      ]);
+    }
+
     const provincial = await getConversionFactors({
       activityType: 'GROUND_TRANSPORT',
       jurisdiction: 'AB',

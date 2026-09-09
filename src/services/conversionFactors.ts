@@ -320,7 +320,7 @@ function matchesPilotGroundTransportParams(params?: {
 
   const jurisdictionFilter = String(params?.jurisdiction ?? '').trim().toLowerCase();
   if (jurisdictionFilter) {
-    return ['canada', 'canada - national', 'national', 'ca'].includes(jurisdictionFilter);
+    return isCanadaNationalJurisdiction(jurisdictionFilter);
   }
 
   const searchFilter = String(params?.search ?? '').trim().toLowerCase();
@@ -337,6 +337,22 @@ function matchesPilotGroundTransportParams(params?: {
   ]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(searchFilter));
+}
+
+function isCanadaNationalJurisdiction(value?: string | null) {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_–—-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  return [
+    'canada',
+    'canada national',
+    'national',
+    'ca',
+    'ca national',
+  ].includes(normalized);
 }
 
 function isSamePilotSystemFactor(

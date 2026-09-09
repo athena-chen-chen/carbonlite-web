@@ -37,7 +37,7 @@ import { CollapsibleReportSection } from '../components/reports/CollapsibleRepor
 import { ReportScopeSection } from '../components/reports/sections/ReportScopeSection';
 import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
 import { getCurrentUser, getOrganizationName } from '../services/auth';
-import { getAccountType, isPilotReviewer } from '../utils/permissions';
+import { isPilotReviewer } from '../utils/permissions';
 import { createClientAuditLog } from '../services/auditLogs';
 import { getActivityEvents, trackActivityEvent, type ActivityEventItem } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
@@ -56,8 +56,7 @@ import {
   formatScopeSource,
   resolveScopeClassification,
 } from '../utils/scopeClassification';
-import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
-import { getActivityTypeLabel } from '../utils/activityType';
+import { getActivityTypeLabel, getFactorDisplayName } from '../utils/activityType';
 import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
 import {
@@ -1063,7 +1062,7 @@ function handleDownloadPDF() {
     ]],
     body: conversionFactorsUsed.length
       ? conversionFactorsUsed.map((factor) => [
-          factor.factorName || getActivityTypeLabel(factor.activityType) || 'Factor not specified',
+          getFactorDisplayName(factor.factorName) || getActivityTypeLabel(factor.activityType) || 'Factor not specified',
           formatFactorValue(factor.factorValue),
           formatReportFactorUnit(factor.resultUnit, factor.inputUnit),
           factor.jurisdiction || 'Not specified',
@@ -1113,7 +1112,7 @@ function handleDownloadPDF() {
 
     conversionFactorsUsed.forEach((factor) => {
       nextY = ensurePdfSpace(doc, nextY, 31);
-      const factorName = factor.factorName || getActivityTypeLabel(factor.activityType) || 'Factor not specified';
+      const factorName = getFactorDisplayName(factor.factorName) || getActivityTypeLabel(factor.activityType) || 'Factor not specified';
       const factorText = [
         `Factor: ${factorName}`,
         `Value: ${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`,
@@ -1742,14 +1741,6 @@ function formatWorkflowEventSummary(event: ActivityEventItem) {
 }
 
 const organizationName = getOrganizationName(currentUser);
-const pilotReviewerFeedbackHref = isPilotReviewerAccount
-  ? buildFeedbackMailtoHref({
-      pagePath: location.pathname,
-      userEmail: currentUser?.email,
-      workspaceName: organizationName,
-      accountType: getAccountType(currentUser),
-    })
-  : '';
 const generatedAt = new Date().toLocaleString();
 const reportScopeLabel = getReportScopeLabel(
   reportScope,
@@ -1802,6 +1793,7 @@ const exportDisabled = !hasReportOutput;
 const exportDisabledTitle = exportDisabled
   ? 'Generate a report before exporting.'
   : undefined;
+const isPreparingReportData = !dateRangeReady || loading;
 
 function toggleReportSection(sectionId: ReportSectionId) {
   setExpandedSections((current) => ({
@@ -1831,7 +1823,7 @@ function setAllReportSections(expanded: boolean) {
       </p>
 
       {isPilotReviewerAccount ? (
-        <PilotReviewerFeedbackPrompt feedbackHref={pilotReviewerFeedbackHref} />
+        <PilotReviewerFeedbackPrompt />
       ) : null}
 
       {/* <div style={paidPilotScopeCalloutStyle}>
@@ -1978,8 +1970,10 @@ function setAllReportSections(expanded: boolean) {
         </div>
       ) : null}
 
-      {loading ? (
-        <div style={loadingNoticeStyle}>Generating report output...</div>
+      {isPreparingReportData ? (
+        <div role="status" aria-live="polite" style={loadingNoticeStyle}>
+          Preparing report data...
+        </div>
       ) : hasReportOutput ? (
         <>
           {hasRecordsRequiringReviewOnly ? (

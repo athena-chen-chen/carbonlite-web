@@ -16,6 +16,7 @@ import {
   loadOrganizationProfile,
   saveOrganizationProfile,
 } from '../services/organizationProfile';
+import { OPEN_FEEDBACK_OVERLAY_EVENT } from '../utils/feedbackOverlay';
 
 vi.mock('../services/metricsOverview', async () => {
   const actual = await vi.importActual<typeof import('../services/metricsOverview')>(
@@ -53,6 +54,84 @@ vi.mock('jspdf-autotable', () => ({
 }));
 
 describe('ReportingPage audit trail', () => {
+  it('shows a loading indication while report data is preparing', async () => {
+    let resolveOverview!: (value: Awaited<ReturnType<typeof loadMetricsOverview>>) => void;
+    vi.mocked(loadMetricsOverview).mockReturnValue(
+      new Promise((resolve) => {
+        resolveOverview = resolve;
+      }) as ReturnType<typeof loadMetricsOverview>,
+    );
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Preparing report data...');
+    expect(screen.queryByText('No reporting data found.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No records found for the selected period.')).not.toBeInTheDocument();
+
+    resolveOverview({
+      summary: {},
+      activities: [
+        {
+          id: 'activity-1',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2026-07-20',
+          quantity: 1000,
+          unit: 'm3',
+          sourceType: 'SPREADSHEET',
+        },
+      ],
+      usageTotals: {
+        fuel: 0,
+        electricity: 0,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 37285,
+      totalRecordsFound: 10,
+      recordsIncluded: 9,
+      processedRecords: 9,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 1,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-1',
+          activityType: 'NATURAL_GAS',
+          activityQuantity: 1000,
+          activityUnit: 'm3',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 1890,
+          scope: 'SCOPE_1',
+        },
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 10,
+      recordsInScope: 10,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+    expect(screen.getAllByText(/37,285 kgCO2e|37,285 kg CO2e/i).length).toBeGreaterThan(0);
+  });
+
   const workflowEvent: ActivityEventItem = {
     id: 'event-1',
     eventName: 'RECORDS_IMPORTED',
@@ -176,8 +255,7 @@ describe('ReportingPage audit trail', () => {
     expect(screen.getByText(/Records imported from Golden Test Data/i)).toBeInTheDocument();
   });
 
-  // TODO: Re-enable after ReportingPage fully hides Workflow History / Audit Trail for accountType === 'PILOT_REVIEWER'.
-  it.skip('shows report context while hiding internal workflow audit details for pilot reviewer accounts', async () => {
+  it('shows report context while hiding internal workflow audit details for pilot reviewer accounts', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -230,10 +308,13 @@ describe('ReportingPage audit trail', () => {
     expect(getActivityEvents).not.toHaveBeenCalled();
 
     expect(screen.getByText(/Have feedback on this page/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Send Feedback' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('mailto:'),
-    );
+    const feedbackListener = vi.fn();
+    window.addEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
+    const sendFeedbackButton = screen.getByRole('button', { name: 'Send Feedback' });
+    expect(sendFeedbackButton).not.toHaveAttribute('href');
+    await userEvent.click(sendFeedbackButton);
+    expect(feedbackListener).toHaveBeenCalledTimes(1);
+    window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
     expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save Report Scope/i })).not.toBeInTheDocument();
     expect(screen.getAllByText(/37,285 kgCO2e|37,285 kg CO2e/i).length).toBeGreaterThan(0);

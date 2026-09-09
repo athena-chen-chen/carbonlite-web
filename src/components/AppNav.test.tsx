@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
+import { OPEN_FEEDBACK_OVERLAY_EVENT } from '../utils/feedbackOverlay';
 import { AppNav } from './AppNav';
 
 describe('AppNav logout flow', () => {
@@ -28,13 +29,18 @@ describe('AppNav logout flow', () => {
     expect(screen.getByRole('button', { name: /user@example.com/i })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /send feedback/i })).not.toBeInTheDocument();
 
+    const feedbackListener = vi.fn();
+    window.addEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
+
     await userEvent.click(screen.getByRole('button', { name: /user@example.com/i }));
 
-    expect(screen.getByRole('menuitem', { name: /send feedback/i })).toHaveAttribute(
-      'href',
-      expect.stringContaining('mailto:hello@carbonliteapp.ca'),
-    );
+    const feedbackMenuItem = screen.getByRole('menuitem', { name: /send feedback/i });
+    expect(feedbackMenuItem).not.toHaveAttribute('href');
     expect(screen.getByRole('menuitem', { name: /logout/i })).toBeInTheDocument();
+    await userEvent.click(feedbackMenuItem);
+    expect(feedbackListener).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
   });
 
   it('keeps the app header above scrolling page content', () => {
@@ -150,7 +156,7 @@ describe('AppNav logout flow', () => {
     expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument();
   });
 
-  it('shows pilot reviewer banner and hides admin navigation for review accounts', () => {
+  it('shows pilot reviewer banner and hides admin navigation for review accounts', async () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
       'currentUser',
@@ -170,11 +176,14 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
+    const feedbackListener = vi.fn();
+    window.addEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
+
     expect(screen.getByText(/Pilot review account/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /send feedback/i })).toHaveAttribute(
-      'href',
-      expect.stringContaining('CarbonLite%20Pilot%20Feedback'),
-    );
+    const bannerFeedbackButton = screen.getByRole('button', { name: /send feedback/i });
+    expect(bannerFeedbackButton).not.toHaveAttribute('href');
+    await userEvent.click(bannerFeedbackButton);
+    expect(feedbackListener).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Input Data' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review Guide' })).toHaveAttribute(
@@ -186,6 +195,8 @@ describe('AppNav logout flow', () => {
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
     expect(screen.getByRole('button', { name: /^Settings\s*▾?$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /admin/i })).not.toBeInTheDocument();
+
+    window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
   });
 
   it('shows admin feedback and activity navigation in a compact dropdown', async () => {

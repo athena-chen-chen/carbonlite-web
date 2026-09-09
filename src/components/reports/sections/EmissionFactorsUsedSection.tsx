@@ -3,7 +3,7 @@ import type { FormalConversionFactorUsed } from '../../FormalReportPreview';
 import {
   formatFactorValue,
 } from '../../../utils/calculationTraceability';
-import { getActivityTypeLabel } from '../../../utils/activityType';
+import { getActivityTypeLabel, getFactorDisplayName } from '../../../utils/activityType';
 import { formatCredibilityLabel } from '../../../utils/factorCredibility';
 import {
   formatReportAssumptions,
@@ -38,7 +38,7 @@ export function EmissionFactorsUsedSection({
         ]}
         emptyMessage="No conversion factors found for this report scope."
         rows={conversionFactorsUsed.map((factor) => [
-          factor.factorName || getActivityTypeLabel(factor.activityType),
+          getFactorDisplayName(factor.factorName) || getActivityTypeLabel(factor.activityType),
           formatFactorValue(factor.factorValue),
           formatReportFactorUnit(factor.resultUnit, factor.inputUnit),
           formatJurisdiction(factor.jurisdiction),
@@ -58,7 +58,7 @@ export function EmissionFactorsUsedSection({
             {conversionFactorsUsed.map((factor) => (
               <section key={factor.factorId || factor.factorName} style={factorDetailBlockStyle}>
                 <div style={factorDetailTitleStyle}>
-                  {factor.factorName || getActivityTypeLabel(factor.activityType)}
+                  {getFactorDisplayName(factor.factorName) || getActivityTypeLabel(factor.activityType)}
                 </div>
                 <dl style={detailListStyle}>
                   <Detail label="Value" value={`${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`} />

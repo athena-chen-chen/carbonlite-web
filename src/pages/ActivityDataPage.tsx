@@ -35,7 +35,7 @@ import {
   ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
   normalizeProvince as normalizeCanadianProvince,
 } from '../utils/province';
-import { getActivityTypeLabel } from '../utils/activityType';
+import { getActivityTypeLabel, getFactorDisplayName } from '../utils/activityType';
 import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
@@ -670,7 +670,7 @@ function hasStoredReviewStatus(row: ActivityDataItem) {
 }
 
 function getShortFactorName(match: ConversionFactorMatch) {
-  return match.factor.name || match.factor.displayName || match.factor.activityType || 'Matched factor';
+  return getFactorDisplayName(match.factor.name || match.factor.displayName) || match.factor.activityType || 'Matched factor';
 }
 
 function getActivityRecordMatch(
@@ -941,7 +941,7 @@ function getActivityRecordQuality(
       filterKey: 'ready',
       tone: 'success' as const,
       title: row.matchedFactorName
-        ? `Matched factor: ${row.matchedFactorName}.`
+        ? `Matched factor: ${getFactorDisplayName(row.matchedFactorName)}.`
         : 'This record has saved canonical matching metadata.',
     };
   }
@@ -1582,7 +1582,7 @@ function renderViewedRecordModal() {
               value={formatActivitySourceReference(viewedRecord)}
               fullWidth
             />
-            <DetailsField label="Matched Factor Name" value={formatOptionalRecordValue(viewedRecord.matchedFactorName ?? (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
+            <DetailsField label="Matched Factor Name" value={formatOptionalRecordValue(getFactorDisplayName(viewedRecord.matchedFactorName) || (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
             <DetailsField label="Matched Factor Value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
             <DetailsField label="Matched Factor Unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
             <DetailsField label="Matched Factor Source Year" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceYear ?? matchedFactor?.factorYear)} />

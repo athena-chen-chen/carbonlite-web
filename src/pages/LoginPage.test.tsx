@@ -44,7 +44,7 @@ describe('LoginPage', () => {
     renderLogin();
 
     await userEvent.type(screen.getByLabelText(/email/i), 'reviewer@example.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'Password123!');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'Password123!');
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     await screen.findByText('Calculation Review page');
@@ -64,7 +64,7 @@ describe('LoginPage', () => {
     renderLogin();
 
     await userEvent.type(screen.getByLabelText(/email/i), 'user@example.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'Password123!');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'Password123!');
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     await screen.findByText('Upload page');
@@ -99,6 +99,35 @@ describe('LoginPage', () => {
     );
   });
 
+  it('toggles password visibility without clearing the typed password', async () => {
+    renderLogin();
+
+    const passwordInput = screen.getByLabelText(/^password$/i);
+    expect(passwordInput).toHaveAttribute('type', 'password');
+
+    await userEvent.type(passwordInput, 'TestPassword123!');
+    await userEvent.click(screen.getByRole('button', { name: /show password/i }));
+
+    expect(passwordInput).toHaveAttribute('type', 'text');
+    expect(passwordInput).toHaveValue('TestPassword123!');
+
+    await userEvent.click(screen.getByRole('button', { name: /hide password/i }));
+
+    expect(passwordInput).toHaveAttribute('type', 'password');
+    expect(passwordInput).toHaveValue('TestPassword123!');
+  });
+
+  it('does not submit the login form when toggling password visibility', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    renderLogin();
+
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'TestPassword123!');
+    await userEvent.click(screen.getByRole('button', { name: /show password/i }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('falls back to the CarbonLite contact email when no contact email is configured', () => {
     renderLogin();
 
@@ -128,7 +157,7 @@ describe('LoginPage', () => {
     renderLogin();
 
     await userEvent.type(screen.getByLabelText(/email/i), 'bad@example.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'wrong');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'wrong');
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     expect(
@@ -143,7 +172,7 @@ describe('LoginPage', () => {
     renderLogin();
 
     await userEvent.type(screen.getByLabelText(/email/i), 'user@example.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'Password123!');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'Password123!');
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     await waitFor(() => {

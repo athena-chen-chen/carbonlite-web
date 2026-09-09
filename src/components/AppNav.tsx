@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { getOrganizationName, getUserDisplayName } from '../services/auth';
-import { canViewAdmin, getAccountType, isPilotReviewer } from '../utils/permissions';
-import { buildFeedbackMailtoHref } from '../utils/feedbackMailto';
+import { canViewAdmin, isPilotReviewer } from '../utils/permissions';
+import { openFeedbackOverlay } from '../utils/feedbackOverlay';
 
 const navItems = [
   { to: '/', label: 'Home' },
@@ -110,12 +110,6 @@ export function AppNav() {
   const visibleNavItems = showPilotReviewerBanner
     ? navItems.filter((item) => !['/', '/input-data'].includes(item.to))
     : navItems;
-  const feedbackHref = buildFeedbackMailtoHref({
-    pagePath: `${location.pathname}${location.search}${location.hash}`,
-    userEmail: user?.email,
-    workspaceName,
-    accountType: getAccountType(user),
-  });
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -188,6 +182,11 @@ export function AppNav() {
   function handleLogout() {
     logout();
     navigate('/login', { replace: true });
+  }
+
+  function handleOpenFeedback() {
+    openFeedbackOverlay();
+    setIsUserMenuOpen(false);
   }
 
   return (
@@ -322,15 +321,16 @@ export function AppNav() {
                 </button>
                 {isUserMenuOpen ? (
                   <div ref={userMenuRef} role="menu" style={userMenuStyle}>
-                    <a
-                      href={feedbackHref}
+                    <button
+                      type="button"
                       role="menuitem"
-                      style={userMenuLinkStyle}
+                      onClick={handleOpenFeedback}
+                      style={userMenuFeedbackButtonStyle}
                       aria-label="Send feedback to CarbonLite"
                       title="Send feedback or report an issue with the CarbonLite pilot."
                     >
                       Send Feedback
-                    </a>
+                    </button>
                     <button
                       type="button"
                       role="menuitem"
@@ -348,9 +348,13 @@ export function AppNav() {
         {showPilotReviewerBanner ? (
           <div role="status" style={pilotReviewerBannerStyle}>
             Pilot review account · Sample data only · Not for formal reporting ·{' '}
-            <a href={feedbackHref} style={pilotReviewerBannerLinkStyle}>
+            <button
+              type="button"
+              onClick={openFeedbackOverlay}
+              style={pilotReviewerBannerLinkStyle}
+            >
               Send Feedback
-            </a>
+            </button>
           </div>
         ) : null}
       </div>
@@ -396,7 +400,12 @@ const pilotReviewerBannerStyle: React.CSSProperties = {
 };
 
 const pilotReviewerBannerLinkStyle: React.CSSProperties = {
+  border: 0,
+  background: 'transparent',
+  padding: 0,
   color: '#0369a1',
+  cursor: 'pointer',
+  font: 'inherit',
   fontWeight: 900,
   textDecoration: 'underline',
   textUnderlineOffset: 2,
@@ -457,6 +466,13 @@ const userMenuLinkStyle: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 700,
   whiteSpace: 'nowrap',
+};
+
+const userMenuFeedbackButtonStyle: React.CSSProperties = {
+  ...userMenuLinkStyle,
+  border: 0,
+  textAlign: 'left',
+  cursor: 'pointer',
 };
 
 const userMenuLogoutStyle: React.CSSProperties = {
