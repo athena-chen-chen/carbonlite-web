@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { trackEvent } from '../services/ga4.service';
 
-const demoVideoUrl = import.meta.env.VITE_DEMO_VIDEO_URL || 'https://www.youtube.com/embed/rninS2Y0FBo';
+const demoVideoUrl = import.meta.env.VITE_DEMO_VIDEO_URL || 'https://www.youtube.com/embed/7sXJJN1GMyE';
 const demoVideoEmbedUrl = getYouTubeEmbedUrl(demoVideoUrl);
 
 function getYouTubeEmbedUrl(urlOrId: string) {

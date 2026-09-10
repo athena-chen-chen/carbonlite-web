@@ -87,6 +87,12 @@ export function OrganizationProfilePage() {
       })
       .catch((error) => {
         if (isMounted) {
+          if (readOnlyReviewer) {
+            setProfile(loadOrganizationProfile(currentUser));
+            setError('');
+            return;
+          }
+
           setError(getUserFriendlyErrorMessage(error, 'organizationProfile'));
         }
       });
@@ -94,7 +100,7 @@ export function OrganizationProfilePage() {
     return () => {
       isMounted = false;
     };
-  }, [currentUserKey]);
+  }, [currentUserKey, readOnlyReviewer]);
 
   function updateField(key: keyof OrganizationProfile, value: string) {
     if (!canEdit) return;
@@ -170,112 +176,162 @@ export function OrganizationProfilePage() {
       {successMessage ? <div style={successStyle}>{successMessage}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
 
-      <form onSubmit={handleSubmit} style={formStyle} noValidate>
-        {fieldGroups.map((group) => (
-          <section key={group.title} style={sectionStyle} aria-labelledby={`${slugify(group.title)}-title`}>
-            <h2 id={`${slugify(group.title)}-title`} style={sectionTitleStyle}>{group.title}</h2>
-            {group.title === 'Organization Profile' ? (
-              <p style={sectionNoteStyle}>
-                This workspace is configured for Canadian emissions reporting. Country is currently fixed to Canada.
-              </p>
-            ) : null}
-            <div style={gridStyle}>
-              {group.fields.map((field) => (
-                <label key={field.key} style={fieldStyle}>
-                  <span style={labelStyle}>
-                    {field.label}
-                    {field.required ? ' *' : ''}
-                  </span>
-                  {field.key === 'industry' ? (
-                    <>
+      {readOnlyReviewer ? (
+        <div style={formStyle}>
+          {fieldGroups.map((group) => (
+            <ReadOnlyProfileSection key={group.title} group={group} profile={profile} />
+          ))}
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} style={formStyle} noValidate>
+          {fieldGroups.map((group) => (
+            <section key={group.title} style={sectionStyle} aria-labelledby={`${slugify(group.title)}-title`}>
+              <h2 id={`${slugify(group.title)}-title`} style={sectionTitleStyle}>{group.title}</h2>
+              {group.title === 'Organization Profile' ? (
+                <p style={sectionNoteStyle}>
+                  This workspace is configured for Canadian emissions reporting. Country is currently fixed to Canada.
+                </p>
+              ) : null}
+              <div style={gridStyle}>
+                {group.fields.map((field) => (
+                  <label key={field.key} style={fieldStyle}>
+                    <span style={labelStyle}>
+                      {field.label}
+                      {field.required ? ' *' : ''}
+                    </span>
+                    {field.key === 'industry' ? (
+                      <>
+                        <select
+                          value={profile.industry}
+                          onChange={(event) => updateIndustry(event.target.value)}
+                          disabled={!canEdit}
+                          required={field.required}
+                          style={inputStyle(!canEdit)}
+                        >
+                          <option value="">Select industry</option>
+                          {INDUSTRY_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                        {profile.industry === 'Other' ? (
+                          <input
+                            type="text"
+                            aria-label="Other industry"
+                            placeholder="Enter industry"
+                            value={profile.otherIndustry ?? ''}
+                            onChange={(event) => updateField('otherIndustry', event.target.value)}
+                            disabled={!canEdit}
+                            maxLength={1200}
+                            required
+                            style={inputStyle(!canEdit)}
+                          />
+                        ) : null}
+                      </>
+                    ) : field.key === 'country' ? (
+                      <input
+                        type="text"
+                        value={DEFAULT_COUNTRY}
+                        readOnly
+                        disabled
+                        required={field.required}
+                        style={inputStyle(true)}
+                      />
+                    ) : field.key === 'provinceOrState' ? (
                       <select
-                        value={profile.industry}
-                        onChange={(event) => updateIndustry(event.target.value)}
+                        value={profile.provinceOrState}
+                        onChange={(event) => updateField('provinceOrState', event.target.value)}
                         disabled={!canEdit}
                         required={field.required}
                         style={inputStyle(!canEdit)}
                       >
-                        <option value="">Select industry</option>
-                        {INDUSTRY_OPTIONS.map((option) => (
+                        <option value="">Select province or territory</option>
+                        {CANADA_PROVINCE_TERRITORY_OPTIONS.map((option) => (
                           <option key={option} value={option}>{option}</option>
                         ))}
                       </select>
-                      {profile.industry === 'Other' ? (
-                        <input
-                          type="text"
-                          aria-label="Other industry"
-                          placeholder="Enter industry"
-                          value={profile.otherIndustry ?? ''}
-                          onChange={(event) => updateField('otherIndustry', event.target.value)}
-                          disabled={!canEdit}
-                          maxLength={1200}
-                          required
-                          style={inputStyle(!canEdit)}
-                        />
-                      ) : null}
-                    </>
-                  ) : field.key === 'country' ? (
-                    <input
-                      type="text"
-                      value={DEFAULT_COUNTRY}
-                      readOnly
-                      disabled
-                      required={field.required}
-                      style={inputStyle(true)}
-                    />
-                  ) : field.key === 'provinceOrState' ? (
-                    <select
-                      value={profile.provinceOrState}
-                      onChange={(event) => updateField('provinceOrState', event.target.value)}
-                      disabled={!canEdit}
-                      required={field.required}
-                      style={inputStyle(!canEdit)}
-                    >
-                      <option value="">Select province or territory</option>
-                      {CANADA_PROVINCE_TERRITORY_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                  ) : field.type === 'textarea' ? (
-                    <textarea
-                      value={profile[field.key]}
-                      onChange={(event) => updateField(field.key, event.target.value)}
-                      disabled={!canEdit}
-                      maxLength={1200}
-                      style={textareaStyle(!canEdit)}
-                    />
-                  ) : (
-                    <input
-                      type={field.type ?? 'text'}
-                      value={profile[field.key]}
-                      onChange={(event) => updateField(field.key, event.target.value)}
-                      disabled={!canEdit}
-                      maxLength={1200}
-                      required={field.required}
-                      style={inputStyle(!canEdit)}
-                      aria-invalid={Boolean(fieldErrors[field.key])}
-                      aria-describedby={fieldErrors[field.key] ? `${String(field.key)}-error` : undefined}
-                    />
-                  )}
-                  {fieldErrors[field.key] ? (
-                    <span id={`${String(field.key)}-error`} role="alert" style={fieldErrorStyle}>
-                      {fieldErrors[field.key]}
-                    </span>
-                  ) : null}
-                </label>
-              ))}
-            </div>
-          </section>
-        ))}
+                    ) : field.type === 'textarea' ? (
+                      <textarea
+                        value={profile[field.key]}
+                        onChange={(event) => updateField(field.key, event.target.value)}
+                        disabled={!canEdit}
+                        maxLength={1200}
+                        style={textareaStyle(!canEdit)}
+                      />
+                    ) : (
+                      <input
+                        type={field.type ?? 'text'}
+                        value={profile[field.key]}
+                        onChange={(event) => updateField(field.key, event.target.value)}
+                        disabled={!canEdit}
+                        maxLength={1200}
+                        required={field.required}
+                        style={inputStyle(!canEdit)}
+                        aria-invalid={Boolean(fieldErrors[field.key])}
+                        aria-describedby={fieldErrors[field.key] ? `${String(field.key)}-error` : undefined}
+                      />
+                    )}
+                    {fieldErrors[field.key] ? (
+                      <span id={`${String(field.key)}-error`} role="alert" style={fieldErrorStyle}>
+                        {fieldErrors[field.key]}
+                      </span>
+                    ) : null}
+                  </label>
+                ))}
+              </div>
+            </section>
+          ))}
 
-        {canEdit ? (
-          <button type="submit" disabled={isSaving} style={saveButtonStyle(isSaving)}>
-            {isSaving ? 'Saving...' : 'Save Organization Profile'}
-          </button>
-        ) : null}
-      </form>
+          {canEdit ? (
+            <button type="submit" disabled={isSaving} style={saveButtonStyle(isSaving)}>
+              {isSaving ? 'Saving...' : 'Save Organization Profile'}
+            </button>
+          ) : null}
+        </form>
+      )}
     </div>
   );
+}
+
+function ReadOnlyProfileSection({
+  group,
+  profile,
+}: {
+  group: (typeof fieldGroups)[number];
+  profile: OrganizationProfile;
+}) {
+  return (
+    <section style={sectionStyle} aria-labelledby={`${slugify(group.title)}-title`}>
+      <h2 id={`${slugify(group.title)}-title`} style={sectionTitleStyle}>{group.title}</h2>
+      {group.title === 'Organization Profile' ? (
+        <p style={sectionNoteStyle}>
+          This workspace is configured for Canadian emissions reporting. Country is currently fixed to Canada.
+        </p>
+      ) : null}
+      {group.title === 'Reporting Period' ? (
+        <p style={readOnlyPeriodStyle}>
+          {profile.reportingPeriodStart} to {profile.reportingPeriodEnd}
+        </p>
+      ) : null}
+      <div style={gridStyle}>
+        {group.fields.map((field) => (
+          <div key={field.key} style={readOnlyFieldStyle}>
+            <span style={labelStyle}>{field.label}</span>
+            <span style={readOnlyValueStyle}>{getReadOnlyFieldValue(profile, field.key)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function getReadOnlyFieldValue(profile: OrganizationProfile, key: keyof OrganizationProfile) {
+  if (key === 'industry') {
+    return profile.industry === 'Other'
+      ? profile.otherIndustry || 'Other'
+      : profile.industry || 'Not specified';
+  }
+
+  return profile[key] || 'Not specified';
 }
 
 function slugify(value: string) {
@@ -334,9 +390,33 @@ const fieldStyle: React.CSSProperties = {
   gap: 6,
 };
 
+const readOnlyFieldStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  alignContent: 'start',
+};
+
 const labelStyle: React.CSSProperties = {
   color: '#334155',
   fontSize: 13,
+  fontWeight: 800,
+};
+
+const readOnlyValueStyle: React.CSSProperties = {
+  minHeight: 42,
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  color: '#0f172a',
+  lineHeight: 1.45,
+  whiteSpace: 'pre-wrap',
+};
+
+const readOnlyPeriodStyle: React.CSSProperties = {
+  margin: '0 0 14px',
+  color: '#0f172a',
+  fontSize: 14,
   fontWeight: 800,
 };
 

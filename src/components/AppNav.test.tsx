@@ -193,7 +193,7 @@ describe('AppNav logout flow', () => {
     expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
     expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
-    expect(screen.getByRole('button', { name: /^Settings\s*▾?$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Workspace Info\s*▾?$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /admin/i })).not.toBeInTheDocument();
 
     window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);

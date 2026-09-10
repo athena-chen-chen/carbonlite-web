@@ -255,6 +255,50 @@ describe('ReportingPage audit trail', () => {
     expect(screen.getByText(/Records imported from Golden Test Data/i)).toBeInTheDocument();
   });
 
+  it('shows one global expand/collapse control pair that controls report sections', async () => {
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+
+    expect(screen.getAllByRole('button', { name: 'Expand all' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Collapse all' })).toHaveLength(1);
+
+    expect(screen.getByRole('button', { name: /Expand Activity Records/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: /Expand G\. Emissions Breakdown/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+
+    expect(screen.getByRole('button', { name: /Collapse Activity Records/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /Collapse G\. Emissions Breakdown/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+
+    expect(screen.getByRole('button', { name: /Expand Activity Records/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: /Expand G\. Emissions Breakdown/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
   it('shows report context while hiding internal workflow audit details for pilot reviewer accounts', async () => {
     localStorage.setItem(
       'currentUser',

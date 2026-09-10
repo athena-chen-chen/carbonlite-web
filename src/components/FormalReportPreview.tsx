@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   buildDataReadinessSummary,
   buildHotspotAnalysis,
@@ -526,6 +526,8 @@ export function FormalReportPreview({
   conversionFactorsUsed,
   sourceEvidenceRows,
   calculationDetails,
+  showSectionToolbar = true,
+  sectionExpansionRequest,
 }: {
   organizationName: string;
   reportPeriod: string;
@@ -539,6 +541,11 @@ export function FormalReportPreview({
   conversionFactorsUsed: FormalConversionFactorUsed[];
   sourceEvidenceRows: SourceEvidenceRow[];
   calculationDetails: CalculationAuditDetail[];
+  showSectionToolbar?: boolean;
+  sectionExpansionRequest?: {
+    token: number;
+    expanded: boolean;
+  };
 }) {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
@@ -593,6 +600,14 @@ export function FormalReportPreview({
     setExpandedSections(Object.fromEntries(REPORT_SECTION_IDS.map((id) => [id, false])));
   }
 
+  useEffect(() => {
+    if (!sectionExpansionRequest) return;
+
+    setExpandedSections(
+      Object.fromEntries(REPORT_SECTION_IDS.map((id) => [id, sectionExpansionRequest.expanded])),
+    );
+  }, [sectionExpansionRequest?.token, sectionExpansionRequest?.expanded]);
+
   return (
     <section style={reportShellStyle}>
       <div style={coverPageStyle}>
@@ -619,14 +634,16 @@ export function FormalReportPreview({
         </div>
       </div>
 
-      <div style={reportSectionToolbarStyle}>
-        <button type="button" onClick={expandAllSections} style={reportSectionToolbarButtonStyle}>
-          Expand all
-        </button>
-        <button type="button" onClick={collapseAllSections} style={reportSectionToolbarButtonStyle}>
-          Collapse all
-        </button>
-      </div>
+      {showSectionToolbar ? (
+        <div style={reportSectionToolbarStyle}>
+          <button type="button" onClick={expandAllSections} style={reportSectionToolbarButtonStyle}>
+            Expand all
+          </button>
+          <button type="button" onClick={collapseAllSections} style={reportSectionToolbarButtonStyle}>
+            Collapse all
+          </button>
+        </div>
+      ) : null}
 
       <ReportSection
         title="A. Inventory Boundary"

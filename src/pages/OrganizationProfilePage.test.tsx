@@ -273,7 +273,7 @@ describe('OrganizationProfilePage', () => {
     expect(loadOrganizationProfile().country).toBe('Canada');
   });
 
-  it('shows pilot reviewers boundary information without save controls', () => {
+  it('shows pilot reviewers boundary information as a read-only view without save controls', () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -287,13 +287,50 @@ describe('OrganizationProfilePage', () => {
 
     render(<OrganizationProfilePage />);
 
-    expect(screen.getByDisplayValue('CarbonLite Sample Workspace')).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: /Industry/i })).toBeDisabled();
-    expect(screen.getByRole('textbox', { name: /Country/i })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: /Province \/ Territory/i })).toBeDisabled();
-    expect(screen.getByLabelText(/Primary Contact Email/i)).toBeDisabled();
+    expect(screen.getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
+    expect(screen.getByText('Technology')).toBeInTheDocument();
+    expect(screen.getByText('Canada')).toBeInTheDocument();
+    expect(screen.getByText('Alberta')).toBeInTheDocument();
+    expect(screen.getByText('2026-01-01 to 2026-12-31')).toBeInTheDocument();
     expect(screen.getByText(/Pilot reviewer accounts can view boundary information/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save Organization Profile' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reset/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /Industry/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /Province \/ Territory/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Primary Contact Email/i)).not.toBeInTheDocument();
+  });
+
+  it('does not show a red unavailable error for pilot reviewers when sample defaults are visible', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'reviewer@example.com',
+        role: 'VIEWER',
+        accountType: 'PILOT_REVIEWER',
+        organizationId: 'sample-workspace',
+        organizationName: 'CarbonLite Sample Workspace',
+      }),
+    );
+    localStorage.setItem('accessToken', 'reviewer-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ message: 'Not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    render(<OrganizationProfilePage />);
+
+    expect(screen.getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText('The requested information is no longer available.'),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it('prevents pilot reviewer profile updates in the client service', () => {

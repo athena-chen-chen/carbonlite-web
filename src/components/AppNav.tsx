@@ -241,7 +241,7 @@ export function AppNav() {
                     aria-haspopup="menu"
                     aria-expanded={isSettingsMenuOpen}
                   >
-                    Settings <span aria-hidden="true">▾</span>
+                    {showPilotReviewerBanner ? 'Workspace Info' : 'Settings'} <span aria-hidden="true">▾</span>
                   </button>
                   {isSettingsMenuOpen ? (
                     <div ref={settingsMenuRef} role="menu" style={adminMenuStyle}>

@@ -237,6 +237,10 @@ export default function ReportingPage() {
   );
   const [expandedSections, setExpandedSections] =
     useState<Record<ReportSectionId, boolean>>(REPORT_SECTION_DEFAULTS);
+  const [previewExpansionRequest, setPreviewExpansionRequest] = useState({
+    token: 0,
+    expanded: false,
+  });
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const trackedReportViewRef = useRef(false);
@@ -1812,6 +1816,10 @@ function setAllReportSections(expanded: boolean) {
       {} as Record<ReportSectionId, boolean>,
     ),
   );
+  setPreviewExpansionRequest((current) => ({
+    token: current.token + 1,
+    expanded,
+  }));
 }
 
   return (
@@ -1996,6 +2004,8 @@ function setAllReportSections(expanded: boolean) {
             conversionFactorsUsed={conversionFactorsUsed}
             sourceEvidenceRows={sourceEvidenceRows}
             calculationDetails={calculationDetails}
+            showSectionToolbar={false}
+            sectionExpansionRequest={previewExpansionRequest}
           />
 
           <CollapsibleReportSection
