@@ -22,6 +22,7 @@
     "test:regression": "playwright test --config apps/web-e2e/playwright.config.ts --grep @smoke",
     "verify:deployment": "pnpm test && pnpm build && pnpm test:regression",
     "create:pilot-reviewer": "node scripts/create-pilot-reviewer.mjs",
+    "upgrade:pilot-to-customer": "node scripts/upgrade-pilot-to-customer.mjs",
     "seed:sample-workspace": "pnpm --dir ../carbonlite-api seed:sample-workspace"
   },
   "dependencies": {

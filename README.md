@@ -31,6 +31,7 @@ pnpm build
 pnpm build:pilot
 pnpm test:e2e
 pnpm test:smoke
+pnpm upgrade:pilot-to-customer -- --email customer@example.com --workspace "Customer Pilot Workspace" --role ADMIN --dry-run
 ```
 
 ## Environment Separation
@@ -45,6 +46,12 @@ CarbonLite uses three practical environment profiles:
 See [docs/environment-separation.md](docs/environment-separation.md) for the
 required environment variables, reset safety contract, seed script contract, and
 pilot smoke-test checklist.
+
+Manual pilot-reviewer-to-customer upgrades are supported through
+`pnpm upgrade:pilot-to-customer`. This script calls the backend admin upgrade
+endpoint and creates a separate customer workspace; it must not make the user an
+admin of the shared sample workspace. See
+[docs/pilot-reviewer-upgrade-backend-contract.md](docs/pilot-reviewer-upgrade-backend-contract.md).
 
 ## CarbonLite Pilot Demo Smoke Test
 

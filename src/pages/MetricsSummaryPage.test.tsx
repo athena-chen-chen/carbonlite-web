@@ -1774,8 +1774,8 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Calculating metrics...')).toBeInTheDocument();
-    expect(screen.getByText('Loading calculation summary...')).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent('Preparing calculation review...');
+    expect(screen.getAllByText('Preparing calculation review...').length).toBeGreaterThan(0);
     expect(screen.queryByText('No activity records yet. Import activity data to generate metrics.')).not.toBeInTheDocument();
     expect(screen.queryByText('0 kg CO2e')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('2025-01-01')).not.toBeDisabled();

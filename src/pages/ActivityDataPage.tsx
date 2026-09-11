@@ -58,6 +58,9 @@ import {
 } from '../utils/demoDataReset';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { invalidateDemoDataQueries } from '../queryClient';
+import { useSlowLoading } from '../hooks/useSlowLoading';
+import { startDevTiming } from '../utils/performanceDiagnostics';
+import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
 
 const PAGE_SIZE = 15;
 const RESET_DEMO_DATA_CONFIRMATION = 'RESET DEMO DATA';
@@ -202,6 +205,7 @@ const currentUser = getCurrentUser();
 const canEditActivityRecords = canManageActivityRecords(currentUser);
 const canClearActivityRecords = canClearActivityRecordsForUser(currentUser);
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
+const summaryCardPlaceholder = loading ? '—' : null;
 
 useEffect(() => {
   if (!viewedRecord) return undefined;
@@ -225,6 +229,7 @@ useEffect(() => {
 
   async function loadItems(options: { updateState?: boolean } = {}) {
     const { updateState = true } = options;
+    const endTiming = startDevTiming('loadActivityRecords');
     setLoading(true);
     setRecordLoadError(null);
     try {
@@ -243,6 +248,7 @@ useEffect(() => {
       return items;
     } finally {
       setLoading(false);
+      endTiming();
     }
   }
 
@@ -332,6 +338,7 @@ useEffect(() => {
 
   const isInitialRecordsLoading = loading && items.length === 0 && !recordLoadError;
   const isRefreshingRecords = loading && items.length > 0;
+  const isSlowRecordsLoading = useSlowLoading(loading);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const paginatedItems = filteredItems.slice(
@@ -1766,10 +1773,15 @@ function handleRetryLoad() {
           marginBottom: 24,
         }}
       >
-        <Card title="Total Activity Records" value={items.length} icon="📄" />
-        <Card title="Manual Entries" value={items.filter(i => i.sourceType === 'MANUAL').length} icon="✍️" />
-        <Card title="Imported" value={items.filter(i => i.sourceType !== 'MANUAL').length} icon="📥" />
+        <Card title="Total Activity Records" value={summaryCardPlaceholder ?? items.length} icon="📄" />
+        <Card title="Manual Entries" value={summaryCardPlaceholder ?? items.filter(i => i.sourceType === 'MANUAL').length} icon="✍️" />
+        <Card title="Imported" value={summaryCardPlaceholder ?? items.filter(i => i.sourceType !== 'MANUAL').length} icon="📥" />
       </div>
+      {loading ? (
+        <div style={summaryLoadingIndicatorStyle}>
+          <LinearLoadingIndicator label="Loading data records" />
+        </div>
+      ) : null}
 
       {/* 状态 */}
       {error && <div style={warningStyle}>{error}</div>}
@@ -1967,7 +1979,10 @@ function handleRetryLoad() {
         ) : null}
 
         {isInitialRecordsLoading ? (
-          <ActivityRecordsLoadingState visibleColumns={visibleColumns} />
+          <ActivityRecordsLoadingState
+            visibleColumns={visibleColumns}
+            isSlowLoading={isSlowRecordsLoading}
+          />
         ) : recordLoadError && items.length === 0 ? (
           <div style={tableErrorStateStyle}>
             <div style={{ fontWeight: 800 }}>Unable to load activity records.</div>
@@ -2092,8 +2107,10 @@ function Card({ title, value, icon }: any) {
 
 function ActivityRecordsLoadingState({
   visibleColumns,
+  isSlowLoading,
 }: {
   visibleColumns: Record<ActivityTableColumnKey, boolean>;
+  isSlowLoading: boolean;
 }) {
   const skeletonRows = Array.from({ length: 5 }, (_, index) => index);
 
@@ -2103,6 +2120,11 @@ function ActivityRecordsLoadingState({
         <span>Loading activity records...</span>
         <span style={loadingBarStyle} aria-hidden="true" />
       </div>
+      {isSlowLoading ? (
+        <div style={slowLoadingTextStyle}>
+          Still loading — this may take a few seconds.
+        </div>
+      ) : null}
       <div style={tableScrollContainerStyle}>
         <table style={activityRecordsTableStyle}>
           <thead>
@@ -2152,6 +2174,11 @@ const card = {
   borderRadius: 12,
   background: '#fff',
   border: '1px solid #eee',
+};
+
+const summaryLoadingIndicatorStyle: React.CSSProperties = {
+  marginTop: -12,
+  marginBottom: 20,
 };
 
 const tableCard = {
@@ -2895,6 +2922,13 @@ const loadingStateHeaderStyle: React.CSSProperties = {
   gap: 8,
   color: '#475569',
   fontSize: 14,
+  fontWeight: 700,
+};
+
+const slowLoadingTextStyle: React.CSSProperties = {
+  marginTop: 8,
+  color: '#64748b',
+  fontSize: 13,
   fontWeight: 700,
 };
 

@@ -5,6 +5,8 @@ import { getContactEmail, isPublicSignupEnabled } from '../config/api';
 import { getCurrentUser } from '../services/auth';
 import { isPilotReviewer } from '../utils/permissions';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import { useSlowLoading } from '../hooks/useSlowLoading';
+import { startDevTiming } from '../utils/performanceDiagnostics';
 
 export function LoginPage() {
   const { isAuthenticated, login, user } = useAuth();
@@ -20,6 +22,7 @@ export function LoginPage() {
     return message ? getUserFriendlyErrorMessage(message, 'login') : null;
   });
   const [submitting, setSubmitting] = useState(false);
+  const isSlowSubmit = useSlowLoading(submitting);
 
   if (isAuthenticated) {
     return <Navigate to={isPilotReviewer(user) ? '/metrics-summary' : '/upload'} replace />;
@@ -27,6 +30,9 @@ export function LoginPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (submitting) return;
+
+    const endTiming = startDevTiming('login');
     setSubmitting(true);
     setError(null);
 
@@ -37,6 +43,7 @@ export function LoginPage() {
       setError(getUserFriendlyErrorMessage(err, 'login'));
     } finally {
       setSubmitting(false);
+      endTiming();
     }
   }
 
@@ -79,8 +86,19 @@ export function LoginPage() {
 
         {error ? <div style={errorStyle}>{error}</div> : null}
 
+        {submitting ? (
+          <div role="status" aria-live="polite" style={loadingStatusStyle}>
+            Signing you in...
+            {isSlowSubmit ? (
+              <div style={slowLoadingTextStyle}>
+                Still loading — this may take a few seconds.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <button type="submit" disabled={submitting} style={primaryButtonStyle(submitting)}>
-          {submitting ? 'Logging in...' : 'Log In'}
+          {submitting ? 'Signing you in...' : 'Log In'}
         </button>
 
         <div style={authLinksStyle}>
@@ -251,6 +269,22 @@ const errorStyle: React.CSSProperties = {
   border: '1px solid #fecaca',
   background: '#fef2f2',
   color: '#991b1b',
+};
+
+const loadingStatusStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1e40af',
+  fontWeight: 800,
+};
+
+const slowLoadingTextStyle: React.CSSProperties = {
+  marginTop: 6,
+  color: '#475569',
+  fontSize: 13,
+  fontWeight: 700,
 };
 
 function primaryButtonStyle(disabled: boolean): React.CSSProperties {

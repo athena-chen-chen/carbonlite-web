@@ -42,9 +42,9 @@ const DEACTIVATED_ACCOUNT_MESSAGE =
 export type AuthUser = {
   id?: string;
   email: string;
-  role?: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' | 'REVIEWER' | 'USER';
-  accountType?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string;
-  account_type?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string;
+  role?: 'OWNER' | 'ADMIN' | 'EDITOR' | 'MEMBER' | 'VIEWER' | 'REVIEWER' | 'USER';
+  accountType?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string | null;
+  account_type?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string | null;
   expiresAt?: string | null;
   status?: 'ACTIVE' | 'DISABLED' | 'PENDING' | string;
   organizationId?: string;

@@ -43,16 +43,58 @@ describe('feedback service', () => {
       `${FALLBACK_API_BASE_URL}/feedback`,
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({
-          type: 'BUG',
-          intent: 'Import records',
-          message: 'Import failed',
-          email: 'pilot@example.com',
-          page: '/upload',
-          url: 'https://carbonliteapp.ca/upload',
-        }),
+        body: expect.any(String),
       }),
     );
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body).toMatchObject({
+      type: 'BUG',
+      intent: 'Import records',
+      email: 'pilot@example.com',
+      page: '/upload',
+      url: 'https://carbonliteapp.ca/upload',
+    });
+    expect(body.message).toContain('Import failed');
+    expect(body.message).toContain('Workspace: CarbonLite Sample Workspace');
+    expect(body.message).toContain('Account type: PILOT_REVIEWER');
+    expect(body.message).toContain('App version: v0.2-test');
+    expect(body).not.toHaveProperty('workspaceName');
+    expect(body).not.toHaveProperty('accountType');
+    expect(body).not.toHaveProperty('appVersion');
+  });
+
+  it('does not duplicate metadata already included in the feedback message', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'feedback-1',
+          type: 'OTHER',
+          intent: 'Calculation feedback',
+          message: 'ok',
+          status: 'NEW',
+          createdAt: '2026-06-29T12:00:00.000Z',
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await submitFeedback({
+      type: 'OTHER',
+      intent: 'Calculation feedback',
+      message:
+        'Feedback context:\nAccount type: PILOT_REVIEWER\nWorkspace: CarbonLite Sample Workspace\nApp version: v0.2-test',
+      workspaceName: 'CarbonLite Sample Workspace',
+      accountType: 'PILOT_REVIEWER',
+      appVersion: 'v0.2-test',
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.message.match(/Account type:/g)).toHaveLength(1);
+    expect(body.message.match(/Workspace:/g)).toHaveLength(1);
+    expect(body.message.match(/App version:/g)).toHaveLength(1);
+    expect(body).not.toHaveProperty('workspaceName');
+    expect(body).not.toHaveProperty('accountType');
+    expect(body).not.toHaveProperty('appVersion');
   });
 
   it('omits blank optional feedback email from the backend payload', async () => {

@@ -82,6 +82,41 @@ describe('LoginPage', () => {
     );
   });
 
+  it('shows signing-in status, disables submit, and prevents double submit while pending', async () => {
+    let resolveLogin!: (response: Response) => void;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockReturnValue(
+      new Promise((resolve) => {
+        resolveLogin = resolve;
+      }) as Promise<Response>,
+    );
+
+    renderLogin();
+
+    await userEvent.type(screen.getByLabelText(/email/i), 'user@example.com');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'Password123!');
+    await userEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Signing you in...');
+    const submitButton = screen.getByRole('button', { name: /Signing you in/i });
+    expect(submitButton).toBeDisabled();
+
+    await userEvent.click(submitButton);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText(/^password$/i)).toHaveValue('Password123!');
+
+    resolveLogin(
+      new Response(
+        JSON.stringify({
+          accessToken: 'test-token',
+          user: { id: 'user-1', email: 'user@example.com' },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await screen.findByText('Upload page');
+  });
+
   it('does not show public signup links when pilot access is invite-only', () => {
     vi.stubEnv('VITE_CONTACT_EMAIL', 'help@carbonliteapp.ca');
 

@@ -18,6 +18,8 @@ import {
   saveOrganizationProfile,
   type OrganizationProfile,
 } from '../services/organizationProfile';
+import { useSlowLoading } from '../hooks/useSlowLoading';
+import { startDevTiming } from '../utils/performanceDiagnostics';
 
 const fieldGroups: Array<{
   title: string;
@@ -73,11 +75,15 @@ export function OrganizationProfilePage() {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof OrganizationProfile, string>>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const isSlowProfileLoading = useSlowLoading(isProfileLoading);
 
   useEffect(() => {
     if (!hasBackendOrganizationProfileSession()) return undefined;
 
     let isMounted = true;
+    const endTiming = startDevTiming('loadOrganizationBoundary');
+    setIsProfileLoading(true);
 
     fetchOrganizationProfile(currentUser)
       .then((backendProfile) => {
@@ -95,6 +101,12 @@ export function OrganizationProfilePage() {
 
           setError(getUserFriendlyErrorMessage(error, 'organizationProfile'));
         }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsProfileLoading(false);
+        }
+        endTiming();
       });
 
     return () => {
@@ -175,6 +187,16 @@ export function OrganizationProfilePage() {
 
       {successMessage ? <div style={successStyle}>{successMessage}</div> : null}
       {error ? <div style={errorStyle}>{error}</div> : null}
+      {isProfileLoading ? (
+        <div role="status" aria-live="polite" style={loadingNoticeStyle}>
+          Loading organization boundary...
+          {isSlowProfileLoading ? (
+            <div style={slowLoadingTextStyle}>
+              Still loading — this may take a few seconds.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {readOnlyReviewer ? (
         <div style={formStyle}>
@@ -476,6 +498,23 @@ const successStyle: React.CSSProperties = {
   border: '1px solid #bbf7d0',
   background: '#f0fdf4',
   color: '#166534',
+  fontWeight: 700,
+};
+
+const loadingNoticeStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1e40af',
+  fontWeight: 800,
+};
+
+const slowLoadingTextStyle: React.CSSProperties = {
+  marginTop: 6,
+  color: '#475569',
+  fontSize: 13,
   fontWeight: 700,
 };
 

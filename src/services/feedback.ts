@@ -83,11 +83,42 @@ function buildCreateFeedbackBody(input: CreateFeedbackInput) {
   return {
     type: input.type,
     intent: input.intent,
-    message: input.message,
+    message: appendFeedbackMetadata(input.message, input),
     ...(email ? { email } : {}),
     ...(input.page?.trim() ? { page: input.page.trim() } : {}),
     ...(input.url?.trim() ? { url: input.url.trim() } : {}),
   };
+}
+
+function appendFeedbackMetadata(message: string, input: CreateFeedbackInput) {
+  const lines = [message.trim()];
+  const existingMessage = message.toLowerCase();
+
+  const metadata = [
+    {
+      label: 'Workspace',
+      value: input.workspaceName,
+    },
+    {
+      label: 'Account type',
+      value: input.accountType,
+    },
+    {
+      label: 'App version',
+      value: input.appVersion,
+    },
+  ];
+
+  const missingMetadataLines = metadata
+    .filter((item) => item.value?.trim())
+    .filter((item) => !existingMessage.includes(`${item.label.toLowerCase()}:`))
+    .map((item) => `${item.label}: ${item.value?.trim()}`);
+
+  if (missingMetadataLines.length > 0) {
+    lines.push('', 'Feedback metadata:', ...missingMetadataLines);
+  }
+
+  return lines.join('\n');
 }
 
 function normalizeOptionalFeedbackEmail(email?: string) {

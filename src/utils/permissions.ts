@@ -26,7 +26,7 @@ export function getUserRole(user: AuthUser | null) {
   const role = String(user.role ?? 'MEMBER').toUpperCase();
   if (role === 'REVIEWER') return 'VIEWER';
   if (role === 'USER') return 'MEMBER';
-  if (role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER' || role === 'VIEWER') {
+  if (role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR' || role === 'MEMBER' || role === 'VIEWER') {
     return role;
   }
   return 'MEMBER';
@@ -98,7 +98,11 @@ export function canEditWorkspace(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
   if (isPilotReviewer(user)) return false;
 
-  return isAdminOrOwner(user);
+  const rawRole = String(user?.role ?? '').trim().toUpperCase();
+  if (rawRole === 'USER') return true;
+
+  const role = getUserRole(user);
+  return role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR';
 }
 
 export function canManageUsers(user: AuthUser | null) {

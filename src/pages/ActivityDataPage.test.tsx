@@ -202,6 +202,13 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     expect(screen.getByText('Loading activity records...')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading data records')).toBeInTheDocument();
+    ['Total Activity Records', 'Manual Entries', 'Imported'].forEach((title) => {
+      const card = screen.getByText(title).parentElement;
+      expect(card).not.toBeNull();
+      expect(within(card as HTMLElement).getByText('—')).toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByText('0')).not.toBeInTheDocument();
+    });
     expect(
       screen.queryByText(/No activity records yet/i),
     ).not.toBeInTheDocument();
@@ -209,6 +216,8 @@ describe('ActivityDataPage delete flows', () => {
     resolveRecords(records);
 
     expect(await screen.findByText('Diesel')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Loading data records')).not.toBeInTheDocument();
+    expect(within(screen.getByText('Total Activity Records').parentElement as HTMLElement).getByText('2')).toBeInTheDocument();
   });
 
   it('shows a retryable error state when activity records fail to load', async () => {

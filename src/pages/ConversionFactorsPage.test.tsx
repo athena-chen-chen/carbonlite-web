@@ -108,6 +108,15 @@ function getFirstLabeledControl(label: string | RegExp) {
   return screen.getAllByLabelText(label)[0];
 }
 
+function getSummaryCard(title: string) {
+  const titleElement = screen.getByText(title);
+  const card = titleElement.parentElement;
+  if (!card) {
+    throw new Error(`Summary card "${title}" was not rendered.`);
+  }
+  return within(card);
+}
+
 describe('ConversionFactorsPage traceability', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -129,7 +138,13 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Loading conversion factors...');
+    expect(await screen.findByText('Loading conversion factors...')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading conversion factors')).toBeInTheDocument();
+    ['Total Factors', 'Emission Factors', 'Default Factors', 'Activity Types'].forEach((title) => {
+      const card = getSummaryCard(title);
+      expect(card.getByText('—')).toBeInTheDocument();
+      expect(card.queryByText('0')).not.toBeInTheDocument();
+    });
     expect(screen.queryByText('No conversion factors yet.')).not.toBeInTheDocument();
     expect(screen.queryByText('No factors match the selected filters.')).not.toBeInTheDocument();
 
@@ -142,7 +157,11 @@ describe('ConversionFactorsPage traceability', () => {
     });
 
     expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Loading conversion factors')).not.toBeInTheDocument();
+    expect(getSummaryCard('Total Factors').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Emission Factors').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Default Factors').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Activity Types').getByText('1')).toBeInTheDocument();
   });
 
   it('uses database traceability values for system factors', () => {

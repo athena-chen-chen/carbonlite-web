@@ -34,6 +34,8 @@ import {
   ORGANIZATION_PROFILE_UPDATED_EVENT,
   profileToInventoryBoundary,
 } from '../services/organizationProfile';
+import { useSlowLoading } from '../hooks/useSlowLoading';
+import { startDevTiming } from '../utils/performanceDiagnostics';
 
 
 export function MetricsSummaryPage() {
@@ -73,6 +75,7 @@ export function MetricsSummaryPage() {
   const [organizationProfile, setOrganizationProfile] = useState(() =>
     loadOrganizationProfile(currentUser),
   );
+  const isSlowLoadingSummary = useSlowLoading(isInitialMetricsLoading(loading, lastUpdated, summary, error));
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestSequenceRef = useRef(0);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -170,6 +173,7 @@ export function MetricsSummaryPage() {
     inFlightRequestKeyRef.current = requestKey;
     const requestSequence = requestSequenceRef.current + 1;
     requestSequenceRef.current = requestSequence;
+    const endTiming = startDevTiming('loadCalculationReview');
     setLoading(true);
     setError(null);
     try {
@@ -201,6 +205,7 @@ export function MetricsSummaryPage() {
       if (requestSequence === requestSequenceRef.current) {
         setLoading(false);
       }
+      endTiming();
     }
   }
 
@@ -489,7 +494,7 @@ function handleDownloadPDF() {
       <div style={statusBarStyle}>
         <div style={statusTextStyle}>
           {isInitialLoading
-            ? 'Calculating metrics...'
+            ? 'Preparing calculation review...'
             : isRefreshing
             ? 'Refreshing metrics...'
             : lastUpdated
@@ -538,7 +543,14 @@ function handleDownloadPDF() {
 </button> */}
       </div>
       {isInitialLoading ? (
-        <div style={loadingNoticeStyle}>Loading calculation summary...</div>
+        <div role="status" aria-live="polite" style={loadingNoticeStyle}>
+          Preparing calculation review...
+          {isSlowLoadingSummary ? (
+            <div style={slowLoadingTextStyle}>
+              Still loading — this may take a few seconds.
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {error && <div style={warningStyle}>{error}</div>}
@@ -771,6 +783,15 @@ function secondaryButtonStyle(disabled: boolean): React.CSSProperties {
   };
 }
 
+function isInitialMetricsLoading(
+  loading: boolean,
+  lastUpdated: Date | null,
+  summary: unknown,
+  error: string | null,
+) {
+  return loading || (!lastUpdated && !summary && !error);
+}
+
 const statusBarStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -794,6 +815,13 @@ const loadingNoticeStyle: React.CSSProperties = {
   background: '#eff6ff',
   color: '#1d4ed8',
   fontWeight: 800,
+};
+
+const slowLoadingTextStyle: React.CSSProperties = {
+  marginTop: 6,
+  color: '#475569',
+  fontSize: 13,
+  fontWeight: 700,
 };
 
 function refreshButtonStyle(disabled: boolean): React.CSSProperties {

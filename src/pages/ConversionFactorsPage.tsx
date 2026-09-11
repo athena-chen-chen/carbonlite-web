@@ -26,6 +26,9 @@ import {
 import { formatCredibilityLabel } from '../utils/factorCredibility';
 import { useAppDialog } from '../components/AppDialog';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import { useSlowLoading } from '../hooks/useSlowLoading';
+import { startDevTiming } from '../utils/performanceDiagnostics';
+import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -618,7 +621,7 @@ export function ConversionFactorsPage() {
   const generatedAt = new Date().toLocaleString();
   const [form, setForm] = useState<ConversionFactorInput>(initialForm);
   const [items, setItems] = useState<ConversionFactorItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -630,10 +633,12 @@ export function ConversionFactorsPage() {
   const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const isSlowLoadingFactors = useSlowLoading(loading);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   async function loadItems(filters: FactorFilterState = appliedFilters) {
+    const endTiming = startDevTiming('loadConversionFactors');
     setLoading(true);
     setError(null);
 
@@ -650,6 +655,7 @@ export function ConversionFactorsPage() {
       setError(getUserFriendlyErrorMessage(err, 'conversionFactors'));
     } finally {
       setLoading(false);
+      endTiming();
     }
   }
 
@@ -753,6 +759,7 @@ export function ConversionFactorsPage() {
     () => items.length - visibleFactorItems.length,
     [items, visibleFactorItems],
   );
+  const summaryCardPlaceholder = loading ? '—' : null;
   const hasActiveFilters = hasAppliedFactorFilters(appliedFilters);
   const hasUnappliedFilterChanges = !areFactorFiltersEqual(pendingFilters, appliedFilters);
 
@@ -1095,14 +1102,14 @@ export function ConversionFactorsPage() {
         <SummaryCard
           icon="🧮"
           title="Total Factors"
-          value={String(visibleFactorItems.length)}
+          value={summaryCardPlaceholder ?? String(visibleFactorItems.length)}
           subtitle="Available conversion rules"
         />
 
         <SummaryCard
           icon="🌱"
           title="Emission Factors"
-          value={String(emissionCount)}
+          value={summaryCardPlaceholder ?? String(emissionCount)}
           subtitle="Used for CO₂e calculations"
           accent="#10b981"
         />
@@ -1110,7 +1117,7 @@ export function ConversionFactorsPage() {
         <SummaryCard
           icon="✅"
           title="Default Factors"
-          value={String(defaultCount)}
+          value={summaryCardPlaceholder ?? String(defaultCount)}
           subtitle="System-provided starter library"
           accent="#3b82f6"
         />
@@ -1118,11 +1125,16 @@ export function ConversionFactorsPage() {
         <SummaryCard
           icon="📊"
           title="Activity Types"
-          value={String(activityTypesCovered)}
+          value={summaryCardPlaceholder ?? String(activityTypesCovered)}
           subtitle="Covered data categories"
           accent="#f59e0b"
         />
       </div>
+      {loading ? (
+        <div className="no-print" style={summaryLoadingIndicatorStyle}>
+          <LinearLoadingIndicator label="Loading conversion factors" />
+        </div>
+      ) : null}
 
       <div className="no-print" style={pilotDisclaimerStyle}>
         System default factors are provided for pilot workflow validation. Users should verify factors against applicable reporting requirements before relying on final reports.
@@ -1578,6 +1590,11 @@ export function ConversionFactorsPage() {
         {loading ? (
           <div role="status" aria-live="polite" style={{ padding: 16 }}>
             Loading conversion factors...
+            {isSlowLoadingFactors ? (
+              <div style={slowLoadingTextStyle}>
+                Still loading — this may take a few seconds.
+              </div>
+            ) : null}
           </div>
         ) : (
           <>
@@ -2019,6 +2036,11 @@ const summaryGridStyle: React.CSSProperties = {
   marginBottom: 24,
 };
 
+const summaryLoadingIndicatorStyle: React.CSSProperties = {
+  marginTop: -12,
+  marginBottom: 20,
+};
+
 const summaryCardStyle: React.CSSProperties = {
   borderRadius: 16,
   padding: 20,
@@ -2093,6 +2115,13 @@ const filterHintStyle: React.CSSProperties = {
   fontSize: 13,
   background: '#f8fafc',
   borderBottom: '1px solid #e5e7eb',
+};
+
+const slowLoadingTextStyle: React.CSSProperties = {
+  marginTop: 6,
+  color: '#64748b',
+  fontSize: 13,
+  fontWeight: 700,
 };
 
 const pilotDisclaimerStyle: React.CSSProperties = {

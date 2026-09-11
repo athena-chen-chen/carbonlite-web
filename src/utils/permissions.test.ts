@@ -30,6 +30,7 @@ describe('shared permission helpers', () => {
   it('normalizes existing role values', () => {
     expect(getUserRole(user('OWNER'))).toBe('OWNER');
     expect(getUserRole(user('ADMIN'))).toBe('ADMIN');
+    expect(getUserRole(user('EDITOR'))).toBe('EDITOR');
     expect(getUserRole(user('MEMBER'))).toBe('MEMBER');
     expect(getUserRole(user('VIEWER'))).toBe('VIEWER');
     expect(getUserRole(user('REVIEWER'))).toBe('VIEWER');
@@ -91,6 +92,25 @@ describe('shared permission helpers', () => {
 
     expect(isAdmin(user('ADMIN'))).toBe(true);
     expect(isAdmin(user('OWNER'))).toBe(false);
+  });
+
+  it('allows customer editors to edit workspace settings without admin permissions', () => {
+    const editor = user('EDITOR', { accountType: 'CUSTOMER' });
+
+    expect(canEditWorkspace(editor)).toBe(true);
+    expect(canManageUsers(editor)).toBe(false);
+    expect(canViewAdmin(editor)).toBe(false);
+    expect(canResetWorkspaceData(editor)).toBe(false);
+  });
+
+  it('allows legacy regular USER accounts to edit their workspace settings', () => {
+    const legacyUser = user('USER', { accountType: null });
+
+    expect(isPilotReviewer(legacyUser)).toBe(false);
+    expect(canEditWorkspace(legacyUser)).toBe(true);
+    expect(canManageUsers(legacyUser)).toBe(false);
+    expect(canViewAdmin(legacyUser)).toBe(false);
+    expect(canResetWorkspaceData(legacyUser)).toBe(false);
   });
 
   it('keeps member editable behavior but blocks dangerous admin-only actions', () => {

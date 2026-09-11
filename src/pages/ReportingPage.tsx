@@ -86,6 +86,8 @@ import {
   ORGANIZATION_PROFILE_UPDATED_EVENT,
   profileToInventoryBoundary,
 } from '../services/organizationProfile';
+import { useSlowLoading } from '../hooks/useSlowLoading';
+import { startDevTiming } from '../utils/performanceDiagnostics';
 
 type ActivityItem = {
   id: string;
@@ -241,6 +243,7 @@ export default function ReportingPage() {
     token: 0,
     expanded: false,
   });
+  const isSlowPreparingReport = useSlowLoading(!dateRangeReady || loading);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const trackedReportViewRef = useRef(false);
@@ -278,6 +281,7 @@ export default function ReportingPage() {
 
     if (inFlightRequestKeyRef.current === requestKey) return;
     inFlightRequestKeyRef.current = requestKey;
+    const endTiming = startDevTiming('loadReportData');
     setLoading(true);
     setError(null);
 
@@ -320,6 +324,7 @@ export default function ReportingPage() {
         inFlightRequestKeyRef.current = null;
       }
       setLoading(false);
+      endTiming();
     }
   }
   useEffect(() => {
@@ -1981,6 +1986,11 @@ function setAllReportSections(expanded: boolean) {
       {isPreparingReportData ? (
         <div role="status" aria-live="polite" style={loadingNoticeStyle}>
           Preparing report data...
+          {isSlowPreparingReport ? (
+            <div style={slowLoadingTextStyle}>
+              Still loading — this may take a few seconds.
+            </div>
+          ) : null}
         </div>
       ) : hasReportOutput ? (
         <>
@@ -2737,6 +2747,13 @@ const loadingNoticeStyle: React.CSSProperties = {
   background: '#eff6ff',
   color: '#1d4ed8',
   fontWeight: 800,
+};
+
+const slowLoadingTextStyle: React.CSSProperties = {
+  marginTop: 6,
+  color: '#475569',
+  fontSize: 13,
+  fontWeight: 700,
 };
 
 const filterCardStyle: React.CSSProperties = {

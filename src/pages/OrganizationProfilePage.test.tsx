@@ -13,8 +13,35 @@ function setAdminUser() {
     JSON.stringify({
       email: 'admin@example.com',
       role: 'ADMIN',
+      accountType: 'CUSTOMER',
       organizationId: 'admin-workspace',
       organizationName: 'Admin Workspace',
+    }),
+  );
+}
+
+function setCustomerUser(role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER') {
+  localStorage.setItem(
+    'currentUser',
+    JSON.stringify({
+      email: `${role.toLowerCase()}@example.com`,
+      role,
+      accountType: 'CUSTOMER',
+      organizationId: 'customer-workspace',
+      organizationName: 'Customer Workspace',
+    }),
+  );
+}
+
+function setLegacyRegularUser() {
+  localStorage.setItem(
+    'currentUser',
+    JSON.stringify({
+      email: 'legacy-user@example.com',
+      role: 'USER',
+      accountType: null,
+      organizationId: 'legacy-customer-workspace',
+      organizationName: 'Legacy Customer Workspace',
     }),
   );
 }
@@ -44,6 +71,7 @@ describe('OrganizationProfilePage', () => {
     render(<OrganizationProfilePage />);
 
     expect(screen.getByRole('heading', { name: 'Organization & Boundary' })).toBeInTheDocument();
+    expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Technology' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Other' })).toBeInTheDocument();
@@ -77,6 +105,89 @@ describe('OrganizationProfilePage', () => {
     expect(loadOrganizationProfile().geographicBoundary).toBe(
       'Canadian warehouse and fleet operations',
     );
+  });
+
+  it('lets customer editors edit Organization & Boundary settings', async () => {
+    setCustomerUser('EDITOR');
+
+    render(<OrganizationProfilePage />);
+
+    expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Industry/i })).toBeEnabled();
+    expect(screen.getByRole('combobox', { name: /Province \/ Territory/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save Organization Profile' })).toBeInTheDocument();
+
+    await fillRequiredProfileFields();
+    await userEvent.clear(screen.getByLabelText(/City/i));
+    await userEvent.type(screen.getByLabelText(/City/i), 'Calgary');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+
+    expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
+    expect(loadOrganizationProfile().city).toBe('Calgary');
+  });
+
+  it('keeps customer viewers read-only on Organization & Boundary settings', () => {
+    setCustomerUser('VIEWER');
+
+    render(<OrganizationProfilePage />);
+
+    expect(screen.getByText(/Read-only access: you can view boundary information/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save Organization Profile' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Industry/i })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /Province \/ Territory/i })).toBeDisabled();
+  });
+
+  it('lets legacy regular USER accounts edit Organization & Boundary settings', async () => {
+    setLegacyRegularUser();
+    localStorage.setItem('accessToken', 'legacy-workspace-token');
+    const fetchMock = vi.fn(async (_url: string | URL | Request, options?: RequestInit) => {
+      if (options?.method === 'PATCH') {
+        const body = JSON.parse(String(options.body));
+
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          organizationName: 'Legacy Customer Workspace',
+          industry: 'Technology',
+          country: 'Canada',
+          provinceOrState: 'Alberta',
+          city: 'Calgary',
+          reportingPeriodStart: '2026-01-01',
+          reportingPeriodEnd: '2026-12-31',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<OrganizationProfilePage />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Legacy Customer Workspace')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Industry/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save Organization Profile' })).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText(/City/i));
+    await userEvent.type(screen.getByLabelText(/City/i), 'Edmonton');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/organization-profile'),
+        expect.objectContaining({ method: 'PATCH' }),
+      );
+    });
+    expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
   });
 
   it('allows Primary Contact Email to remain blank when saving', async () => {
@@ -170,6 +281,47 @@ describe('OrganizationProfilePage', () => {
       primaryContactEmail: 'saved@example.ca',
     });
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
+  });
+
+  it('shows a loading state while organization boundary values load from the backend', async () => {
+    setAdminUser();
+    localStorage.setItem('accessToken', 'workspace-token');
+    let resolveProfile!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveProfile = resolve;
+          }),
+      ),
+    );
+
+    render(<OrganizationProfilePage />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Loading organization boundary...');
+
+    resolveProfile(
+      new Response(
+        JSON.stringify({
+          organizationName: 'Backend Workspace',
+          industry: 'Technology',
+          country: 'Canada',
+          provinceOrState: 'Ontario',
+          reportingPeriodStart: '2026-01-01',
+          reportingPeriodEnd: '2026-12-31',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+    expect(screen.getByDisplayValue('Backend Workspace')).toBeInTheDocument();
   });
 
   it('does not show success or mask a failed backend save with localStorage', async () => {
