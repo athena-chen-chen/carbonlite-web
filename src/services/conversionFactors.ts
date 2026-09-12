@@ -6,7 +6,7 @@ import {
   normalizeProvince,
 } from '../utils/province';
 import { normalizeActivityType } from '../utils/activityType';
-import { canManageConversionFactors, requirePermission } from '../utils/permissions';
+import { canManageCompanyFactors, requirePermission } from '../utils/permissions';
 import {
   getCurrentUser,
   getOrganizationId,
@@ -178,7 +178,7 @@ const PILOT_GROUND_TRANSPORT_FACTOR: ConversionFactorItem = {
 };
 
 export async function createConversionFactor(input: ConversionFactorInput) {
-  requirePermission(canManageConversionFactors(getCurrentUser()));
+  requirePermission(canManageCompanyFactors(getCurrentUser()));
 
   return apiFetch<ConversionFactorItem>('/conversion-factors', {
     method: 'POST',
@@ -417,7 +417,7 @@ export async function getConversionFactorById(id: string) {
 }
 
 export async function deleteConversionFactor(id: string) {
-  requirePermission(canManageConversionFactors(getCurrentUser()));
+  requirePermission(canManageCompanyFactors(getCurrentUser()));
 
   return apiFetch<{ id: string } | ConversionFactorItem>(
     `/conversion-factors/${id}`,
@@ -430,7 +430,7 @@ export async function updateConversionFactor(
   id: string,
   input: Partial<ConversionFactorInput>,
 ) {
-  requirePermission(canManageConversionFactors(getCurrentUser()));
+  requirePermission(canManageCompanyFactors(getCurrentUser()));
 
   return apiFetch<ConversionFactorItem>(`/conversion-factors/${id}`, {
     method: 'PATCH',

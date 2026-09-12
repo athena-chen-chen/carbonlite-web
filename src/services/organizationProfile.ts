@@ -85,6 +85,11 @@ export function getDefaultOrganizationProfile(user: AuthUser | null = getCurrent
 
 export function loadOrganizationProfile(user: AuthUser | null = getCurrentUser()): OrganizationProfile {
   const defaults = getDefaultOrganizationProfile(user);
+
+  if (hasBackendOrganizationProfileSession()) {
+    return defaults;
+  }
+
   const key = getOrganizationProfileStorageKey(user);
 
   try {
@@ -127,8 +132,7 @@ export async function fetchOrganizationProfile(
     ...getDefaultOrganizationProfile(user),
     ...profile,
   });
-  localStorage.setItem(getOrganizationProfileStorageKey(user), JSON.stringify(normalizedProfile));
-  window.dispatchEvent(new Event(ORGANIZATION_PROFILE_UPDATED_EVENT));
+  dispatchOrganizationProfileUpdated(normalizedProfile);
   return normalizedProfile;
 }
 
@@ -151,8 +155,7 @@ export async function persistOrganizationProfile(
     ...saved,
   });
 
-  localStorage.setItem(getOrganizationProfileStorageKey(user), JSON.stringify(normalizedSaved));
-  window.dispatchEvent(new Event(ORGANIZATION_PROFILE_UPDATED_EVENT));
+  dispatchOrganizationProfileUpdated(normalizedSaved);
   return normalizedSaved;
 }
 
@@ -210,11 +213,18 @@ function getOrganizationProfileStorageKey(user: AuthUser | null) {
 
 function normalizeOrganizationProfile(input: Partial<OrganizationProfile>): OrganizationProfile {
   const defaults = SAMPLE_WORKSPACE_PROFILE;
+  const apiInput = input as Partial<OrganizationProfile> & {
+    province?: string | null;
+    includedFacilities?: string | null;
+    excludedFacilities?: string | null;
+    exclusionsLimitations?: string | null;
+  };
+
   return {
     organizationName: clean(input.organizationName ?? defaults.organizationName),
     ...normalizeIndustry(input.industry, input.otherIndustry),
     country: clean(input.country ?? defaults.country) || DEFAULT_COUNTRY,
-    provinceOrState: clean(input.provinceOrState),
+    provinceOrState: clean(input.provinceOrState ?? apiInput.province),
     city: clean(input.city),
     primaryContactName: clean(input.primaryContactName),
     primaryContactEmail: clean(input.primaryContactEmail).toLowerCase(),
@@ -222,16 +232,30 @@ function normalizeOrganizationProfile(input: Partial<OrganizationProfile>): Orga
     reportingPeriodEnd: clean(input.reportingPeriodEnd),
     geographicBoundary: clean(input.geographicBoundary ?? defaults.geographicBoundary),
     includedFacilitiesOrLocations: clean(
-      input.includedFacilitiesOrLocations ?? defaults.includedFacilitiesOrLocations,
+      input.includedFacilitiesOrLocations ??
+        apiInput.includedFacilities ??
+        defaults.includedFacilitiesOrLocations,
     ),
-    excludedFacilitiesOrLocations: clean(input.excludedFacilitiesOrLocations),
+    excludedFacilitiesOrLocations: clean(
+      input.excludedFacilitiesOrLocations ?? apiInput.excludedFacilities,
+    ),
     includedScopes: clean(input.includedScopes ?? defaults.includedScopes),
     scope3CoverageNote: clean(input.scope3CoverageNote ?? defaults.scope3CoverageNote),
     exclusionsAndLimitations: clean(
-      input.exclusionsAndLimitations ?? defaults.exclusionsAndLimitations,
+      input.exclusionsAndLimitations ??
+        apiInput.exclusionsLimitations ??
+        defaults.exclusionsAndLimitations,
     ),
     boundaryNotes: clean(input.boundaryNotes ?? defaults.boundaryNotes),
   };
+}
+
+function dispatchOrganizationProfileUpdated(profile: OrganizationProfile) {
+  window.dispatchEvent(
+    new CustomEvent<OrganizationProfile>(ORGANIZATION_PROFILE_UPDATED_EVENT, {
+      detail: profile,
+    }),
+  );
 }
 
 function validateOrganizationProfile(profile: OrganizationProfile) {

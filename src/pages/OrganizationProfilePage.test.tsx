@@ -72,6 +72,7 @@ describe('OrganizationProfilePage', () => {
 
     expect(screen.getByRole('heading', { name: 'Organization & Boundary' })).toBeInTheDocument();
     expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pilot review/i)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Technology' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Other' })).toBeInTheDocument();
@@ -131,7 +132,8 @@ describe('OrganizationProfilePage', () => {
 
     render(<OrganizationProfilePage />);
 
-    expect(screen.getByText(/Read-only access: you can view boundary information/i)).toBeInTheDocument();
+    expect(screen.getByText('Your account has read-only access to this workspace.')).toBeInTheDocument();
+    expect(screen.queryByText(/pilot review/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save Organization Profile' })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: /Province \/ Territory/i })).toBeDisabled();
@@ -174,6 +176,7 @@ describe('OrganizationProfilePage', () => {
       expect(screen.getByDisplayValue('Legacy Customer Workspace')).toBeInTheDocument();
     });
     expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pilot review/i)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Save Organization Profile' })).toBeInTheDocument();
 
@@ -217,46 +220,57 @@ describe('OrganizationProfilePage', () => {
   it('loads and saves Organization & Boundary values through the backend when signed in', async () => {
     setAdminUser();
     localStorage.setItem('accessToken', 'workspace-token');
+    localStorage.setItem(
+      'carbonlite:organization-profile:admin-workspace',
+      JSON.stringify({
+        ...loadOrganizationProfile(),
+        organizationName: 'Stale Local Workspace',
+        industry: 'Technology',
+        country: 'Canada',
+        provinceOrState: 'Alberta',
+        city: 'Stale City',
+      }),
+    );
+    let backendProfile = {
+      organizationName: 'Backend Workspace',
+      industry: 'Technology',
+      country: 'Canada',
+      provinceOrState: 'Ontario',
+      city: 'Toronto',
+      primaryContactEmail: 'saved@example.ca',
+      reportingPeriodStart: '2026-01-01',
+      reportingPeriodEnd: '2026-12-31',
+      geographicBoundary: 'Saved backend boundary',
+      includedFacilitiesOrLocations: 'Saved facilities',
+      includedScopes: 'Scope 1, Scope 2, and selected Scope 3 pilot activity types',
+      scope3CoverageNote: 'Saved Scope 3 note.',
+      exclusionsAndLimitations: 'Saved limitations.',
+      boundaryNotes: 'Saved boundary notes.',
+    };
     const fetchMock = vi.fn(async (_url: string | URL | Request, options?: RequestInit) => {
       if (options?.method === 'PATCH') {
         const body = JSON.parse(String(options.body));
+        backendProfile = { ...backendProfile, ...body };
 
-        return new Response(JSON.stringify(body), {
+        return new Response(JSON.stringify(backendProfile), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      return new Response(
-        JSON.stringify({
-          organizationName: 'Backend Workspace',
-          industry: 'Technology',
-          country: 'Canada',
-          provinceOrState: 'Ontario',
-          city: 'Toronto',
-          primaryContactEmail: 'saved@example.ca',
-          reportingPeriodStart: '2026-01-01',
-          reportingPeriodEnd: '2026-12-31',
-          geographicBoundary: 'Saved backend boundary',
-          includedFacilitiesOrLocations: 'Saved facilities',
-          includedScopes: 'Scope 1, Scope 2, and selected Scope 3 pilot activity types',
-          scope3CoverageNote: 'Saved Scope 3 note.',
-          exclusionsAndLimitations: 'Saved limitations.',
-          boundaryNotes: 'Saved boundary notes.',
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      );
+      return new Response(JSON.stringify(backendProfile), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<OrganizationProfilePage />);
+    const { unmount } = render(<OrganizationProfilePage />);
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Backend Workspace')).toBeInTheDocument();
     });
+    expect(screen.queryByDisplayValue('Stale Local Workspace')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Geographic Boundary/i)).toHaveValue('Saved backend boundary');
 
     await userEvent.clear(screen.getByLabelText(/City/i));
@@ -281,6 +295,22 @@ describe('OrganizationProfilePage', () => {
       primaryContactEmail: 'saved@example.ca',
     });
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
+    expect(localStorage.getItem('carbonlite:organization-profile:admin-workspace')).toContain(
+      'Stale Local Workspace',
+    );
+
+    unmount();
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('currentUser');
+    setAdminUser();
+    localStorage.setItem('accessToken', 'workspace-token');
+
+    render(<OrganizationProfilePage />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Backend Workspace')).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/City/i)).toHaveValue('Ottawa');
   });
 
   it('shows a loading state while organization boundary values load from the backend', async () => {
@@ -371,7 +401,50 @@ describe('OrganizationProfilePage', () => {
 
     expect(await screen.findByText('Organization profile could not be saved. Please try again.')).toBeInTheDocument();
     expect(screen.queryByText('Organization profile saved.')).not.toBeInTheDocument();
-    expect(loadOrganizationProfile().city).toBe('Toronto');
+    expect(localStorage.getItem('carbonlite:organization-profile:admin-workspace')).toBeNull();
+  });
+
+  it('does not show pilot-specific read-only errors to regular customer accounts', async () => {
+    setAdminUser();
+    localStorage.setItem('accessToken', 'workspace-token');
+    const fetchMock = vi.fn(async (_url: string | URL | Request, options?: RequestInit) => {
+      if (options?.method === 'PATCH') {
+        return new Response(JSON.stringify({ message: 'Pilot reviewer accounts are read-only' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          organizationName: 'Backend Workspace',
+          industry: 'Technology',
+          country: 'Canada',
+          provinceOrState: 'Ontario',
+          city: 'Toronto',
+          reportingPeriodStart: '2026-01-01',
+          reportingPeriodEnd: '2026-12-31',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<OrganizationProfilePage />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Backend Workspace')).toBeInTheDocument();
+    });
+    await userEvent.clear(screen.getByLabelText(/City/i));
+    await userEvent.type(screen.getByLabelText(/City/i), 'Ottawa');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+
+    expect(await screen.findByText('Your account has read-only access to this workspace.')).toBeInTheDocument();
+    expect(screen.queryByText('This account is read-only for pilot review. Editing actions are disabled.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Pilot reviewer accounts/i)).not.toBeInTheDocument();
   });
 
   it.each([
@@ -444,7 +517,8 @@ describe('OrganizationProfilePage', () => {
     expect(screen.getByText('Canada')).toBeInTheDocument();
     expect(screen.getByText('Alberta')).toBeInTheDocument();
     expect(screen.getByText('2026-01-01 to 2026-12-31')).toBeInTheDocument();
-    expect(screen.getByText(/Pilot reviewer accounts can view boundary information/i)).toBeInTheDocument();
+    expect(screen.getByText(/Read-only access: you can view boundary information/i)).toBeInTheDocument();
+    expect(screen.queryByText(/This account is read-only for pilot review/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save Organization Profile' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Reset/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Industry/i })).not.toBeInTheDocument();

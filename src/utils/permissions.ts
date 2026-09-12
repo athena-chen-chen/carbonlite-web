@@ -73,7 +73,7 @@ export function canEditActivityRecords(user: AuthUser | null) {
   if (isPilotReviewer(user)) return false;
 
   const role = getUserRole(user);
-  return role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER';
+  return role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR' || role === 'MEMBER';
 }
 
 export function canDeleteActivityRecords(user: AuthUser | null) {
@@ -90,6 +90,18 @@ export function canResetWorkspaceData(user: AuthUser | null) {
 export function canEditFactors(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
   if (isPilotReviewer(user)) return false;
+
+  return isAdminOrOwner(user);
+}
+
+export function canManageCompanyFactors(user: AuthUser | null) {
+  if (!hasCompanyContext(user)) return false;
+  if (isPilotReviewer(user)) return false;
+
+  const accountType = getFactorManagementAccountType(user);
+  if (accountType !== 'CUSTOMER' && accountType !== 'INTERNAL_TEST') {
+    return false;
+  }
 
   return isAdminOrOwner(user);
 }
@@ -130,7 +142,7 @@ export const isAdminOrOwnerUser = isAdminOrOwner;
 export const canManageActivityRecords = canEditActivityRecords;
 export const canImportActivityRecords = canImportData;
 export const canClearActivityRecords = canResetWorkspaceData;
-export const canManageConversionFactors = canEditFactors;
+export const canManageConversionFactors = canManageCompanyFactors;
 
 function hasCompanyContext(user: AuthUser | null) {
   return Boolean(user && getOrganizationIdFromUser(user));
@@ -138,4 +150,13 @@ function hasCompanyContext(user: AuthUser | null) {
 
 function getOrganizationIdFromUser(user: AuthUser | null) {
   return user?.organizationId || user?.organization?.id || '';
+}
+
+function getFactorManagementAccountType(user: AuthUser | null) {
+  const rawAccountType = user?.accountType ?? user?.account_type;
+  if (rawAccountType === null || rawAccountType === undefined || String(rawAccountType).trim() === '') {
+    return 'CUSTOMER';
+  }
+
+  return String(rawAccountType).trim().toUpperCase();
 }

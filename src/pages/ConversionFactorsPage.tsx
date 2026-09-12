@@ -14,7 +14,7 @@ import {
   getCurrentUser,
   getOrganizationName,
 } from '../services/auth';
-import { canManageConversionFactors, isPilotReviewer } from '../utils/permissions';
+import { canManageCompanyFactors, isPilotReviewer } from '../utils/permissions';
 import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
 import { getActivityTypeLabel, getFactorDisplayName, normalizeActivityType } from '../utils/activityType';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
@@ -422,11 +422,11 @@ function isSystemFactor(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'fa
 }
 
 function getFactorTypeLabel(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'factorType' | 'organizationId'>) {
-  return isSystemFactor(item) ? 'CarbonLite System Factor' : 'Custom Factor';
+  return isSystemFactor(item) ? 'CarbonLite System Factor' : 'Company Factor';
 }
 
 function getFactorTypeTableLabel(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'factorType' | 'organizationId'>) {
-  return isSystemFactor(item) ? 'System Factor' : 'Custom Factor';
+  return isSystemFactor(item) ? 'System Factor' : 'Company Factor';
 }
 
 function getCustomFactorFormErrors(
@@ -462,7 +462,7 @@ function getCustomFactorFormErrors(
     errors.push('Source Authority or Source Reference is required.');
   }
   if (activityType === 'ELECTRICITY' && !province) {
-    errors.push('Province / Jurisdiction is required for Electricity custom factors.');
+    errors.push('Province / Jurisdiction is required for Electricity company factors.');
   }
 
   if (
@@ -479,7 +479,7 @@ function getCustomFactorFormErrors(
     })
   ) {
     errors.push(
-      'A custom factor already exists for this activity type, input unit, country, province, and source year.',
+      'A company factor already exists for this activity type, input unit, country, province, and source year.',
     );
   }
 
@@ -616,7 +616,7 @@ export function ConversionFactorsPage() {
   const prefillFactor = (location.state as ConversionFactorRouteState)?.prefillFactor;
   const currentUser = getCurrentUser();
   const organizationName = getOrganizationName(currentUser);
-  const canManageFactors = canManageConversionFactors(currentUser);
+  const canManageFactors = canManageCompanyFactors(currentUser);
   const pilotReviewerReadOnly = isPilotReviewer(currentUser);
   const generatedAt = new Date().toLocaleString();
   const [form, setForm] = useState<ConversionFactorInput>(initialForm);
@@ -856,12 +856,12 @@ export function ConversionFactorsPage() {
 
       if (editingId) {
         await updateConversionFactor(editingId, getPayloadFromForm());
-        setSuccessMessage('Custom factor updated successfully.');
+        setSuccessMessage('Company factor updated successfully.');
         setEditingId(null);
         setShowFactorForm(false);
       } else {
         await createConversionFactor(getPayloadFromForm());
-        setSuccessMessage('Custom factor created successfully.');
+        setSuccessMessage('Company factor created successfully.');
         setShowFactorForm(false);
       }
 
@@ -960,8 +960,8 @@ export function ConversionFactorsPage() {
     if (isSystemFactor(item)) return;
 
     const shouldDelete = await confirm({
-      title: 'Delete custom factor',
-      message: `Delete custom factor "${item.name}"? This cannot be undone.`,
+      title: 'Delete company factor',
+      message: `Delete company-specific factor "${item.name}"? This cannot be undone.`,
       confirmLabel: 'Delete',
       variant: 'danger',
     });
@@ -1030,7 +1030,7 @@ export function ConversionFactorsPage() {
               ? 'Read-only'
               : isSystemFactor(item)
               ? 'System factor'
-              : 'Only admins can manage custom factors.'}
+              : 'Only admins can manage company-specific factors.'}
           </div>
         ) : null}
         <button
@@ -1155,9 +1155,9 @@ export function ConversionFactorsPage() {
       ) : !showFactorForm ? (
         <div className="no-print" style={collapsedFormStyle}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 20 }}>Custom conversion factors</h2>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Company conversion factors</h2>
             <p style={{ marginTop: 6, color: '#666' }}>
-              System default factors are already available. Add a custom factor only when you need organization-specific values.
+              System default factors are already available. Add a company-specific factor only when you need workspace-specific values.
             </p>
           </div>
           <button
@@ -1171,14 +1171,14 @@ export function ConversionFactorsPage() {
             }}
             style={primaryButtonStyle(false)}
           >
-            + Add Custom Factor
+            + Add Company Factor
           </button>
         </div>
       ) : (
       <form className="no-print" onSubmit={handleSubmit} style={formCardStyle}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>
-            {editingId ? 'Edit Custom Factor' : 'Add Custom Factor'}
+            {editingId ? 'Edit Company Factor' : 'Add Company Factor'}
           </h2>
           <p style={{ marginTop: 6, color: '#666' }}>
             {editingId
@@ -1432,7 +1432,7 @@ export function ConversionFactorsPage() {
                 : 'Creating...'
               : editingId
               ? 'Save Changes'
-              : 'Create Conversion Factor'}
+              : 'Create Company Factor'}
           </button>
           {editingId ? (
             <button
@@ -1582,8 +1582,8 @@ export function ConversionFactorsPage() {
           </div>
         </form>
         {hasUnappliedFilterChanges ? (
-          <div className="no-print" style={filterHintStyle}>
-            You have unapplied filter changes.
+          <div className="no-print" role="status" aria-live="polite" style={filterHintStyle}>
+            Filters changed. Click Apply Filters to update results.
           </div>
         ) : null}
 
@@ -2110,11 +2110,14 @@ const filterActionsStyle: React.CSSProperties = {
 };
 
 const filterHintStyle: React.CSSProperties = {
-  padding: '0 16px 12px',
-  color: '#64748b',
+  margin: '0 0 12px',
+  padding: '10px 12px',
+  color: '#1d4ed8',
   fontSize: 13,
-  background: '#f8fafc',
-  borderBottom: '1px solid #e5e7eb',
+  fontWeight: 700,
+  background: '#eff6ff',
+  border: '1px solid #bfdbfe',
+  borderRadius: 10,
 };
 
 const slowLoadingTextStyle: React.CSSProperties = {

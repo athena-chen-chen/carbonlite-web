@@ -288,7 +288,12 @@ describe('conversion factor traceability API payloads', () => {
   it('blocks normal users from editing company factors', async () => {
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+      JSON.stringify({
+        email: 'legacy-user@example.com',
+        role: 'USER',
+        accountType: null,
+        organizationId: 'org-1',
+      }),
     );
     const fetchMock = vi.spyOn(globalThis, 'fetch');
 

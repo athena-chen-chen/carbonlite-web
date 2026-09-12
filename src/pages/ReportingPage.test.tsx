@@ -12,10 +12,6 @@ import {
   trackActivityEvent,
   type ActivityEventItem,
 } from '../services/activityEvents';
-import {
-  loadOrganizationProfile,
-  saveOrganizationProfile,
-} from '../services/organizationProfile';
 import { OPEN_FEEDBACK_OVERLAY_EVENT } from '../utils/feedbackOverlay';
 
 vi.mock('../services/metricsOverview', async () => {
@@ -410,9 +406,12 @@ describe('ReportingPage audit trail', () => {
       organizationName: 'KACH CANADA LTD.',
     };
     localStorage.setItem('currentUser', JSON.stringify(adminUser));
-    saveOrganizationProfile(
-      {
-        ...loadOrganizationProfile(adminUser),
+    localStorage.setItem('accessToken', 'report-boundary-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
         organizationName: 'KACH CANADA LTD.',
         industry: 'Technology',
         country: 'Canada',
@@ -424,8 +423,13 @@ describe('ReportingPage audit trail', () => {
         includedScopes: 'Scope 1, Scope 2, and selected Scope 3 pilot categories',
         scope3CoverageNote: 'Scope 3 includes selected business travel records only.',
         exclusionsAndLimitations: 'Excluded supplier categories outside the pilot review.',
-      },
-      adminUser,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      ),
     );
 
     render(

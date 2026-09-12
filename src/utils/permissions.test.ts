@@ -3,6 +3,7 @@ import {
   canEditActivityRecords,
   canEditFactors,
   canEditWorkspace,
+  canManageCompanyFactors,
   canImportData,
   canManageUsers,
   canResetWorkspaceData,
@@ -78,9 +79,10 @@ describe('shared permission helpers', () => {
   });
 
   it('preserves admin and owner management permissions', () => {
-    [user('ADMIN'), user('OWNER')].forEach((account) => {
+    [user('ADMIN', { accountType: 'CUSTOMER' }), user('OWNER', { accountType: 'CUSTOMER' })].forEach((account) => {
       expect(isAdminOrOwner(account)).toBe(true);
       expect(canEditFactors(account)).toBe(true);
+      expect(canManageCompanyFactors(account)).toBe(true);
       expect(canEditWorkspace(account)).toBe(true);
       expect(canImportData(account)).toBe(true);
       expect(canEditActivityRecords(account)).toBe(true);
@@ -94,10 +96,25 @@ describe('shared permission helpers', () => {
     expect(isAdmin(user('OWNER'))).toBe(false);
   });
 
+  it('allows internal test admins and owners to manage company factors', () => {
+    expect(canManageCompanyFactors(user('ADMIN', { accountType: 'INTERNAL_TEST' }))).toBe(true);
+    expect(canManageCompanyFactors(user('OWNER', { accountType: 'INTERNAL_TEST' }))).toBe(true);
+  });
+
+  it('does not allow unsupported account types to manage company factors', () => {
+    const partnerAdmin = user('ADMIN', { accountType: 'PARTNER' });
+
+    expect(canEditFactors(partnerAdmin)).toBe(true);
+    expect(canManageCompanyFactors(partnerAdmin)).toBe(false);
+  });
+
   it('allows customer editors to edit workspace settings without admin permissions', () => {
     const editor = user('EDITOR', { accountType: 'CUSTOMER' });
 
+    expect(canImportData(editor)).toBe(true);
+    expect(canEditActivityRecords(editor)).toBe(true);
     expect(canEditWorkspace(editor)).toBe(true);
+    expect(canManageCompanyFactors(editor)).toBe(false);
     expect(canManageUsers(editor)).toBe(false);
     expect(canViewAdmin(editor)).toBe(false);
     expect(canResetWorkspaceData(editor)).toBe(false);
@@ -108,9 +125,18 @@ describe('shared permission helpers', () => {
 
     expect(isPilotReviewer(legacyUser)).toBe(false);
     expect(canEditWorkspace(legacyUser)).toBe(true);
+    expect(canManageCompanyFactors(legacyUser)).toBe(false);
     expect(canManageUsers(legacyUser)).toBe(false);
     expect(canViewAdmin(legacyUser)).toBe(false);
     expect(canResetWorkspaceData(legacyUser)).toBe(false);
+  });
+
+  it('keeps customer USER accounts read-only for company factor management', () => {
+    const customerUser = user('USER', { accountType: 'CUSTOMER' });
+
+    expect(canManageCompanyFactors(customerUser)).toBe(false);
+    expect(canEditFactors(customerUser)).toBe(false);
+    expect(canViewFactors(customerUser)).toBe(true);
   });
 
   it('keeps member editable behavior but blocks dangerous admin-only actions', () => {

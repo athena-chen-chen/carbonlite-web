@@ -114,7 +114,12 @@ export function MetricsSummaryPage() {
   }, [location.pathname]);
 
   useEffect(() => {
-    function refreshOrganizationProfile() {
+    function refreshOrganizationProfile(event?: Event) {
+      if (event instanceof CustomEvent && event.detail) {
+        setOrganizationProfile(event.detail);
+        return;
+      }
+
       setOrganizationProfile(loadOrganizationProfile(getCurrentUser()));
     }
 

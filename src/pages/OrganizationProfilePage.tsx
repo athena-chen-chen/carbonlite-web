@@ -160,7 +160,11 @@ export function OrganizationProfilePage() {
     } catch (error) {
       setSuccessMessage('');
       setError(
-        error instanceof ApiError && error.status >= 500
+        error instanceof ApiError && error.status === 403
+          ? readOnlyReviewer
+            ? 'Read-only access: you can view boundary information but cannot edit workspace settings.'
+            : 'Your account has read-only access to this workspace.'
+          : error instanceof ApiError && error.status >= 500
           ? 'Organization profile could not be saved. Please try again.'
           : getUserFriendlyErrorMessage(error, 'organizationProfile'),
       );
@@ -180,8 +184,8 @@ export function OrganizationProfilePage() {
       {!canEdit ? (
         <div style={readOnlyNoticeStyle}>
           {readOnlyReviewer
-            ? 'Pilot reviewer accounts can view boundary information but cannot edit workspace settings.'
-            : 'Read-only access: you can view boundary information but cannot edit workspace settings.'}
+            ? 'Read-only access: you can view boundary information but cannot edit workspace settings.'
+            : 'Your account has read-only access to this workspace.'}
         </div>
       ) : null}
 

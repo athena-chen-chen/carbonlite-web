@@ -5,7 +5,7 @@ import {
   createConversionFactor,
   getConversionFactors,
 } from '../services/conversionFactors';
-import { canManageConversionFactors, isPilotReviewer } from '../utils/permissions';
+import { canManageCompanyFactors, isPilotReviewer } from '../utils/permissions';
 import {
   getFactorTraceability,
   getFactorJurisdiction,
@@ -28,7 +28,7 @@ vi.mock('../services/auth', () => ({
 }));
 
 vi.mock('../utils/permissions', () => ({
-  canManageConversionFactors: vi.fn(() => true),
+  canManageCompanyFactors: vi.fn(() => true),
   isPilotReviewer: vi.fn(() => false),
 }));
 
@@ -120,7 +120,7 @@ function getSummaryCard(title: string) {
 describe('ConversionFactorsPage traceability', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(canManageConversionFactors).mockReturnValue(true);
+    vi.mocked(canManageCompanyFactors).mockReturnValue(true);
     vi.mocked(isPilotReviewer).mockReturnValue(false);
   });
 
@@ -493,7 +493,10 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getAllByTestId(/factor-row-pilot-electricity-/)).toHaveLength(3);
 
     await userEvent.selectOptions(jurisdictionFilter, 'AB');
-    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Filters changed. Click Apply Filters to update results.',
+    );
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-bc-2026')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-on-2026')).toBeInTheDocument();
@@ -507,7 +510,7 @@ describe('ConversionFactorsPage traceability', () => {
         sourceYear: undefined,
       });
     });
-    expect(screen.queryByText('You have unapplied filter changes.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Filters changed. Click Apply Filters to update results.')).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-bc-2026')).not.toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-on-2026')).not.toBeInTheDocument();
@@ -569,7 +572,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     const jurisdictionFilter = await screen.findByLabelText('Jurisdiction');
     await userEvent.selectOptions(jurisdictionFilter, 'NATIONAL');
-    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
@@ -591,7 +594,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
     await waitFor(() => {
-      expect(screen.queryByText('You have unapplied filter changes.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Filters changed. Click Apply Filters to update results.')).not.toBeInTheDocument();
     });
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-national-label')).toBeInTheDocument();
@@ -700,6 +703,30 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeEnabled();
   });
 
+  it('shows customer admins company factor creation but keeps system factors read-only', async () => {
+    vi.mocked(canManageCompanyFactors).mockReturnValue(true);
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [baseFactor],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: '+ Add Company Factor' })).toBeInTheDocument();
+    expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(screen.getByText('System Factor')).toBeInTheDocument();
+    expect(screen.queryByLabelText('More actions for Diesel default')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
   it('sorts conversion factors by factor value', async () => {
     vi.mocked(getConversionFactors).mockResolvedValue({
       items: [
@@ -736,7 +763,7 @@ describe('ConversionFactorsPage traceability', () => {
     await screen.findByTestId('factor-row-factor-1');
     await userEvent.selectOptions(screen.getByLabelText('Sort by Factor Value'), 'asc');
 
-    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
       '2.68 kgCO2e/liter',
       '0.53 kgCO2e/kWh',
@@ -782,7 +809,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     await userEvent.type(screen.getByLabelText('Min Factor Value'), '2');
 
-    expect(screen.getByText('You have unapplied filter changes.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-2')).toBeInTheDocument();
 
@@ -807,19 +834,43 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Custom Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
 
     expect(screen.getByLabelText('Verified source and methodology')).not.toBeChecked();
   });
 
   it('lets an admin create a company custom factor with canonical activity type', async () => {
-    vi.mocked(getConversionFactors).mockResolvedValue({
-      items: [],
-      page: 1,
-      pageSize: 20,
-      total: 0,
-      totalPages: 0,
-    });
+    vi.mocked(getConversionFactors)
+      .mockResolvedValueOnce({
+        items: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            ...baseFactor,
+            id: 'custom-factor',
+            organizationId: 'org-1',
+            factorType: 'CUSTOM',
+            isSystemDefault: false,
+            name: 'Company diesel factor',
+            activityType: 'DIESEL',
+            unit: 'L',
+            factorValue: 2.7,
+            sourceAuthority: 'Consultant factor table',
+            sourceYear: 2026,
+            confidenceLevel: 'HIGH',
+            verificationStatus: 'CONSULTANT_REVIEWED',
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 1,
+        totalPages: 1,
+      });
     vi.mocked(createConversionFactor).mockResolvedValue({ id: 'custom-factor' } as any);
 
     render(
@@ -828,7 +879,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Custom Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
     await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'DIESEL');
     await userEvent.type(screen.getByLabelText('Factor Name'), 'Company diesel factor');
     await userEvent.clear(getFirstLabeledControl('Factor Value'));
@@ -839,7 +890,7 @@ describe('ConversionFactorsPage traceability', () => {
     await userEvent.type(getFirstLabeledControl('Source Authority'), 'Consultant factor table');
     await userEvent.selectOptions(screen.getByLabelText('Confidence Level'), 'HIGH');
     await userEvent.selectOptions(screen.getByLabelText('Verification Status'), 'CONSULTANT_REVIEWED');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Conversion Factor' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
 
     expect(createConversionFactor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -860,10 +911,13 @@ describe('ConversionFactorsPage traceability', () => {
         verified: true,
       }),
     );
+    expect(await screen.findByText('Company factor created successfully.')).toBeInTheDocument();
+    expect(await screen.findByText('Company diesel factor')).toBeInTheDocument();
+    expect(screen.getByText('Company Factor')).toBeInTheDocument();
   });
 
   it('does not show custom factor creation to viewers', async () => {
-    vi.mocked(canManageConversionFactors).mockReturnValue(false);
+    vi.mocked(canManageCompanyFactors).mockReturnValue(false);
     vi.mocked(getConversionFactors).mockResolvedValue({
       items: [
         baseFactor,
@@ -894,10 +948,10 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByText(/Read-only access/i)).toBeInTheDocument();
     expect(screen.getByText('Company diesel custom factor')).toBeInTheDocument();
-    expect(screen.getByText('Custom Factor')).toBeInTheDocument();
+    expect(screen.getByText('Company Factor')).toBeInTheDocument();
     expect(screen.getByText('Consultant factor table')).toBeInTheDocument();
     expect(screen.getByText('Consultant Reviewed')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '+ Add Custom Factor' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Add Company Factor' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
     expect(screen.queryByLabelText('More actions for Company diesel custom factor')).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
@@ -908,7 +962,7 @@ describe('ConversionFactorsPage traceability', () => {
   });
 
   it('shows pilot reviewers a read-only factor transparency view', async () => {
-    vi.mocked(canManageConversionFactors).mockReturnValue(false);
+    vi.mocked(canManageCompanyFactors).mockReturnValue(false);
     vi.mocked(isPilotReviewer).mockReturnValue(true);
     vi.mocked(getConversionFactors).mockResolvedValue({
       items: [
@@ -939,7 +993,7 @@ describe('ConversionFactorsPage traceability', () => {
       await screen.findByText(/Pilot reviewer accounts can view factor information for transparency/i),
     ).toBeInTheDocument();
     expect(await screen.findByTestId('factor-row-pilot-review-factor')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '+ Add Custom Factor' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Add Company Factor' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
 
@@ -982,16 +1036,16 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Custom Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
     await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'ELECTRICITY');
     await userEvent.type(screen.getByLabelText('Factor Name'), 'Company electricity factor');
     await userEvent.type(getFirstLabeledControl('Factor Value'), '0.04');
     await userEvent.type(screen.getByLabelText('Input Unit'), 'kWh');
     await userEvent.type(getFirstLabeledControl('Source Year'), '2026');
     await userEvent.type(getFirstLabeledControl('Source Authority'), 'Provincial source');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Conversion Factor' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
 
-    expect(await screen.findByText(/Province \/ Jurisdiction is required for Electricity custom factors/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Province \/ Jurisdiction is required for Electricity company factors/i)).toBeInTheDocument();
     expect(createConversionFactor).not.toHaveBeenCalled();
   });
 
@@ -1010,7 +1064,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Custom Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
     await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'DIESEL');
     await userEvent.type(screen.getByLabelText('Factor Name'), 'Bad diesel factor');
     await userEvent.clear(getFirstLabeledControl('Factor Value'));
@@ -1018,7 +1072,7 @@ describe('ConversionFactorsPage traceability', () => {
     await userEvent.type(screen.getByLabelText('Input Unit'), 'L');
     await userEvent.type(getFirstLabeledControl('Source Year'), '2026');
     await userEvent.type(getFirstLabeledControl('Source Authority'), 'Consultant source');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Conversion Factor' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
 
     expect(await screen.findByText(/Factor Value must be a positive number/i)).toBeInTheDocument();
     expect(createConversionFactor).not.toHaveBeenCalled();
@@ -1053,7 +1107,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Custom Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
     await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'DIESEL');
     await userEvent.type(screen.getByLabelText('Factor Name'), 'Duplicate custom diesel');
     await userEvent.clear(getFirstLabeledControl('Factor Value'));
@@ -1061,9 +1115,9 @@ describe('ConversionFactorsPage traceability', () => {
     await userEvent.type(screen.getByLabelText('Input Unit'), 'L');
     await userEvent.type(getFirstLabeledControl('Source Year'), '2026');
     await userEvent.type(getFirstLabeledControl('Source Authority'), 'Consultant source');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Conversion Factor' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
 
-    expect(await screen.findByText(/A custom factor already exists/i)).toBeInTheDocument();
+    expect(await screen.findByText(/A company factor already exists/i)).toBeInTheDocument();
     expect(createConversionFactor).not.toHaveBeenCalled();
   });
 

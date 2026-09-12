@@ -60,6 +60,7 @@ import { inferDefaultScope } from '../utils/scopeClassification';
 import { ExcelInputTable } from '../components/ExcelInputTable';
 import { useAppDialog } from '../components/AppDialog';
 import {
+  ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
   UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE,
   isSupportedPilotProvince,
   normalizeProvince,
@@ -983,6 +984,7 @@ export function UploadPage() {
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
   const [previewDocumentIds, setPreviewDocumentIds] = useState<string[]>([]);
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
+  const [bulkProvince, setBulkProvince] = useState('');
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
   const [sampleWorkspaceLoaded, setSampleWorkspaceLoaded] = useState(false);
@@ -1056,7 +1058,23 @@ export function UploadPage() {
           selectedImportedDocuments.length === 1 ? '' : 's'
         } selected for reporting.`
       : '';
+  const isProcessing =
+    uploading ||
+    extractingId !== null ||
+    confirmingId !== null ||
+    generatingMetrics;
   const importValidationIssues = getImportValidationIssues(parsedActivities);
+  const missingProvinceRowIndexes = Array.from(
+    new Set(
+      importValidationIssues
+        .filter(
+          (issue) =>
+            issue.field === 'jurisdictionRegion' &&
+            issue.message.includes('Missing Province'),
+        )
+        .map((issue) => issue.rowIndex),
+    ),
+  );
   const selectedImportValidationIssues = importValidationIssues.filter(
     (issue) => parsedActivities[issue.rowIndex]?.selected,
   );
@@ -1103,6 +1121,12 @@ export function UploadPage() {
     previewDocumentIds,
     documents,
   });
+  const normalizedBulkProvince = normalizePreviewProvince(bulkProvince);
+  const canSetBulkProvince =
+    canImportData &&
+    missingProvinceRowIndexes.length > 0 &&
+    Boolean(normalizedBulkProvince) &&
+    !isProcessing;
   async function loadDocuments() {
     setLoading(true);
     setError(null);
@@ -1137,6 +1161,7 @@ export function UploadPage() {
       setPreviewDocumentId(null);
       setPreviewDocumentIds([]);
       setParsedActivities([]);
+      setBulkProvince('');
       setLatestDocumentId(null);
       setSelectedDocumentIds([]);
       setDocumentToDelete(null);
@@ -1387,6 +1412,7 @@ export function UploadPage() {
     setPreviewDocumentId('MULTIPLE');
     setPreviewDocumentIds(sampleDocuments.map((document) => document.id));
     setParsedActivities(buildSampleReviewRows());
+    setBulkProvince('');
     setSampleWorkspaceLoaded(true);
     setSuccessMessage('Sample files loaded. You can review, import, edit, and generate reports like a real workflow.');
     setError(null);
@@ -2916,6 +2942,61 @@ ${sampleRows.join('\n')}`,
     return getConfirmImportDisabledReason() ?? '';
   }
 
+  function getSetProvinceDisabledReason() {
+    if (!canImportData) return 'You do not have permission to edit draft rows.';
+    if (isProcessing) return undefined;
+    if (missingProvinceRowIndexes.length === 0) return 'No rows need a province.';
+    if (!normalizedBulkProvince) return 'Select a province to apply.';
+    return undefined;
+  }
+
+  function applyBulkProvinceToMissingRows() {
+    if (!canImportData) {
+      setError('You do not have permission to edit draft rows.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (!normalizedBulkProvince) {
+      setError('Select a province to apply.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (missingProvinceRowIndexes.length === 0) {
+      setError('No rows need a province.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    const rowsToUpdate = new Set(missingProvinceRowIndexes);
+    setParsedActivities((prev) =>
+      prev.map((item, index) => {
+        if (!rowsToUpdate.has(index)) return item;
+
+        const updatedItem = {
+          ...item,
+          jurisdictionRegion: {
+            ...item.jurisdictionRegion,
+            value: normalizedBulkProvince,
+            confidence: 'medium',
+          },
+        };
+
+        return {
+          ...updatedItem,
+          selected: getImportValidationIssues([updatedItem]).length === 0,
+        };
+      }),
+    );
+    setError(null);
+    setSuccessMessage(
+      `Province set to ${normalizedBulkProvince} for ${missingProvinceRowIndexes.length} row${
+        missingProvinceRowIndexes.length === 1 ? '' : 's'
+      }.`,
+    );
+  }
+
   function getImportCompletedMessage(importedCount: number, trackedMetricCount: number) {
     const detailParts = [
       `${importedCount} record${importedCount === 1 ? '' : 's'} imported`,
@@ -3128,11 +3209,6 @@ ${sampleRows.join('\n')}`,
     );
   }
 
-  const isProcessing =
-    uploading ||
-    extractingId !== null ||
-    confirmingId !== null ||
-    generatingMetrics;
   const showPostImportLinks =
     Boolean(successMessage) && /import|metric/i.test(successMessage ?? '');
 
@@ -3700,6 +3776,42 @@ ${sampleRows.join('\n')}`,
             <div style={{ padding: 16 }}>No extracted activities.</div>
           ) : (
             <>
+            {missingProvinceRowIndexes.length > 0 ? (
+              <div style={bulkProvincePanelStyle}>
+                <div>
+                  <strong>Missing province helper</strong>
+                  <p style={bulkProvinceHelpTextStyle}>
+                    Select a province to apply to {missingProvinceRowIndexes.length} electricity row
+                    {missingProvinceRowIndexes.length === 1 ? '' : 's'} that require province-specific matching.
+                  </p>
+                </div>
+                <label style={bulkProvinceControlStyle}>
+                  <span style={bulkProvinceLabelStyle}>Province</span>
+                  <select
+                    value={bulkProvince}
+                    onChange={(event) => setBulkProvince(event.target.value)}
+                    disabled={!canImportData || isProcessing}
+                    style={bulkProvinceSelectStyle}
+                  >
+                    <option value="">Select province</option>
+                    {ELECTRICITY_FACTOR_PROVINCE_OPTIONS.map((province) => (
+                      <option key={province} value={province}>
+                        {province}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={applyBulkProvinceToMissingRows}
+                  disabled={!canSetBulkProvince}
+                  title={getSetProvinceDisabledReason()}
+                  style={primaryButtonStyle(!canSetBulkProvince)}
+                >
+                  Set Province
+                </button>
+              </div>
+            ) : null}
             {hasImportValidationErrors ? (
               <div ref={validationSummaryRef} style={validationSummaryStyle} role="alert">
                 <strong>⚠ Please correct the following issues:</strong>
@@ -4716,6 +4828,44 @@ const validationSummaryStyle: React.CSSProperties = {
   background: '#fff1f2',
   color: '#991b1b',
   fontSize: 14,
+};
+
+const bulkProvincePanelStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'end',
+  gap: 12,
+  flexWrap: 'wrap',
+  margin: '0 16px 14px',
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+};
+
+const bulkProvinceHelpTextStyle: React.CSSProperties = {
+  margin: '4px 0 0',
+  color: '#475569',
+  fontSize: 13,
+  lineHeight: 1.4,
+};
+
+const bulkProvinceControlStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  minWidth: 220,
+};
+
+const bulkProvinceLabelStyle: React.CSSProperties = {
+  color: '#334155',
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const bulkProvinceSelectStyle: React.CSSProperties = {
+  padding: '9px 10px',
+  borderRadius: 8,
+  border: '1px solid #93c5fd',
+  background: '#fff',
 };
 
 const dateSuggestionStyle: React.CSSProperties = {

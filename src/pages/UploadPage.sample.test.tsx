@@ -161,6 +161,29 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByText('Activity Rows')).not.toBeInTheDocument();
   });
 
+  it('keeps customer viewers read-only without pilot-reviewer wording or Set Province controls', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'viewer@example.com',
+        role: 'VIEWER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/Read-only access: you can view existing records/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pilot reviewer accounts use preloaded sample data/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Set Province' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Confirm Import/i })).not.toBeInTheDocument();
+  });
+
   it('clears Input Review documents when demo data reset is broadcast', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
@@ -516,6 +539,70 @@ describe('UploadPage sample workflow', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Select All/i }));
     expect(within(electricityRow!).getByRole('checkbox')).not.toBeChecked();
+  });
+
+  it('enables customer admins to set province on missing-province draft rows', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'province-doc',
+          fileName: 'province-missing.xlsx',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'province-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'electricity',
+          amount: '1000',
+          unit: 'kWh',
+          country: 'Canada',
+          province: '',
+          startDate: '2026-01-01',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+
+    const row = screen.getByDisplayValue('Electricity').closest('tr');
+    expect(row).toBeTruthy();
+    expect(within(row!).getByText('Province required')).toBeInTheDocument();
+
+    const setProvinceButton = screen.getByRole('button', { name: 'Set Province' });
+    expect(setProvinceButton).toBeDisabled();
+    expect(setProvinceButton).toHaveAttribute('title', 'Select a province to apply.');
+
+    await userEvent.selectOptions(screen.getByLabelText('Province'), 'Alberta');
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+
+    expect(within(row!).getByDisplayValue('Alberta')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(row!).queryByText('Province required')).not.toBeInTheDocument();
+    });
+    expect(within(row!).getByText('Ready')).toBeInTheDocument();
+    expect(within(row!).getByRole('checkbox')).toBeEnabled();
+    expect(within(row!).getByRole('checkbox')).toBeChecked();
   });
 
   it('keeps unsupported electricity provinces in JSON preview for factor review', async () => {
