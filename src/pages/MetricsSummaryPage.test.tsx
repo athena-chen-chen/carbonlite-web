@@ -38,6 +38,8 @@ vi.mock('../services/metricsOverview', async () => {
 afterEach(() => {
   cleanup();
   localStorage.removeItem('currentUser');
+  localStorage.removeItem('accessToken');
+  vi.unstubAllGlobals();
 });
 
 const goldenTrailUsageTotals = {
@@ -1697,6 +1699,9 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     );
 
     const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    expect(boundarySection).toHaveTextContent(
+      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Calgary office and Ontario distribution activity records',
+    );
     await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
 
     expect(within(boundarySection).getByText('KACH CANADA LTD.')).toBeInTheDocument();
@@ -1707,6 +1712,66 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       within(boundarySection).getByText('Supplier locations outside the pilot boundary'),
     ).toBeInTheDocument();
     expect(within(boundarySection).getByText('Scope 3 includes selected travel records only.')).toBeInTheDocument();
+  });
+
+  it('loads backend organization profile values into the Inventory Boundary for authenticated users', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        accountType: 'CUSTOMER',
+        companyId: 'company-boundary-workspace',
+        organizationName: 'Kach',
+      }),
+    );
+    localStorage.setItem('accessToken', 'metrics-boundary-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            organizationName: 'Kach',
+            industry: 'Technology',
+            country: 'Canada',
+            province: 'Alberta',
+            city: 'Calgary',
+            reportingPeriodStart: '2026-01-01',
+            reportingPeriodEnd: '2026-12-31',
+            geographicBoundary: 'Kach Canadian operations in Alberta',
+            includedFacilities: 'Calgary pilot facility',
+            excludedFacilities: 'US operations',
+            includedScopes: 'Scope 1, Scope 2, selected Scope 3',
+            scope3CoverageNote: 'Scope 3 includes selected business travel only.',
+            exclusionsLimitations: 'Workflow review only.',
+            boundaryNotes: 'Customer saved boundary notes.',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    await waitFor(() => {
+      expect(boundarySection).toHaveTextContent(
+        '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Kach Canadian operations in Alberta',
+      );
+    });
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
+
+    expect(within(boundarySection).getByText('Kach')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('Kach Canadian operations in Alberta')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('Calgary pilot facility')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('US operations')).toBeInTheDocument();
   });
 
   it('renders Calculation Review for pilot reviewer without mutation controls', async () => {

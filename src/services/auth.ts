@@ -49,7 +49,21 @@ export type AuthUser = {
   status?: 'ACTIVE' | 'DISABLED' | 'PENDING' | string;
   organizationId?: string;
   organizationName?: string;
+  companyId?: string;
+  company_id?: string;
+  workspaceId?: string;
+  workspace_id?: string;
+  tenantId?: string;
+  tenant_id?: string;
   organization?: {
+    id?: string;
+    name?: string;
+  };
+  company?: {
+    id?: string;
+    name?: string;
+  };
+  workspace?: {
     id?: string;
     name?: string;
   };
@@ -270,11 +284,29 @@ export function getCurrentUser(): AuthUser | null {
 }
 
 export function getOrganizationName(user: AuthUser | null) {
-  return user?.organizationName || user?.organization?.name || 'Workspace';
+  return (
+    user?.organizationName ||
+    user?.organization?.name ||
+    user?.company?.name ||
+    user?.workspace?.name ||
+    'Workspace'
+  );
 }
 
 export function getOrganizationId(user: AuthUser | null) {
-  return user?.organizationId || user?.organization?.id || '';
+  return (
+    user?.organizationId ||
+    user?.organization?.id ||
+    user?.companyId ||
+    user?.company_id ||
+    user?.company?.id ||
+    user?.workspaceId ||
+    user?.workspace_id ||
+    user?.workspace?.id ||
+    user?.tenantId ||
+    user?.tenant_id ||
+    ''
+  );
 }
 
 export function getUserDisplayName(user: AuthUser | null) {

@@ -128,10 +128,10 @@ export async function fetchOrganizationProfile(
   user: AuthUser | null = getCurrentUser(),
 ) {
   const profile = await apiFetch<Partial<OrganizationProfile>>('/organization-profile');
-  const normalizedProfile = normalizeOrganizationProfile({
-    ...getDefaultOrganizationProfile(user),
-    ...profile,
-  });
+  const normalizedProfile = normalizeOrganizationProfile(
+    profile,
+    getDefaultOrganizationProfile(user),
+  );
   dispatchOrganizationProfileUpdated(normalizedProfile);
   return normalizedProfile;
 }
@@ -211,8 +211,10 @@ function getOrganizationProfileStorageKey(user: AuthUser | null) {
   return `${PROFILE_STORAGE_PREFIX}${id || name}`;
 }
 
-function normalizeOrganizationProfile(input: Partial<OrganizationProfile>): OrganizationProfile {
-  const defaults = SAMPLE_WORKSPACE_PROFILE;
+function normalizeOrganizationProfile(
+  input: Partial<OrganizationProfile>,
+  defaults: OrganizationProfile = SAMPLE_WORKSPACE_PROFILE,
+): OrganizationProfile {
   const apiInput = input as Partial<OrganizationProfile> & {
     province?: string | null;
     includedFacilities?: string | null;

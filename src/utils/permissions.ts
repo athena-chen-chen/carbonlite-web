@@ -149,7 +149,19 @@ function hasCompanyContext(user: AuthUser | null) {
 }
 
 function getOrganizationIdFromUser(user: AuthUser | null) {
-  return user?.organizationId || user?.organization?.id || '';
+  return (
+    user?.organizationId ||
+    user?.organization?.id ||
+    user?.companyId ||
+    user?.company_id ||
+    user?.company?.id ||
+    user?.workspaceId ||
+    user?.workspace_id ||
+    user?.workspace?.id ||
+    user?.tenantId ||
+    user?.tenant_id ||
+    ''
+  );
 }
 
 function getFactorManagementAccountType(user: AuthUser | null) {

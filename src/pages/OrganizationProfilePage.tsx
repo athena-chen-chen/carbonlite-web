@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { getCurrentUser } from '../services/auth';
+import { getCurrentUser, getOrganizationId } from '../services/auth';
 import {
   CANADA_PROVINCE_TERRITORY_OPTIONS,
   INDUSTRY_OPTIONS,
@@ -65,7 +65,7 @@ const fieldGroups: Array<{
 
 export function OrganizationProfilePage() {
   const currentUser = getCurrentUser();
-  const currentUserKey = `${currentUser?.id ?? ''}:${currentUser?.organizationId ?? ''}:${currentUser?.email ?? ''}`;
+  const currentUserKey = `${currentUser?.id ?? ''}:${getOrganizationId(currentUser)}:${currentUser?.email ?? ''}`;
   const canEdit = canEditWorkspace(currentUser);
   const readOnlyReviewer = isPilotReviewer(currentUser);
   const [profile, setProfile] = useState<OrganizationProfile>(() =>

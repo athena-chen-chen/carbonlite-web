@@ -151,6 +151,30 @@ describe('shared permission helpers', () => {
     expect(canManageUsers(member)).toBe(false);
   });
 
+  it('allows editable customer admins when backend session uses companyId for workspace context', () => {
+    const customerAdmin = user('ADMIN', {
+      accountType: 'CUSTOMER',
+      organizationId: undefined,
+      companyId: 'company-1',
+    });
+
+    expect(canImportData(customerAdmin)).toBe(true);
+    expect(canEditActivityRecords(customerAdmin)).toBe(true);
+    expect(canEditWorkspace(customerAdmin)).toBe(true);
+  });
+
+  it('allows editable customer admins when backend session uses workspaceId for workspace context', () => {
+    const customerAdmin = user('ADMIN', {
+      accountType: 'CUSTOMER',
+      organizationId: undefined,
+      workspaceId: 'workspace-1',
+    });
+
+    expect(canImportData(customerAdmin)).toBe(true);
+    expect(canEditActivityRecords(customerAdmin)).toBe(true);
+    expect(canEditWorkspace(customerAdmin)).toBe(true);
+  });
+
   it('fails closed without company context', () => {
     const adminWithoutCompany = user('ADMIN', { organizationId: '' });
 

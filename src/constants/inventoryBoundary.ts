@@ -57,5 +57,35 @@ export function summarizeInventoryBoundary(
   reportingPeriodSummary?: string | null,
 ) {
   const period = reportingPeriodSummary?.trim() || boundary.reportingPeriod;
-  return `${period} · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations`;
+  const scopes = summarizeScopes(boundary.includedScopes);
+  const geography = summarizeGeographicBoundary(boundary.geographicBoundary);
+
+  return [period, scopes, geography].filter(Boolean).join(' · ');
+}
+
+function summarizeScopes(includedScopes?: string | null) {
+  const normalized = String(includedScopes ?? '').trim();
+  if (!normalized) return 'Scope 1, Scope 2, selected Scope 3';
+
+  return normalized
+    .replace(/\band selected Scope 3 pilot activity types\b/i, 'selected Scope 3')
+    .replace(/\band selected Scope 3 pilot categories\b/i, 'selected Scope 3')
+    .replace(/\bselected Scope 3 pilot activity types\b/i, 'selected Scope 3')
+    .replace(/\bselected Scope 3 pilot categories\b/i, 'selected Scope 3')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function summarizeGeographicBoundary(geographicBoundary?: string | null) {
+  const normalized = String(geographicBoundary ?? '').trim();
+  if (!normalized) return '';
+
+  if (
+    normalized === DEFAULT_INVENTORY_BOUNDARY.geographicBoundary ||
+    /^sample canadian operations/i.test(normalized)
+  ) {
+    return 'Sample Canadian operations';
+  }
+
+  return normalized;
 }

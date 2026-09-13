@@ -440,6 +440,9 @@ describe('ReportingPage audit trail', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    expect(boundarySection).toHaveTextContent(
+      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Saved Calgary and Ontario reporting boundary',
+    );
     await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
 
     expect(within(boundarySection).getByText('KACH CANADA LTD.')).toBeInTheDocument();

@@ -542,6 +542,15 @@ describe('UploadPage sample workflow', () => {
   });
 
   it('enables customer admins to set province on missing-province draft rows', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        accountType: 'CUSTOMER',
+        companyId: 'company-1',
+      }),
+    );
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {

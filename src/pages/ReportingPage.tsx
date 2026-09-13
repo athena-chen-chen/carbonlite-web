@@ -36,7 +36,7 @@ import { CollapsibleSection } from '../components/common/CollapsibleSection';
 import { CollapsibleReportSection } from '../components/reports/CollapsibleReportSection';
 import { ReportScopeSection } from '../components/reports/sections/ReportScopeSection';
 import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
-import { getCurrentUser, getOrganizationName } from '../services/auth';
+import { getCurrentUser, getOrganizationId, getOrganizationName } from '../services/auth';
 import { isPilotReviewer } from '../utils/permissions';
 import { createClientAuditLog } from '../services/auditLogs';
 import { getActivityEvents, trackActivityEvent, type ActivityEventItem } from '../services/activityEvents';
@@ -175,6 +175,7 @@ export default function ReportingPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
+  const currentWorkspaceId = getOrganizationId(currentUser);
   const isPilotReviewerAccount = isPilotReviewer(currentUser);
   const canViewWorkflowHistory = !isPilotReviewerAccount;
   const routeState = location.state as {
@@ -403,7 +404,7 @@ export default function ReportingPage() {
       .catch(() => {
         setOrganizationProfile(loadOrganizationProfile(currentUser));
       });
-  }, [currentUser?.id, currentUser?.organizationId, currentUser?.email]);
+  }, [currentUser?.id, currentWorkspaceId, currentUser?.email]);
 
 async function initializeDateRange() {
   try {

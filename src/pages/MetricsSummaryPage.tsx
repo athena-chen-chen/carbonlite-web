@@ -20,7 +20,7 @@ import { CollapsibleSection } from '../components/common/CollapsibleSection';
 import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
 import { trackActivityEvent } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
-import { getCurrentUser } from '../services/auth';
+import { getCurrentUser, getOrganizationId } from '../services/auth';
 import { isPilotReviewer } from '../utils/permissions';
 import { openFeedbackOverlay } from '../utils/feedbackOverlay';
 import {
@@ -41,6 +41,7 @@ import { startDevTiming } from '../utils/performanceDiagnostics';
 export function MetricsSummaryPage() {
   const location = useLocation();
   const currentUser = getCurrentUser();
+  const currentWorkspaceId = getOrganizationId(currentUser);
   const showPilotReviewerWelcome = isPilotReviewer(currentUser);
   const [summary, setSummary] = useState<any>(null);
   const [activities, setActivities] = useState<ActivityUsageRecord[]>([]);
@@ -140,7 +141,7 @@ export function MetricsSummaryPage() {
       .catch(() => {
         setOrganizationProfile(loadOrganizationProfile(currentUser));
       });
-  }, [currentUser?.id, currentUser?.organizationId, currentUser?.email]);
+  }, [currentUser?.id, currentWorkspaceId, currentUser?.email]);
 
   useEffect(() => {
     function refreshMetrics() {
