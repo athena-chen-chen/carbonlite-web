@@ -22,6 +22,7 @@ import {
   getFactorResultUnit,
   getFactorSourceAuthority,
   getFactorValue,
+  resolveActivityYear,
   type MatchableConversionFactor,
 } from '../utils/conversionFactorMatching';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
@@ -272,9 +273,13 @@ export async function loadMetricsOverview(options?: {
     supplementalCalculations,
     activities,
   );
+  const facilityEnrichedCalculationDetails = enrichCalculationDetailsWithActivityFacilities(
+    mergedCalculationDetails,
+    activities,
+  );
   const mergedCalculationIssues = mergeCalculationDetailsIntoIssueItems(
     mergedMissingFactors,
-    mergedCalculationDetails,
+    facilityEnrichedCalculationDetails,
   );
   const mergedMatchedActivityEmissions = [
     ...(summary.matchedActivityEmissions ?? []),
@@ -298,7 +303,7 @@ export async function loadMetricsOverview(options?: {
     missingFactors: mergedCalculationIssues,
     matchedActivityEmissions: mergedMatchedActivityEmissions,
     conversionFactorsUsed: mergedConversionFactorsUsed,
-    calculationDetails: mergedCalculationDetails,
+    calculationDetails: facilityEnrichedCalculationDetails,
     invalidRecordCount: summary.invalidRecordCount ?? 0,
     dataQualityCoverage:
       totalRecordsFound > 0
@@ -435,8 +440,13 @@ function mergeCalculationRecordsIntoDetails(
     const quantity = firstFiniteNumber(record.normalizedQuantity, record.quantity, activity?.quantity);
     const unit = String(record.normalizedUnit ?? record.unit ?? activity?.unit ?? '');
     const recordDate = record.recordDate ?? activity?.recordDate ?? '';
-    const parsedRecordYear = Number(String(recordDate).slice(0, 4));
-    const recordYear = record.recordYear ?? (Number.isFinite(parsedRecordYear) ? parsedRecordYear : null);
+    const activityYear = resolveActivityYear({
+      servicePeriodEndDate: activity?.periodEnd,
+      servicePeriodStartDate: activity?.periodStart,
+      recordDate,
+      reportingYear: record.recordYear,
+    });
+    const recordYear = record.recordYear ?? activityYear.year;
 
     const detail: CalculationAuditDetail = {
       ...existingDetail,
@@ -444,14 +454,15 @@ function mergeCalculationRecordsIntoDetails(
       activityType,
       recordDate,
       dateEstimated: Boolean(activity?.dateEstimated),
-      reportingYear: recordYear ?? new Date().getFullYear(),
+      reportingYear: recordYear ?? null,
       recordYear,
       jurisdiction: record.jurisdiction ?? formatJurisdiction(activity),
       jurisdictionCountry: record.jurisdictionCountry ?? activity?.jurisdictionCountry ?? null,
       jurisdictionRegion: record.jurisdictionRegion ?? activity?.jurisdictionRegion ?? null,
       jurisdictionSource: record.jurisdictionSource ?? null,
       jurisdictionAssumed: record.jurisdictionAssumed ?? null,
-      facilityName: record.facilityName ?? null,
+      facilityId: resolveActivityFacilityId(existingDetail, activity, record),
+      facilityName: resolveActivityFacilityName(existingDetail, activity, record),
       activityQuantity: quantity,
       activityUnit: unit,
       quantityUnit: String(record.unit ?? activity?.unit ?? unit),
@@ -464,12 +475,16 @@ function mergeCalculationRecordsIntoDetails(
       factorInputUnit: record.factor?.inputUnit ?? null,
       factorResultUnit: activity?.matchedFactorUnit ?? record.factor?.resultUnit ?? record.resultUnit ?? null,
       factorYear: record.factor?.factorYear ?? record.factor?.sourceYear ?? activity?.matchedFactorSourceYear ?? null,
+      factorEffectiveYear: record.factor?.effectiveYear ?? record.factor?.sourceYear ?? activity?.matchedFactorSourceYear ?? null,
+      factorSet: record.factor?.factorSet ?? null,
       factorJurisdictionRegion: record.factor?.jurisdiction ?? null,
       factorSource: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? 'Source not specified',
       sourceAuthority: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? null,
       sourceDocument: activity?.matchedFactorSourceDocument ?? record.factor?.sourceDocument ?? null,
       sourceUrl: record.factor?.sourceUrl ?? null,
       sourceYear: activity?.matchedFactorSourceYear ?? record.factor?.sourceYear ?? null,
+      boundary: record.factor?.boundary ?? null,
+      factorNotes: record.factor?.notes ?? null,
       factorAssumptions: activity?.matchedFactorAssumptions ?? record.factor?.assumptions ?? null,
       factorVerified: Boolean(record.factor?.verified ?? record.factor?.isOfficial),
       factorConfidenceLevel: activity?.matchedFactorConfidenceLevel ?? record.factor?.confidenceLevel ?? null,
@@ -554,7 +569,12 @@ function mergeMatchedEmissionsIntoCalculationDetails(
     const quantity = firstFiniteNumber(emission.quantity, activity?.quantity);
     const unit = String(emission.unit ?? activity?.unit ?? '');
     const recordDate = activity?.recordDate ?? '';
-    const recordYear = Number(recordDate.slice(0, 4)) || null;
+    const activityYear = resolveActivityYear({
+      servicePeriodEndDate: activity?.periodEnd,
+      servicePeriodStartDate: activity?.periodStart,
+      recordDate,
+    });
+    const recordYear = activityYear.year;
     const factorValue = Number(factor?.factorValue);
 
     const synthesizedDetail: CalculationAuditDetail = {
@@ -563,11 +583,13 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       activityType,
       recordDate,
       dateEstimated: Boolean(activity?.dateEstimated),
-      reportingYear: recordYear ?? new Date().getFullYear(),
+      reportingYear: recordYear ?? null,
       recordYear,
       jurisdiction: formatJurisdiction(activity),
       jurisdictionCountry: activity?.jurisdictionCountry ?? null,
       jurisdictionRegion: activity?.jurisdictionRegion ?? null,
+      facilityId: resolveActivityFacilityId(existingDetail, activity, emission),
+      facilityName: resolveActivityFacilityName(existingDetail, activity, emission),
       activityQuantity: quantity,
       activityUnit: unit,
       quantityUnit: unit,
@@ -580,6 +602,8 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       factorInputUnit: factor?.inputUnit ?? null,
       factorResultUnit: factor?.resultUnit ?? null,
       factorYear: factor?.sourceYear ?? factor?.reportingYear ?? null,
+      factorEffectiveYear: factor?.effectiveYear ?? factor?.sourceYear ?? factor?.reportingYear ?? null,
+      factorSet: factor?.factorSet ?? null,
       factorStatus: factor?.factorStatus ?? null,
       factorPriority: factor?.priority ?? null,
       factorSource: factor?.sourceAuthority ?? 'Source not specified',
@@ -587,6 +611,8 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       sourceDocument: factor?.sourceDocument ?? null,
       sourceUrl: factor?.sourceUrl ?? null,
       sourceYear: factor?.sourceYear ?? null,
+      boundary: factor?.boundary ?? null,
+      factorNotes: factor?.notes ?? null,
       factorAssumptions: factor?.assumptions ?? null,
       factorVerified: Boolean(factor?.verified),
       factorConfidenceLevel: factor?.confidenceLevel ?? null,
@@ -628,6 +654,102 @@ function formatJurisdiction(activity?: ActivityDataItem) {
     .map((part) => String(part ?? '').trim())
     .filter(Boolean)
     .join(', ');
+}
+
+function enrichCalculationDetailsWithActivityFacilities(
+  calculationDetails: CalculationAuditDetail[],
+  activities: ActivityDataItem[],
+) {
+  if (calculationDetails.length === 0 || activities.length === 0) return calculationDetails;
+
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+
+  return calculationDetails.map((detail) => {
+    const activity = activityById.get(detail.activityDataId);
+    if (!activity) return detail;
+
+    const facilityId = resolveActivityFacilityId(detail, activity);
+    const facilityName = resolveActivityFacilityName(detail, activity);
+
+    if (facilityId === detail.facilityId && facilityName === detail.facilityName) {
+      return detail;
+    }
+
+    return {
+      ...detail,
+      facilityId,
+      facilityName,
+    };
+  });
+}
+
+function resolveActivityFacilityId(
+  existingDetail?: CalculationAuditDetail,
+  activity?: ActivityDataItem,
+  record?: unknown,
+) {
+  const recordWithAliases = getRecordWithFacilityAliases(record);
+
+  return firstPresentString(
+    existingDetail?.facilityId,
+    activity?.facility,
+    activity?.facilityId,
+    activity?.facilityName,
+    recordWithAliases.facilityId,
+    recordWithAliases.facility,
+    recordWithAliases.facilityName,
+    recordWithAliases.site,
+    recordWithAliases.siteName,
+    recordWithAliases.location,
+    recordWithAliases.branch,
+    recordWithAliases.factory,
+  );
+}
+
+function resolveActivityFacilityName(
+  existingDetail?: CalculationAuditDetail,
+  activity?: ActivityDataItem,
+  record?: unknown,
+) {
+  const recordWithAliases = getRecordWithFacilityAliases(record);
+
+  return firstPresentString(
+    existingDetail?.facilityName,
+    activity?.facilityName,
+    activity?.facility,
+    recordWithAliases.facilityName,
+    recordWithAliases.facility,
+    recordWithAliases.facilityId,
+    recordWithAliases.siteName,
+    recordWithAliases.site,
+    recordWithAliases.location,
+    recordWithAliases.branch,
+    recordWithAliases.factory,
+    existingDetail?.facilityId,
+    activity?.facility,
+    activity?.facilityId,
+  );
+}
+
+function getRecordWithFacilityAliases(record: unknown) {
+  if (!record || typeof record !== 'object') {
+    return {} as Record<string, unknown>;
+  }
+
+  return record as Record<string, unknown>;
+}
+
+function firstPresentString(...values: unknown[]) {
+  for (const value of values) {
+    const candidate =
+      value && typeof value === 'object' && 'name' in value
+        ? (value as { name?: unknown }).name
+        : value;
+    const normalized = String(candidate ?? '').trim();
+    if (normalized) return normalized;
+  }
+
+  return null;
 }
 
 function isCompleteCalculatedDetail(detail?: CalculationAuditDetail) {
@@ -679,7 +801,12 @@ async function buildSupplementalCalculations(input: {
       inputUnit: normalizedUnit.value,
       jurisdictionCountry: activity.jurisdictionCountry,
       jurisdictionRegion: activity.jurisdictionRegion,
-      recordYear: getDateOnlyYear(activity.recordDate),
+      recordYear: resolveActivityYear({
+        servicePeriodEndDate: activity.periodEnd,
+        servicePeriodStartDate: activity.periodStart,
+        recordDate: activity.recordDate,
+        reportingYear: activity.recordYear,
+      }).year,
       organizationId,
       factors: factors as MatchableConversionFactor[],
     });
@@ -751,14 +878,18 @@ function buildSupplementalCalculationDetail(
   const factorResultUnit = getFactorResultUnit(item.factor);
   const sourceAuthority = getFactorSourceAuthority(item.factor);
   const recordDate = activity?.recordDate ?? '';
-  const recordYear = Number(recordDate.slice(0, 4)) || new Date().getFullYear();
+  const recordYear = resolveActivityYear({
+    servicePeriodEndDate: activity?.periodEnd,
+    servicePeriodStartDate: activity?.periodStart,
+    recordDate,
+  }).year;
 
   return {
     activityDataId: item.activityId,
     activityType: item.activityType,
     recordDate,
     dateEstimated: false,
-    reportingYear: recordYear,
+    reportingYear: recordYear ?? null,
     recordYear,
     jurisdiction: item.factor.jurisdiction ?? '',
     activityQuantity: item.quantity,
@@ -774,11 +905,15 @@ function buildSupplementalCalculationDetail(
     factorInputUnit,
     factorResultUnit,
     factorYear: item.factor.sourceYear ?? null,
+    factorEffectiveYear: item.factor.effectiveYear ?? item.factor.sourceYear ?? null,
+    factorSet: item.factor.factorSet ?? null,
     factorStatus: item.factor.status ?? null,
     factorSource: sourceAuthority || 'Source not specified',
     sourceAuthority,
     sourceDocument: getFactorSourceDocument(item.factor) || null,
     sourceYear: item.factor.sourceYear ?? null,
+    boundary: item.factor.boundary ?? null,
+    factorNotes: item.factor.notes ?? null,
     factorAssumptions: getFactorAssumptionDisclosure(item.activityType, item.factor) || null,
     factorVerified: Boolean(item.factor.verified),
     factorConfidenceLevel: getFactorConfidenceLevel(item.factor) || null,

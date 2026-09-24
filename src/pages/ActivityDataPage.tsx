@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -7,6 +7,7 @@ import {
   updateActivityData,
   deleteActivityData,
   bulkDeleteActivityData,
+  bulkUpdateActivityProvince,
   resetDemoDataForCurrentCompany,
   type ResetDemoDataResponse,
   type DeleteActivityDataResponse,
@@ -14,6 +15,7 @@ import {
 import {
   canClearActivityRecords as canClearActivityRecordsForUser,
   canManageActivityRecords,
+  canSetProvinceForActivityRecords,
 } from '../utils/permissions';
 import {
   getCurrentUser,
@@ -29,6 +31,7 @@ import { BulkProvinceToolbar } from '../components/shared/BulkProvinceToolbar';
 import { useAppDialog } from '../components/AppDialog';
 import {
   activityTypes,
+  getDefaultUnitForActivityType,
 } from '../constants/activityTypes';
 import {
   CANADIAN_PROVINCE_OPTIONS,
@@ -39,8 +42,11 @@ import { getActivityTypeLabel, getFactorDisplayName } from '../utils/activityTyp
 import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
+  buildFactorUnitMismatchMessage,
   findBestConversionFactorMatch,
+  getCompatibleFactorUnitLabels,
   getFactorValue,
+  resolveActivityYear,
   type ConversionFactorMatch,
   type MatchableConversionFactor,
   normalizeActivityType,
@@ -61,9 +67,25 @@ import { invalidateDemoDataQueries } from '../queryClient';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
 import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
+import {
+  buildDataRecordsCsv,
+  buildDataRecordsCsvFileName,
+} from '../utils/dataRecordsCsvExport';
+import {
+  getRecordProvinceValue,
+  getMissingProvinceElectricityRecords,
+  getSetProvinceDisabledReason,
+  isElectricityRecord,
+  isMissingProvince,
+  normalizeProvince as normalizeSetProvince,
+} from '../utils/activityRecordHelpers';
 
 const PAGE_SIZE = 15;
 const RESET_DEMO_DATA_CONFIRMATION = 'RESET DEMO DATA';
+
+function normalizeRecordId(id: unknown) {
+  return String(id ?? '').trim();
+}
 
 const ACTIVITY_TABLE_COLUMNS = [
   { key: 'status', label: 'Status' },
@@ -73,7 +95,7 @@ const ACTIVITY_TABLE_COLUMNS = [
   { key: 'unit', label: 'Unit' },
   { key: 'country', label: 'Country' },
   { key: 'province', label: 'Province' },
-  { key: 'facility', label: 'Facility' },
+  { key: 'facility', label: 'Site / Facility' },
   { key: 'source', label: 'Source' },
   { key: 'sourceReference', label: 'Source Reference' },
 ] as const;
@@ -82,6 +104,7 @@ type ActivityTableColumnKey = (typeof ACTIVITY_TABLE_COLUMNS)[number]['key'];
 
 type ActivityDataItem = {
   id: string;
+  organizationId?: string | null;
   activityType?: string | null;
   recordDate?: string | null;
   quantity?: string | number | null;
@@ -90,7 +113,9 @@ type ActivityDataItem = {
   jurisdictionRegion?: string | null;
   country?: string | null;
   province?: string | null;
+  facility?: string | { name?: string | null } | null;
   facilityId?: string | null;
+  facilityName?: string | null;
   recordYear?: number | null;
   documentId?: string | null;
   sourceDocumentId?: string | null;
@@ -154,6 +179,7 @@ const [bulkApplyingProvince, setBulkApplyingProvince] = useState(false);
 const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
 const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
+const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 const [qualityFilter, setQualityFilter] = useState('all');
 const [viewedRecord, setViewedRecord] = useState<ActivityDataItem | null>(null);
 const [isClearRecordsModalOpen, setIsClearRecordsModalOpen] = useState(false);
@@ -174,10 +200,13 @@ const [visibleColumns, setVisibleColumns] = useState<Record<ActivityTableColumnK
 });
 const tableScrollRef = useRef<HTMLDivElement | null>(null);
 const columnMenuRef = useRef<HTMLDivElement | null>(null);
+const exportMenuRef = useRef<HTMLDivElement | null>(null);
 const actionMenuRef = useRef<HTMLDivElement | null>(null);
 const actionMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const documentFilterId = searchParams.get('documentId');
 const recordFilterId = searchParams.get('recordId');
+const previousDocumentFilterRef = useRef<string | null>(documentFilterId);
+const previousRecordFilterRef = useRef<string | null>(recordFilterId);
 const sourceDocumentNameFromState =
   (location.state as { sourceDocumentName?: string } | null)?.sourceDocumentName;
 const scopeFilteredItems = recordFilterId
@@ -195,17 +224,77 @@ const documentFilterName =
   sourceDocumentNameFromState ??
   scopeFilteredItems.find((item) => item.sourceFileName)?.sourceFileName ??
   documentFilterId;
-const selectedMissingProvinceElectricityRows = items.filter(
-  (item) =>
-    selectedIds.includes(item.id) &&
-    String(item.activityType ?? '').toUpperCase() === 'ELECTRICITY' &&
-    isMissingRecordValue(item.jurisdictionRegion),
-);
 const currentUser = getCurrentUser();
 const canEditActivityRecords = canManageActivityRecords(currentUser);
+const canSetProvinceOnActivityRecords = canSetProvinceForActivityRecords(currentUser);
+const canSelectActivityRecords = canEditActivityRecords || canSetProvinceOnActivityRecords;
 const canClearActivityRecords = canClearActivityRecordsForUser(currentUser);
+const isPilotReviewerAccount = currentUser?.accountType === 'PILOT_REVIEWER';
+const selectedIdSet = useMemo(
+  () => new Set(selectedIds.map(normalizeRecordId).filter(Boolean)),
+  [selectedIds],
+);
+const selectedRecords = useMemo(
+  () => items.filter((item) => selectedIdSet.has(normalizeRecordId(item.id))),
+  [items, selectedIdSet],
+);
+const selectedElectricityRows = useMemo(
+  () => selectedRecords.filter((record) => isElectricityRecord(record)),
+  [selectedRecords],
+);
+const setProvinceDisabledReason = getSetProvinceDisabledReason({
+  canEdit: canSetProvinceOnActivityRecords,
+  selectedCount: selectedIds.length,
+  eligibleCount: selectedElectricityRows.length,
+  selectedProvince: bulkProvince,
+  isPilotReviewer: isPilotReviewerAccount,
+  isUpdating: bulkApplyingProvince,
+  user: currentUser,
+});
+const normalizedSelectedProvince = normalizeSetProvince(bulkProvince);
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
 const summaryCardPlaceholder = loading ? '—' : null;
+
+useEffect(() => {
+  if (!import.meta.env.DEV) return;
+
+  console.debug('Set Province diagnostics', {
+    currentUser,
+    canSetProvince: canSetProvinceOnActivityRecords,
+    selectedIds,
+    selectedRecords: selectedRecords.map((record) => ({
+      id: record.id,
+      activityType: record.activityType,
+      type: (record as any).type,
+      category: (record as any).category,
+      province: record.province,
+      jurisdictionRegion: record.jurisdictionRegion,
+      status: (record as any).status,
+      validationStatus: (record as any).validationStatus,
+      factorStatus: (record as any).factorStatus,
+    })),
+    eligibleRecords: selectedElectricityRows.map((record) => ({
+      id: record.id,
+      activityType: record.activityType,
+      province: record.province,
+      jurisdictionRegion: record.jurisdictionRegion,
+    })),
+    selectedProvince: bulkProvince,
+    bulkApplyingProvince,
+    normalizedSelectedProvince,
+    disabledReason: setProvinceDisabledReason,
+  });
+}, [
+  currentUser,
+  canSetProvinceOnActivityRecords,
+  selectedIds,
+  selectedRecords,
+  selectedElectricityRows,
+  bulkProvince,
+  bulkApplyingProvince,
+  normalizedSelectedProvince,
+  setProvinceDisabledReason,
+]);
 
 useEffect(() => {
   if (!viewedRecord) return undefined;
@@ -351,9 +440,39 @@ useEffect(() => {
   }, [totalPages]);
 
   useEffect(() => {
+    const previousDocumentFilterId = previousDocumentFilterRef.current;
+    const previousRecordFilterId = previousRecordFilterRef.current;
+    const documentFilterChanged = previousDocumentFilterId !== documentFilterId;
+    const recordFilterChanged = previousRecordFilterId !== recordFilterId;
+
+    previousDocumentFilterRef.current = documentFilterId;
+    previousRecordFilterRef.current = recordFilterId;
+
+    if (!documentFilterChanged && !recordFilterChanged) {
+      return;
+    }
+
+    if (import.meta.env.DEV) {
+      console.debug('Activity selectedIds reset for record/document filter change', {
+        previousDocumentFilterId,
+        previousRecordFilterId,
+        documentFilterId,
+        recordFilterId,
+      });
+    }
+
     setCurrentPage(1);
     setSelectedIds([]);
   }, [documentFilterId, recordFilterId]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.debug('Activity selectedIds state changed', {
+        selectedIds,
+        count: selectedIds.length,
+      });
+    }
+  }, [selectedIds]);
 
   useEffect(() => {
     if (!recordFilterId || filteredItems.length === 0) return;
@@ -413,6 +532,29 @@ useEffect(() => {
   }, [isColumnMenuOpen]);
 
   useEffect(() => {
+    if (!isExportMenuOpen) return;
+
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (target && exportMenuRef.current?.contains(target)) return;
+      setIsExportMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsExportMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isExportMenuOpen]);
+
+  useEffect(() => {
     if (!openActionMenuId) return;
 
     function closeActionMenu() {
@@ -466,25 +608,71 @@ function clearActivityRecordFilters() {
   setSearchParams({});
 }
 
-function toggleSelect(id: string, checked: boolean) {
-  if (!canEditActivityRecords) return;
+function toggleSelect(id: unknown, checked: boolean) {
+  if (!canSelectActivityRecords) return;
 
-  setSelectedIds((prev) =>
-    checked ? [...prev, id] : prev.filter((x) => x !== id),
-  );
+  const normalizedId = normalizeRecordId(id);
+  if (!normalizedId) return;
+
+  if (import.meta.env.DEV) {
+    console.debug('Activity row checkbox event', {
+      rowId: normalizedId,
+      checked,
+      previousSelectedIds: selectedIds,
+    });
+  }
+
+  setSelectedIds((prev) => {
+    const next = new Set(prev.map(normalizeRecordId).filter(Boolean));
+
+    if (checked) {
+      next.add(normalizedId);
+    } else {
+      next.delete(normalizedId);
+    }
+
+    const nextIds = Array.from(next);
+
+    if (import.meta.env.DEV) {
+      console.debug('Activity selectedIds updater', {
+        rowId: normalizedId,
+        checked,
+        previous: prev,
+        next: nextIds,
+      });
+    }
+
+    return nextIds;
+  });
 }
 
 function toggleSelectAll(checked: boolean) {
-  if (!canEditActivityRecords) return;
+  if (!canSelectActivityRecords) return;
 
-  const pageIds = paginatedItems.map((item) => item.id);
+  const pageIds = paginatedItems.map((item) => normalizeRecordId(item.id)).filter(Boolean);
+
+  if (import.meta.env.DEV) {
+    console.debug('Activity select-all checkbox event', {
+      checked,
+      pageIds,
+      previousSelectedIds: selectedIds,
+    });
+  }
 
   setSelectedIds((prev) => {
-    if (checked) {
-      return Array.from(new Set([...prev, ...pageIds]));
+    const nextIds = checked
+      ? Array.from(new Set([...prev.map(normalizeRecordId).filter(Boolean), ...pageIds]))
+      : prev.filter((id) => !pageIds.includes(normalizeRecordId(id)));
+
+    if (import.meta.env.DEV) {
+      console.debug('Activity select-all selectedIds updater', {
+        checked,
+        previous: prev,
+        next: nextIds,
+      });
     }
 
-    return prev.filter((id) => !pageIds.includes(id));
+    return nextIds;
   });
 }
 
@@ -500,6 +688,55 @@ function handleGenerateReportFromSelection() {
   });
 }
 
+function downloadRecordsCsv(records: ActivityDataItem[], scope: 'all' | 'filtered' | 'selected') {
+  const csv = buildDataRecordsCsv(records);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = buildDataRecordsCsvFileName(scope);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function getRecordsForExportScope(scope: 'all' | 'filtered' | 'selected') {
+  if (scope === 'all') return items;
+  if (scope === 'filtered') return filteredItems;
+
+  return items.filter((item) => selectedIdSet.has(normalizeRecordId(item.id)));
+}
+
+function handleExportRecords(scope: 'all' | 'filtered' | 'selected') {
+  const recordsToExport = getRecordsForExportScope(scope);
+  setIsExportMenuOpen(false);
+  setError(null);
+  setSuccessMessage(null);
+
+  if (scope === 'all' && recordsToExport.length === 0) {
+    setError('No records available to export.');
+    return;
+  }
+
+  if (scope === 'filtered' && recordsToExport.length === 0) {
+    setError('No records match the current filters.');
+    return;
+  }
+
+  if (scope === 'selected' && recordsToExport.length === 0) {
+    setError('No selected records available to export.');
+    return;
+  }
+
+  try {
+    downloadRecordsCsv(recordsToExport, scope);
+    setSuccessMessage('Export prepared.');
+  } catch {
+    setError('Records could not be exported. Please try again.');
+  }
+}
+
 function normalizeProvinceValue(value?: string | null) {
   return normalizeCanadianProvince(value) ?? '';
 }
@@ -512,9 +749,12 @@ function normalizeStoredStatus(value?: string | null) {
 }
 
 function getActivityRecordYear(row: ActivityDataItem) {
-  const yearFromDate = getDateOnlyYear(row.recordDate);
-
-  return yearFromDate ?? row.recordYear ?? undefined;
+  return resolveActivityYear({
+    servicePeriodEndDate: row.periodEnd,
+    servicePeriodStartDate: row.periodStart,
+    recordDate: row.recordDate,
+    reportingYear: row.recordYear,
+  }).year ?? undefined;
 }
 
 function getProvinceOptions(value?: string | null) {
@@ -616,6 +856,17 @@ function handleViewRecord(row: ActivityDataItem) {
 function isMissingRecordValue(value: unknown) {
   const normalized = String(value ?? '').trim().toLowerCase();
   return !normalized || normalized === 'null' || normalized === 'undefined';
+}
+
+function isMissingProvinceValue(value: unknown) {
+  return isMissingProvince(value);
+}
+
+function isEligibleForProvinceUpdate(row: ActivityDataItem) {
+  return getMissingProvinceElectricityRecords([row], {
+    canEdit: true,
+    organizationId: getOrganizationId(currentUser),
+  }).length > 0;
 }
 
 function isActivityRecordIncomplete(row: ActivityDataItem) {
@@ -738,7 +989,7 @@ function buildMatchedActivityRecordNote(
 
 function buildUnmatchedActivityRecordNote(
   row: ActivityDataItem,
-  label: 'Missing Province' | 'Missing Factor' | 'Invalid Unit' | 'Tracked Metric' | 'Requires Review',
+  label: 'Missing Province' | 'Missing Factor' | 'Invalid Unit' | 'Unit Mismatch' | 'Tracked Metric' | 'Requires Review',
 ) {
   const retainedNotes = row.notes && !/missing factor|no conversion factor|calculation status/i.test(row.notes)
     ? row.notes
@@ -748,6 +999,7 @@ function buildUnmatchedActivityRecordNote(
     'Missing Province': 'Electricity requires province before factor matching.',
     'Missing Factor': 'No matching conversion factor is available for this record.',
     'Invalid Unit': 'Unit must be normalized before calculation.',
+    'Unit Mismatch': 'A matching activity factor exists, but it uses a different unit.',
     'Tracked Metric': 'Tracked only and excluded from GHG totals.',
     'Requires Review': 'Required fields must be completed before calculation.',
   };
@@ -797,7 +1049,7 @@ function buildRecalculatedActivityPayload(
     scope,
   };
 
-  if (activityType === 'ELECTRICITY' && isMissingRecordValue(row.jurisdictionRegion)) {
+  if (activityType === 'ELECTRICITY' && isMissingProvinceValue(getRecordProvinceValue(row))) {
     return {
       payload: {
         ...basePayload,
@@ -819,7 +1071,7 @@ function buildRecalculatedActivityPayload(
         reportTreatment: 'EXCLUDED',
         calculationStatus: 'UNIT_MISMATCH',
         calculationMessage: 'Unit mismatch. This record is excluded from emissions totals.',
-        notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Invalid Unit') : row.notes ?? '',
+        notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Unit Mismatch') : row.notes ?? '',
       },
       status: 'unitMismatch' as const,
     };
@@ -874,6 +1126,34 @@ function buildRecalculatedActivityPayload(
     };
   }
 
+  const compatibleUnits = getCompatibleFactorUnitLabels({
+    activityType,
+    inputUnit: normalizedUnit.status === 'valid' ? normalizedUnit.value : row.unit,
+    jurisdictionCountry: row.jurisdictionCountry || 'Canada',
+    jurisdictionRegion: row.jurisdictionRegion || '',
+    recordYear: getActivityRecordYear(row),
+    organizationId: getOrganizationId(getCurrentUser()),
+    factors: conversionFactors as MatchableConversionFactor[],
+  }).filter((unit) => normalizedUnit.status !== 'valid' || unit.toLowerCase() !== normalizedUnit.value.toLowerCase());
+
+  if (normalizedUnit.status === 'valid' && compatibleUnits.length > 0) {
+    return {
+      payload: {
+        ...basePayload,
+        matchingStatus: 'UNIT_MISMATCH',
+        reportTreatment: 'EXCLUDED',
+        calculationStatus: 'UNIT_MISMATCH',
+        calculationMessage: buildFactorUnitMismatchMessage({
+          activityType,
+          inputUnit: normalizedUnit.value,
+          availableUnits: compatibleUnits,
+        }),
+        notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Unit Mismatch') : row.notes ?? '',
+      },
+      status: 'unitMismatch' as const,
+    };
+  }
+
   return {
     payload: {
       ...basePayload,
@@ -906,7 +1186,7 @@ function getActivityRecordQuality(
     !row.sourceFileName &&
     !row.sourceReference;
 
-  if (activityType === 'ELECTRICITY' && isMissingRecordValue(row.jurisdictionRegion)) {
+  if (activityType === 'ELECTRICITY' && isMissingProvinceValue(getRecordProvinceValue(row))) {
     return {
       label: 'Missing Province',
       filterKey: 'missing-jurisdiction',
@@ -1062,6 +1342,13 @@ function formatOptionalRecordValue(value: unknown) {
   return isMissingRecordValue(value) ? '-' : String(value);
 }
 
+function formatSiteFacilityValue(row: ActivityDataItem) {
+  const facilityRelationName =
+    row.facility && typeof row.facility === 'object' ? row.facility.name : row.facility;
+  const value = String(row.facilityName ?? facilityRelationName ?? row.facilityId ?? '').trim();
+  return value || 'Unassigned';
+}
+
 function formatStoredStatusValue(value: unknown) {
   const normalized = normalizeStoredStatus(value as string | null | undefined);
   return normalized || '-';
@@ -1120,52 +1407,106 @@ function formatCalculatedEmissionValue(value: unknown) {
 }
 
 async function handleBulkApplyProvince() {
-  if (!canEditActivityRecords) {
+  const disabledReason = getSetProvinceDisabledReason({
+    canEdit: canSetProvinceOnActivityRecords,
+    selectedCount: selectedIds.length,
+    eligibleCount: selectedElectricityRows.length,
+    selectedProvince: bulkProvince,
+    isPilotReviewer: isPilotReviewerAccount,
+    isUpdating: bulkApplyingProvince,
+    user: currentUser,
+  });
+
+  if (disabledReason) {
+    setError(disabledReason);
+    return;
+  }
+
+  if (!canSetProvinceOnActivityRecords) {
     setError('You do not have permission to perform this action.');
     return;
   }
 
-  const normalizedProvince = normalizeProvinceValue(bulkProvince);
-  const rowsToUpdate = selectedMissingProvinceElectricityRows;
+  const normalizedProvince = normalizeSetProvince(bulkProvince);
+  const rowsToUpdate = selectedElectricityRows;
+  const rowsWithExistingProvince = rowsToUpdate.filter((row) =>
+    !isMissingProvince(getRecordProvinceValue(row)),
+  );
 
-  if (!normalizedProvince || rowsToUpdate.length === 0) return;
+  if (import.meta.env.DEV) {
+    console.debug('Set Province apply attempt', {
+      selectedIds,
+      selectedRecords: selectedRecords.map((record) => ({
+        id: record.id,
+        activityType: record.activityType,
+        province: record.province,
+        jurisdictionRegion: record.jurisdictionRegion,
+      })),
+      rowsToUpdate: rowsToUpdate.map((record) => ({
+        id: record.id,
+        activityType: record.activityType,
+        province: record.province,
+        jurisdictionRegion: record.jurisdictionRegion,
+      })),
+      selectedProvince: bulkProvince,
+      normalizedProvince,
+      disabledReason,
+    });
+  }
+
+  if (!normalizedProvince) {
+    setError('Select a province before applying.');
+    return;
+  }
+
+  if (rowsWithExistingProvince.length > 0) {
+    const existingProvinceRecordLabel =
+      rowsWithExistingProvince.length === 1
+        ? '1 selected electricity record already has a province.'
+        : `${rowsWithExistingProvince.length} selected electricity records already have a province.`;
+    const shouldUpdate = await confirm({
+      title: 'Update province?',
+      message:
+        `${existingProvinceRecordLabel}\nTheir existing province will be replaced with ${bulkProvince}.\n\nContinue?`,
+      confirmLabel: 'Update Province',
+      cancelLabel: 'Cancel',
+    });
+
+    if (!shouldUpdate) {
+      return;
+    }
+  }
 
   setBulkApplyingProvince(true);
   setError(null);
   setSuccessMessage(null);
 
   try {
-    await Promise.all(
-      rowsToUpdate.map((row) => {
-        const quantity = Number(row.quantity);
+    const eligibleIds = rowsToUpdate.map((row) => String(row.id));
+    const result = await bulkUpdateActivityProvince(eligibleIds, normalizedProvince);
+    const updatedCount = Number(result.updatedCount ?? result.count ?? eligibleIds.length);
 
-        return updateActivityData(row.id, {
-          activityType: row.activityType ?? 'ELECTRICITY',
-          recordDate: formatDateOnly(row.recordDate) || null,
-          quantity: Number.isFinite(quantity) ? quantity : 0,
-          unit: row.unit ?? '',
-          jurisdictionCountry: row.jurisdictionCountry || 'Canada',
-          jurisdictionRegion: normalizedProvince,
-          recordYear: row.recordYear ?? undefined,
-          sourceType: row.sourceType || 'MANUAL',
-          sourceReference: row.sourceReference ?? '',
-          notes: row.notes ?? '',
-          facilityId: row.facilityId ?? '',
-          documentId: row.documentId ?? '',
-          sourceDocumentId: row.sourceDocumentId ?? '',
-          sourceFileName: row.sourceFileName ?? '',
-          sourcePage: row.sourcePage ?? undefined,
-          sourceRow: row.sourceRow ?? undefined,
-        });
-      }),
-    );
+    if (import.meta.env.DEV) {
+      console.debug('Set Province update result', {
+        eligibleIds,
+        normalizedProvince,
+        result,
+      });
+    }
 
     await loadItems();
-    setSuccessMessage('Province applied to selected electricity records.');
+    setBulkProvince('');
+    setSuccessMessage(`Province updated for ${updatedCount} electricity record${updatedCount === 1 ? '' : 's'}.`);
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
+    window.dispatchEvent(new Event('carbonlite:reports-stale'));
   } catch (err) {
-    setError(getUserFriendlyErrorMessage(err, 'activityRecords'));
+    if (import.meta.env.DEV) {
+      console.debug('Set Province update failed', {
+        error: err,
+      });
+    }
+    setError('Province could not be updated. Please try again.');
   } finally {
     setBulkApplyingProvince(false);
   }
@@ -1337,7 +1678,7 @@ async function handleDelete(row: ActivityDataItem) {
 
     removeDeletedRows([row.id]);
     setLastDeleted(row);
-    setSelectedIds((prev) => prev.filter((id) => id !== row.id));
+    setSelectedIds((prev) => prev.filter((id) => normalizeRecordId(id) !== normalizeRecordId(row.id)));
     setSuccessMessage(formatDeletedMessage(deletedCount));
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
@@ -1356,6 +1697,7 @@ function updateEditField(key: string, value: any) {
   setEditRow((prev: any) => ({
     ...prev,
     [key]: value,
+    ...(key === 'activityType' ? { unit: getDefaultUnitForActivityType(value) } : {}),
   }));
 
   setEditErrors((prev) => {
@@ -1405,15 +1747,18 @@ function renderNormalRow(row){
       style={
         editingId === row.id || highlightedRecordId === row.id
           ? highlightedRecordRowStyle
+          : selectedIdSet.has(normalizeRecordId(row.id))
+          ? selectedRecordRowStyle
           : undefined
       }
     >
       <td style={tdStyle}>
-  {canEditActivityRecords ? (
+  {canSelectActivityRecords ? (
     <input
       type="checkbox"
-      checked={selectedIds.includes(row.id)}
-      onChange={(e) => toggleSelect(row.id, e.target.checked)}
+      aria-label={`Select activity record ${formatActivityTypeValue(row.activityType)} ${formatDateOnly(row.recordDate) || row.id}`}
+      checked={selectedIdSet.has(normalizeRecordId(row.id))}
+      onChange={(event) => toggleSelect(row.id, event.currentTarget.checked)}
     />
   ) : null}
 </td>
@@ -1433,14 +1778,13 @@ function renderNormalRow(row){
       {visibleColumns.country ? <td style={tdStyle}>{formatOptionalRecordValue(row.jurisdictionCountry)}</td> : null}
       {visibleColumns.province ? (
       <td style={tdStyle}>
-        {formatOptionalRecordValue(normalizeProvinceValue(row.jurisdictionRegion))}
-        {String(row.activityType ?? '').toUpperCase() === 'ELECTRICITY' &&
-        isMissingRecordValue(row.jurisdictionRegion) ? (
-          <div style={helperTextStyle}>Set province</div>
+        {formatOptionalRecordValue(normalizeProvinceValue(String(getRecordProvinceValue(row) ?? '')))}
+        {isEligibleForProvinceUpdate(row) ? (
+          <div style={helperTextStyle}>Missing province</div>
         ) : null}
       </td>
       ) : null}
-      {visibleColumns.facility ? <td style={tdStyle}>{formatOptionalRecordValue(row.facilityId)}</td> : null}
+      {visibleColumns.facility ? <td style={tdStyle}>{formatSiteFacilityValue(row)}</td> : null}
       {visibleColumns.source ? <td style={tdStyle}>{formatActivitySourceType(row)}</td> : null}
       {visibleColumns.sourceReference ? (
       <td style={sourceReferenceCellStyle} title={formatActivitySourceReference(row)}>
@@ -1493,7 +1837,7 @@ function renderEditRow(row){
           activityTypes={activityTypes}
           provinceOptions={getProvinceOptions(editRow.jurisdictionRegion)}
           validationMessages={editErrors}
-          selected={selectedIds.includes(row.id)}
+          selected={selectedIdSet.has(normalizeRecordId(row.id))}
           onSelectedChange={(checked) => toggleSelect(row.id, checked)}
           onChange={updateEditField}
           onSave={saveEdit}
@@ -1582,7 +1926,7 @@ function renderViewedRecordModal() {
               label="Province"
               value={formatOptionalRecordValue(normalizeProvinceValue(viewedRecord.jurisdictionRegion))}
             />
-            <DetailsField label="Facility" value={formatOptionalRecordValue(viewedRecord.facilityId)} />
+            <DetailsField label="Site / Facility" value={formatSiteFacilityValue(viewedRecord)} />
             <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord)} />
             <DetailsField
               label="Source Reference"
@@ -1743,12 +2087,31 @@ function handleRetryLoad() {
   setRecordLoadError(null);
   void loadItems();
 }
+
+if (import.meta.env.DEV) {
+  console.debug('Set Province render snapshot', {
+    timestamp: Date.now(),
+    selectedIds,
+    selectedCount: selectedIds.length,
+    selectedElectricityCount: selectedElectricityRows.length,
+    bulkProvince,
+  });
+  console.debug('Set Province toolbar state', {
+    selectedCount: selectedIds.length,
+    selectedElectricityCount: selectedElectricityRows.length,
+    bulkProvince,
+    bulkApplyingProvince,
+    canSetProvinceOnActivityRecords,
+    setProvinceDisabledReason,
+  });
+}
+
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       {/* ⭐ 标题区 */}
-      <h1 style={{ marginBottom: 8 }}>Data Records</h1>
+      <h1 style={pageTitleStyle}>Data Records</h1>
 
-      <p style={{ color: '#666', marginBottom: 24 }}>
+      <p style={pageSubtitleStyle}>
         Data Records shows saved activity records. To add new data, go to Input Data.
       </p>
       {canEditActivityRecords ? (
@@ -1901,21 +2264,95 @@ function handleRetryLoad() {
                   </div>
                 ) : null}
               </div>
+
+              <div ref={exportMenuRef} style={columnMenuWrapperStyle}>
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={isExportMenuOpen}
+                  aria-controls="activity-export-menu"
+                  onClick={() => setIsExportMenuOpen((current) => !current)}
+                  style={secondaryActionBtn}
+                >
+                  Export Records
+                </button>
+                {isExportMenuOpen ? (
+                  <div
+                    id="activity-export-menu"
+                    role="menu"
+                    aria-label="Export activity records"
+                    style={exportMenuStyle}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => handleExportRecords('all')}
+                      style={exportMenuItemStyle(false)}
+                    >
+                      Export all records
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => handleExportRecords('filtered')}
+                      style={exportMenuItemStyle(false)}
+                    >
+                      Export current filtered records
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => handleExportRecords('selected')}
+                      disabled={selectedIds.length === 0}
+                      style={exportMenuItemStyle(selectedIds.length === 0)}
+                    >
+                      Export selected records
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
 
           <div style={toolbarRowStyle}>
-            {canEditActivityRecords ? (
+            {canSetProvinceOnActivityRecords ? (
               <div style={toolbarGroupStyle}>
+                {import.meta.env.DEV
+                  ? console.debug('BulkProvinceToolbar caller values', {
+                      selectedCount: selectedIds.length,
+                      selectedElectricityCount: selectedElectricityRows.length,
+                      selectedElectricityRows: selectedElectricityRows.map((row) => ({
+                        id: row.id,
+                        activityType: row.activityType,
+                        jurisdictionRegion: row.jurisdictionRegion,
+                      })),
+                      selectedProvince: bulkProvince,
+                      isApplying: bulkApplyingProvince,
+                      canSetProvinceOnActivityRecords,
+                    })
+                  : null}
                 <BulkProvinceToolbar
                   selectedCount={selectedIds.length}
-                  eligibleCount={selectedMissingProvinceElectricityRows.length}
+                  eligibleCount={selectedElectricityRows.length}
                   selectedProvince={bulkProvince}
-                  onProvinceChange={(value) => setBulkProvince(normalizeProvinceValue(value))}
+                  onProvinceChange={(value) => {
+                    if (import.meta.env.DEV) {
+                      console.debug('Province changed', {
+                        value,
+                        selectedIdsBeforeProvinceChange: selectedIds,
+                      });
+                    }
+
+                    setBulkProvince(normalizeProvinceValue(value));
+                  }}
                   provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
                   onApply={handleBulkApplyProvince}
                   isApplying={bulkApplyingProvince}
+                  label="Set province for selected electricity records"
                   applyLabel="Set province"
+                  applyingLabel="Setting province..."
+                  disabledReason={setProvinceDisabledReason}
+                  helperText="Apply a province to selected electricity records. Non-electricity records will be ignored."
                 />
               </div>
             ) : null}
@@ -2007,12 +2444,12 @@ function handleRetryLoad() {
               <thead>
                 <tr>
                   <th style={checkboxThStyle}>
-                    {canEditActivityRecords ? (
+                    {canSelectActivityRecords ? (
                       <input
                         type="checkbox"
                         checked={
                           paginatedItems.length > 0 &&
-                          paginatedItems.every((item) => selectedIds.includes(item.id))
+                          paginatedItems.every((item) => selectedIdSet.has(normalizeRecordId(item.id)))
                         }
                         onChange={(e) => toggleSelectAll(e.target.checked)}
                       />
@@ -2025,7 +2462,7 @@ function handleRetryLoad() {
                   {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
                   {visibleColumns.country ? <th style={countryThStyle}>Country</th> : null}
                   {visibleColumns.province ? <th style={provinceThStyle}>Province</th> : null}
-                  {visibleColumns.facility ? <th style={facilityThStyle}>Facility</th> : null}
+                  {visibleColumns.facility ? <th style={facilityThStyle}>Site / Facility</th> : null}
                   {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
                   {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
                   <th style={actionsThStyle}></th>
@@ -2099,8 +2536,8 @@ function Card({ title, value, icon }: any) {
   return (
     <div style={card}>
       <div style={{ fontSize: 22 }}>{icon}</div>
-      <div style={{ color: '#666' }}>{title}</div>
-      <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
+      <div style={cardTitleStyle}>{title}</div>
+      <div style={cardValueStyle}>{value}</div>
     </div>
   );
 }
@@ -2137,7 +2574,7 @@ function ActivityRecordsLoadingState({
               {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
               {visibleColumns.country ? <th style={countryThStyle}>Country</th> : null}
               {visibleColumns.province ? <th style={provinceThStyle}>Province</th> : null}
-              {visibleColumns.facility ? <th style={facilityThStyle}>Facility</th> : null}
+              {visibleColumns.facility ? <th style={facilityThStyle}>Site / Facility</th> : null}
               {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
               {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
               <th style={actionsThStyle} />
@@ -2169,11 +2606,52 @@ function ActivityRecordsLoadingState({
 
 /* ⭐ Styles */
 
-const card = {
+const activityRecordsPalette = {
+  primaryGreen: '#047857',
+  primaryGreenHover: '#065F46',
+  primaryText: '#0F172A',
+  secondaryText: '#64748B',
+  mutedText: '#94A3B8',
+  border: '#E2E8F0',
+  lightBorder: '#F1F5F9',
+  white: '#FFFFFF',
+  subtleBackground: '#F8FAFC',
+  disabledBackground: '#F1F5F9',
+  successBackground: '#ECFDF5',
+  warningBackground: '#FFFBEB',
+  warningText: '#B45309',
+  errorBackground: '#FEF2F2',
+  errorText: '#B91C1C',
+  infoText: '#475569',
+};
+
+const pageTitleStyle: React.CSSProperties = {
+  marginBottom: 8,
+  color: activityRecordsPalette.primaryText,
+};
+
+const pageSubtitleStyle: React.CSSProperties = {
+  color: activityRecordsPalette.secondaryText,
+  marginBottom: 24,
+};
+
+const card: React.CSSProperties = {
   padding: 16,
-  borderRadius: 12,
-  background: '#fff',
-  border: '1px solid #eee',
+  borderRadius: 10,
+  background: activityRecordsPalette.white,
+  border: `1px solid ${activityRecordsPalette.border}`,
+};
+
+const cardTitleStyle: React.CSSProperties = {
+  color: activityRecordsPalette.secondaryText,
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const cardValueStyle: React.CSSProperties = {
+  color: activityRecordsPalette.primaryText,
+  fontSize: 24,
+  fontWeight: 700,
 };
 
 const summaryLoadingIndicatorStyle: React.CSSProperties = {
@@ -2184,8 +2662,8 @@ const summaryLoadingIndicatorStyle: React.CSSProperties = {
 const tableCard = {
   padding: 20,
   borderRadius: 12,
-  border: '1px solid #ddd',
-  background: '#fff',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
   overflow: 'visible',
 };
 
@@ -2210,8 +2688,8 @@ const rowActionStyle = {
 
 const expandedEditCellStyle: React.CSSProperties = {
   padding: 12,
-  borderBottom: '1px solid #e2e8f0',
-  background: '#f8fafc',
+  borderBottom: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.subtleBackground,
 };
 
 const tableToolbarStyle: React.CSSProperties = {
@@ -2243,7 +2721,7 @@ const qualityFilterLabelStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  color: '#475569',
+  color: activityRecordsPalette.infoText,
   fontSize: 13,
   fontWeight: 700,
 };
@@ -2251,9 +2729,9 @@ const qualityFilterLabelStyle: React.CSSProperties = {
 const qualityFilterSelectStyle: React.CSSProperties = {
   height: 38,
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
-  color: '#0f172a',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.primaryText,
   padding: '0 10px',
   fontWeight: 700,
 };
@@ -2272,9 +2750,14 @@ const columnMenuStyle: React.CSSProperties = {
   minWidth: 210,
   padding: 8,
   borderRadius: 12,
-  border: '1px solid #e2e8f0',
-  background: '#fff',
-  boxShadow: '0 20px 42px rgba(15, 23, 42, 0.18)',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+  boxShadow: '0 18px 36px rgba(15, 23, 42, 0.12)',
+};
+
+const exportMenuStyle: React.CSSProperties = {
+  ...columnMenuStyle,
+  minWidth: 260,
 };
 
 const columnMenuItemStyle: React.CSSProperties = {
@@ -2283,12 +2766,29 @@ const columnMenuItemStyle: React.CSSProperties = {
   gap: 8,
   padding: '8px 10px',
   borderRadius: 8,
-  color: '#0f172a',
+  color: activityRecordsPalette.primaryText,
   fontSize: 13,
   fontWeight: 700,
   cursor: 'pointer',
   whiteSpace: 'nowrap',
 };
+
+function exportMenuItemStyle(disabled = false): React.CSSProperties {
+  return {
+    width: '100%',
+    display: 'block',
+    padding: '8px 10px',
+    border: 0,
+    borderRadius: 8,
+    background: 'transparent',
+    color: disabled ? activityRecordsPalette.mutedText : activityRecordsPalette.primaryText,
+    fontSize: 13,
+    fontWeight: 700,
+    textAlign: 'left',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    whiteSpace: 'nowrap',
+  };
+}
 
 const tableScrollContainerStyle: React.CSSProperties = {
   marginTop: 16,
@@ -2308,7 +2808,7 @@ const activityRecordsTableStyle: React.CSSProperties = {
 
 const scrollHintStyle: React.CSSProperties = {
   marginTop: 12,
-  color: '#94a3b8',
+  color: activityRecordsPalette.mutedText,
   fontSize: 12,
   fontWeight: 600,
   textAlign: 'right',
@@ -2435,8 +2935,8 @@ const documentFilterBannerStyle: React.CSSProperties = {
   marginBottom: 2,
   padding: '12px 14px',
   borderRadius: 10,
-  border: '1px solid #bbf7d0',
-  background: '#f0fdf4',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.subtleBackground,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
@@ -2447,9 +2947,9 @@ const documentFilterBannerStyle: React.CSSProperties = {
 const clearFilterButtonStyle: React.CSSProperties = {
   padding: '7px 10px',
   borderRadius: 8,
-  border: '1px solid #86efac',
-  background: '#fff',
-  color: '#047857',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.primaryGreen,
   fontWeight: 700,
   cursor: 'pointer',
 };
@@ -2457,10 +2957,10 @@ const clearFilterButtonStyle: React.CSSProperties = {
 const primaryActionBtn = {
   padding: '8px 14px',
   borderRadius: 8,
-  border: 'none',
-  background: '#10b981',
-  color: '#fff',
-  fontWeight: 600,
+  border: `1px solid ${activityRecordsPalette.primaryGreen}`,
+  background: activityRecordsPalette.primaryGreen,
+  color: activityRecordsPalette.white,
+  fontWeight: 700,
   cursor: 'pointer',
 };
 
@@ -2468,29 +2968,29 @@ const readOnlyNoticeStyle: React.CSSProperties = {
   marginBottom: 20,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #cbd5e1',
-  background: '#f8fafc',
-  color: '#475569',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.subtleBackground,
+  color: activityRecordsPalette.infoText,
   fontSize: 13,
   lineHeight: 1.5,
 };
 
 const secondaryActionBtn = {
-  padding: '6px 10px',
+  padding: '7px 11px',
   borderRadius: 8,
-  border: '1px solid #d1d5db',
-  background: '#fff',
-  color: '#111827',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+  color: '#334155',
   fontSize: 12,
-  fontWeight: 600,
+  fontWeight: 700,
   cursor: 'pointer',
 };
 
 function secondaryActionBtnStyle(disabled = false): React.CSSProperties {
   return {
     ...secondaryActionBtn,
-    background: disabled ? '#f8fafc' : '#fff',
-    color: disabled ? '#94a3b8' : '#111827',
+    background: disabled ? activityRecordsPalette.disabledBackground : activityRecordsPalette.white,
+    color: disabled ? activityRecordsPalette.mutedText : '#334155',
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }
@@ -2499,8 +2999,8 @@ const dangerActionBtn = {
   padding: '8px 14px',
   borderRadius: 8,
   border: '1px solid #fca5a5',
-  background: '#fff1f2',
-  color: '#be123c',
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.errorText,
   fontWeight: 600,
   cursor: 'pointer',
 };
@@ -2514,9 +3014,9 @@ function bulkDeleteButtonStyle(
   return {
     padding: '8px 12px',
     borderRadius: 8,
-    border: hasSelection ? '1px solid #dc2626' : '1px solid #d1d5db',
-    background: hasSelection ? '#dc2626' : '#f3f4f6',
-    color: hasSelection ? '#fff' : '#6b7280',
+    border: hasSelection ? `1px solid ${activityRecordsPalette.errorText}` : `1px solid ${activityRecordsPalette.border}`,
+    background: hasSelection ? activityRecordsPalette.white : activityRecordsPalette.disabledBackground,
+    color: hasSelection ? activityRecordsPalette.errorText : activityRecordsPalette.mutedText,
     cursor: hasSelection ? 'pointer' : 'not-allowed',
     fontWeight: 700,
   };
@@ -2528,9 +3028,9 @@ function generateReportButtonStyle(selectedCount: number): React.CSSProperties {
   return {
     padding: '8px 12px',
     borderRadius: 8,
-    border: hasSelection ? '1px solid #10b981' : '1px solid #d1d5db',
-    background: hasSelection ? '#10b981' : '#f3f4f6',
-    color: hasSelection ? '#fff' : '#6b7280',
+    border: hasSelection ? `1px solid ${activityRecordsPalette.primaryGreen}` : `1px solid ${activityRecordsPalette.border}`,
+    background: hasSelection ? activityRecordsPalette.primaryGreen : activityRecordsPalette.disabledBackground,
+    color: hasSelection ? activityRecordsPalette.white : activityRecordsPalette.mutedText,
     cursor: hasSelection ? 'pointer' : 'not-allowed',
     fontWeight: 700,
   };
@@ -2539,11 +3039,11 @@ function generateReportButtonStyle(selectedCount: number): React.CSSProperties {
 const thStyle = {
   textAlign: 'left' as const,
   padding: '8px 10px',
-  background: '#f8fafc',
-  color: '#475569',
+  background: activityRecordsPalette.subtleBackground,
+  color: activityRecordsPalette.infoText,
   fontSize: 12,
   fontWeight: 700,
-  borderBottom: '1px solid #e5e7eb',
+  borderBottom: `1px solid ${activityRecordsPalette.border}`,
 };
 
 const checkboxThStyle: React.CSSProperties = {
@@ -2607,13 +3107,13 @@ const actionsThStyle: React.CSSProperties = {
   position: 'sticky',
   right: 0,
   zIndex: 3,
-  background: '#f8fafc',
+  background: activityRecordsPalette.subtleBackground,
   boxShadow: '-8px 0 12px rgba(248, 250, 252, 0.9)',
 };
 
 const tdStyle = {
   padding: '7px 10px',
-  borderBottom: '1px solid #f1f5f9',
+  borderBottom: `1px solid ${activityRecordsPalette.lightBorder}`,
   verticalAlign: 'middle' as const,
   fontSize: 13,
   lineHeight: 1.25,
@@ -2631,7 +3131,7 @@ const unitCellStyle: React.CSSProperties = {
 
 const helperTextStyle: React.CSSProperties = {
   marginTop: 4,
-  color: '#64748b',
+  color: activityRecordsPalette.secondaryText,
   fontSize: 11,
   lineHeight: 1.25,
 };
@@ -2642,13 +3142,17 @@ const sourceReferenceCellStyle: React.CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  color: '#475569',
+  color: activityRecordsPalette.infoText,
 };
 
 const highlightedRecordRowStyle: React.CSSProperties = {
-  background: '#ecfdf5',
-  boxShadow: 'inset 4px 0 0 #10b981',
+  background: activityRecordsPalette.successBackground,
+  boxShadow: `inset 4px 0 0 ${activityRecordsPalette.primaryGreen}`,
   transition: 'background 0.2s ease, box-shadow 0.2s ease',
+};
+
+const selectedRecordRowStyle: React.CSSProperties = {
+  background: '#F0FDF4',
 };
 
 const actionsCellStyle: React.CSSProperties = {
@@ -2657,7 +3161,7 @@ const actionsCellStyle: React.CSSProperties = {
   position: 'sticky',
   right: 0,
   zIndex: 2,
-  background: '#fff',
+  background: activityRecordsPalette.white,
   whiteSpace: 'nowrap',
   boxShadow: '-8px 0 12px rgba(255, 255, 255, 0.92)',
 };
@@ -2671,9 +3175,9 @@ const overflowButtonStyle: React.CSSProperties = {
   width: 30,
   height: 30,
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
-  color: '#0f172a',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.primaryText,
   fontWeight: 800,
   cursor: 'pointer',
 };
@@ -2689,8 +3193,8 @@ const overflowMenuStyle: React.CSSProperties = {
   minWidth: 96,
   padding: 6,
   borderRadius: 10,
-  border: '1px solid #e2e8f0',
-  background: '#fff',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
   boxShadow: '0 14px 30px rgba(15, 23, 42, 0.14)',
 };
 
@@ -2701,8 +3205,8 @@ const menuItemStyle: React.CSSProperties = {
   padding: '8px 10px',
   border: 'none',
   borderRadius: 8,
-  background: '#fff',
-  color: '#0f172a',
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.primaryText,
   textAlign: 'left',
   fontWeight: 600,
   cursor: 'pointer',
@@ -2710,7 +3214,7 @@ const menuItemStyle: React.CSSProperties = {
 
 const menuItemDangerStyle: React.CSSProperties = {
   ...menuItemStyle,
-  color: '#b91c1c',
+  color: activityRecordsPalette.errorText,
 };
 
 const paginationStyle: React.CSSProperties = {
@@ -2720,7 +3224,7 @@ const paginationStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   gap: 12,
   flexWrap: 'wrap',
-  color: '#475569',
+  color: activityRecordsPalette.infoText,
   fontSize: 14,
 };
 
@@ -2734,9 +3238,9 @@ function paginationButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     padding: '8px 12px',
     borderRadius: 8,
-    border: '1px solid #cbd5e1',
-    background: disabled ? '#f8fafc' : '#fff',
-    color: disabled ? '#94a3b8' : '#0f172a',
+    border: `1px solid ${activityRecordsPalette.border}`,
+    background: disabled ? activityRecordsPalette.disabledBackground : activityRecordsPalette.white,
+    color: disabled ? activityRecordsPalette.mutedText : activityRecordsPalette.primaryText,
     fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -2746,9 +3250,9 @@ const undoBarStyle: React.CSSProperties = {
   marginBottom: 12,
   padding: '12px 14px',
   borderRadius: 10,
-  background: '#fefce8',
-  border: '1px solid #fde68a',
-  color: '#854d0e',
+  background: activityRecordsPalette.warningBackground,
+  border: '1px solid #FDE68A',
+  color: activityRecordsPalette.warningText,
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
@@ -2761,7 +3265,7 @@ const undoButtonStyle: React.CSSProperties = {
   borderRadius: 8,
   border: '1px solid #ca8a04',
   background: '#fff',
-  color: '#854d0e',
+  color: activityRecordsPalette.warningText,
   fontWeight: 700,
   cursor: 'pointer',
 };
@@ -2770,8 +3274,8 @@ const dismissButtonStyle: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 8,
   border: '1px solid #d1d5db',
-  background: '#fff',
-  color: '#374151',
+  background: activityRecordsPalette.white,
+  color: '#334155',
   cursor: 'pointer',
 };
 
@@ -2779,26 +3283,26 @@ const warningStyle: React.CSSProperties = {
   marginBottom: 12,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #fed7aa',
-  background: '#fff7ed',
-  color: '#9a3412',
+  border: '1px solid #FDE68A',
+  background: activityRecordsPalette.warningBackground,
+  color: activityRecordsPalette.warningText,
 };
 
 const successStyle: React.CSSProperties = {
   marginBottom: 12,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #bbf7d0',
-  background: '#f0fdf4',
-  color: '#166534',
+  border: '1px solid #BBF7D0',
+  background: activityRecordsPalette.successBackground,
+  color: activityRecordsPalette.primaryGreen,
 };
 
 const advancedActionsStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 16,
   borderRadius: 10,
-  border: '1px solid #fecaca',
-  background: '#fff7f7',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.subtleBackground,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
@@ -2808,13 +3312,13 @@ const advancedActionsStyle: React.CSSProperties = {
 
 const advancedActionsTitleStyle: React.CSSProperties = {
   margin: 0,
-  color: '#7f1d1d',
+  color: activityRecordsPalette.primaryText,
   fontSize: 18,
 };
 
 const advancedActionsTextStyle: React.CSSProperties = {
   margin: '4px 0 0',
-  color: '#7f1d1d',
+  color: activityRecordsPalette.secondaryText,
   fontSize: 13,
 };
 
@@ -2829,9 +3333,9 @@ function recalculateRecordsButtonStyle(disabled = false): React.CSSProperties {
   return {
     padding: '9px 12px',
     borderRadius: 8,
-    border: '1px solid #059669',
-    background: disabled ? '#ecfdf5' : '#059669',
-    color: disabled ? '#6ee7b7' : '#fff',
+    border: `1px solid ${activityRecordsPalette.border}`,
+    background: disabled ? activityRecordsPalette.disabledBackground : activityRecordsPalette.white,
+    color: disabled ? activityRecordsPalette.mutedText : activityRecordsPalette.primaryGreen,
     fontWeight: 800,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -2840,9 +3344,9 @@ function recalculateRecordsButtonStyle(disabled = false): React.CSSProperties {
 const clearRecordsButtonStyle: React.CSSProperties = {
   padding: '9px 12px',
   borderRadius: 8,
-  border: '1px solid #dc2626',
-  background: '#dc2626',
-  color: '#fff',
+  border: `1px solid ${activityRecordsPalette.errorText}`,
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.errorText,
   fontWeight: 800,
   cursor: 'pointer',
 };
@@ -2896,9 +3400,9 @@ function clearRecordsConfirmButtonStyle(enabled: boolean): React.CSSProperties {
   return {
     padding: '8px 12px',
     borderRadius: 8,
-    border: enabled ? '1px solid #dc2626' : '1px solid #d1d5db',
-    background: enabled ? '#dc2626' : '#f3f4f6',
-    color: enabled ? '#fff' : '#6b7280',
+    border: enabled ? `1px solid ${activityRecordsPalette.errorText}` : `1px solid ${activityRecordsPalette.border}`,
+    background: enabled ? activityRecordsPalette.errorText : activityRecordsPalette.disabledBackground,
+    color: enabled ? activityRecordsPalette.white : activityRecordsPalette.mutedText,
     cursor: enabled ? 'pointer' : 'not-allowed',
     fontWeight: 800,
   };
@@ -2908,9 +3412,9 @@ const emptyStateStyle: React.CSSProperties = {
   marginTop: 16,
   padding: 18,
   borderRadius: 12,
-  border: '1px solid #e2e8f0',
-  background: '#f8fafc',
-  color: '#475569',
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.subtleBackground,
+  color: activityRecordsPalette.infoText,
 };
 
 const loadingStateStyle: React.CSSProperties = {
@@ -2920,14 +3424,14 @@ const loadingStateStyle: React.CSSProperties = {
 const loadingStateHeaderStyle: React.CSSProperties = {
   display: 'grid',
   gap: 8,
-  color: '#475569',
+  color: activityRecordsPalette.infoText,
   fontSize: 14,
   fontWeight: 700,
 };
 
 const slowLoadingTextStyle: React.CSSProperties = {
   marginTop: 8,
-  color: '#64748b',
+  color: activityRecordsPalette.secondaryText,
   fontSize: 13,
   fontWeight: 700,
 };
@@ -2939,7 +3443,7 @@ const loadingBarStyle: React.CSSProperties = {
   borderRadius: 999,
   overflow: 'hidden',
   background:
-    'linear-gradient(90deg, #d1fae5 0%, #10b981 45%, #d1fae5 90%)',
+    `linear-gradient(90deg, #D1FAE5 0%, ${activityRecordsPalette.primaryGreen} 45%, #D1FAE5 90%)`,
   backgroundSize: '180% 100%',
 };
 
@@ -2949,9 +3453,9 @@ const refreshingNoticeStyle: React.CSSProperties = {
   marginTop: 12,
   padding: '10px 12px',
   borderRadius: 10,
-  border: '1px solid #bbf7d0',
-  background: '#f0fdf4',
-  color: '#047857',
+  border: '1px solid #BBF7D0',
+  background: activityRecordsPalette.successBackground,
+  color: activityRecordsPalette.primaryGreen,
   fontSize: 13,
   fontWeight: 800,
 };
@@ -2960,9 +3464,9 @@ const tableErrorStateStyle: React.CSSProperties = {
   marginTop: 16,
   padding: 18,
   borderRadius: 12,
-  border: '1px solid #fecaca',
-  background: '#fff1f2',
-  color: '#991b1b',
+  border: '1px solid #FECACA',
+  background: activityRecordsPalette.errorBackground,
+  color: activityRecordsPalette.errorText,
   display: 'grid',
   gap: 10,
 };
@@ -2971,9 +3475,9 @@ const retryButtonStyle: React.CSSProperties = {
   justifySelf: 'start',
   padding: '8px 12px',
   borderRadius: 8,
-  border: '1px solid #be123c',
-  background: '#fff',
-  color: '#be123c',
+  border: `1px solid ${activityRecordsPalette.errorText}`,
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.errorText,
   fontWeight: 800,
   cursor: 'pointer',
 };

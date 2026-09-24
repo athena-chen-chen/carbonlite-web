@@ -92,6 +92,42 @@ const checklist = [
   },
 ];
 
+const reviewIssues = [
+  {
+    label: 'Missing Province',
+    description: 'Electricity records need a province or jurisdiction before a province-specific factor can be matched.',
+  },
+  {
+    label: 'Missing Site',
+    description: 'Site or facility is optional, but it helps group records in reports and review packages.',
+  },
+  {
+    label: 'Missing Factor',
+    description: 'The record is retained for review when no compatible conversion factor is available.',
+  },
+  {
+    label: 'Unit Mismatch',
+    description: 'The activity unit does not match the available factor unit. CarbonLite does not silently combine incompatible units.',
+  },
+  {
+    label: 'Missing Required Field',
+    description: 'A quantity, unit, date, or activity type may need review before import.',
+  },
+  {
+    label: 'Tracked Only',
+    description: 'The record can be tracked as operational data without being included in the current emissions total.',
+  },
+];
+
+const workflowSteps = [
+  'Collect',
+  'Upload / Import',
+  'Review',
+  'Match Factors',
+  'Calculation Review',
+  'Export Review Package',
+];
+
 const templateRows = [
   ['Electricity', '1000', 'kWh', '2026-01-01', 'Canada', 'British Columbia', 'Vancouver Office', 'Electricity bill', 'BC electricity example'],
   ['Electricity', '1000', 'kWh', '2026-01-01', 'Canada', 'Alberta', 'Calgary Office', 'Electricity bill', 'Alberta electricity example'],
@@ -131,8 +167,12 @@ export default function DataCollectionGuidePage() {
         <p style={eyebrowStyle}>SME Data Readiness</p>
         <h1 style={titleStyle}>Data Collection Guide</h1>
         <p style={subtitleStyle}>
-          A practical checklist for Canadian SMEs and sustainability consultants preparing utility bills,
-          invoices, spreadsheets, and operational records for traceable emissions reporting.
+          Use this guide to gather the source documents and activity data needed for a clean CarbonLite review.
+          Start with the records your organization already has, including utility bills, fuel records,
+          invoices, spreadsheets, travel data, and other operational information.
+        </p>
+        <p style={introSupportStyle}>
+          You do not need perfect data before you begin. Records with missing information can be flagged for review.
         </p>
         <div style={actionRowStyle}>
           <button type="button" onClick={downloadTemplate} style={primaryButtonStyle}>
@@ -144,7 +184,11 @@ export default function DataCollectionGuidePage() {
       </section>
 
       <section style={sectionStyle}>
-        <h2 style={sectionTitleStyle}>What Data Should I Collect?</h2>
+        <h2 style={sectionTitleStyle}>What Source Data Should I Collect?</h2>
+        <p style={bodyTextStyle}>
+          Look for the physical activity quantity, not just the amount paid. Useful quantities include kWh,
+          GJ, m3, L, km, nights, and tonnes when supported by the factor library.
+        </p>
         <div style={categoryGridStyle}>
           {dataCategories.map((category) => (
             <article key={category.title} style={categoryCardStyle}>
@@ -173,9 +217,10 @@ export default function DataCollectionGuidePage() {
       </section>
 
       <section style={sectionStyle}>
-        <h2 style={sectionTitleStyle}>How to Organize Spreadsheet Data</h2>
+        <h2 style={sectionTitleStyle}>Using Existing Spreadsheets</h2>
         <p style={bodyTextStyle}>
-          Use one row per activity record. These columns work well with CarbonLite’s upload and review workflow.
+          You do not need to rebuild your records before starting. CarbonLite is designed to work with existing
+          CSV or spreadsheet data and help identify fields that require review. Use one row per activity record.
         </p>
         <p style={unitNoteStyle}>
           CarbonLite currently supports selected pilot units. Additional unit conversion support will be expanded in future versions.
@@ -193,7 +238,24 @@ export default function DataCollectionGuidePage() {
       </section>
 
       <section style={sectionStyle}>
-        <h2 style={sectionTitleStyle}>Data Quality Checklist</h2>
+        <h2 style={sectionTitleStyle}>Uploading Documents</h2>
+        <p style={bodyTextStyle}>
+          CarbonLite extracts supported activity information and presents it for review before it becomes an
+          Activity Record. Utility bills, fuel invoices, travel records, PDFs, and spreadsheets should still be
+          checked in Input Review before import.
+        </p>
+        <div style={workflowStyle} aria-label="CarbonLite data review workflow">
+          {workflowSteps.map((step, index) => (
+            <div key={step} style={workflowStepStyle}>
+              <span style={workflowNumberStyle}>{index + 1}</span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section style={sectionStyle}>
+        <h2 style={sectionTitleStyle}>What CarbonLite Looks For</h2>
         <div style={checklistGridStyle}>
           {checklist.map((item) => (
             <div key={item.label} style={checkItemStyle}>
@@ -207,8 +269,24 @@ export default function DataCollectionGuidePage() {
         </div>
       </section>
 
+      <section style={sectionStyle}>
+        <h2 style={sectionTitleStyle}>Common Review Issues</h2>
+        <p style={bodyTextStyle}>
+          These do not always mean the source document is unusable. They indicate information that should be
+          reviewed before final calculations or export.
+        </p>
+        <div style={issueGridStyle}>
+          {reviewIssues.map((issue) => (
+            <article key={issue.label} style={issueItemStyle}>
+              <span style={issueBadgeStyle}>{issue.label}</span>
+              <p style={smallTextStyle}>{issue.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section style={calloutStyle}>
-        <h2 style={sectionTitleStyle}>How this connects to Calculation Review and Reports</h2>
+        <h2 style={sectionTitleStyle}>Ready to Add Data?</h2>
         <p style={bodyTextStyle}>
           Calculation Review shows calculated emissions, records requiring review, tracked metrics, and data readiness.
           Reports turn reviewed calculations into a polished output for sharing.
@@ -260,9 +338,9 @@ const pageStyle: React.CSSProperties = {
 
 const heroStyle: React.CSSProperties = {
   padding: 28,
-  borderRadius: 16,
-  background: '#f0fdf4',
-  border: '1px solid #bbf7d0',
+  borderRadius: 12,
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
   marginBottom: 24,
 };
 
@@ -283,8 +361,16 @@ const titleStyle: React.CSSProperties = {
 const subtitleStyle: React.CSSProperties = {
   maxWidth: 820,
   margin: 0,
-  color: '#334155',
+  color: '#475569',
   fontSize: 16,
+  lineHeight: 1.6,
+};
+
+const introSupportStyle: React.CSSProperties = {
+  maxWidth: 820,
+  margin: '10px 0 0',
+  color: '#64748b',
+  fontSize: 15,
   lineHeight: 1.6,
 };
 
@@ -296,8 +382,8 @@ const actionRowStyle: React.CSSProperties = {
 };
 
 const primaryButtonStyle: React.CSSProperties = {
-  border: '1px solid #059669',
-  background: '#059669',
+  border: '1px solid #047857',
+  background: '#047857',
   color: '#fff',
   borderRadius: 10,
   padding: '10px 14px',
@@ -322,7 +408,7 @@ const secondaryLinkStyle: React.CSSProperties = {
 
 const sectionStyle: React.CSSProperties = {
   padding: 22,
-  borderRadius: 16,
+  borderRadius: 12,
   background: '#fff',
   border: '1px solid #e2e8f0',
   marginBottom: 24,
@@ -330,8 +416,8 @@ const sectionStyle: React.CSSProperties = {
 
 const calloutStyle: React.CSSProperties = {
   ...sectionStyle,
-  background: '#eff6ff',
-  border: '1px solid #bfdbfe',
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
 };
 
 const sectionTitleStyle: React.CSSProperties = {
@@ -340,7 +426,7 @@ const sectionTitleStyle: React.CSSProperties = {
 };
 
 const bodyTextStyle: React.CSSProperties = {
-  color: '#334155',
+  color: '#475569',
   lineHeight: 1.6,
 };
 
@@ -364,7 +450,7 @@ const categoryCardStyle: React.CSSProperties = {
   padding: 16,
   borderRadius: 12,
   border: '1px solid #e2e8f0',
-  background: '#f8fafc',
+  background: '#fff',
 };
 
 const categoryHeaderStyle: React.CSSProperties = {
@@ -407,9 +493,9 @@ const listStyle: React.CSSProperties = {
 };
 
 const noteStyle: React.CSSProperties = {
-  color: '#0f766e',
-  background: '#ecfeff',
-  border: '1px solid #a5f3fc',
+  color: '#475569',
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
   borderRadius: 10,
   padding: 10,
   fontSize: 13,
@@ -477,4 +563,64 @@ const checkIconStyle: React.CSSProperties = {
   background: '#dcfce7',
   color: '#047857',
   fontWeight: 900,
+};
+
+const workflowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+  gap: 10,
+  marginTop: 16,
+};
+
+const workflowStepStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  color: '#0f172a',
+  fontWeight: 700,
+};
+
+const workflowNumberStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 22,
+  height: 22,
+  borderRadius: 999,
+  background: '#ecfdf5',
+  color: '#047857',
+  fontSize: 12,
+  fontWeight: 900,
+  flexShrink: 0,
+};
+
+const issueGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+  gap: 12,
+  marginTop: 14,
+};
+
+const issueItemStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  padding: 12,
+  borderRadius: 12,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+};
+
+const issueBadgeStyle: React.CSSProperties = {
+  width: 'fit-content',
+  padding: '4px 8px',
+  borderRadius: 999,
+  background: '#fff',
+  border: '1px solid #e2e8f0',
+  color: '#334155',
+  fontSize: 12,
+  fontWeight: 800,
 };

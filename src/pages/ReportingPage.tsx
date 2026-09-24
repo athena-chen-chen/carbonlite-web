@@ -37,7 +37,7 @@ import { CollapsibleReportSection } from '../components/reports/CollapsibleRepor
 import { ReportScopeSection } from '../components/reports/sections/ReportScopeSection';
 import { PilotReviewerFeedbackPrompt } from '../components/PilotReviewerFeedbackPrompt';
 import { getCurrentUser, getOrganizationId, getOrganizationName } from '../services/auth';
-import { isPilotReviewer } from '../utils/permissions';
+import { canEditWorkspace, isPilotReviewer } from '../utils/permissions';
 import { createClientAuditLog } from '../services/auditLogs';
 import { getActivityEvents, trackActivityEvent, type ActivityEventItem } from '../services/activityEvents';
 import { track } from '../services/analytics.service';
@@ -75,6 +75,24 @@ import {
 } from '../utils/reportCredibility';
 import { buildPilotCsv } from '../utils/reportCsvExport';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import {
+  ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E,
+  buildFacilityThresholdReferenceRows,
+  buildSiteFacilityRollup,
+  FACILITY_REPORTING_THRESHOLD_TCO2E,
+  FACILITY_THRESHOLD_REFERENCE_DISCLAIMER,
+  type FacilityThresholdReferenceRow,
+  type SiteFacilityBreakdownRow,
+} from '../utils/siteFacilityBreakdown';
+import {
+  buildReviewPackageCalculationTraceabilityCsv,
+  buildReviewPackageDataRecordsCsv,
+  buildReviewPackageFactorSourceSummaryCsv,
+  buildReviewPackageRecordsRequiringReviewCsv,
+  buildReviewPackageSiteFacilityBreakdownCsv,
+  getReviewPackageCsvFileName,
+  type ReviewPackageCsvKind,
+} from '../utils/reportReviewPackageCsvExport';
 import {
   summarizeInventoryBoundary,
   type InventoryBoundary,
@@ -137,6 +155,8 @@ const REPORT_SECTION_DEFAULTS = {
   executiveSummary: true,
   emissionsHotspots: false,
   scopeBreakdown: true,
+  siteFacilityBreakdown: false,
+  facilityThresholdReference: false,
   calculationQuality: true,
   calculationSummary: false,
   activityBreakdown: false,
@@ -146,6 +166,7 @@ const REPORT_SECTION_DEFAULTS = {
   recordsRequiringReview: false,
   dataQualityNotes: true,
   carbonCreditReadiness: false,
+  regulatoryReportingReference: false,
   methodologyDisclaimer: true,
   activityRecords: false,
 } as const;
@@ -171,12 +192,25 @@ const WORKFLOW_AUDIT_EVENT_NAMES = new Set([
   'IMPORT_FAILED',
 ]);
 
+const REGULATORY_REPORTING_REFERENCE_TITLE = 'Regulatory Reporting Reference';
+const REGULATORY_REPORTING_REFERENCE_SUMMARY =
+  'Reference only · Not an official filing or compliance determination';
+const REGULATORY_REPORTING_REFERENCE_TEXT =
+  'This report is for emissions data readiness and internal workflow review only. It is not a CRA fuel charge return, official GHGRP submission, TIER compliance report, third-party verification, or regulatory compliance advice.';
+const REGULATORY_REPORTING_SYSTEMS = [
+  'Federal GHGRP Single Window reporting',
+  'Alberta SGRR / SWIM reporting',
+  'Alberta TIER compliance reporting',
+  'CRA fuel charge forms, where applicable',
+] as const;
+
 export default function ReportingPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
   const currentWorkspaceId = getOrganizationId(currentUser);
   const isPilotReviewerAccount = isPilotReviewer(currentUser);
+  const canEditOrganizationBoundary = canEditWorkspace(currentUser);
   const canViewWorkflowHistory = !isPilotReviewerAccount;
   const routeState = location.state as {
     reportScope?: string;
@@ -216,6 +250,7 @@ export default function ReportingPage() {
   const [workflowEventsLoading, setWorkflowEventsLoading] = useState(false);
   const [isWorkflowAuditOpen, setIsWorkflowAuditOpen] = useState(false);
   const [isInventoryBoundaryExpanded, setIsInventoryBoundaryExpanded] = useState(false);
+  const [isReviewPackageMenuOpen, setIsReviewPackageMenuOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
   const [periodEnd, setPeriodEnd] = useState('2026-12-31');
@@ -247,6 +282,7 @@ export default function ReportingPage() {
   const isSlowPreparingReport = useSlowLoading(!dateRangeReady || loading);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const inFlightRequestKeyRef = useRef<string | null>(null);
+  const reviewPackageMenuRef = useRef<HTMLDivElement | null>(null);
   const trackedReportViewRef = useRef(false);
   async function loadWorkflowEvents() {
     if (!canViewWorkflowHistory) {
@@ -406,6 +442,29 @@ export default function ReportingPage() {
       });
   }, [currentUser?.id, currentWorkspaceId, currentUser?.email]);
 
+  useEffect(() => {
+    if (!isReviewPackageMenuOpen) return;
+
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (target && reviewPackageMenuRef.current?.contains(target)) return;
+      setIsReviewPackageMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsReviewPackageMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isReviewPackageMenuOpen]);
+
 async function initializeDateRange() {
   try {
     const range = await loadDefaultMetricsDateRange();
@@ -518,26 +577,100 @@ const unclassifiedCalculatedRecords = useMemo(
     ),
   [calculationDetails],
 );
+const siteFacilityRollup = useMemo(
+  () => buildSiteFacilityRollup(calculationDetails),
+  [calculationDetails],
+);
+const siteFacilityBreakdownRows = siteFacilityRollup.rows;
+const facilityThresholdReferenceRows = useMemo(
+  () => buildFacilityThresholdReferenceRows(siteFacilityBreakdownRows),
+  [siteFacilityBreakdownRows],
+);
 
-function handleDownloadCSV() {
-  if (!hasReportOutput) return;
-
-  const csv = buildPilotCsv(calculationDetails);
+function downloadCsvFile(csv: string, filename: string) {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
 
   link.href = url;
-  link.download = `CarbonLite_Sample_Report_Export_v0.1_${new Date()
-    .toISOString()
-    .slice(0, 10)}.csv`;
+  link.download = filename;
 
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 
   URL.revokeObjectURL(url);
+}
+
+function getReviewPackageCsv(kind: ReviewPackageCsvKind) {
+  switch (kind) {
+    case 'data-records':
+      return buildReviewPackageDataRecordsCsv(calculationDetails);
+    case 'site-facility-breakdown':
+      return buildReviewPackageSiteFacilityBreakdownCsv(
+        siteFacilityBreakdownRows,
+        calculationDetails,
+      );
+    case 'factor-source-summary':
+      return buildReviewPackageFactorSourceSummaryCsv(conversionFactorsUsed);
+    case 'calculation-traceability':
+      return buildReviewPackageCalculationTraceabilityCsv(calculationDetails);
+    case 'records-requiring-review':
+      return buildReviewPackageRecordsRequiringReviewCsv(calculationDetails);
+  }
+}
+
+function hasReviewPackageData(kind: ReviewPackageCsvKind) {
+  if (kind === 'site-facility-breakdown') return siteFacilityBreakdownRows.length > 0;
+  if (kind === 'factor-source-summary') return conversionFactorsUsed.length > 0;
+  if (kind === 'records-requiring-review') {
+    return calculationDetails.some(isRecordRequiringCorrection);
+  }
+  return calculationDetails.length > 0;
+}
+
+function handleExportReviewPackageCsv(kind: ReviewPackageCsvKind) {
+  setIsReviewPackageMenuOpen(false);
+  setError(null);
+
+  if (!hasReviewPackageData(kind)) {
+    setError(
+      kind === 'records-requiring-review'
+        ? 'No records currently require review.'
+        : 'No records available to export.',
+    );
+    return;
+  }
+
+  const csv = getReviewPackageCsv(kind);
+  downloadCsvFile(csv, getReviewPackageCsvFileName(kind));
+
+  void trackActivityEvent({
+    eventName: 'CSV_EXPORTED',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'REPORT',
+    metadata: {
+      exportKind: kind,
+      exportedAt: new Date().toISOString(),
+      exportStatus: 'EXPORTED',
+      reportScope,
+    },
+  }).catch(() => {
+    // Review package export should not be blocked by usage tracking.
+  });
+}
+
+function handleDownloadCSV() {
+  if (!hasReportOutput) return;
+
+  const csv = buildPilotCsv(calculationDetails);
+  downloadCsvFile(
+    csv,
+    `CarbonLite_Sample_Report_Export_v0.1_${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`,
+  );
 
   void trackActivityEvent({
     eventName: 'REPORT_EXPORTED_CSV',
@@ -643,26 +776,24 @@ function drawInventoryBoundaryPdfSection(
   boundary: InventoryBoundary,
   startY: number,
 ) {
-  drawPdfSectionTitle(doc, 'Inventory Boundary', startY);
+  drawPdfSectionTitle(doc, 'Reporting Boundary', startY);
   autoTable(doc, {
     startY: startY + 6,
     head: [['Boundary Field', 'Description']],
     body: [
-      ['Organization / Workspace', boundary.organizationWorkspace],
+      ['Organization / Workspace', formatBoundaryValue(boundary.organizationWorkspace)],
       ...(boundary.industry ? [['Industry', boundary.industry]] : []),
       ...(boundary.country ? [['Country', boundary.country]] : []),
       ...(boundary.provinceOrTerritory ? [['Province / Territory', boundary.provinceOrTerritory]] : []),
       ...(boundary.city ? [['City', boundary.city]] : []),
-      ['Reporting period', boundary.reportingPeriod],
-      ['Geographic boundary', boundary.geographicBoundary],
-      ['Included facilities or locations', boundary.includedFacilitiesOrLocations],
-      ...(boundary.excludedFacilitiesOrLocations
-        ? [['Excluded facilities or locations', boundary.excludedFacilitiesOrLocations]]
-        : []),
-      ['Included scopes', boundary.includedScopes],
-      ['Scope 3 coverage note', boundary.scope3CoverageNote],
-      ['Exclusions / limitations', boundary.exclusionsLimitations],
-      ...(boundary.boundaryNotes ? [['Boundary notes', boundary.boundaryNotes]] : []),
+      ['Reporting period', formatBoundaryValue(boundary.reportingPeriod)],
+      ['Geographic boundary', formatBoundaryValue(boundary.geographicBoundary)],
+      ['Included facilities or locations', formatBoundaryValue(boundary.includedFacilitiesOrLocations)],
+      ['Excluded facilities or locations', formatBoundaryValue(boundary.excludedFacilitiesOrLocations)],
+      ['Included scopes', formatBoundaryValue(boundary.includedScopes)],
+      ['Scope 3 coverage note', formatBoundaryValue(boundary.scope3CoverageNote)],
+      ['Exclusions / limitations', formatBoundaryValue(boundary.exclusionsLimitations)],
+      ['Boundary notes', formatBoundaryValue(boundary.boundaryNotes)],
     ],
     styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
     headStyles: { fillColor: [4, 120, 87] },
@@ -673,6 +804,31 @@ function drawInventoryBoundaryPdfSection(
   });
 
   return ((doc as any).lastAutoTable?.finalY ?? startY) + 8;
+}
+
+function drawRegulatoryReportingReferencePdfSection(doc: jsPDF, startY: number) {
+  const y = ensurePdfSpace(doc, startY, 58);
+  drawPdfSectionTitle(doc, REGULATORY_REPORTING_REFERENCE_TITLE, y);
+  autoTable(doc, {
+    startY: y + 6,
+    head: [['Reference Note', 'Details']],
+    body: [
+      ['Purpose', REGULATORY_REPORTING_REFERENCE_TEXT],
+      ['Relevant reporting systems may include', REGULATORY_REPORTING_SYSTEMS.join('\n')],
+      [
+        'Important note',
+        'Reference only. CarbonLite does not determine regulatory obligations. Consult a qualified professional before making regulatory filing or compliance decisions.',
+      ],
+    ],
+    styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
+    headStyles: { fillColor: [71, 85, 105] },
+    columnStyles: {
+      0: { cellWidth: 54 },
+      1: { cellWidth: 126 },
+    },
+  });
+
+  return ((doc as any).lastAutoTable?.finalY ?? y) + 8;
 }
 
 function formatHotspotLevelForPdf(level: HotspotAnalysis['categoryHotspots'][number]['hotspotLevel']) {
@@ -1040,6 +1196,54 @@ function handleDownloadPDF() {
     ],
   });
 
+  nextY = (doc as any).lastAutoTable.finalY + 14;
+  drawPdfSectionTitle(doc, 'Emissions by Site / Facility', nextY);
+  autoTable(doc, {
+    startY: nextY + 6,
+    head: [['Site / Facility', 'Scope 1', 'Scope 2', 'Scope 3', 'Total', 'Included Records', 'Activity Type Breakdown']],
+    body: siteFacilityBreakdownRows.length
+      ? siteFacilityBreakdownRows.map((row) => [
+          row.siteFacility,
+          `${formatEmissionsValue(row.scope1KgCO2e)} kgCO2e`,
+          `${formatEmissionsValue(row.scope2KgCO2e)} kgCO2e`,
+          `${formatEmissionsValue(row.scope3KgCO2e)} kgCO2e`,
+          `${formatEmissionsValue(row.totalKgCO2e)} kgCO2e`,
+          row.includedRecords,
+          formatSiteFacilityActivityBreakdown(row),
+        ])
+      : [['No calculated GHG records with site or facility totals.', '', '', '', '', '', '']],
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
+  });
+
+  if (facilityThresholdReferenceRows.length > 0) {
+    nextY = (doc as any).lastAutoTable.finalY + 14;
+    drawPdfSectionTitle(doc, 'Facility-Level Reporting Threshold Reference', nextY);
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(
+      [
+        `Reference points: ${formatDisplayNumber(FACILITY_REPORTING_THRESHOLD_TCO2E)} tCO2e/year per facility; Alberta TIER large-emitter screening reference: ${formatDisplayNumber(ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E)} tCO2e/year per facility.`,
+        FACILITY_THRESHOLD_REFERENCE_DISCLAIMER,
+      ],
+      14,
+      nextY + 7,
+      { maxWidth: 182 },
+    );
+    autoTable(doc, {
+      startY: nextY + 20,
+      head: [['Site / Facility', 'Total Calculated Emissions', '% of 10,000 tCO2e Threshold', 'Screening Note']],
+      body: facilityThresholdReferenceRows.map((row) => [
+        row.siteFacility,
+        `${formatEmissionsValue(row.totalKgCO2e)} kgCO2e (${formatThresholdTonnes(row.totalTCO2e)} tCO2e)`,
+        `${formatThresholdPercent(row.percentOfReportingThreshold)}%`,
+        row.screeningNote,
+      ]),
+      rowPageBreak: 'avoid',
+      showHead: 'everyPage',
+    });
+  }
+
   const activityStartY = (doc as any).lastAutoTable.finalY + 14;
   drawPdfSectionTitle(doc, 'Activity Breakdown', activityStartY);
   autoTable(doc, {
@@ -1356,6 +1560,9 @@ function handleDownloadPDF() {
     doc.addPage();
     nextY = 20;
   }
+
+  nextY = drawRegulatoryReportingReferencePdfSection(doc, nextY + 10);
+  nextY = ensurePdfSpace(doc, nextY, 42);
 
   drawPdfSectionTitle(doc, 'Methodology and Limitations', nextY + 10);
   doc.setFont('helvetica', 'normal');
@@ -1834,12 +2041,16 @@ function setAllReportSections(expanded: boolean) {
 }
 
   return (
-    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1>Reports</h1>
+    <div style={reportsPageStyle}>
+      <div style={reportsHeaderStyle}>
+        <div>
+          <h1 style={reportsTitleStyle}>Reports</h1>
 
-      <p style={{ color: '#666', marginBottom: 20 }}>
-        Polished reporting output for sharing emissions totals, scope summaries, included and excluded record counts, methodology notes, factor source notes, and disclaimers.
-      </p>
+          <p style={reportsSubtitleStyle}>
+            Review your emissions summary, data quality, reporting boundary, and exportable review package.
+          </p>
+        </div>
+      </div>
 
       {isPilotReviewerAccount ? (
         <PilotReviewerFeedbackPrompt />
@@ -1866,6 +2077,9 @@ function setAllReportSections(expanded: boolean) {
         summary={inventoryBoundarySummary}
         expanded={isInventoryBoundaryExpanded}
         onToggle={() => setIsInventoryBoundaryExpanded((expanded) => !expanded)}
+        canEdit={canEditOrganizationBoundary}
+        isPilotReviewerAccount={isPilotReviewerAccount}
+        onEdit={() => navigate('/organization-profile')}
       />
 
       <div style={sectionControlsStyle}>
@@ -1936,7 +2150,7 @@ function setAllReportSections(expanded: boolean) {
           No activity records found for selected documents.
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+      <div style={reportActionsStyle}>
         <button
           onClick={loadReportData}
           disabled={loading || hasNoDataInSystem}
@@ -1955,11 +2169,78 @@ function setAllReportSections(expanded: boolean) {
           Download CSV
         </button>
 
+        <div ref={reviewPackageMenuRef} style={reviewPackageMenuWrapperStyle}>
+          <button
+            type="button"
+            onClick={() => setIsReviewPackageMenuOpen((open) => !open)}
+            disabled={exportDisabled}
+            title={exportDisabledTitle}
+            aria-haspopup="menu"
+            aria-expanded={isReviewPackageMenuOpen}
+            aria-controls="review-package-export-menu"
+            style={primaryButtonStyle(exportDisabled)}
+          >
+            Export Review Package
+          </button>
+          {isReviewPackageMenuOpen ? (
+            <div
+              id="review-package-export-menu"
+              role="menu"
+              aria-label="Export review package"
+              style={reviewPackageMenuStyle}
+            >
+              <p style={reviewPackageMenuHelpStyle}>
+                Download CSV files for internal review, consultant review, or pilot workflow validation. These exports are not official regulatory submissions.
+              </p>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handleExportReviewPackageCsv('data-records')}
+                style={reviewPackageMenuItemStyle}
+              >
+                Export Data Records CSV
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handleExportReviewPackageCsv('site-facility-breakdown')}
+                style={reviewPackageMenuItemStyle}
+              >
+                Export Site / Facility Breakdown
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handleExportReviewPackageCsv('factor-source-summary')}
+                style={reviewPackageMenuItemStyle}
+              >
+                Export Factor Source Summary
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handleExportReviewPackageCsv('calculation-traceability')}
+                style={reviewPackageMenuItemStyle}
+              >
+                Export Calculation Traceability
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handleExportReviewPackageCsv('records-requiring-review')}
+                style={reviewPackageMenuItemStyle}
+              >
+                Export Records Requiring Review
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         <button
           onClick={handleDownloadPDF}
           disabled={exportDisabled}
           title={exportDisabledTitle}
-          style={primaryButtonStyle(exportDisabled)}
+          style={secondaryButtonStyle(exportDisabled)}
         >
           Download PDF
         </button>
@@ -1970,7 +2251,7 @@ function setAllReportSections(expanded: boolean) {
       {hasNoDataInSystem ? (
         <div style={reportEmptyStateStyle}>
           <h2 style={{ margin: 0, fontSize: 22 }}>No reporting data found.</h2>
-          <p style={{ margin: '10px 0 18px', color: '#475569', lineHeight: 1.6 }}>
+          <p style={{ margin: '10px 0 18px', color: reportsPalette.infoText, lineHeight: 1.6 }}>
             Add and import activity data to generate your first emissions report.
           </p>
           <button
@@ -2096,15 +2377,15 @@ function setAllReportSections(expanded: boolean) {
               </p>
             </div>
             {dataReadinessSummary.recordsRequiringReview > 0 ? (
-              <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
+              <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
                 Review reasons: {formatReviewReasons(primarySkippedReasons)}.
               </p>
             ) : dataReadinessSummary.trackedOnlyCount > 0 ? (
-              <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
+              <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
                 Tracked operational metrics are retained for review but excluded from the calculated GHG emissions total.
               </p>
             ) : null}
-            <p style={{ color: '#64748b', lineHeight: 1.6, marginTop: 10 }}>
+            <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
               Hotspot analysis is based only on calculated records. Records requiring review are excluded until fixed.
             </p>
           </CollapsibleReportSection>
@@ -2116,10 +2397,10 @@ function setAllReportSections(expanded: boolean) {
               expanded={expandedSections.carbonCreditReadiness}
               onToggle={() => toggleReportSection('carbonCreditReadiness')}
             >
-              <p style={{ color: '#64748b', lineHeight: 1.6, margin: '0 0 12px' }}>
+              <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, margin: '0 0 12px' }}>
                 This section is not included in standard pilot reports and does not determine eligibility for carbon credits.
               </p>
-              <p style={{ color: '#64748b', lineHeight: 1.6, margin: '0 0 12px' }}>
+              <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, margin: '0 0 12px' }}>
                 This optional section is an early screening note only. It is not a certification, verification, eligibility determination, or compliance assessment.
               </p>
               <div style={dataQualityNotesGridStyle}>
@@ -2136,7 +2417,7 @@ function setAllReportSections(expanded: boolean) {
                 <DataQualityNote label="Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
                 <DataQualityNote label="Tracked Operational Metrics" value={dataReadinessSummary.trackedOnlyCount} />
               </div>
-              <p style={{ color: '#555', lineHeight: 1.7, marginTop: 12 }}>
+              <p style={{ color: reportsPalette.infoText, lineHeight: 1.7, marginTop: 12 }}>
                 {carbonCreditReadiness.summary}
               </p>
               <p style={creditDisclaimerReportStyle}>
@@ -2186,6 +2467,46 @@ function setAllReportSections(expanded: boolean) {
               </div>
             ) : null}
           </CollapsibleReportSection>
+          <CollapsibleReportSection
+            id="site-facility-breakdown-report-section"
+            title="Emissions by Site / Facility"
+            summary={
+              siteFacilityBreakdownRows.length > 0
+                ? `Organization total: ${formatEmissionsValue(siteFacilityRollup.organizationTotalKgCO2e)} kgCO2e · ${siteFacilityBreakdownRows.length} site/facility ${siteFacilityBreakdownRows.length === 1 ? 'group' : 'groups'}`
+                : 'No calculated site/facility totals'
+            }
+            expanded={expandedSections.siteFacilityBreakdown}
+            onToggle={() => toggleReportSection('siteFacilityBreakdown')}
+          >
+            <p style={sectionDescriptionStyle}>
+              Organization total: <strong>{formatEmissionsValue(siteFacilityRollup.organizationTotalKgCO2e)} kgCO2e</strong>. This section summarizes calculated emissions by the facility, site, or location assigned to each activity record. Records without a specified site are grouped under “Unassigned”.
+            </p>
+            <SiteFacilityBreakdownTable rows={siteFacilityBreakdownRows} />
+          </CollapsibleReportSection>
+          {facilityThresholdReferenceRows.length > 0 ? (
+            <CollapsibleReportSection
+              id="facility-threshold-reference-report-section"
+              title="Facility-Level Reporting Threshold Reference"
+              summary={`${formatDisplayNumber(FACILITY_REPORTING_THRESHOLD_TCO2E)} tCO2e/year screening reference · ${formatDisplayNumber(ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E)} tCO2e/year Alberta TIER large-emitter screening reference`}
+              expanded={expandedSections.facilityThresholdReference}
+              onToggle={() => toggleReportSection('facilityThresholdReference')}
+            >
+              <p style={sectionDescriptionStyle}>
+                For Alberta / Canada pilot context, this section references <strong>{formatDisplayNumber(FACILITY_REPORTING_THRESHOLD_TCO2E)} tCO2e/year per facility</strong> as a reporting threshold screening reference and <strong>{formatDisplayNumber(ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E)} tCO2e/year per facility</strong> as an Alberta TIER large-emitter screening reference.
+              </p>
+              <p style={thresholdDisclaimerStyle}>{FACILITY_THRESHOLD_REFERENCE_DISCLAIMER}</p>
+              <FacilityThresholdReferenceTable rows={facilityThresholdReferenceRows} />
+            </CollapsibleReportSection>
+          ) : null}
+          <CollapsibleReportSection
+            id="regulatory-reporting-reference-report-section"
+            title={REGULATORY_REPORTING_REFERENCE_TITLE}
+            summary={REGULATORY_REPORTING_REFERENCE_SUMMARY}
+            expanded={expandedSections.regulatoryReportingReference}
+            onToggle={() => toggleReportSection('regulatoryReportingReference')}
+          >
+            <RegulatoryReportingReferenceContent />
+          </CollapsibleReportSection>
         </>
       ) : null}
 
@@ -2203,6 +2524,27 @@ function setAllReportSections(expanded: boolean) {
           onRefresh={loadWorkflowEvents}
         />
       ) : null}
+    </div>
+  );
+}
+
+function RegulatoryReportingReferenceContent() {
+  return (
+    <div style={regulatoryReferenceContentStyle}>
+      <p style={sectionDescriptionStyle}>
+        {REGULATORY_REPORTING_REFERENCE_TEXT}
+      </p>
+      <div>
+        <p style={regulatoryReferenceIntroStyle}>Relevant reporting systems may include:</p>
+        <ul style={regulatoryReferenceListStyle}>
+          {REGULATORY_REPORTING_SYSTEMS.map((system) => (
+            <li key={system}>{system}</li>
+          ))}
+        </ul>
+      </div>
+      <p style={thresholdDisclaimerStyle}>
+        Reference only. CarbonLite does not determine regulatory obligations. Consult a qualified professional before making regulatory filing or compliance decisions.
+      </p>
     </div>
   );
 }
@@ -2289,7 +2631,7 @@ function Card({
   return (
     <div style={cardStyle}>
       <div style={{ fontSize: 28 }}>{icon}</div>
-      <div style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{title}</div>
+      <div style={{ marginTop: 10, color: reportsPalette.secondaryText, fontSize: 14 }}>{title}</div>
       {subtitle ? <div style={cardSubtitleStyle}>{subtitle}</div> : null}
       <div style={{ marginTop: 6, fontSize: 26, fontWeight: 800 }}>
         {value}
@@ -2336,28 +2678,153 @@ function DataQualityNote({
   );
 }
 
+function SiteFacilityBreakdownTable({ rows }: { rows: SiteFacilityBreakdownRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <div style={emptySiteFacilityStyle}>
+        No calculated GHG records are available for site or facility totals.
+      </div>
+    );
+  }
+
+  return (
+    <div style={siteFacilityTableWrapStyle}>
+      <table style={siteFacilityTableStyle}>
+        <thead>
+          <tr>
+            <th style={siteFacilityThStyle}>Site / Facility</th>
+            <th style={siteFacilityThStyle}>Scope 1</th>
+            <th style={siteFacilityThStyle}>Scope 2</th>
+            <th style={siteFacilityThStyle}>Scope 3</th>
+            <th style={siteFacilityThStyle}>Total</th>
+            <th style={siteFacilityThStyle}>Included Records</th>
+            <th style={siteFacilityThStyle}>Activity Type Breakdown</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.siteFacility}>
+              <td style={siteFacilityTdStyle}>{row.siteFacility}</td>
+              <td style={siteFacilityTdStyle}>{formatEmissionsValue(row.scope1KgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTdStyle}>{formatEmissionsValue(row.scope2KgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTdStyle}>{formatEmissionsValue(row.scope3KgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTotalTdStyle}>{formatEmissionsValue(row.totalKgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTdStyle}>{row.includedRecords}</td>
+              <td style={siteFacilityTdStyle}>{formatSiteFacilityActivityBreakdown(row)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FacilityThresholdReferenceTable({ rows }: { rows: FacilityThresholdReferenceRow[] }) {
+  return (
+    <div style={siteFacilityTableWrapStyle}>
+      <table style={thresholdReferenceTableStyle}>
+        <thead>
+          <tr>
+            <th style={siteFacilityThStyle}>Site / Facility</th>
+            <th style={siteFacilityThStyle}>Total calculated emissions</th>
+            <th style={siteFacilityThStyle}>% of 10,000 tCO2e threshold</th>
+            <th style={siteFacilityThStyle}>Screening note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.siteFacility}>
+              <td style={siteFacilityTdStyle}>{row.siteFacility}</td>
+              <td style={siteFacilityTotalTdStyle}>
+                {formatEmissionsValue(row.totalKgCO2e)} kgCO2e ({formatThresholdTonnes(row.totalTCO2e)} tCO2e)
+              </td>
+              <td style={siteFacilityTdStyle}>{formatThresholdPercent(row.percentOfReportingThreshold)}%</td>
+              <td style={siteFacilityTdStyle}>{row.screeningNote}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatSiteFacilityActivityBreakdown(row: SiteFacilityBreakdownRow) {
+  if (row.activityBreakdown.length === 0) return 'No activity breakdown available';
+
+  return row.activityBreakdown
+    .map(
+      (item) =>
+        `${item.activityType}: ${formatEmissionsValue(item.totalKgCO2e)} kgCO2e (${item.includedRecords} ${item.includedRecords === 1 ? 'record' : 'records'})`,
+    )
+    .join('; ');
+}
+
+function formatThresholdTonnes(value: number) {
+  return formatThresholdNumber(value, value >= 100 ? 0 : 1);
+}
+
+function formatThresholdPercent(value: number) {
+  return formatThresholdNumber(value, value >= 10 ? 1 : 2);
+}
+
+function formatThresholdNumber(value: number, maximumFractionDigits: number) {
+  if (!Number.isFinite(value)) return '-';
+
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  });
+}
+
 function InventoryBoundaryPanel({
   boundary,
   summary,
   expanded,
   onToggle,
+  canEdit,
+  isPilotReviewerAccount,
+  onEdit,
 }: {
   boundary: InventoryBoundary;
   summary: string;
   expanded: boolean;
   onToggle: () => void;
+  canEdit: boolean;
+  isPilotReviewerAccount: boolean;
+  onEdit: () => void;
 }) {
   return (
     <CollapsibleSection
-      id="report-inventory-boundary"
-      title="Inventory Boundary"
+      id="report-reporting-boundary"
+      title="Reporting Boundary"
       summary={summary}
       expanded={expanded}
       onToggle={onToggle}
       style={inventoryBoundaryPanelStyle}
       contentStyle={inventoryBoundaryGridStyle}
     >
-      <DataQualityNote label="Organization / Workspace" value={boundary.organizationWorkspace} />
+      <div style={reportingBoundaryIntroStyle}>
+        <span>
+          {isPilotReviewerAccount
+            ? 'Pilot review account · Sample boundary information · Read-only'
+            : 'This reporting boundary is read-only on Reports and comes from Organization & Boundary settings.'}
+        </span>
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            style={reportingBoundaryEditButtonStyle}
+          >
+            Edit in Organization & Boundary
+          </button>
+        ) : !isPilotReviewerAccount ? (
+          <span style={reportingBoundaryReadOnlyTextStyle}>
+            This reporting boundary is read-only for your account.
+          </span>
+        ) : null}
+      </div>
+
+      <DataQualityNote label="Organization / Workspace" value={formatBoundaryValue(boundary.organizationWorkspace)} />
       {boundary.industry ? (
         <DataQualityNote label="Industry" value={boundary.industry} />
       ) : null}
@@ -2370,23 +2837,27 @@ function InventoryBoundaryPanel({
       {boundary.city ? (
         <DataQualityNote label="City" value={boundary.city} />
       ) : null}
-      <DataQualityNote label="Reporting period" value={boundary.reportingPeriod} />
-      <DataQualityNote label="Geographic boundary" value={boundary.geographicBoundary} />
-      <DataQualityNote label="Included facilities or locations" value={boundary.includedFacilitiesOrLocations} />
-      {boundary.excludedFacilitiesOrLocations ? (
-        <DataQualityNote
-          label="Excluded facilities or locations"
-          value={boundary.excludedFacilitiesOrLocations}
-        />
-      ) : null}
-      <DataQualityNote label="Included scopes" value={boundary.includedScopes} />
-      <DataQualityNote label="Scope 3 coverage note" value={boundary.scope3CoverageNote} />
-      <DataQualityNote label="Exclusions / limitations" value={boundary.exclusionsLimitations} />
-      {boundary.boundaryNotes ? (
-        <DataQualityNote label="Boundary notes" value={boundary.boundaryNotes} />
-      ) : null}
+      <DataQualityNote label="Reporting period" value={formatBoundaryValue(boundary.reportingPeriod)} />
+      <DataQualityNote label="Geographic boundary" value={formatBoundaryValue(boundary.geographicBoundary)} />
+      <DataQualityNote
+        label="Included facilities or locations"
+        value={formatBoundaryValue(boundary.includedFacilitiesOrLocations)}
+      />
+      <DataQualityNote
+        label="Excluded facilities or locations"
+        value={formatBoundaryValue(boundary.excludedFacilitiesOrLocations)}
+      />
+      <DataQualityNote label="Included scopes" value={formatBoundaryValue(boundary.includedScopes)} />
+      <DataQualityNote label="Scope 3 coverage note" value={formatBoundaryValue(boundary.scope3CoverageNote)} />
+      <DataQualityNote label="Exclusions / limitations" value={formatBoundaryValue(boundary.exclusionsLimitations)} />
+      <DataQualityNote label="Boundary notes" value={formatBoundaryValue(boundary.boundaryNotes)} />
     </CollapsibleSection>
   );
+}
+
+function formatBoundaryValue(value?: string | null) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed || 'Not specified';
 }
 
 function ReadOnlyReportScopeSummary({
@@ -2417,17 +2888,73 @@ function formatCarbonCreditReadinessLevel(level: string) {
   return labels[level] ?? level;
 }
 
+const reportsPalette = {
+  primaryGreen: '#047857',
+  primaryGreenHover: '#065F46',
+  primaryText: '#0F172A',
+  secondaryText: '#64748B',
+  mutedText: '#94A3B8',
+  border: '#E2E8F0',
+  subtleBorder: '#F1F5F9',
+  white: '#FFFFFF',
+  subtleBackground: '#F8FAFC',
+  disabledBackground: '#F1F5F9',
+  successBackground: '#ECFDF5',
+  successBorder: '#BBF7D0',
+  warningBackground: '#FFFBEB',
+  warningBorder: '#FDE68A',
+  warningText: '#B45309',
+  errorBackground: '#FEF2F2',
+  errorBorder: '#FECACA',
+  errorText: '#B91C1C',
+  infoText: '#475569',
+};
+
+const reportsPageStyle: React.CSSProperties = {
+  padding: 24,
+  maxWidth: 1100,
+  margin: '0 auto',
+  color: reportsPalette.primaryText,
+};
+
+const reportsHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  gap: 16,
+  flexWrap: 'wrap',
+  marginBottom: 20,
+};
+
+const reportsTitleStyle: React.CSSProperties = {
+  margin: 0,
+};
+
+const reportsSubtitleStyle: React.CSSProperties = {
+  color: reportsPalette.secondaryText,
+  margin: '8px 0 0',
+  lineHeight: 1.5,
+};
+
+const reportActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 12,
+  marginBottom: 24,
+  flexWrap: 'wrap',
+  alignItems: 'center',
+};
+
 const cardStyle: React.CSSProperties = {
-  borderRadius: 16,
+  borderRadius: 12,
   padding: 20,
-  background: '#fff',
-  border: '1px solid #eee',
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+  background: reportsPalette.white,
+  border: `1px solid ${reportsPalette.border}`,
+  boxShadow: 'none',
 };
 
 const cardSubtitleStyle: React.CSSProperties = {
   marginTop: 4,
-  color: '#334155',
+  color: reportsPalette.infoText,
   fontSize: 13,
   fontWeight: 800,
   lineHeight: 1.3,
@@ -2443,18 +2970,95 @@ const scopeUnclassifiedWarningStyle: React.CSSProperties = {
   marginTop: 12,
   padding: 12,
   borderRadius: 8,
-  border: '1px solid #fed7aa',
-  background: '#fff7ed',
-  color: '#9a3412',
+  border: `1px solid ${reportsPalette.warningBorder}`,
+  background: reportsPalette.warningBackground,
+  color: reportsPalette.warningText,
   fontSize: 13,
   fontWeight: 700,
+};
+
+const sectionDescriptionStyle: React.CSSProperties = {
+  margin: '0 0 12px',
+  color: reportsPalette.infoText,
+  lineHeight: 1.6,
+};
+
+const thresholdDisclaimerStyle: React.CSSProperties = {
+  margin: '0 0 12px',
+  color: reportsPalette.infoText,
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const regulatoryReferenceContentStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
+};
+
+const regulatoryReferenceIntroStyle: React.CSSProperties = {
+  margin: '0 0 6px',
+  color: reportsPalette.infoText,
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const regulatoryReferenceListStyle: React.CSSProperties = {
+  margin: 0,
+  paddingLeft: 20,
+  color: reportsPalette.infoText,
+  lineHeight: 1.7,
+};
+
+const siteFacilityTableWrapStyle: React.CSSProperties = {
+  overflowX: 'auto',
+};
+
+const siteFacilityTableStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 920,
+  borderCollapse: 'collapse',
+  fontSize: 13,
+};
+
+const thresholdReferenceTableStyle: React.CSSProperties = {
+  ...siteFacilityTableStyle,
+  minWidth: 820,
+};
+
+const siteFacilityThStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  textAlign: 'left',
+  borderBottom: `1px solid ${reportsPalette.border}`,
+  color: reportsPalette.infoText,
+  background: reportsPalette.subtleBackground,
+  fontWeight: 800,
+};
+
+const siteFacilityTdStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  borderBottom: `1px solid ${reportsPalette.subtleBorder}`,
+  color: reportsPalette.primaryText,
+  verticalAlign: 'top',
+};
+
+const siteFacilityTotalTdStyle: React.CSSProperties = {
+  ...siteFacilityTdStyle,
+  fontWeight: 800,
+};
+
+const emptySiteFacilityStyle: React.CSSProperties = {
+  padding: 14,
+  borderRadius: 10,
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.subtleBackground,
+  color: reportsPalette.infoText,
 };
 
 const scopeHelpStyle: React.CSSProperties = {
   marginBottom: 14,
   borderRadius: 12,
-  border: '1px solid #e2e8f0',
-  background: '#f8fafc',
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.subtleBackground,
 };
 
 const scopeHelpSummaryStyle: React.CSSProperties = {
@@ -2462,7 +3066,7 @@ const scopeHelpSummaryStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
   padding: '10px 12px',
-  color: '#0f172a',
+  color: reportsPalette.primaryText,
   fontWeight: 800,
   cursor: 'pointer',
 };
@@ -2474,8 +3078,8 @@ const scopeHelpIconStyle: React.CSSProperties = {
   width: 18,
   height: 18,
   borderRadius: 999,
-  background: '#dbeafe',
-  color: '#1d4ed8',
+  background: reportsPalette.successBackground,
+  color: reportsPalette.primaryGreen,
   fontSize: 12,
   fontWeight: 900,
 };
@@ -2489,24 +3093,24 @@ const scopeHelpGridStyle: React.CSSProperties = {
 const scopeHelpItemStyle: React.CSSProperties = {
   padding: 10,
   borderRadius: 10,
-  background: '#fff',
-  border: '1px solid #e2e8f0',
+  background: reportsPalette.white,
+  border: `1px solid ${reportsPalette.border}`,
 };
 
 const scopeHelpTextStyle: React.CSSProperties = {
   margin: '6px 0',
-  color: '#475569',
+  color: reportsPalette.infoText,
   lineHeight: 1.5,
 };
 
 const scopeHelpExamplesStyle: React.CSSProperties = {
-  color: '#64748b',
+  color: reportsPalette.secondaryText,
   fontSize: 13,
   fontWeight: 700,
 };
 
 const scopeHelpNoteStyle: React.CSSProperties = {
-  color: '#475569',
+  color: reportsPalette.infoText,
   fontSize: 13,
   lineHeight: 1.5,
 };
@@ -2522,9 +3126,9 @@ const inventoryBoundaryPanelStyle: React.CSSProperties = {
   margin: '0 0 20px',
   padding: 16,
   borderRadius: 12,
-  border: '1px solid #d1fae5',
-  background: '#f0fdf4',
-  color: '#0f172a',
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.white,
+  color: reportsPalette.primaryText,
 };
 
 const inventoryBoundaryGridStyle: React.CSSProperties = {
@@ -2534,14 +3138,84 @@ const inventoryBoundaryGridStyle: React.CSSProperties = {
   marginTop: 14,
 };
 
+const reportingBoundaryIntroStyle: React.CSSProperties = {
+  gridColumn: '1 / -1',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
+  padding: 12,
+  borderRadius: 12,
+  background: reportsPalette.subtleBackground,
+  border: `1px solid ${reportsPalette.border}`,
+  color: reportsPalette.infoText,
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const reportingBoundaryEditButtonStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.white,
+  color: reportsPalette.primaryText,
+  cursor: 'pointer',
+  fontWeight: 800,
+};
+
+const reportingBoundaryReadOnlyTextStyle: React.CSSProperties = {
+  color: reportsPalette.secondaryText,
+  fontWeight: 700,
+};
+
 const readOnlyReportScopeStyle: React.CSSProperties = {
   display: 'grid',
   gap: 12,
 };
 
+const reviewPackageMenuWrapperStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+};
+
+const reviewPackageMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 8px)',
+  left: 0,
+  zIndex: 30,
+  width: 320,
+  padding: 10,
+  borderRadius: 12,
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.white,
+  boxShadow: '0 20px 42px rgba(15, 23, 42, 0.12)',
+};
+
+const reviewPackageMenuHelpStyle: React.CSSProperties = {
+  margin: '0 0 8px',
+  color: reportsPalette.secondaryText,
+  fontSize: 12,
+  lineHeight: 1.45,
+};
+
+const reviewPackageMenuItemStyle: React.CSSProperties = {
+  width: '100%',
+  display: 'block',
+  padding: '8px 10px',
+  border: 0,
+  borderRadius: 8,
+  background: 'transparent',
+  color: reportsPalette.primaryText,
+  fontSize: 13,
+  fontWeight: 700,
+  textAlign: 'left',
+  cursor: 'pointer',
+};
+
 const readOnlyReportScopeNoteStyle: React.CSSProperties = {
   margin: 0,
-  color: '#64748b',
+  color: reportsPalette.secondaryText,
   fontSize: 13,
   lineHeight: 1.5,
 };
@@ -2551,9 +3225,9 @@ const dataQualityNoteStyle: React.CSSProperties = {
   gap: 4,
   padding: 12,
   borderRadius: 12,
-  background: '#f8fafc',
-  border: '1px solid #e2e8f0',
-  color: '#334155',
+  background: reportsPalette.subtleBackground,
+  border: `1px solid ${reportsPalette.border}`,
+  color: reportsPalette.infoText,
 };
 
 const dataQualityExplanationStyle: React.CSSProperties = {
@@ -2562,9 +3236,9 @@ const dataQualityExplanationStyle: React.CSSProperties = {
   marginTop: 12,
   padding: 12,
   borderRadius: 12,
-  background: '#f8fafc',
-  border: '1px solid #cbd5e1',
-  color: '#334155',
+  background: reportsPalette.subtleBackground,
+  border: `1px solid ${reportsPalette.border}`,
+  color: reportsPalette.infoText,
   lineHeight: 1.55,
 };
 
@@ -2572,9 +3246,9 @@ const creditDisclaimerReportStyle: React.CSSProperties = {
   marginTop: 12,
   padding: 12,
   borderRadius: 12,
-  background: '#fff7ed',
-  border: '1px solid #fed7aa',
-  color: '#7c2d12',
+  background: reportsPalette.warningBackground,
+  border: `1px solid ${reportsPalette.warningBorder}`,
+  color: reportsPalette.warningText,
   lineHeight: 1.6,
   fontWeight: 700,
 };
@@ -2585,9 +3259,9 @@ const reportDisclaimerCalloutStyle: React.CSSProperties = {
   margin: '0 0 20px',
   padding: 14,
   borderRadius: 12,
-  background: '#f8fafc',
-  border: '1px solid #cbd5e1',
-  color: '#334155',
+  background: reportsPalette.subtleBackground,
+  border: `1px solid ${reportsPalette.border}`,
+  color: reportsPalette.infoText,
   lineHeight: 1.6,
 };
 
@@ -2599,9 +3273,9 @@ const paidPilotScopeCalloutStyle: React.CSSProperties = {
   margin: '0 0 20px',
   padding: 14,
   borderRadius: 12,
-  background: '#ecfdf5',
-  border: '1px solid #bbf7d0',
-  color: '#065f46',
+  background: reportsPalette.successBackground,
+  border: `1px solid ${reportsPalette.successBorder}`,
+  color: reportsPalette.primaryGreen,
   fontWeight: 800,
   flexWrap: 'wrap',
 };
@@ -2612,16 +3286,16 @@ const workflowAuditPanelStyle: React.CSSProperties = {
   marginTop: 24,
   marginBottom: 24,
   padding: 16,
-  borderRadius: 14,
-  border: '1px solid #dbe4ea',
-  background: '#fff',
+  borderRadius: 12,
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.white,
   overflow: 'hidden',
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+  boxShadow: 'none',
 };
 
 const workflowAuditSubtitleStyle: React.CSSProperties = {
   margin: '4px 0 0',
-  color: '#64748b',
+  color: reportsPalette.secondaryText,
   fontSize: 13,
   lineHeight: 1.45,
 };
@@ -2629,7 +3303,7 @@ const workflowAuditSubtitleStyle: React.CSSProperties = {
 const workflowAuditBodyStyle: React.CSSProperties = {
   display: 'grid',
   gap: 12,
-  borderTop: '1px solid #e2e8f0',
+  borderTop: `1px solid ${reportsPalette.border}`,
   padding: 16,
 };
 
@@ -2655,12 +3329,12 @@ const workflowAuditItemStyle: React.CSSProperties = {
   gap: 12,
   padding: 12,
   borderRadius: 10,
-  background: '#f8fafc',
-  border: '1px solid #e2e8f0',
+  background: reportsPalette.subtleBackground,
+  border: `1px solid ${reportsPalette.border}`,
 };
 
 const workflowAuditTimeStyle: React.CSSProperties = {
-  color: '#64748b',
+  color: reportsPalette.secondaryText,
   fontSize: 12,
   fontWeight: 800,
 };
@@ -2669,15 +3343,15 @@ const workflowAuditEventBodyStyle: React.CSSProperties = {
   display: 'grid',
   gap: 4,
   minWidth: 0,
-  color: '#334155',
+  color: reportsPalette.infoText,
   lineHeight: 1.45,
 };
 
 const workflowAuditEmptyStyle: React.CSSProperties = {
   padding: 14,
   borderRadius: 10,
-  background: '#f8fafc',
-  color: '#64748b',
+  background: reportsPalette.subtleBackground,
+  color: reportsPalette.secondaryText,
   textAlign: 'center',
 };
 
@@ -2697,28 +3371,30 @@ const tableStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: 12,
-  borderBottom: '1px solid #ddd',
-  color: '#475569',
+  borderBottom: `1px solid ${reportsPalette.border}`,
+  color: reportsPalette.infoText,
+  background: reportsPalette.subtleBackground,
 };
 
 const tdStyle: React.CSSProperties = {
   padding: 12,
-  borderBottom: '1px solid #eee',
+  borderBottom: `1px solid ${reportsPalette.subtleBorder}`,
+  color: reportsPalette.primaryText,
 };
 
 const emptyStyle: React.CSSProperties = {
   padding: 16,
   textAlign: 'center',
-  color: '#666',
+  color: reportsPalette.secondaryText,
 };
 
 function primaryButtonStyle(disabled = false): React.CSSProperties {
   return {
     padding: '10px 16px',
     borderRadius: 10,
-    border: 'none',
-    background: disabled ? '#cbd5e1' : '#10b981',
-    color: disabled ? '#64748b' : '#fff',
+    border: disabled ? `1px solid ${reportsPalette.border}` : `1px solid ${reportsPalette.primaryGreen}`,
+    background: disabled ? reportsPalette.disabledBackground : reportsPalette.primaryGreen,
+    color: disabled ? reportsPalette.mutedText : reportsPalette.white,
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -2728,9 +3404,9 @@ function secondaryButtonStyle(disabled = false): React.CSSProperties {
   return {
     padding: '10px 16px',
     borderRadius: 10,
-    border: '1px solid #d1d5db',
-    background: disabled ? '#f1f5f9' : '#fff',
-    color: disabled ? '#94a3b8' : '#111',
+    border: `1px solid ${reportsPalette.border}`,
+    background: disabled ? reportsPalette.disabledBackground : reportsPalette.white,
+    color: disabled ? reportsPalette.mutedText : reportsPalette.primaryText,
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -2740,24 +3416,24 @@ const errorStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #fecaca',
-  background: '#fef2f2',
-  color: '#991b1b',
+  border: `1px solid ${reportsPalette.errorBorder}`,
+  background: reportsPalette.errorBackground,
+  color: reportsPalette.errorText,
 };
 
 const loadingNoticeStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #bfdbfe',
-  background: '#eff6ff',
-  color: '#1d4ed8',
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.subtleBackground,
+  color: reportsPalette.infoText,
   fontWeight: 800,
 };
 
 const slowLoadingTextStyle: React.CSSProperties = {
   marginTop: 6,
-  color: '#475569',
+  color: reportsPalette.infoText,
   fontSize: 13,
   fontWeight: 700,
 };
@@ -2768,9 +3444,9 @@ const filterCardStyle: React.CSSProperties = {
   gap: 12,
   flexWrap: 'wrap',
   padding: 16,
-  borderRadius: 16,
-  background: '#fff',
-  border: '1px solid #e5e7eb',
+  borderRadius: 12,
+  background: reportsPalette.white,
+  border: `1px solid ${reportsPalette.border}`,
   marginBottom: 20,
 };
 
@@ -2779,13 +3455,15 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 6,
   fontSize: 13,
   fontWeight: 700,
-  color: '#475569',
+  color: reportsPalette.infoText,
 };
 
 const inputStyle: React.CSSProperties = {
   padding: '10px 12px',
   borderRadius: 10,
-  border: '1px solid #cbd5e1',
+  border: `1px solid ${reportsPalette.border}`,
+  color: reportsPalette.primaryText,
+  background: reportsPalette.white,
 };
 
 const scopeToggleStyle: React.CSSProperties = {
@@ -2793,17 +3471,17 @@ const scopeToggleStyle: React.CSSProperties = {
   gap: 6,
   padding: 4,
   borderRadius: 12,
-  background: '#f1f5f9',
-  border: '1px solid #e2e8f0',
+  background: reportsPalette.disabledBackground,
+  border: `1px solid ${reportsPalette.border}`,
 };
 
 function scopeButtonStyle(active: boolean, disabled = false): React.CSSProperties {
   return {
     padding: '8px 12px',
     borderRadius: 10,
-    border: active ? '1px solid #10b981' : '1px solid transparent',
-    background: active ? '#10b981' : '#fff',
-    color: disabled ? '#94a3b8' : active ? '#fff' : '#334155',
+    border: active ? `1px solid ${reportsPalette.primaryGreen}` : '1px solid transparent',
+    background: active ? reportsPalette.primaryGreen : reportsPalette.white,
+    color: disabled ? reportsPalette.mutedText : active ? reportsPalette.white : reportsPalette.infoText,
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -2813,9 +3491,9 @@ const selectionNoticeStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #bbf7d0',
-  background: '#f0fdf4',
-  color: '#166534',
+  border: `1px solid ${reportsPalette.successBorder}`,
+  background: reportsPalette.successBackground,
+  color: reportsPalette.primaryGreen,
   fontWeight: 700,
 };
 
@@ -2823,9 +3501,9 @@ const emptyScopeNoticeStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #fde68a',
-  background: '#fffbeb',
-  color: '#92400e',
+  border: `1px solid ${reportsPalette.warningBorder}`,
+  background: reportsPalette.warningBackground,
+  color: reportsPalette.warningText,
   fontWeight: 700,
 };
 
@@ -2833,28 +3511,28 @@ const reviewOnlyNoticeStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 14,
   borderRadius: 12,
-  border: '1px solid #fde68a',
-  background: '#fffbeb',
-  color: '#92400e',
+  border: `1px solid ${reportsPalette.warningBorder}`,
+  background: reportsPalette.warningBackground,
+  color: reportsPalette.warningText,
   fontWeight: 800,
   lineHeight: 1.5,
 };
 
 const reportEmptyStateStyle: React.CSSProperties = {
   padding: 28,
-  borderRadius: 16,
-  border: '1px solid #dbeafe',
-  background: '#eff6ff',
-  color: '#0f172a',
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+  borderRadius: 12,
+  border: `1px solid ${reportsPalette.border}`,
+  background: reportsPalette.subtleBackground,
+  color: reportsPalette.primaryText,
+  boxShadow: 'none',
 };
 
 const dateRangeEmptyStateStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 16,
   borderRadius: 12,
-  border: '1px solid #fde68a',
-  background: '#fffbeb',
-  color: '#92400e',
+  border: `1px solid ${reportsPalette.warningBorder}`,
+  background: reportsPalette.warningBackground,
+  color: reportsPalette.warningText,
   fontWeight: 800,
 };

@@ -65,15 +65,31 @@ export function canViewReports(user: AuthUser | null) {
 }
 
 export function canImportData(user: AuthUser | null) {
-  return canEditActivityRecords(user);
+  return canImportDraftRows(user);
+}
+
+export function canEditDraftRows(user: AuthUser | null) {
+  return canImportDraftRows(user);
+}
+
+export function canUploadFiles(user: AuthUser | null) {
+  return canContributeActivityData(user);
+}
+
+export function canImportDraftRows(user: AuthUser | null) {
+  return canContributeActivityData(user);
+}
+
+export function canSetProvinceForActivityRecords(user: AuthUser | null) {
+  return canContributeActivityData(user);
 }
 
 export function canEditActivityRecords(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
   if (isPilotReviewer(user)) return false;
 
-  const role = getUserRole(user);
-  return role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR' || role === 'MEMBER';
+  const rawRole = String(user?.role ?? '').trim().toUpperCase();
+  return rawRole === 'OWNER' || rawRole === 'ADMIN' || rawRole === 'EDITOR' || rawRole === 'MEMBER';
 }
 
 export function canDeleteActivityRecords(user: AuthUser | null) {
@@ -140,7 +156,11 @@ export function requirePermission(allowed: boolean) {
 export const isAdminUser = isAdmin;
 export const isAdminOrOwnerUser = isAdminOrOwner;
 export const canManageActivityRecords = canEditActivityRecords;
+export const canEditImportedDraftRows = canEditDraftRows;
+export const canSetProvince = canSetProvinceForActivityRecords;
+export const canImportDraftActivityRows = canImportDraftRows;
 export const canImportActivityRecords = canImportData;
+export const canUploadActivityFiles = canUploadFiles;
 export const canClearActivityRecords = canResetWorkspaceData;
 export const canManageConversionFactors = canManageCompanyFactors;
 
@@ -171,4 +191,28 @@ function getFactorManagementAccountType(user: AuthUser | null) {
   }
 
   return String(rawAccountType).trim().toUpperCase();
+}
+
+function canContributeActivityData(user: AuthUser | null) {
+  if (!hasCompanyContext(user)) return false;
+  if (isPilotReviewer(user)) return false;
+
+  const accountType = getAccountType(user);
+  if (accountType !== 'CUSTOMER' && accountType !== 'INTERNAL_TEST') {
+    return false;
+  }
+
+  const rawRole = String(user?.role ?? '').trim().toUpperCase();
+  const membershipRole = String(user?.membershipRole ?? '').trim().toUpperCase();
+  if (rawRole === 'VIEWER' || rawRole === 'REVIEWER' || membershipRole === 'VIEWER' || membershipRole === 'REVIEWER') {
+    return false;
+  }
+
+  return (
+    rawRole === 'OWNER' ||
+    rawRole === 'ADMIN' ||
+    rawRole === 'EDITOR' ||
+    rawRole === 'MEMBER' ||
+    rawRole === 'USER'
+  );
 }

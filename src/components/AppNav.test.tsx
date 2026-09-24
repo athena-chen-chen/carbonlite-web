@@ -96,6 +96,34 @@ describe('AppNav logout flow', () => {
     expect(screen.queryByRole('button', { name: /exit demo/i })).not.toBeInTheDocument();
   });
 
+  it.each(['/calculation-review', '/metrics-summary'])(
+    'highlights Calculation Review for %s',
+    (path) => {
+      localStorage.setItem('accessToken', 'valid-token');
+      localStorage.setItem(
+        'currentUser',
+        JSON.stringify({ email: 'user@example.com', organizationName: 'KACH CANADA LTD.' }),
+      );
+
+      render(
+        <MemoryRouter initialEntries={[path]}>
+          <AuthProvider>
+            <AppNav />
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveStyle({
+        background: '#111',
+        color: '#fff',
+      });
+      expect(screen.getByRole('link', { name: 'Input Data' })).toHaveStyle({
+        background: 'transparent',
+        color: '#222',
+      });
+    },
+  );
+
   it('places Organization & Boundary under Settings instead of Admin user management', async () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(

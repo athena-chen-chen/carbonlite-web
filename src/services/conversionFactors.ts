@@ -29,8 +29,13 @@ export type ConversionFactorInput = {
   sourceAuthority?: string;
   sourceDocument?: string;
   sourceYear?: number;
+  effectiveYear?: number;
   sourceUrl?: string;
   factorVersion?: string;
+  factorSet?: string;
+  factorStatus?: string;
+  confidence?: string;
+  boundary?: string;
   assumptions?: string;
   isPilotEstimate?: boolean;
   consultantReviewRecommended?: boolean;
@@ -63,8 +68,13 @@ export type ConversionFactorItem = {
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
   sourceYear?: number | null;
+  effectiveYear?: number | null;
   sourceUrl?: string | null;
   factorVersion?: string | null;
+  factorSet?: string | null;
+  factorStatus?: string | null;
+  confidence?: string | null;
+  boundary?: string | null;
   assumptions?: string | null;
   isPilotEstimate?: boolean | null;
   consultantReviewRecommended?: boolean | null;
@@ -97,6 +107,19 @@ const PILOT_ELECTRICITY_FACTOR_VALUES: Record<string, number> = {
   ON: 0.12,
 };
 
+const OFFICIAL_ELECTRICITY_FACTOR_VALUES: Record<number, Record<string, number>> = {
+  2025: {
+    AB: 0.49,
+    BC: 0.015,
+    ON: 0.038,
+  },
+  2026: {
+    AB: 0.438,
+    BC: 0.018,
+    ON: 0.059,
+  },
+};
+
 const PILOT_ELECTRICITY_FACTORS: ConversionFactorItem[] = PILOT_SUPPORTED_PROVINCES.map(
   (province) => ({
     id: `pilot-electricity-${province.code.toLowerCase()}-2026`,
@@ -116,8 +139,13 @@ const PILOT_ELECTRICITY_FACTORS: ConversionFactorItem[] = PILOT_SUPPORTED_PROVIN
     sourceAuthority: 'CarbonLite',
     sourceDocument: 'CarbonLite MVP Default Factors v1.0',
     sourceYear: 2026,
+    effectiveYear: 2026,
     sourceUrl: '/methodology/default-factors',
     factorVersion: 'v1.0',
+    factorSet: 'PILOT_DEFAULT_V0_1',
+    factorStatus: 'ACTIVE',
+    confidence: 'PILOT_ESTIMATE',
+    boundary: 'Purchased electricity consumption intensity for pilot workflow validation.',
     assumptions:
       'Pilot default electricity factor. Replace with official reviewed factor before formal reporting.',
     methodology:
@@ -135,6 +163,55 @@ const PILOT_ELECTRICITY_FACTORS: ConversionFactorItem[] = PILOT_SUPPORTED_PROVIN
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   }),
+);
+
+const OFFICIAL_ELECTRICITY_FACTORS: ConversionFactorItem[] = Object.entries(
+  OFFICIAL_ELECTRICITY_FACTOR_VALUES,
+).flatMap(([year, values]) =>
+  PILOT_SUPPORTED_PROVINCES.map((province) => ({
+    id: `eccc-electricity-${province.code.toLowerCase()}-${year}`,
+    organizationId: null,
+    factorType: 'SYSTEM',
+    name: `Electricity - ${province.name} - ${year} Reference`,
+    type: 'EMISSION',
+    activityType: 'ELECTRICITY',
+    jurisdiction: `${province.name}, Canada`,
+    region: province.name,
+    country: 'Canada',
+    inputUnit: 'kWh',
+    unit: 'kWh',
+    factorValue: values[province.code],
+    resultUnit: 'kgCO2e',
+    sourceName: 'ECCC electricity consumption intensity reference',
+    sourceReference: `ECCC ${year} electricity consumption intensity reference`,
+    sourceAuthority: 'Environment and Climate Change Canada',
+    sourceDocument: 'ECCC electricity consumption intensity reference',
+    sourceYear: Number(year),
+    effectiveYear: Number(year),
+    sourceUrl: '/methodology/eccc-electricity-reference',
+    factorVersion: `ECCC_REFERENCE_${year}`,
+    factorSet: `ECCC_REFERENCE_${year}`,
+    factorStatus: 'ACTIVE',
+    confidence: 'HIGH',
+    confidenceLevel: 'HIGH',
+    verificationStatus: 'ACTIVE',
+    boundary: 'Purchased electricity consumption intensity.',
+    assumptions:
+      'Official reference factor provided for source transparency. Pilot default factors remain preserved for the golden sample dataset.',
+    methodology:
+      'Reference electricity consumption intensity factor for purchased electricity.',
+    isPilotEstimate: false,
+    consultantReviewRecommended: false,
+    verified: true,
+    notes:
+      'Reference factor added as a separate versioned factor set; it does not overwrite CarbonLite pilot defaults.',
+    isDefault: false,
+    isSystemDefault: true,
+    defaultScope: 'SCOPE_2',
+    scope: 'SCOPE_2',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  })),
 );
 
 const PILOT_GROUND_TRANSPORT_FACTOR: ConversionFactorItem = {
@@ -156,8 +233,13 @@ const PILOT_GROUND_TRANSPORT_FACTOR: ConversionFactorItem = {
   sourceAuthority: 'CarbonLite',
   sourceDocument: 'CarbonLite Pilot Ground Transport Estimate 2025',
   sourceYear: 2025,
+  effectiveYear: 2025,
   sourceUrl: '/methodology/default-factors',
   factorVersion: 'v1.0',
+  factorSet: 'PILOT_DEFAULT_V0_1',
+  factorStatus: 'GENERIC_ESTIMATE',
+  confidence: 'LOW',
+  boundary: 'Generic distance-based Scope 3 ground transport estimate.',
   assumptions:
     'Pilot estimate for ground transport distance-based calculation. Consultant review recommended.',
   methodology:
@@ -274,6 +356,7 @@ function getPilotSystemFactorsForParams(params?: {
 }) {
   return [
     ...getPilotElectricityFactorsForParams(params),
+    ...getOfficialElectricityFactorsForParams(params),
     ...(matchesPilotGroundTransportParams(params) ? [PILOT_GROUND_TRANSPORT_FACTOR] : []),
   ];
 }
@@ -303,6 +386,50 @@ function getPilotElectricityFactorsForParams(params?: {
       (pilotCode && factorCode === pilotCode) ||
       String(factorProvince ?? '').toLowerCase().includes(normalizedFilter) ||
       String(factorCode ?? '').toLowerCase() === normalizedFilter
+    );
+  });
+}
+
+function getOfficialElectricityFactorsForParams(params?: {
+  activityType?: string;
+  jurisdiction?: string;
+  sourceYear?: number;
+  search?: string;
+}) {
+  const activityType = normalizeActivityType(params?.activityType);
+  if (activityType && activityType !== 'ELECTRICITY') return [];
+
+  if (
+    params?.sourceYear &&
+    !Object.prototype.hasOwnProperty.call(OFFICIAL_ELECTRICITY_FACTOR_VALUES, params.sourceYear)
+  ) {
+    return [];
+  }
+
+  const jurisdictionFilter = String(params?.jurisdiction ?? '').trim();
+  const searchFilter = String(params?.search ?? '').trim().toLowerCase();
+  const combinedFilter = jurisdictionFilter || searchFilter;
+  const normalizedFilter = combinedFilter.toLowerCase();
+  const pilotCode = getPilotProvinceCode(combinedFilter);
+
+  return OFFICIAL_ELECTRICITY_FACTORS.filter((factor) => {
+    const factorProvince = normalizeProvince(factor.region ?? factor.jurisdiction);
+    const factorCode = getPilotProvinceCode(factorProvince);
+    const matchesJurisdiction = !combinedFilter || (
+      (pilotCode && factorCode === pilotCode) ||
+      String(factorProvince ?? '').toLowerCase().includes(normalizedFilter) ||
+      String(factorCode ?? '').toLowerCase() === normalizedFilter ||
+      [
+        factor.name,
+        factor.factorSet,
+        factor.sourceAuthority,
+        factor.sourceName,
+      ].some((value) => String(value ?? '').toLowerCase().includes(normalizedFilter))
+    );
+
+    return (
+      (!params?.sourceYear || Number(factor.sourceYear) === Number(params.sourceYear)) &&
+      matchesJurisdiction
     );
   });
 }

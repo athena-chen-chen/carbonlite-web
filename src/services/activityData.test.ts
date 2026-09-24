@@ -1,6 +1,7 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
   bulkDeleteActivityData,
+  bulkUpdateActivityProvince,
   clearActivityRecordsForCurrentCompany,
   createActivityData,
   deleteActivityData,
@@ -207,6 +208,36 @@ describe('createActivityData', () => {
       String((fetchMock.mock.calls[0][1] as RequestInit).body),
     );
     expect(requestBody.recordDate).toBe('2026-07-20');
+  });
+
+  it('sends canonical Site / Facility fields when creating activity records', async () => {
+    setMemberUser();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await createActivityData({
+      activityType: 'NATURAL_GAS',
+      recordDate: '2026-07-20',
+      quantity: 1000,
+      unit: 'm3',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      facilityName: 'Edmonton Factory',
+      sourceType: 'MANUAL',
+    });
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody).toMatchObject({
+      facility: 'Edmonton Factory',
+    });
+    expect(requestBody.facilityId).toBeUndefined();
+    expect(requestBody.facilityName).toBeUndefined();
   });
 
   it('preserves edited activity record dates as date-only payload values', async () => {
@@ -552,6 +583,90 @@ describe('bulkDeleteActivityData', () => {
     await expect(bulkDeleteActivityData(['activity-1'])).rejects.toThrow(
       'Activity records were not deleted. Please refresh and try again.',
     );
+  });
+});
+
+describe('bulkUpdateActivityProvince', () => {
+  beforeEach(() => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
+  });
+
+  it('calls PATCH /activity-data/bulk-province with eligible ids and province', async () => {
+    localStorage.setItem('accessToken', 'activity-token');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ updatedCount: 2 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      bulkUpdateActivityProvince(['activity-1', 'activity-2', 'activity-1'], 'British Columbia'),
+    ).resolves.toEqual({ updatedCount: 2 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/activity-data/bulk-province`,
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          ids: ['activity-1', 'activity-2'],
+          province: 'BC',
+        }),
+        headers: expect.objectContaining({
+          Authorization: 'Bearer activity-token',
+        }),
+      }),
+    );
+  });
+
+  it('allows customer users to call the narrow bulk province endpoint', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'user@example.com',
+        role: 'USER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    );
+    localStorage.setItem('accessToken', 'activity-token');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ updatedCount: 1 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      bulkUpdateActivityProvince(['activity-1'], 'Alberta'),
+    ).resolves.toEqual({ updatedCount: 1 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/activity-data/bulk-province`,
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          ids: ['activity-1'],
+          province: 'AB',
+        }),
+      }),
+    );
+  });
+
+  it('blocks viewer users before calling the bulk province endpoint', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'viewer@example.com', role: 'VIEWER', organizationId: 'org-1' }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(
+      bulkUpdateActivityProvince(['activity-1'], 'Alberta'),
+    ).rejects.toThrow('You do not have permission to perform this action.');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

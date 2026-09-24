@@ -163,6 +163,8 @@ export function profileToInventoryBoundary(
   profile: OrganizationProfile,
   fallbackReportingPeriod?: string | null,
 ): InventoryBoundary {
+  const isSampleWorkspace = profile.organizationName === SAMPLE_WORKSPACE_PROFILE.organizationName;
+
   return {
     organizationWorkspace: profile.organizationName || SAMPLE_WORKSPACE_PROFILE.organizationName,
     industry: getDisplayIndustry(profile) || undefined,
@@ -174,19 +176,54 @@ export function profileToInventoryBoundary(
       formatReportingPeriod(profile) ||
       fallbackReportingPeriod ||
       DEFAULT_INVENTORY_BOUNDARY.reportingPeriod,
-    geographicBoundary: profile.geographicBoundary || DEFAULT_INVENTORY_BOUNDARY.geographicBoundary,
+    geographicBoundary: getBoundaryProfileValue(
+      profile.geographicBoundary,
+      DEFAULT_INVENTORY_BOUNDARY.geographicBoundary,
+      isSampleWorkspace,
+    ),
     includedFacilitiesOrLocations:
-      profile.includedFacilitiesOrLocations ||
-      DEFAULT_INVENTORY_BOUNDARY.includedFacilitiesOrLocations,
+      getBoundaryProfileValue(
+        profile.includedFacilitiesOrLocations,
+        DEFAULT_INVENTORY_BOUNDARY.includedFacilitiesOrLocations,
+        isSampleWorkspace,
+      ),
     excludedFacilitiesOrLocations:
-      profile.excludedFacilitiesOrLocations ||
-      DEFAULT_INVENTORY_BOUNDARY.excludedFacilitiesOrLocations,
-    includedScopes: profile.includedScopes || DEFAULT_INVENTORY_BOUNDARY.includedScopes,
-    scope3CoverageNote: profile.scope3CoverageNote || DEFAULT_INVENTORY_BOUNDARY.scope3CoverageNote,
+      getBoundaryProfileValue(
+        profile.excludedFacilitiesOrLocations,
+        DEFAULT_INVENTORY_BOUNDARY.excludedFacilitiesOrLocations,
+        isSampleWorkspace,
+      ),
+    includedScopes: getBoundaryProfileValue(
+      profile.includedScopes,
+      DEFAULT_INVENTORY_BOUNDARY.includedScopes,
+      isSampleWorkspace,
+    ),
+    scope3CoverageNote: getBoundaryProfileValue(
+      profile.scope3CoverageNote,
+      DEFAULT_INVENTORY_BOUNDARY.scope3CoverageNote,
+      isSampleWorkspace,
+    ),
     exclusionsLimitations:
-      profile.exclusionsAndLimitations || DEFAULT_INVENTORY_BOUNDARY.exclusionsLimitations,
-    boundaryNotes: profile.boundaryNotes || DEFAULT_INVENTORY_BOUNDARY.boundaryNotes,
+      getBoundaryProfileValue(
+        profile.exclusionsAndLimitations,
+        DEFAULT_INVENTORY_BOUNDARY.exclusionsLimitations,
+        isSampleWorkspace,
+      ),
+    boundaryNotes: getBoundaryProfileValue(
+      profile.boundaryNotes,
+      DEFAULT_INVENTORY_BOUNDARY.boundaryNotes,
+      isSampleWorkspace,
+    ),
   };
+}
+
+function getBoundaryProfileValue(value: string, sampleDefault: string, isSampleWorkspace: boolean) {
+  const trimmed = String(value ?? '').trim();
+
+  if (isSampleWorkspace) return trimmed || sampleDefault;
+  if (!trimmed || trimmed === sampleDefault) return '';
+
+  return trimmed;
 }
 
 function getDisplayIndustry(profile: Pick<OrganizationProfile, 'industry' | 'otherIndustry'>) {

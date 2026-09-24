@@ -161,12 +161,12 @@ export function LocationSourceFields({
         />
 
         <label style={{ ...fieldStyle, ...facilityFieldStyle }}>
-          <span>Facility</span>
+          <span>Site / Facility</span>
           <input
             value={(facilityField === 'facilityName' ? values.facilityName : values.facilityId) ?? ''}
             onChange={(event) => onChange(facilityField, event.target.value)}
             disabled={disabled}
-            placeholder="Facility"
+            placeholder="Optional site or facility"
             style={inputStyle(Boolean(errors[facilityField]), compact)}
           />
           {errors[facilityField] ? <span style={errorTextStyle}>{errors[facilityField]}</span> : null}

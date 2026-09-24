@@ -1,9 +1,13 @@
 import {
+  buildFactorUnitMismatchMessage,
   findBestConversionFactorMatch,
+  getCompatibleFactorUnitLabels,
   normalizeActivityType,
   normalizeJurisdictionRegion,
+  resolveActivityYear,
 } from './conversionFactorMatching';
 import {
+  ecccReferenceElectricityFactors,
   pilotConversionFactors,
   pilotFactorCoverage,
   pilotUnsupportedElectricityProvinces,
@@ -116,6 +120,104 @@ describe('findBestConversionFactorMatch', () => {
     });
 
     expect(match?.factor.id).toBe('factor-natural-gas-version');
+  });
+
+  it('matches Natural Gas m3 records to the m3 factor without changing the pilot default', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'm3',
+      jurisdictionCountry: 'Canada',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-m3',
+          organizationId: null,
+          name: 'Natural Gas - Canada',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          isSystemDefault: true,
+          isDefault: true,
+          sourceYear: 2026,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('natural-gas-m3');
+    expect(match?.factor.factorValue).toBe(1.89);
+  });
+
+  it('does not match Natural Gas GJ records to an m3 factor', () => {
+    const factors = [
+      {
+        id: 'natural-gas-m3',
+        organizationId: null,
+        name: 'Natural Gas - Canada',
+        type: 'EMISSION',
+        activityType: 'NATURAL_GAS',
+        inputUnit: 'm3',
+        factorValue: 1.89,
+        resultUnit: 'kgCO2e',
+        isSystemDefault: true,
+        isDefault: true,
+        sourceYear: 2026,
+      },
+    ];
+
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors,
+    });
+
+    expect(match).toBeUndefined();
+    expect(getCompatibleFactorUnitLabels({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors,
+    })).toEqual(['m3']);
+    expect(buildFactorUnitMismatchMessage({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      availableUnits: ['m3'],
+    })).toBe('Natural gas usage is in GJ, but the available factor uses m3.');
+  });
+
+  it('matches Natural Gas GJ records when a GJ factor exists', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-gj',
+          organizationId: null,
+          name: 'Natural Gas - Canada GJ',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'GJ',
+          factorValue: 49.87,
+          resultUnit: 'kgCO2e',
+          isSystemDefault: true,
+          isDefault: true,
+          sourceYear: 2026,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('natural-gas-gj');
+    expect(match?.factor.factorValue).toBe(49.87);
   });
 
   it.each([
@@ -331,7 +433,7 @@ describe('findBestConversionFactorMatch', () => {
     expect(match?.usedPriorYearFallback).toBe(true);
   });
 
-  it('does not use a future-year electricity factor for an earlier activity record', () => {
+  it('marks a future-year electricity factor as proxy when no exact or prior factor exists', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'ELECTRICITY',
       inputUnit: 'kWh',
@@ -358,7 +460,10 @@ describe('findBestConversionFactorMatch', () => {
       ],
     });
 
-    expect(match).toBeUndefined();
+    expect(match?.factor.id).toBe('factor-electricity-ab-2026');
+    expect(match?.usedProxyFactor).toBe(true);
+    expect(match?.reviewRecommended).toBe(true);
+    expect(match?.proxyReason).toContain('No exact 2025 factor was available');
   });
 
   it('does not fall back across provinces for electricity', () => {
@@ -432,6 +537,126 @@ describe('findBestConversionFactorMatch', () => {
       expect(match?.sourceLabel).toBe('System Default Factor');
     },
   );
+
+  it('keeps official ECCC reference electricity factors versioned separately from pilot defaults', () => {
+    expect(ecccReferenceElectricityFactors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'eccc-electricity-ab-2025',
+          factorValue: 0.49,
+          factorSet: 'ECCC_REFERENCE_2025',
+          sourceName: 'ECCC electricity consumption intensity reference',
+          effectiveYear: 2025,
+          confidence: 'HIGH',
+          factorStatus: 'ACTIVE',
+        }),
+        expect.objectContaining({
+          id: 'eccc-electricity-ab-2026',
+          factorValue: 0.438,
+          factorSet: 'ECCC_REFERENCE_2026',
+          effectiveYear: 2026,
+        }),
+      ]),
+    );
+
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: pilotConversionFactors,
+    });
+
+    expect(match?.factor.id).toBe('factor-electricity-ab');
+    expect(match?.factor.factorValue).toBe(0.53);
+    expect(match?.factor.factorSet).toBe('PILOT_DEFAULT_V0_1');
+  });
+
+  it('uses the exact activity year factor when 2025 and 2026 factors are available', () => {
+    const factors = ecccReferenceElectricityFactors;
+    const activityYear2025 = resolveActivityYear({
+      servicePeriodEndDate: '2025-07-09',
+      servicePeriodStartDate: '2025-06-10',
+      recordDate: '2026-01-15',
+    });
+    const activityYear2026 = resolveActivityYear({
+      recordDate: '2026-07-09',
+    });
+
+    const match2025 = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: activityYear2025.year,
+      organizationId: 'org-1',
+      factors,
+    });
+    const match2026 = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: activityYear2026.year,
+      organizationId: 'org-1',
+      factors,
+    });
+
+    expect(activityYear2025).toMatchObject({ year: 2025, source: 'servicePeriodEndDate' });
+    expect(match2025?.factor.id).toBe('eccc-electricity-ab-2025');
+    expect(match2025?.factor.factorValue).toBe(0.49);
+    expect(match2025?.exactYearMatch).toBe(true);
+    expect(match2025?.usedProxyFactor).toBe(false);
+    expect(match2026?.factor.id).toBe('eccc-electricity-ab-2026');
+    expect(match2026?.factor.factorValue).toBe(0.438);
+    expect(match2026?.exactYearMatch).toBe(true);
+  });
+
+  it('does not use upload date for activity-year matching', () => {
+    const resolved = resolveActivityYear({
+      servicePeriodEndDate: '2025-07-09',
+      recordDate: '2025-08-01',
+      billDate: '2025-08-01',
+    });
+
+    expect(resolved.year).toBe(2025);
+    expect(resolved.source).toBe('servicePeriodEndDate');
+  });
+
+  it('uses service period end year for cross-year records and marks review recommended', () => {
+    const resolved = resolveActivityYear({
+      servicePeriodStartDate: '2025-12-15',
+      servicePeriodEndDate: '2026-01-14',
+      recordDate: '2025-12-15',
+    });
+
+    expect(resolved).toMatchObject({
+      year: 2026,
+      source: 'servicePeriodEndDate',
+      crossYearServicePeriod: true,
+      reviewNote: 'Cross-year service period · Review recommended',
+    });
+  });
+
+  it('uses nearest available factor as a proxy when no exact or prior-year factor exists', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2024,
+      organizationId: 'org-1',
+      factors: ecccReferenceElectricityFactors,
+    });
+
+    expect(match?.factor.id).toBe('eccc-electricity-ab-2025');
+    expect(match?.exactYearMatch).toBe(false);
+    expect(match?.usedProxyFactor).toBe(true);
+    expect(match?.reviewRecommended).toBe(true);
+    expect(match?.proxyReason).toContain('No exact 2024 factor was available');
+  });
 
   it.each(pilotUnsupportedElectricityProvinces)(
     'returns missing factor for unsupported pilot electricity province %s',

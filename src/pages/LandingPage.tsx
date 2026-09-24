@@ -30,97 +30,111 @@ export default function CarbonLiteLandingPage() {
   const { isAuthenticated } = useAuth();
   const reportSteps = [
     {
-      title: 'Prepare your data',
-      text: 'Use the Data Collection Guide and templates to understand what information SMEs should collect before reporting.',
+      title: 'Collect source data',
+      text: 'Gather utility bills, fuel records, invoices, spreadsheets, and other operational data.',
     },
     {
       title: 'Upload documents or spreadsheets',
-      text: 'Import utility bills, invoices, operational PDFs, CSV files, or Excel activity data.',
+      text: 'Import PDFs, images, CSV files, or Excel data into one workspace.',
     },
     {
       title: 'Review activity records',
-      text: 'Check quantities, units, dates, source references, and records requiring review before calculation.',
+      text: 'Check extracted quantities, units, dates, province, site, and source references. Fix records that need attention.',
     },
     {
-      title: 'Match conversion factors',
-      text: 'Use jurisdiction-aware factor matching with source, year, confidence level, and verification status.',
+      title: 'Match traceable factors',
+      text: 'Apply jurisdiction- and unit-aware emission factors with visible source and year information.',
     },
     {
-      title: 'Generate insights and reports',
-      text: 'View emissions summaries, hotspots, calculation issues, and traceable reports.',
+      title: 'Export a review-ready package',
+      text: 'Prepare emissions summaries, activity records, site breakdowns, factor sources, calculation traceability, and records requiring review.',
     },
   ];
   const audienceCards = [
     {
       title: 'Canadian SMEs',
-      text: 'Understand what emissions-related data to collect, organize messy operational records, and see where the largest emissions come from.',
+      text: 'Organize energy, fuel, travel, and operational data without building a complex emissions-management system.',
     },
     {
       title: 'Sustainability consultants',
-      text: 'Review client data faster, explain factor choices, identify data gaps, and produce clearer reporting outputs.',
+      text: 'Spend less time cleaning client spreadsheets and more time reviewing assumptions, factors, and results.',
     },
     {
-      title: 'Industrial operations teams',
-      text: 'Organize fuel, electricity, water, and operational records before emissions calculations and review.',
+      title: 'Multi-site operations',
+      text: 'Organize activity data by facility or location and identify missing information before reporting.',
     },
     {
-      title: 'ESG and reporting teams',
-      text: 'Create source-backed summaries from the documents and spreadsheets your team already uses.',
+      title: 'Finance / operations / reporting teams',
+      text: 'Create structured, source-backed records that can be reviewed internally or shared with external professionals.',
     },
   ];
   const positioningCards = [
     {
-      title: 'Data readiness for SMEs',
-      text: 'Help teams understand what data to collect, how to organize it, and which records are ready for emissions calculation.',
+      title: 'Collect source data',
+      text: 'Bring together utility bills, fuel records, invoices, PDFs, CSV files, and spreadsheets from different sites and teams.',
     },
     {
-      title: 'Jurisdiction-aware factors',
-      text: 'Match activity data with factors based on country, province, year, source, and confidence level. Electricity factors should be province-specific.',
+      title: 'Structure and review',
+      text: 'Turn source documents into activity records and identify missing province, site, unit, quantity, or other required information.',
     },
     {
-      title: 'Traceable reporting',
-      text: 'Connect each emissions result back to its source data, conversion factor, calculation formula, and review status.',
+      title: 'Trace every calculation',
+      text: 'Connect activity data to its source record, emission factor, jurisdiction, year, and calculation.',
     },
     {
-      title: 'Emissions hotspot analysis',
-      text: 'Identify the highest-emitting categories so SMEs and consultants can focus attention where it matters most.',
+      title: 'Prepare a review package',
+      text: 'Export organized records, factor sources, site summaries, calculation traceability, and items that still need review.',
     },
   ];
   const documentExamples = [
     'Utility bills',
-    'Fuel invoices',
-    'Natural gas bills',
-    'Electricity bills',
-    'CSV/Excel activity data',
-    'Water bills',
-    'Travel, hotel, and shipping records',
-    'Operational PDFs',
+    'Fuel receipts',
+    'Supplier invoices',
+    'Excel spreadsheets',
+    'CSV files',
+    'Multi-site records',
   ];
   const valuePoints = [
-    'Jurisdiction-aware factor selection',
-    'Traceable emissions reporting',
-    'Records requiring review',
-    'Data readiness for SME and consultant workflows',
+    'Documents & spreadsheets',
+    'Structured activity records',
+    'Review issues',
+    'Traceable calculations',
+    'Review package',
   ];
   const demoBullets = [
-    'Upload invoices, utility bills, spreadsheets',
-    'Extract structured activity data',
-    'Review records requiring attention',
-    'Match jurisdiction-aware conversion factors',
-    'Generate traceable reports and hotspot summaries',
+    'Upload bills, invoices, PDFs, CSV files, and spreadsheets',
+    'Extract structured activity records',
+    'Review missing province, site, unit, and source details',
+    'Match jurisdiction- and year-aware emission factors',
+    'Export a review-ready package',
   ];
   const pricingPlans = [
     {
-      name: 'Free pilot',
+      name: 'Pilot Program',
       price: 'Pilot access',
-      text: 'Test data upload, record review, calculation review, hotspot analysis, and traceability workflows.',
+      text: 'Test document and spreadsheet import, activity-data review, site organization, factor matching, calculation review, and review-package exports.',
     },
     {
-      name: 'Report-ready workflows',
+      name: 'Source-data workflows',
       price: 'Validating',
-      text: 'Advanced exports, polished reports, and consultant-ready outputs are being validated with pilot users.',
+      text: 'We are validating CarbonLite with Canadian SMEs and sustainability professionals using real-world source-data workflows.',
       featured: true,
     },
+  ];
+  const reviewPackageItems = [
+    'Activity Records',
+    'Site / Facility Breakdown',
+    'Factor Source Summary',
+    'Calculation Traceability',
+    'Records Requiring Review',
+    'Boundary Summary',
+  ];
+  const factorTransparencyItems = [
+    'Source',
+    'Year',
+    'Jurisdiction',
+    'Unit',
+    'Matching explanation',
   ];
 
   return (
@@ -140,10 +154,10 @@ export default function CarbonLiteLandingPage() {
           </div>
 
           <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-slate-600 lg:flex">
-            <a href="#workflow" className="transition hover:text-emerald-700">Workflow</a>
-            <a href="#audiences" className="transition hover:text-emerald-700">Who it is for</a>
-            <a href="#factor-trust" className="transition hover:text-emerald-700">Factor Trust</a>
-            <a href="#hotspots" className="transition hover:text-emerald-700">Hotspots</a>
+            <a href="#workflow" className="transition hover:text-emerald-700">How It Works</a>
+            <a href="#documents" className="transition hover:text-emerald-700">Source Data</a>
+            <a href="#audiences" className="transition hover:text-emerald-700">Who It&apos;s For</a>
+            <a href="#review-package" className="transition hover:text-emerald-700">Review Package</a>
             <button
               type="button"
               onClick={() => navigate('/pilot')}
@@ -179,16 +193,16 @@ export default function CarbonLiteLandingPage() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Designed for Canadian SMEs and sustainability consultants
+                Built for Canadian SMEs and sustainability professionals
               </div>
               <h1 className="mt-6 max-w-3xl text-[2.2rem] font-black leading-[1.1] tracking-tight text-slate-950 md:text-[2.8rem] lg:text-[3.25rem]">
-                CarbonLite helps Canadian SMEs turn messy operational records into traceable emissions insights.
+                Turn bills, invoices, and spreadsheets into review-ready emissions data.
               </h1>
               <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                For SMEs, consultants, and sustainability teams, CarbonLite helps organize utility bills, invoices, spreadsheets, and activity data into structured emissions records, jurisdiction-aware factor matching, hotspot analysis, and report-ready outputs.
+                CarbonLite helps organize utility bills, fuel records, invoices, and spreadsheets into structured activity data. Review missing information, apply traceable emission factors, and prepare outputs that are easier to share with consultants, customers, and internal teams.
               </p>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700 md:text-base">
-                Understand what data is ready, what needs review, which factors were used, and where to focus first.
+                See what is ready, what needs attention, where each number came from, and how the final emissions result was calculated.
               </p>
 
               <div className="mt-7 flex flex-wrap gap-3">
@@ -197,7 +211,7 @@ export default function CarbonLiteLandingPage() {
                   onClick={() => navigate('/pilot')}
                   className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 px-5 py-2.5 text-sm font-bold text-white shadow-xl shadow-emerald-200 transition hover:-translate-y-0.5"
                 >
-                  Request pilot access
+                  Request Pilot Access
                 </button>
                 <a
                   href="#demo-video"
@@ -209,7 +223,7 @@ export default function CarbonLiteLandingPage() {
                   }
                   className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-bold text-emerald-800 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white"
                 >
-                  View product demo
+                  View Product Demo
                 </a>
                 <button
                   type="button"
@@ -218,20 +232,14 @@ export default function CarbonLiteLandingPage() {
                 >
                   See Sample Workflow
                 </button>
-                <button
-                  type="button"
-                  onClick={() => navigate(isAuthenticated ? '/upload' : '/login')}
-                  className="rounded-xl border border-transparent bg-transparent px-3 py-2.5 text-sm font-bold text-slate-600 transition hover:text-emerald-700"
-                >
-                  {isAuthenticated ? 'Dashboard' : 'Login'}
-                </button>
               </div>
 
-              <div className="mt-8 grid max-w-2xl grid-cols-3 gap-3">
+              <div className="mt-8 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
-                  ['82%', 'data readiness'],
-                  ['2 records', 'need review'],
-                  ['Traceable', 'report status'],
+                  ['18', 'activity records'],
+                  ['4', 'need review'],
+                  ['3', 'source files'],
+                  ['Review-ready', 'workflow status'],
                 ].map(([value, label]) => (
                   <div key={label} className="rounded-3xl border border-white/70 bg-white/80 p-4 shadow-md shadow-slate-200/60 backdrop-blur">
                     <div className="text-xl font-black text-slate-950">{value}</div>
@@ -247,20 +255,21 @@ export default function CarbonLiteLandingPage() {
                 <div className="rounded-2xl bg-slate-950 p-4 text-white">
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
                     <div>
-                      <div className="text-sm font-bold">CarbonLite Readiness Preview</div>
-                      <div className="mt-1 text-xs text-slate-400">Data quality · Factor match · Hotspots</div>
+                      <div className="text-sm font-bold">CarbonLite Data Review</div>
+                      <div className="mt-1 text-xs text-slate-400">Source files → Records → Review package</div>
                     </div>
                     <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-bold text-emerald-300">
-                      Traceable
+                      Review-ready
                     </span>
                   </div>
 
                   <div className="mt-4 grid gap-2.5">
                     {[
-                      ['Data readiness', '82%', '4 of 6 records calculated'],
-                      ['Top hotspot', 'Natural Gas', '45% of calculated emissions'],
-                      ['Factor match', 'Alberta / 2025', 'System default · review required'],
-                      ['Records requiring review', '2', 'Invalid unit · missing factor'],
+                      ['Source files', '4 documents', 'ENMAX_March.pdf · Fuel_receipts.xlsx'],
+                      ['Activity records', '18 extracted', 'Structured quantities, dates, units, and sites'],
+                      ['Ready', '14 records', 'Ready for factor matching and calculation review'],
+                      ['Needs review', '4 records', 'Missing province · unit mismatch · missing site'],
+                      ['Traceability', 'Source → Factor', 'Record, jurisdiction, year, and calculation shown together'],
                     ].map(([label, value, detail]) => (
                       <div key={label} className="rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm">
                         <div className="flex items-center justify-between gap-3">
@@ -282,8 +291,11 @@ export default function CarbonLiteLandingPage() {
             <div className="max-w-3xl">
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Why CarbonLite</p>
               <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">
-                Data readiness, factor trust, and traceable reporting.
+                Spend less time cleaning source data.
               </h2>
+              <p className="mt-3 text-base leading-7 text-slate-600">
+                CarbonLite helps move emissions work out of scattered documents and spreadsheets and into a structured review workflow.
+              </p>
             </div>
             <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
               {positioningCards.map((card) => (
@@ -302,7 +314,7 @@ export default function CarbonLiteLandingPage() {
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Product demo</p>
               <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">See CarbonLite in Action</h2>
               <p className="mt-3 text-base leading-7 text-slate-600">
-                Watch a practical workflow from messy source records to reviewable emissions outputs.
+                Watch a practical workflow from messy source records to review-ready emissions outputs.
               </p>
 
               <div className="mt-6 grid gap-2.5">
@@ -336,7 +348,7 @@ export default function CarbonLiteLandingPage() {
           <div className="mx-auto max-w-6xl px-6 py-16">
             <div className="max-w-3xl">
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">How it works</p>
-              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Prepare → Upload → Review → Match → Report</h2>
+              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Collect → Upload → Review → Match → Export</h2>
             </div>
 
             <div className="mt-9 grid gap-5 md:grid-cols-2 lg:grid-cols-5">
@@ -358,7 +370,7 @@ export default function CarbonLiteLandingPage() {
             <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Pilot users</p>
             <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Built for Canadian SMEs and sustainability consultants</h2>
             <p className="mt-3 text-base leading-7 text-slate-600">
-              CarbonLite is for Canadian-market teams who already work with invoices, utility data, spreadsheets, and operational records, but need a clearer path to data readiness and traceable emissions reporting.
+              CarbonLite is for Canadian-market teams who already work with invoices, utility data, spreadsheets, and operational records, but need a clearer path to source-data readiness and traceable review outputs.
             </p>
           </div>
 
@@ -375,16 +387,16 @@ export default function CarbonLiteLandingPage() {
         <section id="documents" className="border-y border-slate-200 bg-white">
           <div className="mx-auto grid max-w-6xl gap-8 px-5 py-14 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
             <div>
-              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Supported inputs</p>
-              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Upload the documents your workflow already uses.</h2>
+              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Source data</p>
+              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">The hard part often starts before the calculation.</h2>
               <p className="mt-3 text-base leading-7 text-slate-600">
-                Pilot users can test common source documents and help shape coverage for practical SME and consultant reporting workflows. Some records may be tracked-only or require review if a factor, unit, province, or source reference is missing.
+                Activity data may be spread across utility portals, invoices, PDFs, spreadsheets, facilities, and different people. CarbonLite provides one workflow for organizing that information before emissions calculations are reviewed.
               </p>
             </div>
 
             <div className="grid gap-6 md:grid-cols-2">
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <h3 className="text-lg font-bold text-slate-950">Document examples</h3>
+                <h3 className="text-lg font-bold text-slate-950">Common source data</h3>
                 <div className="mt-4 grid gap-2.5">
                   {documentExamples.map((item) => (
                     <div key={item} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700">
@@ -394,41 +406,19 @@ export default function CarbonLiteLandingPage() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
-                <h3 className="text-lg font-bold text-slate-950">What pilot teams can validate</h3>
-                <div className="mt-4 grid gap-2.5">
-                  {valuePoints.map((item) => (
-                    <div key={item} className="rounded-xl border border-emerald-100 bg-white/80 px-3.5 py-2.5 text-sm font-semibold text-emerald-900">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5">
+                <h3 className="text-lg font-bold text-slate-950">From scattered files to reviewable records</h3>
+                <ol className="mt-4 grid gap-2.5">
+                  {valuePoints.map((item, index) => (
+                    <li key={item} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm font-semibold text-slate-700">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">
+                        {index + 1}
+                      </span>
                       {item}
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="hotspots" className="mx-auto max-w-6xl px-6 py-16">
-          <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Emissions hotspots</p>
-              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Know where to focus first</h2>
-              <p className="mt-3 text-base leading-7 text-slate-600">
-                CarbonLite highlights top emissions categories and records requiring review, helping SMEs and consultants prioritize the highest-impact areas.
-              </p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {[
-                ['Top hotspot', 'Natural Gas'],
-                ['Calculated records', '4 of 6 records'],
-                ['Requires review', '2 records'],
-                ['Tracked metric', 'Water usage'],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-md shadow-slate-200/50">
-                  <div className="text-sm font-bold uppercase tracking-wide text-slate-500">{label}</div>
-                  <div className="mt-3 text-xl font-black text-slate-950">{value}</div>
-                </div>
-              ))}
             </div>
           </div>
         </section>
@@ -436,23 +426,15 @@ export default function CarbonLiteLandingPage() {
         <section id="factor-trust" className="border-y border-slate-200 bg-white">
           <div className="mx-auto grid max-w-6xl gap-8 px-5 py-14 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
             <div>
-              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Factor trust</p>
-              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Emission factors should be explainable</h2>
+              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Factor transparency</p>
+              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Know which factor was used — and why.</h2>
               <p className="mt-3 text-base leading-7 text-slate-600">
-                CarbonLite tracks factor source, year, jurisdiction, confidence level, and verification status so users can understand which factor was used and why.
+                CarbonLite keeps factor source, year, jurisdiction, unit, and matching information visible so reviewers can understand how an emissions result was produced.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                'Source authority',
-                'Source document',
-                'Factor year',
-                'Jurisdiction',
-                'Confidence level',
-                'Verification status',
-                'Matching explanation',
-              ].map((item) => (
-                <div key={item} className="rounded-xl border border-emerald-100 bg-emerald-50 px-3.5 py-2.5 text-sm font-bold text-emerald-900">
+              {factorTransparencyItems.map((item) => (
+                <div key={item} className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm font-bold text-slate-700">
                   {item}
                 </div>
               ))}
@@ -460,16 +442,35 @@ export default function CarbonLiteLandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-6 py-16">
-          <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6 shadow-md shadow-amber-100/50">
-            <p className="text-sm font-bold uppercase tracking-wider text-amber-700">Future readiness</p>
-            <h2 className="mt-2 text-2xl font-black md:text-3xl tracking-tight text-slate-950">Carbon Credit Readiness</h2>
-            <p className="mt-3 max-w-4xl leading-7 text-slate-700">
-              CarbonLite may help organize emissions data for future reduction analysis or professional carbon credit readiness discussions.
-            </p>
-            <p className="mt-4 max-w-4xl text-sm font-semibold leading-7 text-amber-900">
-              CarbonLite does not determine carbon credit eligibility, certify reductions, or replace professional advice.
-            </p>
+        <section id="review-package" className="mx-auto max-w-6xl px-6 py-16">
+          <div className="grid gap-8 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-md shadow-slate-200/50 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Review-ready output</p>
+              <h2 className="mt-2 text-2xl font-black md:text-3xl tracking-tight text-slate-950">Give reviewers something they can actually work with.</h2>
+              <p className="mt-3 max-w-4xl leading-7 text-slate-600">
+                CarbonLite organizes the records behind the emissions result, not just the final number.
+              </p>
+              <p className="mt-4 text-sm leading-6 text-slate-500">
+                CarbonLite supports data organization, emissions calculation, and review workflows. It does not replace formal regulatory reporting, third-party verification, or professional compliance advice.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/pilot')}
+                className="mt-6 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-100 transition hover:-translate-y-0.5 hover:bg-emerald-700"
+              >
+                Request Pilot Access
+              </button>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {reviewPackageItems.map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm font-semibold text-slate-700">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">
+                    ✓
+                  </span>
+                  {item}
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -478,6 +479,9 @@ export default function CarbonLiteLandingPage() {
           <div className="max-w-3xl">
             <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Pilot Access</p>
             <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Start with pilot access</h2>
+            <p className="mt-3 text-base leading-7 text-slate-600">
+              We are currently validating CarbonLite with Canadian SMEs and sustainability professionals using real-world source-data workflows.
+            </p>
           </div>
 
           <div className="mt-9 grid gap-5 md:grid-cols-2">
@@ -497,7 +501,7 @@ export default function CarbonLiteLandingPage() {
             onClick={() => navigate('/pilot')}
             className="mt-6 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-100 transition hover:-translate-y-0.5 hover:bg-emerald-700"
           >
-            Request pilot access
+            Request Pilot Access
           </button>
           </div>
         </section>
@@ -508,7 +512,7 @@ export default function CarbonLiteLandingPage() {
               <div>
                 <h2 className="text-2xl font-black md:text-3xl">Join the CarbonLite pilot</h2>
                 <p className="mt-3 max-w-2xl leading-7 text-slate-300">
-                  We are currently validating CarbonLite with Canadian SMEs, sustainability consultants, and environmental professionals. Help shape data readiness, factor matching, hotspot analysis, and traceable reporting workflows.
+                  Help us validate a simpler way to turn bills, invoices, spreadsheets, and operational records into structured, review-ready emissions data.
                 </p>
               </div>
               <button

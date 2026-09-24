@@ -30,9 +30,12 @@ import {
   normalizeActivityType as normalizeCanonicalActivityType,
 } from '../utils/activityType';
 import {
+  buildFactorUnitMismatchMessage,
   findBestConversionFactorMatch,
+  getCompatibleFactorUnitLabels,
   getFactorSourceYear,
   getFactorValue,
+  resolveActivityYear,
   type MatchableConversionFactor,
   normalizeJurisdictionCountry,
 } from '../utils/conversionFactorMatching';
@@ -41,7 +44,10 @@ import { getDateOnlyYear, getTodayDateOnly, isValidDateOnly } from '../utils/dat
 import { buildApiUrl } from '../config/api';
 import { ApiError } from '../services/api';
 import {
-  canImportActivityRecords,
+  canImportDraftRows,
+  canSetProvinceForActivityRecords,
+  canUploadFiles,
+  canDeleteActivityRecords,
   isPilotReviewer,
 } from '../utils/permissions';
 import {
@@ -79,6 +85,9 @@ type DocumentItem = {
   createdAt: string;
   importedAt?: string | null;
   importBatchId?: string | null;
+  sourceRowCount?: number | null;
+  extractedRowCount?: number | null;
+  importedRecordCount?: number | null;
 };
 
 type EditableConfidenceField<T> = {
@@ -98,6 +107,7 @@ type EditableParsedActivity = {
   unit: EditableConfidenceField<string>;
   jurisdictionCountry: EditableConfidenceField<string>;
   jurisdictionRegion: EditableConfidenceField<string>;
+  facilityName: EditableConfidenceField<string>;
   sourceReference: EditableConfidenceField<string>;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
@@ -148,6 +158,39 @@ const INPUT_TEMPLATE_HEADERS = [
   'Notes',
 ];
 
+const SITE_FACILITY_ALIASES = [
+  'facilityName',
+  'Facility Name',
+  'facility',
+  'Facility',
+  'siteName',
+  'Site Name',
+  'site',
+  'Site',
+  'location',
+  'Location',
+  'branch',
+  'Branch',
+  'factory',
+  'Factory',
+] as const;
+
+const SOURCE_REFERENCE_ALIASES = [
+  'sourceReference',
+  'Source Reference',
+  'source reference',
+  'reference',
+  'Reference',
+  'invoice',
+  'Invoice',
+  'documentReference',
+  'Document Reference',
+  'document reference',
+  'sourceDocument',
+  'Source Document',
+  'source document',
+] as const;
+
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
 export const FILE_MISSING_EXPLANATION =
@@ -157,7 +200,7 @@ export const FILE_MISSING_TOOLTIP =
 const UNSUPPORTED_ACTIVITY_TYPE_MESSAGE =
   'Unsupported Activity Type: This activity type is not supported in the current CarbonLite pilot.';
 const inputWorkflowSteps = [
-  { title: 'Upload / Manual Entry', detail: 'Add source activity data' },
+  { title: 'Input Data', detail: 'Add source activity data' },
   { title: 'Review extracted rows', detail: 'Check draft rows before import' },
   { title: 'Confirm activity records', detail: 'Save clean records' },
   { title: 'Match emission factors', detail: 'Apply traceable factors' },
@@ -177,7 +220,8 @@ function getRouteInputMethod(state: unknown): InputMethod | null {
 }
 
 type DocumentActionKind =
-  | 'view'
+  | 'viewDetails'
+  | 'downloadSource'
   | 'uploadAgain'
   | 'extract'
   | 'preview'
@@ -508,6 +552,22 @@ function normalizeSourceReferenceForDocument(sourceReference: string, documentFi
   return sourceReference;
 }
 
+function isLikelyMisclassifiedSiteFacilityReference(value: string, documentFileName: string) {
+  if (!isSpreadsheetFileName(documentFileName)) return false;
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === documentFileName.trim().toLowerCase()) return false;
+  if (getSourceFileExtension(normalized)) return false;
+  if (/invoice|receipt|bill|statement|reference|ref\s*#|document|page|row/i.test(normalized)) {
+    return false;
+  }
+
+  return /\b(office|factory|yard|field office|branch|facility|site|location|warehouse|plant|shop|store|depot)\b/i.test(
+    normalized,
+  );
+}
+
 function getPreviewSourceSummary(input: {
   previewDocumentId: string | null;
   previewDocumentIds: string[];
@@ -597,7 +657,7 @@ function getExtractedDocumentDate(item: ParsedActivity | any) {
   );
 }
 
-function getAliasedExtractionField(item: Record<string, any>, aliases: string[]) {
+function getAliasedExtractionField(item: Record<string, any>, aliases: readonly string[]) {
   for (const alias of aliases) {
     if (item[alias] !== undefined && item[alias] !== null) return item[alias];
   }
@@ -613,6 +673,10 @@ function normalizePreviewProvince(value: RawExtractionField) {
   return normalizeProvince(formatOptionalExtractionField(value)) ?? '';
 }
 
+function normalizePreviewSiteFacility(value: RawExtractionField) {
+  return formatOptionalExtractionField(value);
+}
+
 function normalizePreviewActivityType(value: RawExtractionField) {
   const rawValue = formatOptionalExtractionField(value).trim();
   if (!rawValue) return '';
@@ -622,6 +686,62 @@ function normalizePreviewActivityType(value: RawExtractionField) {
 
 function getPreviewActivityTypeLabel(value?: string | null) {
   return getActivityTypeLabel(value);
+}
+
+function getDraftRowsPermissionDeniedReason(user: ReturnType<typeof getCurrentUser>) {
+  const rawRole = String(user?.role ?? '').trim().toUpperCase();
+  const membershipRole = String(user?.membershipRole ?? '').trim().toUpperCase();
+
+  if (isPilotReviewer(user)) {
+    return 'Pilot review accounts cannot edit draft rows.';
+  }
+
+  if (!getOrganizationId(user)) {
+    return 'Your account is not connected to a workspace.';
+  }
+
+  if (rawRole === 'VIEWER' || rawRole === 'REVIEWER' || membershipRole === 'VIEWER' || membershipRole === 'REVIEWER') {
+    return 'Your current role does not allow importing draft rows.';
+  }
+
+  return 'You do not have permission to edit draft rows.';
+}
+
+function getSetProvincePermissionDeniedReason(user: ReturnType<typeof getCurrentUser>) {
+  const rawRole = String(user?.role ?? '').trim().toUpperCase();
+
+  if (isPilotReviewer(user)) {
+    return 'Pilot review accounts cannot edit draft rows.';
+  }
+
+  if (!getOrganizationId(user)) {
+    return 'Your account is not connected to a workspace.';
+  }
+
+  if (rawRole === 'VIEWER' || rawRole === 'REVIEWER') {
+    return 'Your current role does not allow setting province.';
+  }
+
+  return 'You do not have permission to set province.';
+}
+
+function getUploadPermissionDeniedReason(user: ReturnType<typeof getCurrentUser>) {
+  const rawRole = String(user?.role ?? '').trim().toUpperCase();
+  const membershipRole = String(user?.membershipRole ?? '').trim().toUpperCase();
+
+  if (isPilotReviewer(user)) {
+    return 'Pilot review accounts cannot upload files.';
+  }
+
+  if (!getOrganizationId(user)) {
+    return 'Your account is not connected to a workspace.';
+  }
+
+  if (rawRole === 'VIEWER' || rawRole === 'REVIEWER' || membershipRole === 'VIEWER' || membershipRole === 'REVIEWER') {
+    return 'Your current role does not allow file upload.';
+  }
+
+  return 'You do not have permission to upload files.';
 }
 
 function getUnsupportedActivityTypeDisplayLabel() {
@@ -644,18 +764,25 @@ export function buildDocumentImportActivityPayload(input: {
   const province = item.jurisdictionRegion.value || undefined;
   const normalizedUnit = normalizeUnitForDisplay(item.unit.value);
   const quantity = Number(item.quantity.value);
-  const recordYear = getDateOnlyYear(item.recordDate.value);
+  const activityYear = resolveActivityYear({
+    servicePeriodEndDate: item.periodEndDate,
+    recordDate: item.recordDate.value,
+  });
+  const recordYear = activityYear.year;
   const sourceTypeLabel = formatDocumentSourceTypeLabel({ fileName: sourceFileName });
+  const facilityName = normalizePreviewSiteFacility(item.facilityName?.value);
   const baseNotes = [`Imported via ${sourceTypeLabel}.`, sourceFileName ? `Source file: ${sourceFileName}.` : '']
     .filter(Boolean)
     .join(' ');
   const basePayload = {
     activityType,
     recordDate: item.recordDate.value || null,
+    recordYear: recordYear ?? undefined,
     quantity: item.quantity.value,
     unit: item.unit.value,
     jurisdictionCountry: country,
     jurisdictionRegion: province,
+    facility: facilityName || undefined,
     sourceType: 'AI_EXTRACTION',
     sourceReference: item.sourceReference.value || sourceFileName,
     documentId,
@@ -682,7 +809,7 @@ export function buildDocumentImportActivityPayload(input: {
       ...basePayload,
       ...calculation,
       scope: inferDefaultScope(activityType),
-      notes: [baseNotes, calculation.calculationMessage].filter(Boolean).join(' '),
+      notes: [baseNotes, activityYear.reviewNote, calculation.calculationMessage].filter(Boolean).join(' '),
     };
   }
 
@@ -733,6 +860,29 @@ export function buildDocumentImportActivityPayload(input: {
   });
 
   if (!match) {
+    const compatibleUnits = getCompatibleFactorUnitLabels({
+      activityType,
+      inputUnit: normalizedUnit.value,
+      jurisdictionCountry: country,
+      jurisdictionRegion: province,
+      recordYear,
+      organizationId,
+      factors: conversionFactors as MatchableConversionFactor[],
+    }).filter((unit) => unit.toLowerCase() !== normalizedUnit.value.toLowerCase());
+
+    if (compatibleUnits.length > 0) {
+      return withCalculation({
+        matchingStatus: 'UNIT_MISMATCH',
+        reportTreatment: 'EXCLUDED',
+        calculationStatus: 'UNIT_MISMATCH',
+        calculationMessage: buildFactorUnitMismatchMessage({
+          activityType,
+          inputUnit: normalizedUnit.value,
+          availableUnits: compatibleUnits,
+        }),
+      });
+    }
+
     return withCalculation({
       matchingStatus: 'MISSING_FACTOR',
       reportTreatment: 'EXCLUDED',
@@ -749,7 +899,9 @@ export function buildDocumentImportActivityPayload(input: {
     matchingStatus: 'MATCHED',
     reportTreatment: 'INCLUDED',
     calculationStatus: 'CALCULATED',
-    calculationMessage: match.usedPriorYearFallback && factorYear
+    calculationMessage: match.usedProxyFactor && match.proxyReason
+      ? `Proxy factor · Review recommended. ${match.proxyReason}`
+      : match.usedPriorYearFallback && factorYear
       ? `Matched factor. Using latest available factor year: ${factorYear}.`
       : 'Matched factor. This record is included in emissions totals.',
     matchedFactorId: match.factor.id,
@@ -848,6 +1000,23 @@ export function formatDocumentCreatedAt(value?: string | null) {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
+function formatDocumentMetadataValue(value?: string | number | null) {
+  if (value === undefined || value === null || value === '') return '-';
+  return String(value);
+}
+
+function getDocumentSourceRowCount(doc: DocumentItem) {
+  return doc.sourceRowCount ?? '-';
+}
+
+function getDocumentExtractedRowCount(doc: DocumentItem) {
+  return doc.extractedRowCount ?? '-';
+}
+
+function getDocumentImportedRecordCount(doc: DocumentItem) {
+  return doc.importedRecordCount ?? '-';
+}
+
 export function getDocumentActionModel(input: {
   status: string;
   canImport?: boolean;
@@ -859,9 +1028,13 @@ export function getDocumentActionModel(input: {
   isDeleting?: boolean;
 }): DocumentActionModel {
   const status = normalizeDocumentStatus(input.status);
-  const viewAction: DocumentActionConfig = {
-    kind: 'view',
-    label: input.isViewing ? 'Opening...' : 'View',
+  const viewDetailsAction: DocumentActionConfig = {
+    kind: 'viewDetails',
+    label: 'View Details',
+  };
+  const downloadSourceAction: DocumentActionConfig = {
+    kind: 'downloadSource',
+    label: input.isViewing ? 'Opening source file...' : 'Download Source File',
     disabled: input.isViewing,
   };
   const deleteAction: DocumentActionConfig = {
@@ -875,7 +1048,7 @@ export function getDocumentActionModel(input: {
     return {
       statusLabel: getDocumentStatusLabel(status),
       primaryAction: { kind: 'extract', label: 'Extracting...', disabled: true },
-      menuActions: [viewAction, deleteAction],
+      menuActions: [viewDetailsAction, downloadSourceAction, deleteAction],
     };
   }
 
@@ -887,7 +1060,7 @@ export function getDocumentActionModel(input: {
         label: input.isGeneratingMetrics ? 'Generating...' : 'Importing...',
         disabled: true,
       },
-      menuActions: [viewAction, deleteAction],
+      menuActions: [viewDetailsAction, downloadSourceAction, deleteAction],
     };
   }
 
@@ -898,7 +1071,7 @@ export function getDocumentActionModel(input: {
         kind: 'viewRecords',
         label: 'View Imported Records',
       },
-      menuActions: [viewAction, deleteAction],
+      menuActions: [viewDetailsAction, downloadSourceAction, deleteAction],
     };
   }
 
@@ -938,7 +1111,8 @@ export function getDocumentActionModel(input: {
           : 'No extraction preview is available. Use Re-extract to generate a new preview.',
       },
       menuActions: [
-        viewAction,
+        viewDetailsAction,
+        downloadSourceAction,
         ...(input.canImport
           ? [{ kind: 'import', label: 'Import' } satisfies DocumentActionConfig]
           : []),
@@ -958,7 +1132,7 @@ export function getDocumentActionModel(input: {
       kind: 'extract',
       label: 'Extract',
     },
-    menuActions: [viewAction, deleteAction],
+    menuActions: [viewDetailsAction, downloadSourceAction, deleteAction],
   };
 }
 
@@ -988,6 +1162,7 @@ export function UploadPage() {
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
   const [sampleWorkspaceLoaded, setSampleWorkspaceLoaded] = useState(false);
+  const [documentDetails, setDocumentDetails] = useState<DocumentItem | null>(null);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [viewingDocumentId, setViewingDocumentId] = useState<string | null>(null);
@@ -998,7 +1173,10 @@ export function UploadPage() {
   } | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const currentUser = getCurrentUser();
-  const canImportData = canImportActivityRecords(currentUser);
+  const canUploadData = canUploadFiles(currentUser);
+  const canImportData = canImportDraftRows(currentUser);
+  const canDeleteDocuments = canDeleteActivityRecords(currentUser);
+  const canSetProvinceOnDraftRows = canSetProvinceForActivityRecords(currentUser);
   const pilotReviewerReadOnly = isPilotReviewer(currentUser);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1123,7 +1301,7 @@ export function UploadPage() {
   });
   const normalizedBulkProvince = normalizePreviewProvince(bulkProvince);
   const canSetBulkProvince =
-    canImportData &&
+    canSetProvinceOnDraftRows &&
     missingProvinceRowIndexes.length > 0 &&
     Boolean(normalizedBulkProvince) &&
     !isProcessing;
@@ -1164,6 +1342,7 @@ export function UploadPage() {
       setBulkProvince('');
       setLatestDocumentId(null);
       setSelectedDocumentIds([]);
+      setDocumentDetails(null);
       setDocumentToDelete(null);
       setViewingDocumentId(null);
       setOpenDocumentMenuId(null);
@@ -1224,6 +1403,22 @@ export function UploadPage() {
       window.removeEventListener('scroll', closeDocumentMenu, true);
     };
   }, [openDocumentMenuId]);
+
+  useEffect(() => {
+    if (!documentDetails) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setDocumentDetails(null);
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [documentDetails]);
 
   useEffect(() => {
     const routeInputMethod = getRouteInputMethod(location.state);
@@ -1319,12 +1514,8 @@ export function UploadPage() {
         'state',
         'stateProvince',
       ]);
-      const sourceReferenceField = getAliasedExtractionField(item, [
-        'sourceReference',
-        'sourceFile',
-        'source',
-        'reference',
-      ]);
+      const facilityField = getAliasedExtractionField(item, SITE_FACILITY_ALIASES);
+      const sourceReferenceField = getAliasedExtractionField(item, SOURCE_REFERENCE_ALIASES);
       const documentUploadDate =
         document.createdAt ??
         documents.find((doc) => doc.id === document.id)?.createdAt ??
@@ -1339,8 +1530,16 @@ export function UploadPage() {
       const normalizedActivityType = normalizePreviewActivityType(activityTypeField);
       const normalizedCountry = normalizePreviewCountry(countryField);
       const normalizedProvince = normalizePreviewProvince(provinceField);
+      const normalizedFacility = normalizePreviewSiteFacility(facilityField);
+      const rawSourceReferenceValue = formatSourceReference(sourceReferenceField, document.fileName);
+      const sourceReferenceLooksLikeFacility =
+        !normalizedFacility &&
+        isLikelyMisclassifiedSiteFacilityReference(rawSourceReferenceValue, document.fileName);
+      const previewFacility = sourceReferenceLooksLikeFacility
+        ? rawSourceReferenceValue.trim()
+        : normalizedFacility;
       const sourceReferenceValue = normalizeSourceReferenceForDocument(
-        formatSourceReference(sourceReferenceField, document.fileName),
+        sourceReferenceLooksLikeFacility ? document.fileName : rawSourceReferenceValue,
         document.fileName,
       );
       const periodEndDate = formatDateValue(endDateField) || null;
@@ -1375,6 +1574,12 @@ export function UploadPage() {
         jurisdictionRegion: {
           value: normalizedProvince,
           confidence: normalizedProvince ? 'high' : 'low',
+        },
+        facilityName: {
+          value: previewFacility,
+          confidence: sourceReferenceLooksLikeFacility
+            ? extractFieldConfidence(sourceReferenceField)
+            : extractFieldConfidence(facilityField),
         },
         sourceReference: {
           value: sourceReferenceValue,
@@ -1425,7 +1630,7 @@ export function UploadPage() {
   function getDocumentTypeFromFile(file: File) {
     const fileName = file.name.toLowerCase();
 
-    if (file.type.startsWith('image/') || /\.(png|jpg)$/i.test(fileName)) {
+    if (file.type.startsWith('image/') || /\.(png|jpe?g|heic)$/i.test(fileName)) {
       return 'IMAGE';
     }
 
@@ -1433,15 +1638,11 @@ export function UploadPage() {
       return 'PDF';
     }
 
-    if (/\.(csv|xlsx|json)$/i.test(fileName)) {
-      return 'SPREADSHEET';
-    }
-
     return 'OTHER';
   }
 
   function isSupportedUploadFile(file: File) {
-    return /\.(pdf|csv|xlsx|png|jpg|json)$/i.test(file.name);
+    return /\.(pdf|png|jpe?g|heic)$/i.test(file.name);
   }
 
   function clearUploadInput() {
@@ -1457,7 +1658,7 @@ export function UploadPage() {
       setSelectedFiles([]);
       setSuccessMessage(null);
       setError(
-        `${unsupportedFile.name} is not supported. Please choose PDF, CSV, XLSX, PNG, JPG, or JSON files.`,
+        `${unsupportedFile.name} is not supported. Please choose PDF, JPG, PNG, or HEIC files.`,
       );
       clearUploadInput();
       return;
@@ -1485,9 +1686,9 @@ export function UploadPage() {
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    if (!canImportData) {
+    if (!canUploadData) {
       clearUploadInput();
-      setError('You do not have permission to perform this action.');
+      setError(getUploadPermissionDeniedReason(currentUser));
       setSuccessMessage(null);
       return;
     }
@@ -1500,7 +1701,7 @@ export function UploadPage() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (isProcessing || !canImportData) return;
+    if (isProcessing || !canUploadData) return;
 
     uploadDragDepthRef.current += 1;
     setIsDraggingUpload(true);
@@ -1510,7 +1711,7 @@ export function UploadPage() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (isProcessing || !canImportData) {
+    if (isProcessing || !canUploadData) {
       event.dataTransfer.dropEffect = 'none';
       return;
     }
@@ -1537,8 +1738,8 @@ export function UploadPage() {
     uploadDragDepthRef.current = 0;
     setIsDraggingUpload(false);
 
-    if (isProcessing || !canImportData) {
-      setError('You do not have permission to perform this action.');
+    if (isProcessing || !canUploadData) {
+      setError(getUploadPermissionDeniedReason(currentUser));
       setSuccessMessage(null);
       return;
     }
@@ -1660,8 +1861,8 @@ ${sampleRows.join('\n')}`,
   }
 
   async function uploadSelectedFile(options?: { extractAfterUpload?: boolean }) {
-    if (!canImportData) {
-      setError('You do not have permission to perform this action.');
+    if (!canUploadData) {
+      setError(getUploadPermissionDeniedReason(currentUser));
       setSuccessMessage(null);
       return;
     }
@@ -1812,8 +2013,8 @@ ${sampleRows.join('\n')}`,
 
 
   function handleChooseFile() {
-    if (!canImportData) {
-      setError('You do not have permission to perform this action.');
+    if (!canUploadData) {
+      setError(getUploadPermissionDeniedReason(currentUser));
       setSuccessMessage(null);
       return;
     }
@@ -1874,8 +2075,6 @@ ${sampleRows.join('\n')}`,
       isDeleting: deletingDocumentId === doc.id,
     });
 
-    if (canImportData) return actionModel;
-
     const mutatingActions = new Set<DocumentActionKind>([
       'uploadAgain',
       'extract',
@@ -1886,15 +2085,23 @@ ${sampleRows.join('\n')}`,
 
     return {
       ...actionModel,
-      primaryAction: mutatingActions.has(actionModel.primaryAction.kind)
+      primaryAction: mutatingActions.has(actionModel.primaryAction.kind) &&
+        !canUseDocumentAction(actionModel.primaryAction.kind)
         ? {
             ...actionModel.primaryAction,
             disabled: true,
             title: 'You do not have permission to perform this action.',
           }
         : actionModel.primaryAction,
-      menuActions: actionModel.menuActions.filter((action) => !mutatingActions.has(action.kind)),
+      menuActions: actionModel.menuActions.filter((action) => canUseDocumentAction(action.kind)),
     };
+  }
+
+  function canUseDocumentAction(kind: DocumentActionKind) {
+    if (kind === 'delete') return canDeleteDocuments;
+    if (kind === 'uploadAgain' || kind === 'extract' || kind === 'reextract') return canUploadData;
+    if (kind === 'import') return canImportData;
+    return true;
   }
 
   function getDocumentMenuPosition(button: HTMLButtonElement, actionCount: number) {
@@ -1993,7 +2200,12 @@ ${sampleRows.join('\n')}`,
     closeDocumentMenu();
 
     switch (action.kind) {
-      case 'view':
+      case 'viewDetails':
+        setDocumentDetails(doc);
+        setError(null);
+        setSuccessMessage(null);
+        return;
+      case 'downloadSource':
         handleViewDocument(doc);
         return;
       case 'uploadAgain':
@@ -2189,7 +2401,7 @@ ${sampleRows.join('\n')}`,
   }
 
   async function handleDeleteDocument() {
-    if (!canImportData) {
+    if (!canDeleteDocuments) {
       setError('You do not have permission to perform this action.');
       setSuccessMessage(null);
       setDocumentToDelete(null);
@@ -2899,7 +3111,7 @@ ${sampleRows.join('\n')}`,
   }
 
   function getConfirmImportDisabledReason() {
-    if (!canImportData) return 'You do not have permission to perform this action.';
+    if (!canImportData) return getDraftRowsPermissionDeniedReason(currentUser);
     if (confirmingId || generatingMetrics) return undefined;
     if (parsedActivities.length === 0) return 'No importable records found.';
     if (selectedParsedActivitiesCount === 0) {
@@ -2943,7 +3155,9 @@ ${sampleRows.join('\n')}`,
   }
 
   function getSetProvinceDisabledReason() {
-    if (!canImportData) return 'You do not have permission to edit draft rows.';
+    if (!canSetProvinceOnDraftRows) {
+      return getSetProvincePermissionDeniedReason(currentUser);
+    }
     if (isProcessing) return undefined;
     if (missingProvinceRowIndexes.length === 0) return 'No rows need a province.';
     if (!normalizedBulkProvince) return 'Select a province to apply.';
@@ -2951,8 +3165,8 @@ ${sampleRows.join('\n')}`,
   }
 
   function applyBulkProvinceToMissingRows() {
-    if (!canImportData) {
-      setError('You do not have permission to edit draft rows.');
+    if (!canSetProvinceOnDraftRows) {
+      setError(getSetProvincePermissionDeniedReason(currentUser));
       setSuccessMessage(null);
       return;
     }
@@ -3161,6 +3375,7 @@ ${sampleRows.join('\n')}`,
         unit: { value: 'liters', confidence: 'medium' },
         jurisdictionCountry: { value: 'Canada', confidence: 'medium' },
         jurisdictionRegion: { value: '', confidence: 'low' },
+        facilityName: { value: '', confidence: 'medium' },
         sourceReference: {
           value:
             documents.find((doc) => doc.id === (previewDocumentIds[0] ?? previewDocumentId))
@@ -3313,9 +3528,9 @@ ${sampleRows.join('\n')}`,
 
       {!pilotReviewerReadOnly ? <div style={sampleBannerStyle}>
         <div>
-          <strong>{sampleWorkspaceLoaded ? 'Example workspace loaded' : 'Try sample files'}</strong>
+          <strong>{sampleWorkspaceLoaded ? 'Example workspace loaded' : 'Try sample data'}</strong>
           <div style={{ color: '#475569', marginTop: 4 }}>
-            Preload sample uploaded documents and extracted rows without changing how the app works.
+            Load sample documents and extracted rows for demo purposes.
           </div>
         </div>
         <button
@@ -3332,7 +3547,7 @@ ${sampleRows.join('\n')}`,
       <div style={uploadCardStyle}>
         <h2 style={{ marginTop: 0 }}>Upload Documents</h2>
         <p style={{ color: '#666' }}>
-          Upload utility bills, fuel invoices, natural gas bills, water bills, hotel or travel documents, shipping records, PDFs, images, CSV, XLSX, or structured JSON files. Extracted records appear in Input Review before import.
+          Upload utility bills, fuel invoices, water bills, travel documents, hotel invoices, or operational PDFs.
         </p>
 
         <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
@@ -3340,10 +3555,10 @@ ${sampleRows.join('\n')}`,
             role="button"
             tabIndex={0}
             onClick={() => {
-              if (!isProcessing && canImportData) handleChooseFile();
+              if (!isProcessing && canUploadData) handleChooseFile();
             }}
             onKeyDown={(event) => {
-              if (isProcessing || !canImportData) return;
+              if (isProcessing || !canUploadData) return;
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 handleChooseFile();
@@ -3353,15 +3568,15 @@ ${sampleRows.join('\n')}`,
             onDragOver={handleUploadDragOver}
             onDragLeave={handleUploadDragLeave}
             onDrop={handleUploadDrop}
-            aria-disabled={isProcessing || !canImportData}
-            title={!canImportData ? 'You do not have permission to perform this action.' : undefined}
-            style={uploadDropzoneStyle(isDraggingUpload, isProcessing || !canImportData)}
+            aria-disabled={isProcessing || !canUploadData}
+            title={!canUploadData ? getUploadPermissionDeniedReason(currentUser) : undefined}
+            style={uploadDropzoneStyle(isDraggingUpload, isProcessing || !canUploadData)}
           >
             <strong>
-              {isDraggingUpload ? 'Drop to select files' : 'Drag and drop files here or browse files'}
+              {isDraggingUpload ? 'Drop files here' : 'Drop files here or choose files'}
             </strong>
             <span style={{ color: '#666' }}>
-              PDF, CSV, XLSX, PNG, JPG, or JSON files are supported. Max 10 MB.
+              Supported files: PDF, JPG, PNG, HEIC. Max 10 MB.
             </span>
           </div>
 
@@ -3391,7 +3606,7 @@ ${sampleRows.join('\n')}`,
             id="document-upload-input"
             type="file"
             onChange={handleFileChange}
-            accept=".pdf,.csv,.xlsx,.png,.jpg,.json,application/json"
+            accept=".pdf,.jpg,.jpeg,.png,.heic,application/pdf,image/jpeg,image/png,image/heic"
             style={{ display: 'none' }}
             multiple
           />
@@ -3424,11 +3639,11 @@ ${sampleRows.join('\n')}`,
             <button
               type="button"
               onClick={handleUploadAndExtract}
-              disabled={isProcessing || selectedFiles.length === 0 || !canImportData}
-              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0 || !canImportData)}
+              disabled={isProcessing || selectedFiles.length === 0 || !canUploadData}
+              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0 || !canUploadData)}
               title={
-                !canImportData
-                  ? 'You do not have permission to perform this action.'
+                !canUploadData
+                  ? getUploadPermissionDeniedReason(currentUser)
                   : selectedFiles.length === 0
                   ? 'Select a document before extracting data.'
                   : 'Upload the selected document and extract activity data.'
@@ -3436,28 +3651,6 @@ ${sampleRows.join('\n')}`,
             >
               {uploadExtractInProgress ? 'Extracting...' : 'Extract Data'}
             </button>
-
-            <div style={sampleCsvRowStyle}>
-              <span style={{ color: '#64748b' }}>Need an example?</span>
-              <button
-                type="button"
-                onClick={handleUseSampleCSV}
-                disabled={isProcessing || !canImportData}
-                style={linkButtonStyle(isProcessing || !canImportData)}
-                title={!canImportData ? 'You do not have permission to perform this action.' : undefined}
-              >
-                Use Sample CSV
-              </button>
-              <button
-                type="button"
-                onClick={handleUseSampleJSON}
-                disabled={isProcessing || !canImportData}
-                style={linkButtonStyle(isProcessing || !canImportData)}
-                title={!canImportData ? 'You do not have permission to perform this action.' : undefined}
-              >
-                Use Sample JSON
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -3467,7 +3660,7 @@ ${sampleRows.join('\n')}`,
         <div style={uploadCardStyle}>
           <h2 style={{ marginTop: 0 }}>Import Spreadsheet</h2>
           <p style={{ color: '#666' }}>
-            Import CSV or Excel activity data using the CarbonLite data template. Include Province for electricity records so province-specific factors can match.
+            Import CSV or Excel activity data using the CarbonLite data template.
           </p>
           <div style={templateActionRowStyle}>
             <button type="button" onClick={downloadCsvTemplate} style={secondaryButtonStyle}>
@@ -3477,7 +3670,7 @@ ${sampleRows.join('\n')}`,
               Download Excel template
             </button>
           </div>
-          <ExcelInputTable onSuccess={handleManualOrSpreadsheetSave} />
+          <ExcelInputTable mode="spreadsheet" onSuccess={handleManualOrSpreadsheetSave} />
         </div>
       ) : null}
 
@@ -3485,9 +3678,9 @@ ${sampleRows.join('\n')}`,
         <div ref={manualEntryRef} style={uploadCardStyle} tabIndex={-1}>
           <h2 style={{ marginTop: 0 }}>Manual Entry</h2>
           <p style={{ color: '#666' }}>
-            Enter activity records directly when no file is available. Electricity records require province before calculation and can be saved for review if province is missing.
+            Enter one activity record directly when no file is available.
           </p>
-          <ExcelInputTable onSuccess={handleManualOrSpreadsheetSave} />
+          <ExcelInputTable mode="manual" onSuccess={handleManualOrSpreadsheetSave} />
         </div>
       ) : null}
 
@@ -3526,9 +3719,9 @@ ${sampleRows.join('\n')}`,
           </div>
         ) : documents.length === 0 ? (
           <div style={emptyStateStyle}>
-            <strong>No documents waiting for review.</strong>
+            <strong>No documents uploaded yet.</strong>
             <p style={{ margin: '8px 0 0', color: '#64748b' }}>
-              Upload a file or add records manually to begin.
+              Upload bills, receipts, invoices, PDFs, or images to extract activity data.
             </p>
           </div>
         ) : (
@@ -3703,6 +3896,72 @@ ${sampleRows.join('\n')}`,
           ) : null}
         </div>
       ) : null}
+
+      {documentDetails ? (
+        <div style={modalBackdropStyle} role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="document-details-title"
+            style={documentDetailsModalStyle}
+          >
+            <div style={documentDetailsHeaderStyle}>
+              <div>
+                <h2 id="document-details-title" style={documentDetailsTitleStyle}>
+                  Document Details
+                </h2>
+                <p style={documentDetailsSubtitleStyle}>
+                  Metadata for {documentDetails.fileName}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close document details"
+                onClick={() => setDocumentDetails(null)}
+                style={modalCloseButtonStyle}
+              >
+                ×
+              </button>
+            </div>
+
+            <dl style={documentDetailsGridStyle}>
+              <DocumentMetadataField label="File name" value={documentDetails.fileName} />
+              <DocumentMetadataField label="Type" value={documentDetails.type} />
+              <DocumentMetadataField
+                label="Status"
+                value={getDocumentActionModelForDoc(documentDetails).statusLabel}
+              />
+              <DocumentMetadataField
+                label="Created date"
+                value={formatDocumentCreatedAt(documentDetails.createdAt)}
+              />
+              <DocumentMetadataField
+                label="Source row count"
+                value={getDocumentSourceRowCount(documentDetails)}
+              />
+              <DocumentMetadataField
+                label="Extracted row count"
+                value={getDocumentExtractedRowCount(documentDetails)}
+              />
+              <DocumentMetadataField
+                label="Imported record count"
+                value={getDocumentImportedRecordCount(documentDetails)}
+              />
+            </dl>
+
+            <div style={modalActionRowStyle}>
+              <button
+                type="button"
+                onClick={() => setDocumentDetails(null)}
+                style={secondaryButtonStyle}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {previewDocumentId ? (
         <div style={{ ...sectionCardStyle, marginTop: 24 }}>
           <div style={previewHeaderStyle}>
@@ -3790,7 +4049,7 @@ ${sampleRows.join('\n')}`,
                   <select
                     value={bulkProvince}
                     onChange={(event) => setBulkProvince(event.target.value)}
-                    disabled={!canImportData || isProcessing}
+                    disabled={!canSetProvinceOnDraftRows || isProcessing}
                     style={bulkProvinceSelectStyle}
                   >
                     <option value="">Select province</option>
@@ -3839,6 +4098,7 @@ ${sampleRows.join('\n')}`,
                 <col style={previewUnitColStyle} />
                 <col style={previewCountryColStyle} />
                 <col style={previewProvinceColStyle} />
+                <col style={previewFacilityColStyle} />
                 <col style={previewSourceReferenceColStyle} />
                 <col style={previewIssueColStyle} />
                 <col style={previewTreatmentColStyle} />
@@ -3855,6 +4115,7 @@ ${sampleRows.join('\n')}`,
                   <th style={thStyle}>Unit</th>
                   <th style={thStyle}>Country</th>
                   <th style={thStyle}>Province</th>
+                  <th style={thStyle}>Site / Facility</th>
                   <th style={thStyle}>Source Reference</th>
                   <th style={thStyle}>Issue</th>
                   <th style={thStyle}>Report Treatment</th>
@@ -3876,7 +4137,10 @@ ${sampleRows.join('\n')}`,
                   const rowReportTreatment = getRowReportTreatment(index, item);
 
                   return (
-                  <tr key={`parsed-${index}`}>
+                  <tr
+                    key={`parsed-${index}`}
+                    style={item.selected && !rowHasValidationIssues ? selectedPreviewRowStyle : undefined}
+                  >
                     <td style={tdStyle}>
                       <input
                         type="checkbox"
@@ -4108,6 +4372,25 @@ ${sampleRows.join('\n')}`,
                       <div style={previewFieldStackStyle}>
                         <input
                           type="text"
+                          value={item.facilityName.value ?? ''}
+                          placeholder="Optional site or facility"
+                          onChange={(e) =>
+                            updateParsedActivityField(index, 'facilityName', e.target.value)
+                          }
+                          style={optionalInputStyle(
+                            item.facilityName.confidence,
+                            item.facilityName.value,
+                            { neutralWhenPresent: true },
+                          )}
+                          title={item.facilityName.value ?? 'Optional site or facility'}
+                        />
+                      </div>
+                    </td>
+
+                    <td style={previewTdStyle}>
+                      <div style={previewFieldStackStyle}>
+                        <input
+                          type="text"
                           value={item.sourceReference.value ?? ''}
                           placeholder={item.documentFileName}
                           onChange={(e) =>
@@ -4226,6 +4509,21 @@ ${sampleRows.join('\n')}`,
   );
 }
 
+function DocumentMetadataField({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | number | null;
+}) {
+  return (
+    <div style={documentMetadataFieldStyle}>
+      <dt style={documentMetadataLabelStyle}>{label}</dt>
+      <dd style={documentMetadataValueStyle}>{formatDocumentMetadataValue(value)}</dd>
+    </div>
+  );
+}
+
 const workflowCardStyle: React.CSSProperties = {
   marginBottom: 20,
   padding: 16,
@@ -4233,6 +4531,24 @@ const workflowCardStyle: React.CSSProperties = {
   border: '1px solid #dbe3ec',
   background: '#fff',
   boxShadow: '0 8px 20px rgba(15, 23, 42, 0.04)',
+};
+
+const inputReviewPalette = {
+  primaryGreen: '#047857',
+  primaryText: '#0F172A',
+  secondaryText: '#64748B',
+  mutedText: '#94A3B8',
+  border: '#E2E8F0',
+  subtleBorder: '#F1F5F9',
+  white: '#FFFFFF',
+  subtleBackground: '#F8FAFC',
+  disabledBackground: '#F1F5F9',
+  successBackground: '#ECFDF5',
+  warningBackground: '#FFFBEB',
+  warningText: '#B45309',
+  errorBackground: '#FEF2F2',
+  errorText: '#B91C1C',
+  infoText: '#475569',
 };
 
 const workflowHeaderStyle: React.CSSProperties = {
@@ -4320,9 +4636,9 @@ const sampleBannerStyle: React.CSSProperties = {
   marginBottom: 24,
   padding: 16,
   borderRadius: 12,
-  border: '1px solid #c7d2fe',
-  background: '#eef2ff',
-  color: '#1e293b',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.subtleBackground,
+  color: inputReviewPalette.primaryText,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
@@ -4344,9 +4660,9 @@ function methodTabStyle(active: boolean): React.CSSProperties {
     textAlign: 'left',
     padding: 16,
     borderRadius: 8,
-    border: active ? '2px solid #10b981' : '1px solid #dbe3ec',
-    background: active ? '#ecfdf5' : '#fff',
-    color: '#0f172a',
+    border: active ? `2px solid ${inputReviewPalette.primaryGreen}` : `1px solid ${inputReviewPalette.border}`,
+    background: active ? inputReviewPalette.successBackground : inputReviewPalette.white,
+    color: inputReviewPalette.primaryText,
     cursor: 'pointer',
     boxShadow: active ? '0 8px 20px rgba(16, 185, 129, 0.12)' : 'none',
   };
@@ -4360,26 +4676,25 @@ const templateActionRowStyle: React.CSSProperties = {
 };
 
 const uploadCardStyle: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 16,
+  border: `1px solid ${inputReviewPalette.border}`,
+  borderRadius: 12,
   padding: 20,
   marginBottom: 24,
-  background: '#fff',
-  boxShadow: '0 6px 20px rgba(0,0,0,0.04)',
+  background: inputReviewPalette.white,
 };
 
 const sectionCardStyle: React.CSSProperties = {
-  border: '1px solid #ddd',
+  border: `1px solid ${inputReviewPalette.border}`,
   borderRadius: 12,
-  background: '#fff',
+  background: inputReviewPalette.white,
   overflow: 'visible',
 };
 
 const fileInfoStyle: React.CSSProperties = {
   padding: 12,
   borderRadius: 10,
-  background: '#f7f7f7',
-  border: '1px solid #eee',
+  background: inputReviewPalette.subtleBackground,
+  border: `1px solid ${inputReviewPalette.border}`,
 };
 
 const selectedFileListStyle: React.CSSProperties = {
@@ -4395,8 +4710,8 @@ const uploadWorkflowStyle: React.CSSProperties = {
   gap: 10,
   padding: 12,
   borderRadius: 12,
-  border: '1px solid #dbeafe',
-  background: '#f8fafc',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.subtleBackground,
 };
 
 const uploadWorkflowStepStyle: React.CSSProperties = {
@@ -4415,8 +4730,8 @@ const uploadWorkflowNumberStyle: React.CSSProperties = {
   width: 24,
   height: 24,
   borderRadius: '50%',
-  background: '#e0f2fe',
-  color: '#075985',
+  background: inputReviewPalette.successBackground,
+  color: inputReviewPalette.primaryGreen,
   fontSize: 12,
   fontWeight: 800,
   flex: '0 0 auto',
@@ -4467,8 +4782,8 @@ const includedTreatmentStyle: React.CSSProperties = {
   padding: '3px 8px',
   fontSize: 12,
   fontWeight: 700,
-  color: '#047857',
-  background: '#d1fae5',
+  color: inputReviewPalette.primaryGreen,
+  background: inputReviewPalette.successBackground,
 };
 
 const trackedTreatmentStyle: React.CSSProperties = {
@@ -4479,8 +4794,8 @@ const trackedTreatmentStyle: React.CSSProperties = {
   padding: '3px 8px',
   fontSize: 12,
   fontWeight: 700,
-  color: '#1d4ed8',
-  background: '#dbeafe',
+  color: inputReviewPalette.infoText,
+  background: inputReviewPalette.subtleBackground,
 };
 
 const excludedTreatmentStyle: React.CSSProperties = {
@@ -4491,8 +4806,8 @@ const excludedTreatmentStyle: React.CSSProperties = {
   padding: '3px 8px',
   fontSize: 12,
   fontWeight: 700,
-  color: '#b91c1c',
-  background: '#fee2e2',
+  color: inputReviewPalette.errorText,
+  background: inputReviewPalette.errorBackground,
 };
 
 function linkButtonStyle(disabled: boolean): React.CSSProperties {
@@ -4526,15 +4841,14 @@ const documentTypeSelectStyle: React.CSSProperties = {
   minHeight: 46,
   padding: '10px 44px 10px 14px',
   borderRadius: 10,
-  border: '2px solid #64748b',
-  background: '#f8fafc',
-  color: '#0f172a',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.white,
+  color: inputReviewPalette.primaryText,
   fontSize: 15,
   fontWeight: 700,
   cursor: 'pointer',
   appearance: 'none',
-  outlineColor: '#10b981',
-  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.08)',
+  outlineColor: inputReviewPalette.primaryGreen,
 };
 
 const documentTypeSelectArrowStyle: React.CSSProperties = {
@@ -4558,9 +4872,9 @@ const uploadDropzoneStyle = (
   gap: 6,
   padding: 18,
   borderRadius: 12,
-  border: `2px dashed ${isDragging ? '#10b981' : '#cbd5e1'}`,
-  background: isDragging ? '#ecfdf5' : '#f8fafc',
-  color: isProcessing ? '#94a3b8' : '#0f172a',
+  border: `2px dashed ${isDragging ? inputReviewPalette.primaryGreen : inputReviewPalette.border}`,
+  background: isDragging ? inputReviewPalette.successBackground : inputReviewPalette.subtleBackground,
+  color: isProcessing ? inputReviewPalette.mutedText : inputReviewPalette.primaryText,
   cursor: isProcessing ? 'not-allowed' : 'pointer',
   opacity: isProcessing ? 0.72 : 1,
   transition: 'border-color 120ms ease, background 120ms ease, color 120ms ease',
@@ -4585,19 +4899,18 @@ const successStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 14,
   borderRadius: 10,
-  border: '1px solid #b8dfc1',
-  background: '#f3fff5',
-  color: '#1d6b2d',
-  boxShadow: '0 10px 25px rgba(16, 185, 129, 0.12)',
+  border: '1px solid #BBF7D0',
+  background: inputReviewPalette.successBackground,
+  color: inputReviewPalette.primaryGreen,
 };
 
 const errorStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 8,
-  border: '1px solid #fed7aa',
-  background: '#fff7ed',
-  color: '#9a3412',
+  border: '1px solid #FDE68A',
+  background: inputReviewPalette.warningBackground,
+  color: inputReviewPalette.warningText,
 };
 
 const emptyStateStyle: React.CSSProperties = {
@@ -4608,7 +4921,7 @@ const emptyStateStyle: React.CSSProperties = {
 
 const previewHeaderStyle: React.CSSProperties = {
   padding: 16,
-  borderBottom: '1px solid #eee',
+  borderBottom: `1px solid ${inputReviewPalette.border}`,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
@@ -4634,21 +4947,26 @@ const importSelectionHelpStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 8px',
-  borderBottom: '1px solid #ddd',
+  borderBottom: `1px solid ${inputReviewPalette.border}`,
   boxSizing: 'border-box',
-  color: '#475569',
+  color: inputReviewPalette.infoText,
   fontSize: 12,
   fontWeight: 800,
   whiteSpace: 'nowrap',
+  background: inputReviewPalette.subtleBackground,
 };
 
 const tdStyle: React.CSSProperties = {
   padding: 8,
-  borderBottom: '1px solid #eee',
+  borderBottom: `1px solid ${inputReviewPalette.subtleBorder}`,
   boxSizing: 'border-box',
   verticalAlign: 'top',
   minWidth: 0,
   maxWidth: 0,
+};
+
+const selectedPreviewRowStyle: React.CSSProperties = {
+  background: '#F0FDF4',
 };
 
 const inputReviewTableWrapStyle: React.CSSProperties = {
@@ -4721,7 +5039,7 @@ const previewScrollHintStyle: React.CSSProperties = {
 
 const previewTableStyle: React.CSSProperties = {
   width: '100%',
-  minWidth: 2500,
+  minWidth: 2720,
   borderCollapse: 'collapse',
   tableLayout: 'fixed',
 };
@@ -4759,6 +5077,7 @@ const previewQuantityColStyle: React.CSSProperties = { width: 160 };
 const previewUnitColStyle: React.CSSProperties = { width: 160 };
 const previewCountryColStyle: React.CSSProperties = { width: 180 };
 const previewProvinceColStyle: React.CSSProperties = { width: 220 };
+const previewFacilityColStyle: React.CSSProperties = { width: 220 };
 const previewSourceReferenceColStyle: React.CSSProperties = { width: 260 };
 const previewIssueColStyle: React.CSSProperties = { width: 220 };
 const previewTreatmentColStyle: React.CSSProperties = { width: 160 };
@@ -4788,27 +5107,27 @@ function validatedInputStyle(
 function getPreviewConfidenceStyle(confidence: string): React.CSSProperties {
   if (confidence === 'low') {
     return {
-      background: '#fff1f1',
-      border: '1px solid #f5c2c7',
+      background: inputReviewPalette.errorBackground,
+      border: '1px solid #FECACA',
     };
   }
 
   if (confidence === 'medium') {
     return {
-      background: '#fff8e6',
-      border: '1px solid #f3d28b',
+      background: inputReviewPalette.warningBackground,
+      border: '1px solid #FDE68A',
     };
   }
 
   return {
-    background: '#f6fff7',
-    border: '1px solid #b7e4c7',
+    background: inputReviewPalette.white,
+    border: `1px solid ${inputReviewPalette.border}`,
   };
 }
 
 const validationInputOverrideStyle: React.CSSProperties = {
-  background: '#fff1f2',
-  border: '1px solid #ef4444',
+  background: inputReviewPalette.errorBackground,
+  border: `1px solid ${inputReviewPalette.errorText}`,
 };
 
 const fieldErrorStyle: React.CSSProperties = {
@@ -4824,9 +5143,9 @@ const validationSummaryStyle: React.CSSProperties = {
   margin: '0 16px 14px',
   padding: '12px 14px',
   borderRadius: 8,
-  border: '1px solid #fecaca',
-  background: '#fff1f2',
-  color: '#991b1b',
+  border: '1px solid #FECACA',
+  background: inputReviewPalette.errorBackground,
+  color: inputReviewPalette.errorText,
   fontSize: 14,
 };
 
@@ -4838,8 +5157,8 @@ const bulkProvincePanelStyle: React.CSSProperties = {
   margin: '0 16px 14px',
   padding: '12px 14px',
   borderRadius: 10,
-  border: '1px solid #bfdbfe',
-  background: '#eff6ff',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.subtleBackground,
 };
 
 const bulkProvinceHelpTextStyle: React.CSSProperties = {
@@ -4864,8 +5183,8 @@ const bulkProvinceLabelStyle: React.CSSProperties = {
 const bulkProvinceSelectStyle: React.CSSProperties = {
   padding: '9px 10px',
   borderRadius: 8,
-  border: '1px solid #93c5fd',
-  background: '#fff',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.white,
 };
 
 const dateSuggestionStyle: React.CSSProperties = {
@@ -4900,6 +5219,7 @@ const useSuggestionButtonStyle: React.CSSProperties = {
 function rowStatusBadgeStyle(status: string): React.CSSProperties {
   const isReady = status === 'Ready';
   const isTrackedMetric = status === 'Tracked Metric';
+  const isReview = ['Needs Review', 'Missing Province', 'Missing Factor'].includes(status);
 
   return {
     display: 'inline-flex',
@@ -4912,8 +5232,20 @@ function rowStatusBadgeStyle(status: string): React.CSSProperties {
     padding: '4px 10px',
     fontSize: 12,
     fontWeight: 700,
-    color: isReady ? '#047857' : isTrackedMetric ? '#1d4ed8' : '#b91c1c',
-    background: isReady ? '#d1fae5' : isTrackedMetric ? '#dbeafe' : '#fee2e2',
+    color: isReady
+      ? inputReviewPalette.primaryGreen
+      : isTrackedMetric
+      ? inputReviewPalette.infoText
+      : isReview
+      ? inputReviewPalette.warningText
+      : inputReviewPalette.errorText,
+    background: isReady
+      ? inputReviewPalette.successBackground
+      : isTrackedMetric
+      ? inputReviewPalette.subtleBackground
+      : isReview
+      ? inputReviewPalette.warningBackground
+      : inputReviewPalette.errorBackground,
   };
 }
 
@@ -4931,13 +5263,13 @@ function optionalInputStyle(
     borderRadius: 6,
     ...(isEmpty
       ? {
-          background: '#fff',
-          border: '1px solid #d1d5db',
+          background: inputReviewPalette.white,
+          border: `1px solid ${inputReviewPalette.border}`,
         }
       : options?.neutralWhenPresent
       ? {
-          background: '#fff',
-          border: '1px solid #d1d5db',
+          background: inputReviewPalette.white,
+          border: `1px solid ${inputReviewPalette.border}`,
         }
       : getPreviewConfidenceStyle(confidence)),
   };
@@ -4986,9 +5318,9 @@ function documentPrimaryActionButtonStyle(disabled: boolean): React.CSSPropertie
     minHeight: 34,
     padding: '6px 12px',
     borderRadius: 8,
-    border: '1px solid #047857',
-    background: disabled ? '#e5e7eb' : '#047857',
-    color: disabled ? '#6b7280' : '#fff',
+    border: disabled ? `1px solid ${inputReviewPalette.border}` : `1px solid ${inputReviewPalette.primaryGreen}`,
+    background: disabled ? inputReviewPalette.disabledBackground : inputReviewPalette.primaryGreen,
+    color: disabled ? inputReviewPalette.mutedText : inputReviewPalette.white,
     fontSize: 14,
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
@@ -5004,9 +5336,9 @@ function documentSecondaryActionButtonStyle(disabled: boolean, danger: boolean):
     minHeight: 34,
     padding: '6px 10px',
     borderRadius: 8,
-    border: danger ? '1px solid #fecaca' : '1px solid #cbd5e1',
-    background: disabled ? '#f1f5f9' : '#fff',
-    color: disabled ? '#94a3b8' : danger ? '#b91c1c' : '#334155',
+    border: danger ? '1px solid #FECACA' : `1px solid ${inputReviewPalette.border}`,
+    background: disabled ? inputReviewPalette.disabledBackground : inputReviewPalette.white,
+    color: disabled ? inputReviewPalette.mutedText : danger ? inputReviewPalette.errorText : '#334155',
     fontSize: 14,
     fontWeight: 700,
     whiteSpace: 'nowrap',
@@ -5018,14 +5350,14 @@ function documentStatusBadgeStyle(status: string): React.CSSProperties {
   const label = getDocumentStatusLabel(status);
   const palette =
     label === 'Imported'
-      ? { border: '#bbf7d0', background: '#f0fdf4', color: '#166534' }
+      ? { border: '#BBF7D0', background: inputReviewPalette.successBackground, color: inputReviewPalette.primaryGreen }
       : label === 'Ready for Review'
-      ? { border: '#bfdbfe', background: '#eff6ff', color: '#1d4ed8' }
+      ? { border: '#BBF7D0', background: inputReviewPalette.successBackground, color: inputReviewPalette.primaryGreen }
       : label === 'Needs Attention'
-      ? { border: '#fed7aa', background: '#fff7ed', color: '#9a3412' }
+      ? { border: '#FDE68A', background: inputReviewPalette.warningBackground, color: inputReviewPalette.warningText }
       : label === 'Re-upload Required'
-      ? { border: '#fecaca', background: '#fef2f2', color: '#991b1b' }
-      : { border: '#e2e8f0', background: '#f8fafc', color: '#334155' };
+      ? { border: '#FECACA', background: inputReviewPalette.errorBackground, color: inputReviewPalette.errorText }
+      : { border: inputReviewPalette.border, background: inputReviewPalette.subtleBackground, color: inputReviewPalette.infoText };
 
   return {
     display: 'inline-flex',
@@ -5049,9 +5381,9 @@ const kebabButtonStyle: React.CSSProperties = {
   width: 34,
   height: 34,
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
-  color: '#0f172a',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.white,
+  color: inputReviewPalette.primaryText,
   cursor: 'pointer',
   fontSize: 18,
   fontWeight: 800,
@@ -5067,9 +5399,9 @@ const documentMenuStyle: React.CSSProperties = {
   minWidth: 150,
   padding: 6,
   borderRadius: 10,
-  border: '1px solid #e5e7eb',
-  background: '#fff',
-  boxShadow: '0 14px 36px rgba(15, 23, 42, 0.16)',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.white,
+  boxShadow: '0 14px 30px rgba(15, 23, 42, 0.12)',
 };
 
 function documentMenuItemStyle(disabled: boolean): React.CSSProperties {
@@ -5079,7 +5411,7 @@ function documentMenuItemStyle(disabled: boolean): React.CSSProperties {
     border: 'none',
     borderRadius: 8,
     background: 'transparent',
-    color: disabled ? '#94a3b8' : '#0f172a',
+    color: disabled ? inputReviewPalette.mutedText : inputReviewPalette.primaryText,
     cursor: disabled ? 'not-allowed' : 'pointer',
     textAlign: 'left',
     fontWeight: 600,
@@ -5089,13 +5421,13 @@ function documentMenuItemStyle(disabled: boolean): React.CSSProperties {
 function documentMenuDangerItemStyle(disabled: boolean): React.CSSProperties {
   return {
     ...documentMenuItemStyle(disabled),
-    color: disabled ? '#94a3b8' : '#b91c1c',
+    color: disabled ? inputReviewPalette.mutedText : inputReviewPalette.errorText,
   };
 }
 
 const uploadedDocumentsHeaderStyle: React.CSSProperties = {
   padding: 16,
-  borderBottom: '1px solid #eee',
+  borderBottom: `1px solid ${inputReviewPalette.border}`,
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
@@ -5126,9 +5458,9 @@ function selectedDocumentsReportButtonStyle(
   return {
     padding: '8px 12px',
     borderRadius: 8,
-    border: enabled ? '1px solid #10b981' : '1px solid #d1d5db',
-    background: enabled ? '#10b981' : '#f3f4f6',
-    color: enabled ? '#fff' : '#6b7280',
+    border: enabled ? `1px solid ${inputReviewPalette.primaryGreen}` : `1px solid ${inputReviewPalette.border}`,
+    background: enabled ? inputReviewPalette.primaryGreen : inputReviewPalette.disabledBackground,
+    color: enabled ? inputReviewPalette.white : inputReviewPalette.mutedText,
     cursor: enabled ? 'pointer' : 'not-allowed',
     fontWeight: 700,
   };
@@ -5137,19 +5469,21 @@ function selectedDocumentsReportButtonStyle(
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 8,
-  border: '1px solid #111',
-  background: '#fff',
+  border: `1px solid ${inputReviewPalette.border}`,
+  background: inputReviewPalette.white,
+  color: '#334155',
   cursor: 'pointer',
   fontSize: 14,
+  fontWeight: 700,
 };
 
 function primaryButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     padding: '10px 16px',
     borderRadius: 8,
-    border: '1px solid #047857',
-    background: disabled ? '#9ca3af' : '#047857',
-    color: '#fff',
+    border: disabled ? `1px solid ${inputReviewPalette.border}` : `1px solid ${inputReviewPalette.primaryGreen}`,
+    background: disabled ? inputReviewPalette.disabledBackground : inputReviewPalette.primaryGreen,
+    color: disabled ? inputReviewPalette.mutedText : inputReviewPalette.white,
     fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -5159,9 +5493,9 @@ function secondaryActionButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     padding: '10px 16px',
     borderRadius: 8,
-    border: '1px solid #111',
-    background: disabled ? '#f3f4f6' : '#fff',
-    color: disabled ? '#9ca3af' : '#111',
+    border: `1px solid ${inputReviewPalette.border}`,
+    background: disabled ? inputReviewPalette.disabledBackground : inputReviewPalette.white,
+    color: disabled ? inputReviewPalette.mutedText : '#334155',
     fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -5169,12 +5503,13 @@ function secondaryActionButtonStyle(disabled: boolean): React.CSSProperties {
 
 function confirmButtonStyle(enabled: boolean): React.CSSProperties {
   return {
-    padding: '6px 10px',
-    borderRadius: 6,
-    border: '1px solid #111',
-    background: enabled ? '#111' : '#ddd',
-    color: enabled ? '#fff' : '#666',
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: enabled ? `1px solid ${inputReviewPalette.primaryGreen}` : `1px solid ${inputReviewPalette.border}`,
+    background: enabled ? inputReviewPalette.primaryGreen : inputReviewPalette.disabledBackground,
+    color: enabled ? inputReviewPalette.white : inputReviewPalette.mutedText,
     cursor: enabled ? 'pointer' : 'not-allowed',
+    fontWeight: 700,
   };
 }
 
@@ -5182,9 +5517,9 @@ function dangerButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     padding: '10px 16px',
     borderRadius: 8,
-    border: '1px solid #b91c1c',
-    background: disabled ? '#fca5a5' : '#dc2626',
-    color: '#fff',
+    border: `1px solid ${inputReviewPalette.errorText}`,
+    background: disabled ? inputReviewPalette.disabledBackground : inputReviewPalette.errorText,
+    color: disabled ? inputReviewPalette.mutedText : inputReviewPalette.white,
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -5193,9 +5528,9 @@ function dangerButtonStyle(disabled: boolean): React.CSSProperties {
 const deleteButtonStyle: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 6,
-  border: '1px solid #d33',
-  background: '#fff',
-  color: '#d33',
+  border: `1px solid ${inputReviewPalette.errorText}`,
+  background: inputReviewPalette.white,
+  color: inputReviewPalette.errorText,
   cursor: 'pointer',
 };
 
@@ -5227,6 +5562,73 @@ const modalStyle: React.CSSProperties = {
   background: '#fff',
   padding: 24,
   boxShadow: '0 25px 80px rgba(15, 23, 42, 0.25)',
+};
+
+const documentDetailsModalStyle: React.CSSProperties = {
+  ...modalStyle,
+  maxWidth: 560,
+};
+
+const documentDetailsHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 16,
+  marginBottom: 18,
+};
+
+const documentDetailsTitleStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 20,
+  color: '#0f172a',
+};
+
+const documentDetailsSubtitleStyle: React.CSSProperties = {
+  margin: '6px 0 0',
+  color: '#64748b',
+  lineHeight: 1.45,
+  overflowWrap: 'anywhere',
+};
+
+const modalCloseButtonStyle: React.CSSProperties = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  background: '#fff',
+  color: '#334155',
+  width: 36,
+  height: 36,
+  cursor: 'pointer',
+  fontSize: 22,
+  lineHeight: 1,
+};
+
+const documentDetailsGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 12,
+  margin: 0,
+};
+
+const documentMetadataFieldStyle: React.CSSProperties = {
+  padding: 12,
+  border: '1px solid #e2e8f0',
+  borderRadius: 10,
+  background: '#f8fafc',
+};
+
+const documentMetadataLabelStyle: React.CSSProperties = {
+  marginBottom: 4,
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+};
+
+const documentMetadataValueStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#0f172a',
+  fontSize: 14,
+  overflowWrap: 'anywhere',
 };
 
 const warningTextStyle: React.CSSProperties = {

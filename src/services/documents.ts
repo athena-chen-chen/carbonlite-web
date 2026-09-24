@@ -1,7 +1,11 @@
 import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
 import { trackEvent } from './ga4.service';
-import { canImportActivityRecords, requirePermission } from '../utils/permissions';
+import {
+  canDeleteActivityRecords,
+  canUploadFiles,
+  requirePermission,
+} from '../utils/permissions';
 import {
   getCurrentUser,
   getOrganizationId,
@@ -64,7 +68,7 @@ export type DeleteDocumentResponse = {
 };
 
 export async function uploadDocument(input: UploadDocumentInput) {
-  requirePermission(canImportActivityRecords(getCurrentUser()));
+  requirePermission(canUploadFiles(getCurrentUser()));
 
   const formData = new FormData();
   formData.append('file', input.file);
@@ -160,7 +164,7 @@ export async function getDocuments() {
 }
 
 export async function deleteDocument(id: string) {
-  requirePermission(canImportActivityRecords(getCurrentUser()));
+  requirePermission(canDeleteActivityRecords(getCurrentUser()));
 
   try {
     const response = await apiFetch<DeleteDocumentResponse | void>(`/documents/${id}`, {

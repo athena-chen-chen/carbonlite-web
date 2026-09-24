@@ -4,14 +4,20 @@ export {
   canClearActivityRecords,
   canDeleteActivityRecords,
   canEditActivityRecords,
+  canEditDraftRows,
   canEditFactors,
   canEditWorkspace,
   canImportActivityRecords,
   canImportData,
+  canImportDraftRows,
   canManageActivityRecords,
   canManageConversionFactors,
   canManageUsers,
   canResetWorkspaceData,
+  canSetProvinceForActivityRecords,
+  canSetProvince,
+  canUploadFiles,
+  canUploadActivityFiles,
   canViewAdmin,
   canViewCalculationReview,
   canViewDataRecords,
@@ -43,6 +49,7 @@ export type AuthUser = {
   id?: string;
   email: string;
   role?: 'OWNER' | 'ADMIN' | 'EDITOR' | 'MEMBER' | 'VIEWER' | 'REVIEWER' | 'USER';
+  membershipRole?: 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER' | string | null;
   accountType?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string | null;
   account_type?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string | null;
   expiresAt?: string | null;
@@ -95,11 +102,26 @@ type SetPasswordInput = {
   password: string;
 };
 
+function normalizeAuthUser(user: AuthUser | undefined, fallbackEmail: string): AuthUser {
+  const normalizedUser: AuthUser = user ?? { email: fallbackEmail };
+  const organizationId = getOrganizationId(normalizedUser);
+  const organizationName = getOrganizationName(normalizedUser);
+
+  return {
+    ...normalizedUser,
+    email: normalizedUser.email || fallbackEmail,
+    ...(organizationId ? { organizationId } : {}),
+    ...(organizationName && organizationName !== 'Workspace' ? { organizationName } : {}),
+  };
+}
+
 function saveSession(response: AuthResponse, fallbackEmail: string) {
+  const user = normalizeAuthUser(response.user, fallbackEmail);
+
   localStorage.setItem(TOKEN_KEY, response.accessToken);
   localStorage.setItem(
     USER_KEY,
-    JSON.stringify(response.user ?? { email: fallbackEmail }),
+    JSON.stringify(user),
   );
 }
 

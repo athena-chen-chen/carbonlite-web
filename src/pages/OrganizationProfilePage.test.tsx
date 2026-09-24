@@ -77,7 +77,7 @@ describe('OrganizationProfilePage', () => {
     expect(screen.getByRole('option', { name: 'Technology' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Other' })).toBeInTheDocument();
     expect(screen.getByText(
-      'This workspace is configured for Canadian emissions reporting. Country is currently fixed to Canada.',
+      'This workspace is set up for Canadian emissions reporting. Country is currently fixed to Canada.',
     )).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Country/i })).toHaveValue('Canada');
     expect(screen.getByRole('textbox', { name: /Country/i })).toBeDisabled();

@@ -306,6 +306,128 @@ describe('loadMetricsOverview', () => {
     });
   });
 
+  it('preserves activity site/facility labels on complete calculation details', async () => {
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...backendSummary(),
+      totalsByMetric: [
+        {
+          metricType: 'CARBON_EMISSION',
+          unit: 'kgCO2e',
+          totalValue: '200',
+          count: 2,
+        },
+      ],
+      totalEstimatedEmissionsKgCO2e: 200,
+      totalRecordsFound: 3,
+      recordsInScope: 3,
+      recordsCalculated: 2,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      missingFactorCount: 0,
+      missingFactorRecords: 0,
+      missingFactors: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-calgary',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Alberta, Canada',
+          activityQuantity: 100,
+          activityUnit: 'm3',
+          calculatedEmissionsKgCO2e: 150,
+          status: 'CALCULATED',
+          sourceType: 'AI_EXTRACTION',
+        },
+        {
+          activityDataId: 'activity-unassigned',
+          activityType: 'DIESEL',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Alberta, Canada',
+          activityQuantity: 10,
+          activityUnit: 'liters',
+          calculatedEmissionsKgCO2e: 50,
+          status: 'CALCULATED',
+          sourceType: 'AI_EXTRACTION',
+        },
+        {
+          activityDataId: 'activity-water',
+          activityType: 'WATER',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Alberta, Canada',
+          activityQuantity: 100,
+          activityUnit: 'm3',
+          calculatedEmissionsKgCO2e: 0,
+          status: 'TRACKED_ONLY',
+          sourceType: 'AI_EXTRACTION',
+        },
+      ],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      activities: [
+        {
+          id: 'activity-calgary',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2026-01-01',
+          quantity: 100,
+          unit: 'm3',
+          facilityId: 'Calgary Office',
+          sourceType: 'AI_EXTRACTION',
+        },
+        {
+          id: 'activity-unassigned',
+          activityType: 'DIESEL',
+          recordDate: '2026-01-01',
+          quantity: 10,
+          unit: 'liters',
+          facilityId: '',
+          sourceType: 'AI_EXTRACTION',
+        },
+        {
+          id: 'activity-water',
+          activityType: 'WATER',
+          recordDate: '2026-01-01',
+          quantity: 100,
+          unit: 'm3',
+          facilityId: 'Red Deer Yard',
+          sourceType: 'AI_EXTRACTION',
+        },
+      ],
+    } as any);
+
+    const overview = await loadMetricsOverview({
+      dateFrom: '2026-01-01',
+      dateTo: '2026-12-31',
+    });
+
+    expect(overview.calculationDetails).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityDataId: 'activity-calgary',
+          facilityId: 'Calgary Office',
+          facilityName: 'Calgary Office',
+        }),
+        expect.objectContaining({
+          activityDataId: 'activity-unassigned',
+          facilityId: null,
+          facilityName: null,
+        }),
+        expect.objectContaining({
+          activityDataId: 'activity-water',
+          facilityId: 'Red Deer Yard',
+          facilityName: 'Red Deer Yard',
+          status: 'TRACKED_ONLY',
+        }),
+      ]),
+    );
+  });
+
   it('normalizes imported electricity details that use calculationStatus instead of status', async () => {
     vi.mocked(getCalculationSummary).mockResolvedValue({
       ...backendSummary(),

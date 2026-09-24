@@ -1045,6 +1045,18 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
           value={detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'No matched factor available. Review required.'}
         />
         <CalculationDetailField
+          label="Activity year used for matching"
+          value={formatSafeValue(detail.recordYear ?? detail.reportingYear)}
+        />
+        <CalculationDetailField
+          label="Factor effective year"
+          value={formatSafeValue(detail.factorEffectiveYear ?? detail.sourceYear ?? detail.factorYear)}
+        />
+        <CalculationDetailField
+          label="Factor set"
+          value={formatSafeValue(detail.factorSet)}
+        />
+        <CalculationDetailField
           label="Factor source year"
           value={formatSafeValue(detail.sourceYear ?? detail.factorYear)}
         />

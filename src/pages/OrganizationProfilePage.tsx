@@ -31,7 +31,7 @@ const fieldGroups: Array<{
   }>;
 }> = [
   {
-    title: 'Organization Profile',
+    title: 'Organization',
     fields: [
       { key: 'organizationName', label: 'Organization / Workspace', required: true },
       { key: 'industry', label: 'Industry', required: true },
@@ -50,13 +50,28 @@ const fieldGroups: Array<{
     ],
   },
   {
-    title: 'Reporting Boundary',
+    title: 'Operational Boundary',
     fields: [
       { key: 'geographicBoundary', label: 'Geographic Boundary', type: 'textarea' },
+    ],
+  },
+  {
+    title: 'Facilities / Sites',
+    fields: [
       { key: 'includedFacilitiesOrLocations', label: 'Included Facilities or Locations', type: 'textarea' },
       { key: 'excludedFacilitiesOrLocations', label: 'Excluded Facilities or Locations', type: 'textarea' },
+    ],
+  },
+  {
+    title: 'Scope Coverage',
+    fields: [
       { key: 'includedScopes', label: 'Included Scopes', type: 'textarea' },
       { key: 'scope3CoverageNote', label: 'Scope 3 Coverage Note', type: 'textarea' },
+    ],
+  },
+  {
+    title: 'Exclusions & Notes',
+    fields: [
       { key: 'exclusionsAndLimitations', label: 'Exclusions / Limitations', type: 'textarea' },
       { key: 'boundaryNotes', label: 'Boundary Notes', type: 'textarea' },
     ],
@@ -177,8 +192,8 @@ export function OrganizationProfilePage() {
     <div style={pageStyle}>
       <h1 style={pageTitleStyle}>Organization & Boundary</h1>
       <p style={pageIntroStyle}>
-        Define the workspace-level organization profile and reporting boundary used in
-        Calculation Review and Reports.
+        Define your organization, reporting period, facilities, and emissions boundary used
+        throughout CarbonLite.
       </p>
 
       {!canEdit ? (
@@ -213,11 +228,7 @@ export function OrganizationProfilePage() {
           {fieldGroups.map((group) => (
             <section key={group.title} style={sectionStyle} aria-labelledby={`${slugify(group.title)}-title`}>
               <h2 id={`${slugify(group.title)}-title`} style={sectionTitleStyle}>{group.title}</h2>
-              {group.title === 'Organization Profile' ? (
-                <p style={sectionNoteStyle}>
-                  This workspace is configured for Canadian emissions reporting. Country is currently fixed to Canada.
-                </p>
-              ) : null}
+              <p style={sectionNoteStyle}>{getSectionNote(group.title)}</p>
               <div style={gridStyle}>
                 {group.fields.map((field) => (
                   <label key={field.key} style={fieldStyle}>
@@ -328,11 +339,7 @@ function ReadOnlyProfileSection({
   return (
     <section style={sectionStyle} aria-labelledby={`${slugify(group.title)}-title`}>
       <h2 id={`${slugify(group.title)}-title`} style={sectionTitleStyle}>{group.title}</h2>
-      {group.title === 'Organization Profile' ? (
-        <p style={sectionNoteStyle}>
-          This workspace is configured for Canadian emissions reporting. Country is currently fixed to Canada.
-        </p>
-      ) : null}
+      <p style={sectionNoteStyle}>{getSectionNote(group.title)}</p>
       {group.title === 'Reporting Period' ? (
         <p style={readOnlyPeriodStyle}>
           {profile.reportingPeriodStart} to {profile.reportingPeriodEnd}
@@ -360,6 +367,25 @@ function getReadOnlyFieldValue(profile: OrganizationProfile, key: keyof Organiza
   return profile[key] || 'Not specified';
 }
 
+function getSectionNote(title: string) {
+  switch (title) {
+    case 'Organization':
+      return 'This workspace is set up for Canadian emissions reporting. Country is currently fixed to Canada.';
+    case 'Reporting Period':
+      return 'Set the date range used for Calculation Review and Reports.';
+    case 'Operational Boundary':
+      return 'Define which operations and emissions sources are included in this workspace.';
+    case 'Facilities / Sites':
+      return 'List the locations included in this reporting boundary.';
+    case 'Scope Coverage':
+      return 'Summarize the scopes and selected Scope 3 activity types covered by this workspace.';
+    case 'Exclusions & Notes':
+      return 'Document material exclusions, assumptions, or boundary limitations for reviewers.';
+    default:
+      return '';
+  }
+}
+
 function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -367,48 +393,55 @@ function slugify(value: string) {
 const pageStyle: React.CSSProperties = {
   maxWidth: 1100,
   margin: '0 auto',
-  padding: 24,
+  padding: '28px 24px 48px',
+  color: '#0f172a',
 };
 
 const pageTitleStyle: React.CSSProperties = {
   margin: '0 0 8px',
   color: '#0f172a',
+  fontSize: 32,
+  lineHeight: 1.15,
 };
 
 const pageIntroStyle: React.CSSProperties = {
-  margin: '0 0 18px',
-  color: '#475569',
-  lineHeight: 1.5,
+  maxWidth: 760,
+  margin: '0 0 24px',
+  color: '#64748b',
+  lineHeight: 1.55,
+  fontSize: 16,
 };
 
 const formStyle: React.CSSProperties = {
   display: 'grid',
-  gap: 16,
+  gap: 24,
 };
 
 const sectionStyle: React.CSSProperties = {
-  padding: 16,
+  padding: 22,
   borderRadius: 12,
   border: '1px solid #e2e8f0',
   background: '#fff',
 };
 
 const sectionTitleStyle: React.CSSProperties = {
-  margin: '0 0 6px',
+  margin: '0 0 8px',
   fontSize: 18,
+  color: '#0f172a',
+  lineHeight: 1.3,
 };
 
 const sectionNoteStyle: React.CSSProperties = {
-  margin: '0 0 14px',
+  margin: '0 0 16px',
   color: '#64748b',
   fontSize: 13,
-  lineHeight: 1.45,
+  lineHeight: 1.5,
 };
 
 const gridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-  gap: 14,
+  gap: 16,
 };
 
 const fieldStyle: React.CSSProperties = {
@@ -455,11 +488,12 @@ const fieldErrorStyle: React.CSSProperties = {
 
 function inputStyle(disabled: boolean): React.CSSProperties {
   return {
-    padding: '10px 12px',
+    padding: '11px 12px',
     borderRadius: 10,
-    border: '1px solid #cbd5e1',
-    background: disabled ? '#f8fafc' : '#fff',
+    border: '1px solid #e2e8f0',
+    background: disabled ? '#f1f5f9' : '#fff',
     color: disabled ? '#64748b' : '#0f172a',
+    fontSize: 14,
   };
 }
 
@@ -475,10 +509,10 @@ function textareaStyle(disabled: boolean): React.CSSProperties {
 function saveButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     justifySelf: 'start',
-    padding: '11px 16px',
+    padding: '11px 18px',
     borderRadius: 10,
-    border: 'none',
-    background: disabled ? '#94a3b8' : '#10b981',
+    border: '1px solid transparent',
+    background: disabled ? '#94a3b8' : '#047857',
     color: '#fff',
     fontWeight: 800,
     cursor: disabled ? 'not-allowed' : 'pointer',
@@ -486,32 +520,32 @@ function saveButtonStyle(disabled: boolean): React.CSSProperties {
 }
 
 const readOnlyNoticeStyle: React.CSSProperties = {
-  marginBottom: 16,
-  padding: 12,
+  marginBottom: 20,
+  padding: '10px 12px',
   borderRadius: 10,
-  border: '1px solid #bfdbfe',
-  background: '#eff6ff',
-  color: '#1e40af',
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  color: '#475569',
   fontWeight: 700,
 };
 
 const successStyle: React.CSSProperties = {
-  marginBottom: 16,
+  marginBottom: 20,
   padding: 12,
   borderRadius: 10,
   border: '1px solid #bbf7d0',
-  background: '#f0fdf4',
-  color: '#166534',
+  background: '#ecfdf5',
+  color: '#047857',
   fontWeight: 700,
 };
 
 const loadingNoticeStyle: React.CSSProperties = {
-  marginBottom: 16,
+  marginBottom: 20,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #bfdbfe',
-  background: '#eff6ff',
-  color: '#1e40af',
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  color: '#475569',
   fontWeight: 800,
 };
 
@@ -523,11 +557,11 @@ const slowLoadingTextStyle: React.CSSProperties = {
 };
 
 const errorStyle: React.CSSProperties = {
-  marginBottom: 16,
+  marginBottom: 20,
   padding: 12,
   borderRadius: 10,
   border: '1px solid #fecaca',
   background: '#fef2f2',
-  color: '#991b1b',
+  color: '#b91c1c',
   fontWeight: 700,
 };

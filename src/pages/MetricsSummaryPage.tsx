@@ -34,6 +34,11 @@ import {
   ORGANIZATION_PROFILE_UPDATED_EVENT,
   profileToInventoryBoundary,
 } from '../services/organizationProfile';
+import {
+  buildSiteFacilityRollup,
+  type SiteFacilityBreakdownRow,
+} from '../utils/siteFacilityBreakdown';
+import { formatDisplayNumber } from '../utils/numberFormatting';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
 
@@ -73,6 +78,7 @@ export function MetricsSummaryPage() {
   const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
   const [dateRangeReady, setDateRangeReady] = useState(false);
   const [isInventoryBoundaryExpanded, setIsInventoryBoundaryExpanded] = useState(false);
+  const [isSiteFacilityBreakdownExpanded, setIsSiteFacilityBreakdownExpanded] = useState(false);
   const [organizationProfile, setOrganizationProfile] = useState(() =>
     loadOrganizationProfile(currentUser),
   );
@@ -81,11 +87,16 @@ export function MetricsSummaryPage() {
   const requestSequenceRef = useRef(0);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const trackedViewRef = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
     if (!dateRangeReady) return;
     loadSummary();
   }, [dateRangeReady, reloadKey, periodStart, periodEnd]);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     initializeDateRange();
@@ -402,6 +413,8 @@ function handleDownloadPDF() {
     inventoryBoundary,
     `${getDateOnlyYear(periodEnd) ?? 2026} reporting period`,
   );
+  const siteFacilityRollup = buildSiteFacilityRollup(calculationDetails);
+  const siteFacilityBreakdownRows = siteFacilityRollup.rows;
 
   return (
     <div
@@ -410,7 +423,7 @@ function handleDownloadPDF() {
       data-testid={showPilotReviewerWelcome ? 'pilot-reviewer-welcome-panel' : undefined}
       style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}
     >
-      <h1 style={{ marginBottom: 8 }}>Calculation Review</h1>
+      <h1 ref={headingRef} tabIndex={-1} style={{ marginBottom: 8 }}>Calculation Review</h1>
 
       <p style={{ color: '#666', marginBottom: 24 }}>
         Internal workspace for validating emissions calculations, data quality, included and excluded records, and factor matching issues before generating a shareable report.
@@ -460,6 +473,24 @@ function handleDownloadPDF() {
         {inventoryBoundary.boundaryNotes ? (
           <BoundaryField label="Boundary notes" value={inventoryBoundary.boundaryNotes} />
         ) : null}
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        id="site-facility-breakdown"
+        title="Site / Facility Breakdown"
+        summary={
+          siteFacilityBreakdownRows.length > 0
+            ? `Organization total: ${formatDisplayNumber(siteFacilityRollup.organizationTotalKgCO2e)} kgCO2e · ${siteFacilityBreakdownRows.length} site/facility ${siteFacilityBreakdownRows.length === 1 ? 'group' : 'groups'}`
+            : 'No calculated site/facility totals'
+        }
+        expanded={isSiteFacilityBreakdownExpanded}
+        onToggle={() => setIsSiteFacilityBreakdownExpanded((expanded) => !expanded)}
+        style={siteFacilityCardStyle}
+      >
+        <p style={siteFacilityHelpTextStyle}>
+          Organization total: <strong>{formatDisplayNumber(siteFacilityRollup.organizationTotalKgCO2e)} kgCO2e</strong>. Calculated emissions are grouped by the facility, site, or location assigned to each activity record. Records without a specified site are grouped under “Unassigned”.
+        </p>
+        <SiteFacilityBreakdownTable rows={siteFacilityBreakdownRows} />
       </CollapsibleSection>
 
       <div style={filterCardStyle}>
@@ -587,6 +618,58 @@ function BoundaryField({ label, value }: { label: string; value: string }) {
       <span style={inventoryBoundaryValueStyle}>{value}</span>
     </div>
   );
+}
+
+function SiteFacilityBreakdownTable({ rows }: { rows: SiteFacilityBreakdownRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <div style={siteFacilityEmptyStyle}>
+        No calculated GHG records are available for site or facility totals.
+      </div>
+    );
+  }
+
+  return (
+    <div style={siteFacilityTableWrapStyle}>
+      <table style={siteFacilityTableStyle}>
+        <thead>
+          <tr>
+            <th style={siteFacilityThStyle}>Site / Facility</th>
+            <th style={siteFacilityThStyle}>Scope 1</th>
+            <th style={siteFacilityThStyle}>Scope 2</th>
+            <th style={siteFacilityThStyle}>Scope 3</th>
+            <th style={siteFacilityThStyle}>Total</th>
+            <th style={siteFacilityThStyle}>Included Records</th>
+            <th style={siteFacilityThStyle}>Activity Type Breakdown</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.siteFacility}>
+              <td style={siteFacilityTdStyle}>{row.siteFacility}</td>
+              <td style={siteFacilityTdStyle}>{formatDisplayNumber(row.scope1KgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTdStyle}>{formatDisplayNumber(row.scope2KgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTdStyle}>{formatDisplayNumber(row.scope3KgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTotalTdStyle}>{formatDisplayNumber(row.totalKgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTdStyle}>{row.includedRecords}</td>
+              <td style={siteFacilityTdStyle}>{formatSiteFacilityActivityBreakdown(row)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatSiteFacilityActivityBreakdown(row: SiteFacilityBreakdownRow) {
+  if (row.activityBreakdown.length === 0) return 'No activity breakdown available';
+
+  return row.activityBreakdown
+    .map(
+      (item) =>
+        `${item.activityType}: ${formatDisplayNumber(item.totalKgCO2e)} kgCO2e (${item.includedRecords} ${item.includedRecords === 1 ? 'record' : 'records'})`,
+    )
+    .join('; ');
 }
 
 function PilotReviewerWelcomePanel() {
@@ -744,6 +827,60 @@ const inventoryBoundaryValueStyle: React.CSSProperties = {
   color: '#0f172a',
   fontWeight: 650,
   lineHeight: 1.45,
+};
+
+const siteFacilityCardStyle: React.CSSProperties = {
+  marginBottom: 18,
+  padding: 16,
+  borderRadius: 12,
+  border: '1px solid #e2e8f0',
+  background: '#fff',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+};
+
+const siteFacilityHelpTextStyle: React.CSSProperties = {
+  margin: '0 0 12px',
+  color: '#475569',
+  lineHeight: 1.6,
+};
+
+const siteFacilityTableWrapStyle: React.CSSProperties = {
+  overflowX: 'auto',
+};
+
+const siteFacilityTableStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 920,
+  borderCollapse: 'collapse',
+  fontSize: 13,
+};
+
+const siteFacilityThStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  textAlign: 'left',
+  borderBottom: '1px solid #e2e8f0',
+  color: '#334155',
+  background: '#f8fafc',
+};
+
+const siteFacilityTdStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  borderBottom: '1px solid #e2e8f0',
+  color: '#0f172a',
+  verticalAlign: 'top',
+};
+
+const siteFacilityTotalTdStyle: React.CSSProperties = {
+  ...siteFacilityTdStyle,
+  fontWeight: 800,
+};
+
+const siteFacilityEmptyStyle: React.CSSProperties = {
+  padding: 14,
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  color: '#475569',
 };
 
 const filterCardStyle: React.CSSProperties = {

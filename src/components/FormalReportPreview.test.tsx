@@ -132,7 +132,7 @@ describe('FormalReportPreview', () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText('Date Range').length).toBeGreaterThan(0);
     expect(screen.getByText('Prepared by:')).toBeInTheDocument();
-    expect(screen.getByText('A. Inventory Boundary')).toBeInTheDocument();
+    expect(screen.getByText('A. Reporting Boundary')).toBeInTheDocument();
     expect(screen.getByText('B. Report Scope')).toBeInTheDocument();
     expect(screen.getByText('C. Executive Summary')).toBeInTheDocument();
     expect(screen.getByText('D. Emissions Hotspots')).toBeInTheDocument();

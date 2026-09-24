@@ -4,9 +4,12 @@ import { track } from './analytics.service';
 import { formatDateOnly } from '../utils/dateOnly';
 import {
   canClearActivityRecords,
+  canImportDraftRows,
   canManageActivityRecords,
+  canSetProvinceForActivityRecords,
   requirePermission,
 } from '../utils/permissions';
+import { normalizeProvince } from '../utils/activityRecordHelpers';
 import {
   getCurrentUser,
   getOrganizationId,
@@ -23,7 +26,9 @@ export type ActivityDataInput = {
   sourceType: string;
   sourceReference?: string;
   notes?: string;
+  facility?: string;
   facilityId?: string;
+  facilityName?: string;
   assetId?: string;
   documentId?: string;
   sourceDocumentId?: string;
@@ -58,7 +63,9 @@ export type ActivityDataInput = {
 export type ActivityDataItem = {
   id: string;
   organizationId: string;
+  facility?: string | { name?: string | null } | null;
   facilityId?: string | null;
+  facilityName?: string | null;
   assetId?: string | null;
   documentId?: string | null;
   sourceDocumentId?: string | null;
@@ -116,6 +123,12 @@ export type DeleteActivityDataResponse = void | {
   count?: number;
 };
 
+export type BulkProvinceUpdateResponse = {
+  updatedCount?: number;
+  count?: number;
+  updatedRecords?: ActivityDataItem[];
+};
+
 export type ClearActivityRecordsResponse = {
   deletedActivityRecords: number;
   deletedCalculationDetails: number;
@@ -135,7 +148,7 @@ export type ResetDemoDataResponse = {
 const ACTIVITY_DATA_PAGE_SIZE = 100;
 
 export async function createActivityData(data: any) {
-  requirePermission(canManageActivityRecords(getCurrentUser()));
+  requirePermission(canImportDraftRows(getCurrentUser()));
 
   const payload = buildActivityDataPayload(data);
 
@@ -158,6 +171,11 @@ function normalizeOptionalString(value?: string) {
 }
 
 function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
+  const facility = normalizeOptionalString(input.facility) ??
+    normalizeOptionalString(input.facilityName) ??
+    normalizeOptionalString(input.facilityId);
+  const facilityId = normalizeOptionalString(input.facilityId);
+
   return {
     activityType: input.activityType.trim(),
     recordDate: input.recordDate ? formatDateOnly(input.recordDate) : null,
@@ -169,7 +187,8 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     sourceType: input.sourceType.trim(),
     sourceReference: normalizeOptionalString(input.sourceReference),
     notes: normalizeOptionalString(input.notes),
-    facilityId: normalizeOptionalString(input.facilityId),
+    facility,
+    facilityId: facilityId && facilityId !== facility ? facilityId : undefined,
     assetId: normalizeOptionalString(input.assetId),
     documentId: normalizeOptionalString(input.documentId),
     sourceDocumentId: normalizeOptionalString(input.sourceDocumentId),
@@ -319,6 +338,47 @@ export async function updateActivityData(
   });
 
   return updated;
+}
+
+export async function bulkUpdateActivityProvince(ids: string[], province: string) {
+  requirePermission(canSetProvinceForActivityRecords(getCurrentUser()));
+
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean)));
+  const normalizedProvince = normalizeProvince(province);
+
+  if (!uniqueIds.length) {
+    throw new Error('No eligible activity records selected.');
+  }
+
+  if (!normalizedProvince) {
+    throw new Error('Select a province before applying.');
+  }
+
+  if (import.meta.env.DEV) {
+    console.debug('Set Province PATCH request', {
+      ids: uniqueIds,
+      province,
+      normalizedProvince,
+    });
+  }
+
+  const response = await apiFetch<BulkProvinceUpdateResponse>('/activity-data/bulk-province', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ids: uniqueIds,
+      province: normalizedProvince,
+    }),
+  });
+
+  if (import.meta.env.DEV) {
+    console.debug('Set Province PATCH response', response);
+  }
+
+  track('ACTIVITY_RECORDS_PROVINCE_UPDATED', {
+    recordCount: Number(response.updatedCount ?? response.count ?? uniqueIds.length),
+  });
+
+  return response;
 }
 
 export async function deleteActivityData(id: string) {

@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import autoTable from 'jspdf-autotable';
 import ReportingPage from './ReportingPage';
 import {
@@ -49,8 +49,38 @@ vi.mock('jspdf-autotable', () => ({
   }),
 }));
 
+async function readBlobAsText(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div>Current path: {location.pathname}</div>;
+}
+
 describe('ReportingPage audit trail', () => {
   it('shows a loading indication while report data is preparing', async () => {
+    localStorage.clear();
+    localStorage.setItem('accessToken', 'token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'pilot@example.com',
+        organizationName: 'KACH CANADA LTD.',
+      }),
+    );
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      hasActivityRecords: true,
+    });
+    vi.mocked(getActivityEvents).mockResolvedValue([]);
+
     let resolveOverview!: (value: Awaited<ReturnType<typeof loadMetricsOverview>>) => void;
     vi.mocked(loadMetricsOverview).mockReturnValue(
       new Promise((resolve) => {
@@ -125,7 +155,8 @@ describe('ReportingPage audit trail', () => {
     await waitFor(() => {
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
-    expect(screen.getAllByText(/37,285 kgCO2e|37,285 kg CO2e/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: /Report Scope/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Reporting Boundary/i })).toBeInTheDocument();
   });
 
   const workflowEvent: ActivityEventItem = {
@@ -322,16 +353,19 @@ describe('ReportingPage audit trail', () => {
     expect(reportScopeSection).toHaveTextContent(/Date Range/i);
     expect(reportScopeSection).toHaveTextContent(/2026-01-01 to 2026-12-31/i);
 
-    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
     expect(boundarySection).toHaveTextContent(
       '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
     );
-    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' });
+    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' });
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
     expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
     await userEvent.click(boundaryToggle);
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
     expect(boundaryToggle).toHaveTextContent('Collapse');
+    expect(boundarySection).toHaveTextContent('Pilot review account · Sample boundary information · Read-only');
+    expect(within(boundarySection).queryByRole('button', { name: /Edit in Organization & Boundary/i })).not.toBeInTheDocument();
+    expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
     expect(within(boundarySection).getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
     await userEvent.click(boundaryToggle);
@@ -339,12 +373,32 @@ describe('ReportingPage audit trail', () => {
     expect(boundaryToggle).toHaveTextContent('Expand');
     expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
 
+    const regulatorySection = screen.getByRole('region', { name: 'Regulatory Reporting Reference' });
+    expect(regulatorySection).toHaveTextContent(
+      /Reference only · Not an official filing or compliance determination/i,
+    );
+    const regulatoryToggle = within(regulatorySection).getByRole('button', {
+      name: 'Expand Regulatory Reporting Reference',
+    });
+    expect(regulatoryToggle).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(regulatoryToggle);
+    expect(regulatoryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(regulatorySection).toHaveTextContent(/CRA fuel charge return/i);
+    expect(regulatorySection).toHaveTextContent(/official GHGRP submission/i);
+    expect(regulatorySection).toHaveTextContent(/TIER compliance report/i);
+    expect(regulatorySection).toHaveTextContent(/third-party verification/i);
+    expect(regulatorySection).toHaveTextContent(/regulatory compliance advice/i);
+    expect(regulatorySection).toHaveTextContent(/Federal GHGRP Single Window reporting/i);
+    expect(regulatorySection).toHaveTextContent(/Alberta SGRR \/ SWIM reporting/i);
+    expect(regulatorySection).toHaveTextContent(/Alberta TIER compliance reporting/i);
+    expect(regulatorySection).toHaveTextContent(/CRA fuel charge forms, where applicable/i);
+
     expect(screen.queryByText(/Workflow history for this workspace/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Recent import and report workflow events/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/No workflow audit events recorded yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/raw audit event/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/audit event id/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/internal workflow/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/internal workflow logs/i)).not.toBeInTheDocument();
     expect(getActivityEvents).not.toHaveBeenCalled();
 
     expect(screen.getByText(/Have feedback on this page/i)).toBeInTheDocument();
@@ -358,6 +412,36 @@ describe('ReportingPage audit trail', () => {
     expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save Report Scope/i })).not.toBeInTheDocument();
     expect(screen.getAllByText(/37,285 kgCO2e|37,285 kg CO2e/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows Regulatory Reporting Reference for regular customer users', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'customer@example.com',
+        organizationName: 'KACH CANADA LTD.',
+        role: 'ADMIN',
+        accountType: 'CUSTOMER',
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    const regulatorySection = screen.getByRole('region', { name: 'Regulatory Reporting Reference' });
+    expect(regulatorySection).toBeInTheDocument();
+    await userEvent.click(
+      within(regulatorySection).getByRole('button', {
+        name: 'Expand Regulatory Reporting Reference',
+      }),
+    );
+
+    expect(regulatorySection).toHaveTextContent(/emissions data readiness and internal workflow review only/i);
+    expect(regulatorySection).toHaveTextContent(/Federal GHGRP Single Window reporting/i);
   });
 
   it('logs PDF_EXPORTED, not REPORT_GENERATED, when downloading the PDF', async () => {
@@ -384,6 +468,65 @@ describe('ReportingPage audit trail', () => {
     );
   });
 
+  it('includes Regulatory Reporting Reference in the PDF export', async () => {
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+
+    const regulatoryPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) =>
+        row.some((cell) => String(cell).includes('CRA fuel charge return')),
+      );
+    });
+
+    expect(regulatoryPdfCall).toBeDefined();
+    const regulatoryBody = (regulatoryPdfCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [];
+    expect(String(regulatoryBody.flat().join('\n'))).toContain('Federal GHGRP Single Window reporting');
+    expect(String(regulatoryBody.flat().join('\n'))).toContain('Alberta TIER compliance reporting');
+  });
+
+  it('opens Export Review Package menu and downloads calculation traceability CSV', async () => {
+    const exportedBlobs: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exportedBlobs.push(blob as Blob);
+      return 'blob:review-package';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: /Export Review Package/i }));
+
+    expect(screen.getByRole('menu', { name: /Export review package/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Export Data Records CSV/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Export Site \/ Facility Breakdown/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Export Factor Source Summary/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Export Calculation Traceability/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Export Records Requiring Review/i })).toBeInTheDocument();
+    expect(screen.getByText(/not official regulatory submissions/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('menuitem', { name: /Export Calculation Traceability/i }));
+
+    const csv = await readBlobAsText(exportedBlobs[0]);
+    expect(csv).toContain('Record Date,Activity Year Used For Matching,Activity Type,Quantity,Unit,Site / Facility');
+    expect(csv).toContain('Natural Gas');
+    expect(csv).toContain('Calculated Emissions kgCO2e');
+    expect(csv).not.toContain('activity-1');
+    expect(csv).not.toContain('organizationId');
+  });
+
   it('hides carbon credit readiness notes from the standard web report by default', async () => {
     render(
       <MemoryRouter>
@@ -398,7 +541,7 @@ describe('ReportingPage audit trail', () => {
     expect(screen.queryByText(/does not determine eligibility for carbon credits/i)).not.toBeInTheDocument();
   });
 
-  it('uses saved organization profile values in the report Inventory Boundary', async () => {
+  it('uses saved organization profile values in the read-only report Reporting Boundary', async () => {
     const adminUser = {
       email: 'admin@example.com',
       role: 'ADMIN' as const,
@@ -433,17 +576,23 @@ describe('ReportingPage audit trail', () => {
     );
 
     render(
-      <MemoryRouter>
-        <ReportingPage />
+      <MemoryRouter initialEntries={['/reports']}>
+        <Routes>
+          <Route
+            path="/reports"
+            element={<ReportingPage />}
+          />
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
       </MemoryRouter>,
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
     expect(boundarySection).toHaveTextContent(
       '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Saved Calgary and Ontario reporting boundary',
     );
-    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' }));
 
     expect(within(boundarySection).getByText('KACH CANADA LTD.')).toBeInTheDocument();
     expect(
@@ -455,6 +604,7 @@ describe('ReportingPage audit trail', () => {
     expect(
       within(boundarySection).getByText('Scope 3 includes selected business travel records only.'),
     ).toBeInTheDocument();
+    expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
     const inventoryBoundaryPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
@@ -463,6 +613,258 @@ describe('ReportingPage audit trail', () => {
     });
 
     expect(inventoryBoundaryPdfCall).toBeDefined();
+
+    await userEvent.click(
+      within(boundarySection).getByRole('button', { name: /Edit in Organization & Boundary/i }),
+    );
+    expect(await screen.findByText('Current path: /organization-profile')).toBeInTheDocument();
+  });
+
+  it('shows Not specified instead of sample boundary wording for empty customer boundary fields', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'customer@example.com',
+        role: 'ADMIN',
+        accountType: 'CUSTOMER',
+        organizationId: 'customer-empty-boundary',
+        organizationName: 'KACH CANADA LTD.',
+      }),
+    );
+    localStorage.setItem('accessToken', 'customer-empty-boundary-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            organizationName: 'KACH CANADA LTD.',
+            country: 'Canada',
+            reportingPeriodStart: '2026-01-01',
+            reportingPeriodEnd: '2026-12-31',
+            geographicBoundary: '',
+            includedFacilitiesOrLocations: '',
+            excludedFacilitiesOrLocations: '',
+            includedScopes: '',
+            scope3CoverageNote: '',
+            exclusionsAndLimitations: '',
+            boundaryNotes: '',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' }));
+
+    expect(boundarySection).not.toHaveTextContent(/Sample Canadian operations/i);
+    expect(boundarySection).not.toHaveTextContent(/Sample facilities/i);
+    expect(within(boundarySection).getAllByText('Not specified').length).toBeGreaterThanOrEqual(5);
+    expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('shows emissions by site/facility and includes the breakdown in PDF export', async () => {
+    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+      summary: {},
+      activities: [],
+      usageTotals: {
+        fuel: 0,
+        electricity: 0,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 9240,
+      totalRecordsFound: 6,
+      recordsIncluded: 4,
+      processedRecords: 4,
+      skippedRecords: 2,
+      skippedReasons: {
+        missingFactor: 1,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 1,
+      matchedFactorsCount: 3,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'gas-calgary',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 1000,
+          activityUnit: 'm3',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 1890,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'electricity-calgary',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 12500,
+          activityUnit: 'kWh',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 6625,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'hotel-calgary',
+          activityType: 'HOTEL',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 10,
+          activityUnit: 'nights',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 150,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'air-unassigned',
+          activityType: 'AIR_TRAVEL',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          activityQuantity: 5000,
+          activityUnit: 'km',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 575,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'water-calgary',
+          activityType: 'WATER',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 100,
+          activityUnit: 'm3',
+          factorSource: 'Tracked metric',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: 0,
+          status: 'TRACKED_ONLY',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'missing-factor-calgary',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 100,
+          activityUnit: 'kWh',
+          factorSource: 'Missing factor',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: null,
+          status: 'MISSING_FACTOR',
+          sourceType: 'SPREADSHEET',
+        },
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 80,
+      totalRecords: 6,
+      recordsInScope: 6,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    const siteSection = screen.getByRole('region', { name: 'Emissions by Site / Facility' });
+    expect(siteSection).toHaveTextContent('Organization total: 9,240 kgCO2e');
+    expect(siteSection).toHaveTextContent('2 site/facility groups');
+
+    await userEvent.click(
+      within(siteSection).getByRole('button', { name: /Expand Emissions by Site \/ Facility/i }),
+    );
+
+    expect(within(siteSection).getByText('Calgary Shop')).toBeInTheDocument();
+    expect(within(siteSection).getByText('Unassigned')).toBeInTheDocument();
+    expect(within(siteSection).getByText('1,890 kgCO2e')).toBeInTheDocument();
+    expect(within(siteSection).getByText('6,625 kgCO2e')).toBeInTheDocument();
+    expect(within(siteSection).getByText('8,665 kgCO2e')).toBeInTheDocument();
+    expect(within(siteSection).getAllByText('575 kgCO2e').length).toBeGreaterThan(0);
+    expect(siteSection).toHaveTextContent('Electricity: 6,625 kgCO2e');
+    expect(siteSection).toHaveTextContent('Natural Gas: 1,890 kgCO2e');
+    expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 150 kgCO2e');
+
+    const thresholdSection = screen.getByRole('region', {
+      name: 'Facility-Level Reporting Threshold Reference',
+    });
+    expect(thresholdSection).toHaveTextContent('10,000 tCO2e/year screening reference');
+    expect(thresholdSection).toHaveTextContent('100,000 tCO2e/year Alberta TIER large-emitter screening reference');
+
+    await userEvent.click(
+      within(thresholdSection).getByRole('button', {
+        name: /Expand Facility-Level Reporting Threshold Reference/i,
+      }),
+    );
+
+    expect(thresholdSection).toHaveTextContent(
+      'Threshold screening only. This does not constitute regulatory compliance advice.',
+    );
+    expect(within(thresholdSection).getByText('Calgary Shop')).toBeInTheDocument();
+    expect(within(thresholdSection).getByText('8,665 kgCO2e (8.7 tCO2e)')).toBeInTheDocument();
+    expect(thresholdSection).toHaveTextContent('0.09%');
+    expect(thresholdSection).toHaveTextContent('Below threshold reference');
+    expect(thresholdSection).not.toHaveTextContent(/\bcompliant\b|\bnon-compliant\b/i);
+
+    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    const sitePdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) => row.includes('Calgary Shop') && row.includes('8,665 kgCO2e'));
+    });
+
+    expect(sitePdfCall).toBeDefined();
+
+    const thresholdPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) => row.includes('Calgary Shop') && row.includes('Below threshold reference'));
+    });
+
+    expect(thresholdPdfCall).toBeDefined();
   });
 
   it('keeps Calculation Traceability PDF rows together and repeats headers across pages', async () => {

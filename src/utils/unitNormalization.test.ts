@@ -10,8 +10,10 @@ describe('unit normalization', () => {
     expect(normalizeUnitForDisplay('LTR')).toEqual({ status: 'valid', value: 'liters' });
     expect(normalizeUnitForDisplay('m³')).toEqual({ status: 'valid', value: 'm3' });
     expect(normalizeUnitForDisplay('KWH')).toEqual({ status: 'valid', value: 'kWh' });
+    expect(normalizeUnitForDisplay('gigajoules')).toEqual({ status: 'valid', value: 'GJ' });
     expect(normalizeUnitForDisplay('metric tons')).toEqual({ status: 'valid', value: 'tonnes' });
     expect(normalizeUnitForDisplay('tkm')).toEqual({ status: 'valid', value: 'ton-km' });
+    expect(normalizeUnitKey('GJ')).toBe('gj');
   });
 
   it('detects numeric OCR leftovers as invalid units', () => {

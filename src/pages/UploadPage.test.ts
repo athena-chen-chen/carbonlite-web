@@ -132,11 +132,74 @@ describe('document import factor matching metadata', () => {
       matchedFactorSourceYear: 2025,
       calculatedEmissionsKgCO2e: 2,
       calculationStatus: 'CALCULATED',
-      calculationMessage: 'Matched factor. Using latest available factor year: 2025.',
+      calculationMessage: 'Proxy factor · Review recommended. No exact 2026 factor was available. The nearest available factor was used for internal review only.',
     });
     expect(payload.notes).not.toMatch(/Missing Factor|No conversion factor/i);
     expect(payload.notes).toContain('Imported via PDF extraction. Source file: bc-hydro.pdf.');
     expect(payload.notes).not.toContain('Document ID');
+  });
+
+  it('uses service period year instead of upload or record date for imported bill factor matching', () => {
+    const payload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: 'Electricity', confidence: 'high' },
+        recordDate: { value: '2026-01-15', confidence: 'low' },
+        periodEndDate: '2025-07-09',
+        quantity: { value: 358, confidence: 'high' },
+        unit: { value: 'kWh', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'Alberta', confidence: 'high' },
+      }),
+      documentId: 'doc-enmax',
+      sourceFileName: 'enmax-2025-bill.pdf',
+      importBatchId: 'document-doc-enmax',
+      organizationId: 'org-1',
+      conversionFactors: [
+        {
+          id: 'eccc-electricity-ab-2025',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2025 Reference',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          unit: 'kWh',
+          factorValue: 0.49,
+          resultUnit: 'kgCO2e/kWh',
+          sourceYear: 2025,
+          effectiveYear: 2025,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          isSystemDefault: true,
+          isDefault: false,
+        },
+        {
+          id: 'eccc-electricity-ab-2026',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2026 Reference',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          unit: 'kWh',
+          factorValue: 0.438,
+          resultUnit: 'kgCO2e/kWh',
+          sourceYear: 2026,
+          effectiveYear: 2026,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ] as any,
+    });
+
+    expect(payload).toMatchObject({
+      recordDate: '2026-01-15',
+      recordYear: 2025,
+      matchedFactorId: 'eccc-electricity-ab-2025',
+      matchedFactorSourceYear: 2025,
+      calculatedEmissionsKgCO2e: 175.42,
+      calculationStatus: 'CALCULATED',
+    });
   });
 
   it('keeps unsupported imported electricity provinces as missing factor metadata', () => {
@@ -393,7 +456,7 @@ describe('resolveActivityRecordDate', () => {
 });
 
 describe('document upload action model', () => {
-  it('shows uploaded documents with View, Extract, and Delete actions', () => {
+  it('shows uploaded documents with details, download, extract, and delete actions', () => {
     const model = getDocumentActionModel({ status: 'UPLOADED' });
 
     expect(model.statusLabel).toBe('Uploaded');
@@ -402,7 +465,8 @@ describe('document upload action model', () => {
       label: 'Extract',
     });
     expect(model.menuActions.map((action) => action.label)).toEqual([
-      'View',
+      'View Details',
+      'Download Source File',
       'Delete',
     ]);
   });
@@ -421,7 +485,8 @@ describe('document upload action model', () => {
     });
     expect(model.primaryAction.label).not.toBe('Extract');
     expect(model.menuActions.map((action) => action.label)).toEqual([
-      'View',
+      'View Details',
+      'Download Source File',
       'Import',
       'Re-extract',
       'Delete',
@@ -441,7 +506,8 @@ describe('document upload action model', () => {
       label: 'View Imported Records',
     });
     expect(model.menuActions.map((action) => action.label)).toEqual([
-      'View',
+      'View Details',
+      'Download Source File',
       'Delete',
     ]);
     expect(model.menuActions.map((action) => action.label)).not.toContain('Import');

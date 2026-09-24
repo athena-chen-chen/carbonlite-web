@@ -1774,6 +1774,120 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(within(boundarySection).getByText('US operations')).toBeInTheDocument();
   });
 
+  it('shows a collapsible Site / Facility Breakdown with calculated GHG totals', async () => {
+    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+      ...overview,
+      totalEstimatedEmissionsKgCO2e: 9240,
+      processedRecords: 4,
+      skippedRecords: 2,
+      calculationDetails: [
+        {
+          activityDataId: 'gas-calgary',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 1000,
+          activityUnit: 'm3',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 1890,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'electricity-calgary',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 12500,
+          activityUnit: 'kWh',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 6625,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'hotel-calgary',
+          activityType: 'HOTEL',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 10,
+          activityUnit: 'nights',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 150,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'air-unassigned',
+          activityType: 'AIR_TRAVEL',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          activityQuantity: 5000,
+          activityUnit: 'km',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 575,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+        {
+          activityDataId: 'water-calgary',
+          activityType: 'WATER',
+          recordDate: '2026-01-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Canada',
+          facilityName: 'Calgary Shop',
+          activityQuantity: 100,
+          activityUnit: 'm3',
+          factorSource: 'Tracked metric',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: 0,
+          status: 'TRACKED_ONLY',
+          sourceType: 'SPREADSHEET',
+        },
+      ],
+    } as any);
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    const siteSection = screen.getByRole('region', { name: 'Site / Facility Breakdown' });
+    expect(siteSection).toHaveTextContent('Organization total: 9,240 kgCO2e');
+    expect(siteSection).toHaveTextContent('2 site/facility groups');
+    expect(within(siteSection).queryByText('Calgary Shop')).not.toBeInTheDocument();
+
+    await userEvent.click(
+      within(siteSection).getByRole('button', { name: /Expand Site \/ Facility Breakdown/i }),
+    );
+
+    expect(within(siteSection).getByText('Calgary Shop')).toBeInTheDocument();
+    expect(within(siteSection).getByText('Unassigned')).toBeInTheDocument();
+    expect(within(siteSection).getByText('8,665 kgCO2e')).toBeInTheDocument();
+    expect(within(siteSection).getAllByText('575 kgCO2e').length).toBeGreaterThan(0);
+    expect(siteSection).toHaveTextContent('Electricity: 6,625 kgCO2e');
+    expect(siteSection).toHaveTextContent('Natural Gas: 1,890 kgCO2e');
+    expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 150 kgCO2e');
+  });
+
   it('renders Calculation Review for pilot reviewer without mutation controls', async () => {
     localStorage.setItem(
       'currentUser',
@@ -1791,7 +1905,9 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('heading', { name: /Calculation Review/i })).toBeInTheDocument();
+    const pageHeading = await screen.findByRole('heading', { name: /Calculation Review/i });
+    expect(pageHeading).toBeInTheDocument();
+    expect(pageHeading).toHaveFocus();
     const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
     expect(boundarySection).toBeInTheDocument();
     expect(boundarySection).toHaveTextContent(

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { UploadPage, classifyDraftRow } from './UploadPage';
+import { UploadPage, buildDocumentImportActivityPayload, classifyDraftRow } from './UploadPage';
 import { getDocuments } from '../services/documents';
 import { ApiError } from '../services/api';
 import {
@@ -12,7 +12,22 @@ import {
 import { calculateMetrics } from '../services/metrics';
 
 vi.mock('../components/ExcelInputTable', () => ({
-  ExcelInputTable: () => <div>Activity Rows</div>,
+  ExcelInputTable: ({ mode = 'manual' }: { mode?: 'spreadsheet' | 'manual' }) =>
+    mode === 'spreadsheet' ? (
+      <div>
+        <h3>Spreadsheet rows</h3>
+        <p>Upload a CSV/XLSX file using the CarbonLite template, or paste rows copied from Excel.</p>
+        <strong>No spreadsheet rows yet.</strong>
+        <span>Upload a CSV/XLSX file or paste rows from Excel to begin.</span>
+      </div>
+    ) : (
+      <div>
+        <h3>Manual activity rows</h3>
+        <p>Enter one activity record manually when no file is available.</p>
+        <button type="button">Add activity record</button>
+        <strong>No manual activity rows yet.</strong>
+      </div>
+    ),
 }));
 
 vi.mock('../components/AppDialog', () => ({
@@ -112,6 +127,7 @@ describe('UploadPage sample workflow', () => {
       unit: { value: 'm3', confidence: 'high' },
       jurisdictionCountry: { value: 'Canada', confidence: 'high' },
       jurisdictionRegion: { value: '', confidence: 'high' },
+      facilityName: { value: '', confidence: 'medium' },
       sourceReference: { value: 'pilot-golden-dataset.csv', confidence: 'high' },
       matchingStatus: 'TRACKED_ONLY',
       reportTreatment: 'TRACKED_ONLY',
@@ -122,6 +138,34 @@ describe('UploadPage sample workflow', () => {
     } as const;
 
     expect(classifyDraftRow(row)).toBe('TRACKED_METRIC');
+  });
+
+  it('preserves Site / Facility on document import payloads', () => {
+    const payload = buildDocumentImportActivityPayload({
+      item: {
+        selected: true,
+        documentId: 'facility-doc',
+        documentFileName: 'facility-import.xlsx',
+        dateEstimated: false,
+        activityType: { value: 'Natural Gas', confidence: 'high' },
+        recordDate: { value: '2026-07-20', confidence: 'high' },
+        quantity: { value: 1000, confidence: 'high' },
+        unit: { value: 'm3', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'Alberta', confidence: 'high' },
+        facilityName: { value: 'Edmonton Factory', confidence: 'high' },
+        sourceReference: { value: 'facility-import.xlsx', confidence: 'high' },
+        notes: { value: '', confidence: 'medium' },
+      },
+      documentId: 'facility-doc',
+      sourceFileName: 'facility-import.xlsx',
+      importBatchId: 'facility-import-batch',
+      conversionFactors: [],
+      organizationId: 'org-1',
+    });
+
+    expect(payload.facility).toBe('Edmonton Factory');
+    expect(payload.facilityId).toBeUndefined();
   });
 
   it('shows pilot reviewers a read-only sample review path instead of import tools', async () => {
@@ -142,7 +186,7 @@ describe('UploadPage sample workflow', () => {
     );
 
     const workflow = screen.getByLabelText(/CarbonLite input workflow/i);
-    expect(workflow).toHaveTextContent('Upload / Manual Entry');
+    expect(workflow).toHaveTextContent('Input Data');
     expect(workflow).toHaveTextContent('Review extracted rows');
     expect(workflow).toHaveTextContent('Confirm activity records');
     expect(workflow).toHaveTextContent('Match emission factors');
@@ -158,7 +202,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByRole('button', { name: /reports/i })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /upload documents/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /load sample data/i })).not.toBeInTheDocument();
-    expect(screen.queryByText('Activity Rows')).not.toBeInTheDocument();
+    expect(screen.queryByText('Manual activity rows')).not.toBeInTheDocument();
   });
 
   it('keeps customer viewers read-only without pilot-reviewer wording or Set Province controls', async () => {
@@ -182,6 +226,31 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByText(/pilot reviewer accounts use preloaded sample data/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Set Province' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Confirm Import/i })).not.toBeInTheDocument();
+  });
+
+  it('allows customer users with workspace context to access upload and import workflows', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'user@example.com',
+        role: 'USER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('tab', { name: /Upload Documents/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Import Spreadsheet/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Manual Entry/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Read-only access:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pilot reviewer accounts use preloaded sample data/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Set Province' })).not.toBeInTheDocument();
   });
 
   it('clears Input Review documents when demo data reset is broadcast', async () => {
@@ -214,23 +283,25 @@ describe('UploadPage sample workflow', () => {
 
     window.dispatchEvent(new Event('carbonlite:demo-data-reset'));
 
-    expect(await screen.findByText('No documents waiting for review.')).toBeInTheDocument();
-    expect(screen.getByText('Upload a file or add records manually to begin.')).toBeInTheDocument();
+    expect(await screen.findByText('No documents uploaded yet.')).toBeInTheDocument();
+    expect(screen.getByText('Upload bills, receipts, invoices, PDFs, or images to extract activity data.')).toBeInTheDocument();
     expect(screen.queryByText('stale-import.xlsx')).not.toBeInTheDocument();
   });
 
   it('renders the Input Review row action menu in a fixed portal', async () => {
+    const windowOpenSpy = vi.spyOn(window, 'open').mockReturnValue(null);
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {
-          id: 'doc-actions',
+          id: 'demo-activity-csv',
           fileName: 'pilot-import.xlsx',
-          fileUrl: '',
+          fileUrl: '/demo/sample-activity-data.csv',
           type: 'SPREADSHEET',
           status: 'IMPORTED',
           fileSize: 100,
           createdAt: '2026-07-20T00:00:00.000Z',
           updatedAt: '2026-07-20T00:00:00.000Z',
+          importedRecordCount: 10,
         },
       ],
       page: 1,
@@ -284,8 +355,35 @@ describe('UploadPage sample workflow', () => {
       right: '230px',
       zIndex: '1000',
     });
-    expect(within(menu).getByRole('menuitem', { name: 'View' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: 'View' })).not.toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'View Details' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Download Source File' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
+
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'View Details' }));
+
+    expect(await screen.findByRole('dialog', { name: /Document Details/i })).toBeInTheDocument();
+    expect(screen.getByText('Metadata for pilot-import.xlsx')).toBeInTheDocument();
+    expect(screen.getByText('Imported record count')).toBeInTheDocument();
+    expect(screen.getByText('10')).toBeInTheDocument();
+    expect(windowOpenSpy).not.toHaveBeenCalled();
+
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /Document Details/i })).not.toBeInTheDocument();
+    });
+
+    await userEvent.click(menuButton);
+    await userEvent.click(
+      within(screen.getByRole('menu', { name: /More actions for pilot-import.xlsx/i }))
+        .getByRole('menuitem', { name: 'Download Source File' }),
+    );
+
+    expect(windowOpenSpy).toHaveBeenCalledWith(
+      '/demo/sample-activity-data.csv',
+      '_blank',
+      'noopener,noreferrer',
+    );
 
     await userEvent.keyboard('{Escape}');
 
@@ -366,6 +464,34 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByRole('heading', { name: /^Upload Documents$/i })).not.toBeInTheDocument();
   });
 
+  it('keeps upload, spreadsheet import, and manual entry mode content distinct', async () => {
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
+    expect(screen.getByText(/Supported files: PDF, JPG, PNG, HEIC/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Download CSV template/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add activity record/i })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: /Import Spreadsheet/i }));
+    expect(screen.getByRole('heading', { name: /^Import Spreadsheet$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Download CSV template/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Download Excel template/i })).toBeInTheDocument();
+    expect(screen.getByText('No spreadsheet rows yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add activity record/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Drop files here or choose files/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: /Manual Entry/i }));
+    expect(screen.getByRole('heading', { name: /^Manual Entry$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add activity record/i })).toBeInTheDocument();
+    expect(screen.getByText('No manual activity rows yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Download CSV template/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Supported files: PDF, JPG, PNG, HEIC/i)).not.toBeInTheDocument();
+  });
+
   it('loads sample files without enabling a hidden demo mode', async () => {
     render(
       <MemoryRouter>
@@ -388,18 +514,19 @@ describe('UploadPage sample workflow', () => {
     expect(localStorage.getItem('carbonliteDemoMode')).toBeNull();
   });
 
-  it('lets users load a sample JSON file for extraction', async () => {
+  it('keeps document upload focused on documents instead of sample JSON imports', async () => {
     render(
       <MemoryRouter>
         <UploadPage />
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: /Use Sample JSON/i }));
-
-    expect(screen.getByText('Sample JSON loaded. Click Extract Data.')).toBeInTheDocument();
-    expect(screen.getByText(/carbonlite-sample-activity-records\.json/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Extract Data/i })).toBeEnabled();
+    expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/Upload utility bills, fuel invoices, water bills, travel documents/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Supported files: PDF, JPG, PNG, HEIC/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Use Sample JSON/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Use Sample CSV/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/CSV, XLSX/i)).not.toBeInTheDocument();
   });
 
   it('shows loading state while retry extraction is running', async () => {
@@ -513,6 +640,8 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByDisplayValue('Electricity')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Natural Gas')).toBeInTheDocument();
     expect(screen.getAllByDisplayValue('Canada').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByDisplayValue('Calgary Main Office')).toBeInTheDocument();
+    expect(screen.getByText('Site / Facility')).toBeInTheDocument();
     expect(screen.getByText('2026-01-01 to 2026-01-31')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Optional note')).toBeInTheDocument();
     expect(
@@ -539,6 +668,72 @@ describe('UploadPage sample workflow', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Select All/i }));
     expect(within(electricityRow!).getByRole('checkbox')).not.toBeChecked();
+  });
+
+  it('moves misclassified facility values out of Source Reference into Site / Facility', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'facility-doc',
+          fileName: 'carbonlite-site-facility-upload-test.xlsx',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'facility-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'Electricity',
+          amount: 8000,
+          unit: 'kWh',
+          country: 'Canada',
+          province: 'AB',
+          startDate: '2026-07-20',
+          sourceReference: 'Calgary Office',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    const retryButton = await screen.findByRole('button', { name: /Retry Extract/i });
+    await waitFor(() => expect(retryButton).toBeEnabled());
+    await userEvent.click(retryButton);
+
+    const row = screen.getByDisplayValue('Calgary Office').closest('tr');
+    expect(row).toBeTruthy();
+    expect(screen.getByText('Site / Facility')).toBeInTheDocument();
+    expect(within(row!).getByDisplayValue('Calgary Office')).toBeInTheDocument();
+    expect(
+      within(row!).getByDisplayValue('carbonlite-site-facility-upload-test.xlsx'),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
+    await waitFor(() => {
+      expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
+    });
+
+    const importedActivities = vi.mocked(confirmDocumentImport).mock.calls[0][1];
+    expect(importedActivities[0]).toMatchObject({
+      facility: 'Calgary Office',
+      sourceReference: 'carbonlite-site-facility-upload-test.xlsx',
+    });
+    expect(importedActivities[0].facilityId).toBeUndefined();
   });
 
   it('enables customer admins to set province on missing-province draft rows', async () => {
@@ -612,6 +807,82 @@ describe('UploadPage sample workflow', () => {
     expect(within(row!).getByText('Ready')).toBeInTheDocument();
     expect(within(row!).getByRole('checkbox')).toBeEnabled();
     expect(within(row!).getByRole('checkbox')).toBeChecked();
+  });
+
+  it('allows customer users to set province on draft rows and import ready rows', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'user@example.com',
+        role: 'USER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    );
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'province-doc-user',
+          fileName: 'province-missing-user.xlsx',
+          type: 'SPREADSHEET',
+          status: 'REVIEW_REQUIRED',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(getDocumentExtraction).mockResolvedValue({
+      documentId: 'province-doc-user',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'electricity',
+          amount: '1000',
+          unit: 'kWh',
+          country: 'Canada',
+          province: '',
+          startDate: '2026-01-01',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Review Rows/i }));
+
+    const row = screen.getByDisplayValue('Electricity').closest('tr');
+    expect(row).toBeTruthy();
+
+    const setProvinceButton = screen.getByRole('button', { name: 'Set Province' });
+    expect(setProvinceButton).toBeDisabled();
+    expect(setProvinceButton).toHaveAttribute('title', 'Select a province to apply.');
+
+    await userEvent.selectOptions(screen.getByLabelText('Province'), 'Alberta');
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+
+    expect(within(row!).getByDisplayValue('Alberta')).toBeInTheDocument();
+    const confirmImportButton = screen.getByRole('button', { name: /Confirm Import/i });
+    expect(confirmImportButton).toBeEnabled();
+
+    await userEvent.click(confirmImportButton);
+
+    await waitFor(() => {
+      expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(confirmDocumentImport).mock.calls[0][1]).toHaveLength(1);
   });
 
   it('keeps unsupported electricity provinces in JSON preview for factor review', async () => {
@@ -759,8 +1030,8 @@ describe('UploadPage sample workflow', () => {
       documentId: 'mixed-doc',
       status: 'REVIEW_REQUIRED',
       parsedActivities: [
-        { activityType: 'Electricity', amount: 12500, unit: 'kWh', country: 'Canada', province: 'AB', startDate: '2026-07-20' },
-        { activityType: 'Electricity', amount: 100, unit: 'kWh', country: 'Canada', province: 'BC', startDate: '2026-07-20' },
+        { activityType: 'Electricity', amount: 12500, unit: 'kWh', country: 'Canada', province: 'AB', startDate: '2026-07-20', site: 'Calgary Office' },
+        { activityType: 'Electricity', amount: 100, unit: 'kWh', country: 'Canada', province: 'BC', startDate: '2026-07-20', location: 'Red Deer Yard' },
         { activityType: 'Electricity', amount: 1000, unit: 'kWh', country: 'Canada', province: 'ON', startDate: '2026-07-20' },
         { activityType: 'Natural Gas', amount: 1000, unit: 'm3', country: 'Canada', startDate: '2026-07-20' },
         { activityType: 'Gasoline', amount: 500, unit: 'liters', country: 'Canada', startDate: '2026-07-20' },
@@ -793,6 +1064,8 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText(/File: mixed-activity-records\.csv/i)).toBeInTheDocument();
     expect(screen.getByText(/Source type: Spreadsheet import/i)).toBeInTheDocument();
     expect(screen.queryByText(/Document ID:/i)).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Calgary Office')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Red Deer Yard')).toBeInTheDocument();
     expect(screen.getByText(/Ready:/i)).toHaveTextContent(/Tracked metrics:/i);
     expect(screen.getByText(/Ready:/i)).toHaveTextContent(/Requires review:/i);
 
@@ -824,6 +1097,12 @@ describe('UploadPage sample workflow', () => {
     const importedActivities = vi.mocked(confirmDocumentImport).mock.calls[0][1];
     expect(importedActivities).toHaveLength(selectedImportableCheckboxes.length);
     expect(importedActivities.map((activity) => activity.activityType)).toContain('WATER');
+    expect(importedActivities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ facility: 'Calgary Office' }),
+        expect.objectContaining({ facility: 'Red Deer Yard' }),
+      ]),
+    );
     expect(importedActivities.map((activity) => activity.activityType)).not.toContain('CUSTOM');
     expect(importedActivities).not.toEqual(
       expect.arrayContaining([

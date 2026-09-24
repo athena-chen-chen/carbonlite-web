@@ -202,9 +202,15 @@ export type MetricsSummaryResponse = {
     sourceUrl?: string | null;
     factorVersion?: string | null;
     sourceYear?: number | null;
+    effectiveYear?: number | null;
+    factorSet?: string | null;
     factorStatus?: string | null;
+    confidence?: string | null;
     confidenceLevel?: string | null;
     verificationStatus?: string | null;
+    boundary?: string | null;
+    notes?: string | null;
+    lastReviewedAt?: string | null;
     assumptions?: string | null;
     factorType: 'System' | 'Custom';
     verified: boolean;
@@ -219,6 +225,9 @@ export type MetricsSummaryResponse = {
     sourceType: string;
     sourceReference?: string | null;
     notes?: string | null;
+    facility?: string | null;
+    facilityId?: string | null;
+    facilityName?: string | null;
     sourceDocumentId?: string | null;
     sourceFileName?: string | null;
     sourcePage?: string | number | null;
@@ -232,7 +241,7 @@ export type CalculationAuditDetail = {
   activityType: string;
   recordDate: string;
   dateEstimated: boolean;
-  reportingYear: number;
+  reportingYear: number | null;
   recordYear?: number | null;
   jurisdiction: string;
   jurisdictionCountry?: string | null;
@@ -255,6 +264,8 @@ export type CalculationAuditDetail = {
   factorInputUnit?: string | null;
   factorResultUnit?: string | null;
   factorYear?: number | null;
+  factorEffectiveYear?: number | null;
+  factorSet?: string | null;
   factorJurisdictionCountry?: string | null;
   factorJurisdictionRegion?: string | null;
   factorStatus?: string | null;
@@ -263,6 +274,8 @@ export type CalculationAuditDetail = {
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
   sourceUrl?: string | null;
+  boundary?: string | null;
+  factorNotes?: string | null;
   factorAssumptions?: string | null;
   factorSourcePage?: string | number | null;
   factorSourceTable?: string | null;
@@ -334,10 +347,14 @@ export type CalculationExplanation = {
     resultUnit?: string | null;
     jurisdiction?: string | null;
     factorYear?: number | null;
+    effectiveYear?: number | null;
+    factorSet?: string | null;
     sourceAuthority?: string | null;
     sourceDocument?: string | null;
     sourceYear?: number | null;
     sourceUrl?: string | null;
+    boundary?: string | null;
+    notes?: string | null;
     factorVersion?: string | null;
     assumptions?: string | null;
     confidenceLevel?: string | null;

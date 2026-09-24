@@ -63,7 +63,7 @@ describe('conversion factor traceability API payloads', () => {
     });
   });
 
-  it('adds current pilot electricity factors when the API response does not include them', async () => {
+  it('adds current pilot and official reference electricity factors when the API response does not include them', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       new Response(JSON.stringify({
         items: [],
@@ -79,14 +79,38 @@ describe('conversion factor traceability API payloads', () => {
 
     const response = await getConversionFactors();
     const electricityRows = response.items.filter((item) => item.activityType === 'ELECTRICITY');
+    const pilotRows = electricityRows.filter((item) => item.factorSet === 'PILOT_DEFAULT_V0_1');
+    const officialRows = electricityRows.filter((item) =>
+      String(item.factorSet ?? '').startsWith('ECCC_REFERENCE_'),
+    );
 
-    expect(electricityRows).toHaveLength(3);
-    expect(electricityRows.map((item) => item.name)).toEqual([
+    expect(pilotRows).toHaveLength(3);
+    expect(pilotRows.map((item) => item.name)).toEqual([
       'Electricity - Alberta - 2026',
       'Electricity - British Columbia - 2026',
       'Electricity - Ontario - 2026',
     ]);
-    expect(electricityRows.map((item) => item.factorValue)).toEqual([0.53, 0.02, 0.12]);
+    expect(pilotRows.map((item) => item.factorValue)).toEqual([0.53, 0.02, 0.12]);
+    expect(officialRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Electricity - Alberta - 2025 Reference',
+          factorValue: 0.49,
+          factorSet: 'ECCC_REFERENCE_2025',
+          sourceName: 'ECCC electricity consumption intensity reference',
+          effectiveYear: 2025,
+          confidence: 'HIGH',
+          factorStatus: 'ACTIVE',
+          boundary: 'Purchased electricity consumption intensity.',
+        }),
+        expect.objectContaining({
+          name: 'Electricity - Alberta - 2026 Reference',
+          factorValue: 0.438,
+          factorSet: 'ECCC_REFERENCE_2026',
+          effectiveYear: 2026,
+        }),
+      ]),
+    );
     expect(electricityRows.every((item) => item.unit === 'kWh')).toBe(true);
     expect(electricityRows.every((item) => item.isSystemDefault)).toBe(true);
     expect(response.items.some((item) => item.name === 'Electricity - Province Required')).toBe(false);
@@ -107,26 +131,38 @@ describe('conversion factor traceability API payloads', () => {
     ));
 
     const electricity = await getConversionFactors({ activityType: 'ELECTRICITY' });
-    expect(electricity.items.map((item) => item.region)).toEqual([
+    expect(electricity.items.filter((item) => item.factorSet === 'PILOT_DEFAULT_V0_1').map((item) => item.region)).toEqual([
       'Alberta',
       'British Columbia',
       'Ontario',
     ]);
+    expect(electricity.items.some((item) => item.factorSet === 'ECCC_REFERENCE_2025')).toBe(true);
 
     const alberta = await getConversionFactors({
       activityType: 'ELECTRICITY',
       jurisdiction: 'AB',
       sourceYear: 2026,
     });
-    expect(alberta.items).toHaveLength(1);
-    expect(alberta.items[0].name).toBe('Electricity - Alberta - 2026');
+    expect(alberta.items.map((item) => item.name)).toEqual([
+      'Electricity - Alberta - 2026',
+      'Electricity - Alberta - 2026 Reference',
+    ]);
 
     const bc = await getConversionFactors({
       activityType: 'ELECTRICITY',
       jurisdiction: 'British Columbia',
     });
-    expect(bc.items).toHaveLength(1);
-    expect(bc.items[0].factorValue).toBe(0.02);
+    expect(bc.items.map((item) => item.factorValue)).toEqual([0.02, 0.015, 0.018]);
+
+    const official2025 = await getConversionFactors({
+      activityType: 'ELECTRICITY',
+      sourceYear: 2025,
+    });
+    expect(official2025.items.map((item) => item.factorSet)).toEqual([
+      'ECCC_REFERENCE_2025',
+      'ECCC_REFERENCE_2025',
+      'ECCC_REFERENCE_2025',
+    ]);
 
     const unsupported = await getConversionFactors({
       activityType: 'ELECTRICITY',

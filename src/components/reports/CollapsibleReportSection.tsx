@@ -25,7 +25,12 @@ export function CollapsibleReportSection({
       summary={summary}
       expanded={expanded}
       onToggle={onToggle}
-      style={{ border: '1px solid #eee' }}
+      style={{
+        border: '1px solid #E2E8F0',
+        borderRadius: 12,
+        background: '#FFFFFF',
+        boxShadow: 'none',
+      }}
     >
       {children}
     </CollapsibleSection>

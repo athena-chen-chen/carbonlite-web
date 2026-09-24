@@ -305,7 +305,7 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByRole('columnheader', { name: 'Jurisdiction' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Verified' })).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-value-factor-1')).toHaveTextContent('2.68');
-    expect(container.querySelectorAll('col')).toHaveLength(14);
+    expect(container.querySelectorAll('col')).toHaveLength(17);
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveStyle({
       position: 'sticky',
       right: '0px',
@@ -322,6 +322,57 @@ describe('ConversionFactorsPage traceability', () => {
       'https://example.com/factor-source',
     );
     expect(screen.getByText(/Internal Review Required before formal reporting/i)).toBeInTheDocument();
+  });
+
+  it('shows official reference factor metadata without pilot-estimate wording', async () => {
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [
+        {
+          ...baseFactor,
+          id: 'eccc-electricity-ab-2026',
+          name: 'Electricity - Alberta - 2026 Reference',
+          activityType: 'ELECTRICITY',
+          jurisdiction: 'Alberta, Canada',
+          region: 'Alberta',
+          country: 'Canada',
+          unit: 'kWh',
+          factorValue: 0.438,
+          sourceName: 'ECCC electricity consumption intensity reference',
+          sourceAuthority: 'Environment and Climate Change Canada',
+          sourceDocument: 'ECCC electricity consumption intensity reference',
+          sourceYear: 2026,
+          effectiveYear: 2026,
+          factorSet: 'ECCC_REFERENCE_2026',
+          factorStatus: 'ACTIVE',
+          confidence: 'HIGH',
+          confidenceLevel: 'HIGH',
+          boundary: 'Purchased electricity consumption intensity.',
+          notes: 'Reference factor stored separately from pilot defaults.',
+          verified: true,
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('ECCC reference 2026')).toBeInTheDocument();
+    expect(screen.getAllByText('Active').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('factor-value-eccc-electricity-ab-2026')).toHaveTextContent('0.438 kgCO2e/kWh');
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    const dialog = screen.getByRole('dialog', {
+      name: /Electricity - Alberta - 2026 Reference/i,
+    });
+    expect(within(dialog).getByText('Purchased electricity consumption intensity.')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Pilot-stage default factor/i)).not.toBeInTheDocument();
   });
 
   it('uses pilot-ready wording in system factor detail modal instead of placeholder labels', async () => {
@@ -950,7 +1001,7 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByText('Company diesel custom factor')).toBeInTheDocument();
     expect(screen.getByText('Company Factor')).toBeInTheDocument();
     expect(screen.getByText('Consultant factor table')).toBeInTheDocument();
-    expect(screen.getByText('Consultant Reviewed')).toBeInTheDocument();
+    expect(screen.getAllByText('Consultant Reviewed').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: '+ Add Company Factor' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
     expect(screen.queryByLabelText('More actions for Company diesel custom factor')).not.toBeInTheDocument();

@@ -201,11 +201,11 @@ describe('ExcelInputTable empty activity row UX', () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
-  function renderTable() {
+  function renderTable(mode: 'manual' | 'spreadsheet' = 'manual') {
     return render(
       <ToastProvider>
         <AppDialogProvider>
-          <ExcelInputTable onSuccess={vi.fn()} />
+          <ExcelInputTable mode={mode} onSuccess={vi.fn()} />
         </AppDialogProvider>
       </ToastProvider>,
     );
@@ -216,7 +216,9 @@ describe('ExcelInputTable empty activity row UX', () => {
   }
 
   async function addEmptyRow(rowNumber = 1) {
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Row' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Add activity record|Add another manual row/i }),
+    );
     return getActivityRow(rowNumber);
   }
 
@@ -226,7 +228,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), quantity);
     await waitFor(() => {
       expect(within(row).getByText('Diesel factor')).toBeInTheDocument();
-      expect(within(row).getByText(/kgCO2e\/liter/)).toBeInTheDocument();
+      expect(within(row).getByText(/kgCO2e\/L/)).toBeInTheDocument();
       expect(within(row).queryByText(/kgCO2e\/liters/)).not.toBeInTheDocument();
     });
     return row;
@@ -238,11 +240,22 @@ describe('ExcelInputTable empty activity row UX', () => {
     await waitFor(() => {
       expect(getAllConversionFactors).toHaveBeenCalledWith();
     });
-    expect(await screen.findByText('No activity rows.')).toBeInTheDocument();
-    expect(screen.getByText('Click "+ Add Row" to begin.')).toBeInTheDocument();
+    expect(await screen.findByText('No manual activity rows yet.')).toBeInTheDocument();
+    expect(screen.getByText('Click "Add activity record" to begin.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save All' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Remove row/i })).not.toBeInTheDocument();
     expect(screen.queryByText('No matching factor')).not.toBeInTheDocument();
+  });
+
+  it('shows spreadsheet import guidance without manual add-row controls in spreadsheet mode', async () => {
+    renderTable('spreadsheet');
+
+    expect(await screen.findByText('Spreadsheet rows')).toBeInTheDocument();
+    expect(screen.getByText('Upload a CSV/XLSX file using the CarbonLite template, or paste rows copied from Excel.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Choose spreadsheet file' })).toBeInTheDocument();
+    expect(screen.getByText('No spreadsheet rows yet.')).toBeInTheDocument();
+    expect(screen.getAllByText('Upload a CSV/XLSX file or paste rows from Excel to begin.').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /Add activity record/i })).not.toBeInTheDocument();
   });
 
   it('adds an empty row without showing remove or missing factor warnings', async () => {
@@ -252,7 +265,7 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     expect(within(row).getByRole('combobox', { name: /Activity type/i })).toHaveValue('');
     expect(within(row).getByPlaceholderText('Quantity')).toHaveValue(null);
-    expect(screen.queryByText('No activity rows.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No manual activity rows yet.')).not.toBeInTheDocument();
     expect(screen.queryByText('No matching factor')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Remove row/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save All' })).toBeDisabled();
@@ -274,6 +287,56 @@ describe('ExcelInputTable empty activity row UX', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Import Review Summary')).not.toBeInTheDocument();
     expect(screen.queryByText(/Bulk set province for selected imported rows/i)).not.toBeInTheDocument();
+  });
+
+  it('sets the default unit when activity type changes in manual entry', async () => {
+    renderTable();
+
+    const row = await addEmptyRow();
+    const activityTypeSelect = within(row).getByRole('combobox', { name: /Activity type/i });
+    const unitInput = within(row).getByPlaceholderText('Unit');
+
+    await userEvent.selectOptions(activityTypeSelect, 'ELECTRICITY');
+    expect(unitInput).toHaveValue('kWh');
+
+    await userEvent.selectOptions(activityTypeSelect, 'GASOLINE');
+    expect(unitInput).toHaveValue('L');
+
+    await userEvent.selectOptions(activityTypeSelect, 'DIESEL');
+    expect(unitInput).toHaveValue('L');
+
+    await userEvent.selectOptions(activityTypeSelect, 'AIR_TRAVEL');
+    expect(unitInput).toHaveValue('km');
+
+    await userEvent.selectOptions(activityTypeSelect, 'HOTEL');
+    expect(unitInput).toHaveValue('nights');
+
+    await userEvent.selectOptions(activityTypeSelect, 'WATER');
+    expect(unitInput).toHaveValue('m3');
+  });
+
+  it('preserves manual unit edits until activity type changes again', async () => {
+    renderTable();
+
+    const row = await addEmptyRow();
+    const activityTypeSelect = within(row).getByRole('combobox', { name: /Activity type/i });
+    const unitInput = within(row).getByPlaceholderText('Unit');
+
+    await userEvent.selectOptions(activityTypeSelect, 'NATURAL_GAS');
+    expect(unitInput).toHaveValue('m3');
+
+    await userEvent.clear(unitInput);
+    await userEvent.type(unitInput, 'GJ');
+    expect(unitInput).toHaveValue('GJ');
+
+    await userEvent.type(within(row).getByPlaceholderText('Quantity'), '3');
+    await waitFor(() => {
+      expect(within(row).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
+    });
+    expect(unitInput).toHaveValue('GJ');
+
+    await userEvent.selectOptions(activityTypeSelect, 'ELECTRICITY');
+    expect(unitInput).toHaveValue('kWh');
   });
 
   it('uses the current pilot province dropdown for manual input', async () => {
@@ -313,7 +376,7 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     await userEvent.click(clearDraftButton);
 
-    expect(screen.getByText('No activity rows.')).toBeInTheDocument();
+    expect(screen.getByText('No manual activity rows yet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Remove row/i })).not.toBeInTheDocument();
   });
 
@@ -442,9 +505,9 @@ describe('ExcelInputTable empty activity row UX', () => {
   });
 
   it('shows import review summary and bulk province only for pasted imported rows', async () => {
-    renderTable();
+    renderTable('spreadsheet');
 
-    fireEvent.paste(await screen.findByText('No activity rows.'), {
+    fireEvent.paste(await screen.findByText('No spreadsheet rows yet.'), {
       clipboardData: {
         getData: () => 'ELECTRICITY\t2026-07-20\t100\tkWh\tCanada\t',
       },
@@ -736,7 +799,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           matchedFactorSourceYear: 2025,
           calculatedEmissionsKgCO2e: 2,
           calculationStatus: 'CALCULATED',
-          calculationMessage: 'Matched factor. Using latest available factor year: 2025.',
+          calculationMessage: 'Proxy factor · Review recommended. No exact 2026 factor was available. The nearest available factor was used for internal review only.',
           notes: expect.stringContaining('Calculated emissions: 2 kgCO2e.'),
         }),
       );
@@ -781,6 +844,25 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
     expect(within(row).getAllByText(/Supported unit: km/i).length).toBeGreaterThan(0);
     expect(within(row).queryByText('Missing Province')).not.toBeInTheDocument();
+  });
+
+  it('shows Natural Gas GJ as Unit Mismatch when only an m3 factor is available', async () => {
+    renderTable();
+
+    const row = await addEmptyRow();
+    await userEvent.selectOptions(
+      within(row).getByRole('combobox', { name: /Activity type/i }),
+      'NATURAL_GAS',
+    );
+    await userEvent.type(within(row).getByPlaceholderText('Quantity'), '3');
+    await userEvent.clear(within(row).getByPlaceholderText('Unit'));
+    await userEvent.type(within(row).getByPlaceholderText('Unit'), 'GJ');
+
+    await waitFor(() => {
+      expect(within(row).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
+      expect(within(row).getByText('Natural gas usage is in GJ, but the available factor uses m3.')).toBeInTheDocument();
+    });
+    expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
   it('saves electricity rows missing province as requiring review', async () => {
@@ -872,7 +954,7 @@ describe('ExcelInputTable empty activity row UX', () => {
         expect.objectContaining({
           activityType: 'DIESEL',
           quantity: 100,
-          unit: 'liters',
+          unit: 'L',
         }),
       );
     });
@@ -945,7 +1027,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     const row = await addValidDieselRow('100');
     await userEvent.click(within(row).getByRole('button', { name: /Clear draft row 1/i }));
 
-    expect(screen.getByText('No activity rows.')).toBeInTheDocument();
+    expect(screen.getByText('No manual activity rows yet.')).toBeInTheDocument();
     expect(createActivityData).not.toHaveBeenCalled();
   });
 

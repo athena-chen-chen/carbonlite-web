@@ -106,11 +106,17 @@ export function getFactorJurisdiction(item: ConversionFactorItem) {
 export function getFactorTraceability(item: ConversionFactorItem) {
   return {
     jurisdiction: getFactorJurisdiction(item),
+    factorSet: formatFactorSetLabel(item.factorSet),
     sourceAuthority: formatPilotSourceAuthority(item),
     sourceDocument: formatPilotSourceDocument(item),
     sourceYear: item.sourceYear ?? null,
+    effectiveYear: item.effectiveYear ?? item.sourceYear ?? null,
     sourceUrl: item.sourceUrl ?? '',
     factorVersion: formatPilotFactorVersion(item),
+    factorStatus: isPilotDefaultFactor(item)
+      ? formatPilotVerification(item)
+      : formatFactorStatusLabel(item.factorStatus || item.verificationStatus),
+    boundary: item.boundary || '',
     assumptions: formatPilotAssumptions(item),
     methodology: item.methodology || '',
     confidenceLevel: formatPilotConfidence(item),
@@ -153,7 +159,16 @@ function isPlaceholderElectricityFactor(item: ConversionFactorItem) {
 }
 
 function isPilotDefaultFactor(item: ConversionFactorItem) {
+  if (isOfficialReferenceFactor(item)) return false;
+  const factorSet = String(item.factorSet ?? '').trim().toUpperCase();
+  if (factorSet === 'PILOT_DEFAULT_V0_1') return true;
   return isSystemFactor(item) || String(item.sourceAuthority ?? '').toLowerCase().includes('carbonlite');
+}
+
+function isOfficialReferenceFactor(item: Pick<ConversionFactorItem, 'factorSet' | 'sourceAuthority' | 'sourceName'>) {
+  const factorSet = String(item.factorSet ?? '').trim().toUpperCase();
+  const source = `${item.sourceAuthority ?? ''} ${item.sourceName ?? ''}`.toLowerCase();
+  return factorSet.startsWith('ECCC_REFERENCE') || source.includes('environment and climate change canada');
 }
 
 function isFuelFactor(item: Pick<ConversionFactorItem, 'activityType'>) {
@@ -186,6 +201,7 @@ function formatPilotFactorVersion(item: ConversionFactorItem) {
 
 function formatPilotConfidence(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) return 'Tracked Metric · No Emissions Factor Required';
+  if (isOfficialReferenceFactor(item)) return formatCredibilityLabel(item.confidence || item.confidenceLevel) || 'High';
   if (isElectricityFactor(item) && isPilotDefaultFactor(item)) return 'Pilot Estimate';
   if (isScope3Factor(item) && isPilotDefaultFactor(item)) return 'Pilot Estimate';
   if (isFuelFactor(item) && isPilotDefaultFactor(item)) return 'Medium — Engineering Estimate';
@@ -201,6 +217,9 @@ function formatPilotConfidence(item: ConversionFactorItem) {
 
 function formatPilotVerification(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) return 'Tracked Metric · No Emissions Factor Required';
+  if (isOfficialReferenceFactor(item)) {
+    return formatFactorStatusLabel(item.factorStatus || item.verificationStatus) || 'Active';
+  }
   if (isScope3Factor(item) && isPilotDefaultFactor(item)) {
     return 'Internal Review Required · Consultant Review Recommended';
   }
@@ -221,6 +240,10 @@ function formatPilotAssumptions(item: ConversionFactorItem) {
     return 'Water is tracked as an operational metric and excluded from GHG emissions totals unless a reviewed water emissions factor is provided.';
   }
 
+  if (isOfficialReferenceFactor(item)) {
+    return item.assumptions || 'Official reference factor stored separately from CarbonLite pilot defaults.';
+  }
+
   if (isElectricityFactor(item) && isPilotDefaultFactor(item)) {
     return 'Pilot-stage default electricity factor. Uses jurisdiction-specific electricity factor and latest available prior-year factor where no reporting-year factor exists. Replace with reviewed official or consultant-approved factor before formal reporting.';
   }
@@ -239,6 +262,10 @@ function formatPilotAssumptions(item: ConversionFactorItem) {
 function formatModalReviewGuidance(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) {
     return 'Tracked Metric · No Emissions Factor Required';
+  }
+
+  if (isOfficialReferenceFactor(item)) {
+    return 'Official reference factor. Confirm reporting boundary and applicability before formal use.';
   }
 
   if (isScope3Factor(item)) {
@@ -284,6 +311,11 @@ function formatFactorUnitDisplay(item: Pick<ConversionFactorItem, 'resultUnit' |
   return `${resultUnit}/${singularUnit(item.unit)}`;
 }
 
+function formatInputUnitDisplay(value?: string | null) {
+  const unit = normalizeUnitForDisplay(value);
+  return unit.status === 'valid' ? unit.value : String(value ?? '').trim() || '-';
+}
+
 function singularUnit(unit?: string | null) {
   const value = String(unit ?? '').trim();
   const normalized = value.toLowerCase();
@@ -314,6 +346,7 @@ function formatActivityTypeDisplay(value?: string | null) {
 
 function formatFactorNameDisplay(item: ConversionFactorItem) {
   if (!isSystemFactor(item) && item.name) return getFactorDisplayName(item.name);
+  if (isOfficialReferenceFactor(item) && item.name) return getFactorDisplayName(item.name);
 
   if (isElectricityFactor(item)) {
     const jurisdiction = getFactorJurisdiction(item);
@@ -389,6 +422,7 @@ function formatMethodologyDisplay(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) {
     return 'Water usage is tracked as an operational metric. CarbonLite does not calculate water-related emissions by default because water emission factors vary by municipality, treatment process, and reporting methodology.';
   }
+  if (isOfficialReferenceFactor(item)) return item.methodology || item.assumptions || '';
   if (isPilotDefaultFactor(item)) return formatPilotAssumptions(item);
   return item.methodology || '';
 }
@@ -397,10 +431,39 @@ function formatNotesDisplay(item: ConversionFactorItem) {
   if (isWaterTrackedFactor(item)) {
     return 'Tracked metric only. Not included in emissions totals unless a reviewed water factor is configured.';
   }
+  if (isOfficialReferenceFactor(item)) return item.notes || '';
   if (isPilotDefaultFactor(item)) {
     return 'CarbonLite does not certify emissions. Replace pilot-stage defaults with reviewed official or consultant-approved factors before formal reporting.';
   }
   return item.notes || '';
+}
+
+function formatFactorSetLabel(value?: string | null) {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (!normalized) return '';
+  if (normalized === 'PILOT_DEFAULT_V0_1') return 'Pilot default v0.1';
+  const ecccMatch = normalized.match(/^ECCC_REFERENCE_(\d{4})$/);
+  if (ecccMatch) return `ECCC reference ${ecccMatch[1]}`;
+  return normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => (part.length <= 3 ? part : part[0] + part.slice(1).toLowerCase()))
+    .join(' ');
+}
+
+function formatFactorStatusLabel(value?: string | null) {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (!normalized) return '';
+  if (normalized === 'GENERIC_ESTIMATE') return 'Generic estimate';
+  if (normalized === 'REVIEW_RECOMMENDED') return 'Review recommended';
+  if (normalized === 'TRACKED_ONLY') return 'Tracked only';
+  if (normalized === 'INTERNAL_REVIEW_REQUIRED') return 'Internal review required';
+  if (normalized === 'ACTIVE') return 'Active';
+  return formatCredibilityLabel(value) || normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part[0] + part.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function formatTableSourceAuthority(value?: string | null) {
@@ -1084,8 +1147,8 @@ export function ConversionFactorsPage() {
       <div style={pageHeaderStyle}>
         <div>
           <h1 style={{ margin: 0 }}>Conversion Factors</h1>
-          <p style={{ marginTop: 8, color: '#666' }}>
-            Manage the factors used to convert activity data into emissions metrics.
+          <p style={{ marginTop: 8, color: factorsPalette.secondaryText }}>
+            Review the factors used in CarbonLite calculations, including jurisdiction, unit, year, and source.
           </p>
         </div>
         <button
@@ -1111,7 +1174,7 @@ export function ConversionFactorsPage() {
           title="Emission Factors"
           value={summaryCardPlaceholder ?? String(emissionCount)}
           subtitle="Used for CO₂e calculations"
-          accent="#10b981"
+          accent="#047857"
         />
 
         <SummaryCard
@@ -1119,7 +1182,7 @@ export function ConversionFactorsPage() {
           title="Default Factors"
           value={summaryCardPlaceholder ?? String(defaultCount)}
           subtitle="System-provided starter library"
-          accent="#3b82f6"
+          accent="#475569"
         />
 
         <SummaryCard
@@ -1127,7 +1190,7 @@ export function ConversionFactorsPage() {
           title="Activity Types"
           value={summaryCardPlaceholder ?? String(activityTypesCovered)}
           subtitle="Covered data categories"
-          accent="#f59e0b"
+          accent="#B45309"
         />
       </div>
       {loading ? (
@@ -1156,7 +1219,7 @@ export function ConversionFactorsPage() {
         <div className="no-print" style={collapsedFormStyle}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20 }}>Company conversion factors</h2>
-            <p style={{ marginTop: 6, color: '#666' }}>
+            <p style={{ marginTop: 6, color: factorsPalette.secondaryText }}>
               System default factors are already available. Add a company-specific factor only when you need workspace-specific values.
             </p>
           </div>
@@ -1180,7 +1243,7 @@ export function ConversionFactorsPage() {
           <h2 style={{ margin: 0, fontSize: 20 }}>
             {editingId ? 'Edit Company Factor' : 'Add Company Factor'}
           </h2>
-          <p style={{ marginTop: 6, color: '#666' }}>
+          <p style={{ marginTop: 6, color: factorsPalette.secondaryText }}>
             {editingId
               ? 'Update this company-specific factor, then save your changes.'
               : 'Create a company-specific factor. System factors remain read-only and unchanged.'}
@@ -1464,7 +1527,7 @@ export function ConversionFactorsPage() {
         <div style={tableHeaderStyle}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20 }}>Conversion Factor Library</h2>
-            <p style={{ marginTop: 6, color: '#666' }}>
+            <p style={{ marginTop: 6, color: factorsPalette.secondaryText }}>
               Conversion factors should be current, source-backed, and jurisdiction-aware. CarbonLite tracks factor source, year, confidence level, and verification status to support more transparent calculations.
             </p>
           </div>
@@ -1607,10 +1670,13 @@ export function ConversionFactorsPage() {
               <col style={factorJurisdictionColStyle} />
               <col style={factorValueColStyle} />
               <col style={factorInputUnitColStyle} />
+              <col style={factorSetColStyle} />
               <col style={factorSourceAuthorityColStyle} />
               <col style={factorSourceDocumentColStyle} />
               <col style={factorSourceYearColStyle} />
+              <col style={factorSourceYearColStyle} />
               <col style={factorVersionColStyle} />
+              <col style={factorStatusColStyle} />
               <col style={factorConfidenceColStyle} />
               <col style={factorVerificationColStyle} />
               <col style={factorAssumptionsColStyle} />
@@ -1618,16 +1684,19 @@ export function ConversionFactorsPage() {
               <col style={factorActionsColStyle} />
             </colgroup>
             <thead>
-              <tr style={{ background: '#f8fafc' }}>
+              <tr style={{ background: factorsPalette.subtleBackground }}>
                 <th style={thStyle}>Activity Type</th>
                 <th style={thStyle}>Factor</th>
                 <th style={thStyle}>Jurisdiction</th>
                 <th style={thStyle}>Factor Value</th>
                 <th style={thStyle}>Input Unit</th>
+                <th style={thStyle}>Factor Set</th>
                 <th style={thStyle}>Source Authority</th>
                 <th style={thStyle}>Source Document</th>
                 <th style={thStyle}>Source Year</th>
+                <th style={thStyle}>Effective Year</th>
                 <th style={thStyle}>Version</th>
+                <th style={thStyle}>Status</th>
                 <th style={thStyle}>Confidence</th>
                 <th style={thStyle}>Verification</th>
                 <th style={thStyle}>Assumptions</th>
@@ -1638,7 +1707,7 @@ export function ConversionFactorsPage() {
             <tbody>
               {displayedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={14} style={{ padding: 18, textAlign: 'center', color: '#666' }}>
+                  <td colSpan={17} style={{ padding: 18, textAlign: 'center', color: factorsPalette.secondaryText }}>
                     {hasActiveFilters ? (
                       <>
                         <div>No factors match the selected filters.</div>
@@ -1666,7 +1735,10 @@ export function ConversionFactorsPage() {
                         >
                           {formatFactorValueDisplay(item)}
                         </td>
-                        <td style={nowrapCellStyle}>{item.unit}</td>
+                        <td style={nowrapCellStyle}>{formatInputUnitDisplay(item.unit || item.inputUnit)}</td>
+                        <td style={truncateCellStyle} title={traceability.factorSet || undefined}>
+                          {traceability.factorSet || '-'}
+                        </td>
                         <td style={sourceAuthorityCellStyle} title={traceability.sourceAuthority || undefined}>
                           {formatTableSourceAuthority(traceability.sourceAuthority)}
                         </td>
@@ -1674,7 +1746,11 @@ export function ConversionFactorsPage() {
                           {traceability.sourceDocument || '-'}
                         </td>
                         <td style={nowrapCellStyle}>{traceability.sourceYear ?? '-'}</td>
+                        <td style={nowrapCellStyle}>{traceability.effectiveYear ?? '-'}</td>
                         <td style={nowrapCellStyle}>{traceability.factorVersion || '-'}</td>
+                        <td style={truncateCellStyle} title={traceability.factorStatus || undefined}>
+                          {traceability.factorStatus || '-'}
+                        </td>
                         <td style={truncateCellStyle} title={traceability.confidenceLevel || undefined}>
                           {traceability.confidenceLevel || '-'}
                         </td>
@@ -1687,11 +1763,11 @@ export function ConversionFactorsPage() {
                         <td style={factorTypeCellStyle}>
                           {isSystemFactor(item) ? (
                             <span title={getFactorTypeLabel(item)}>
-                              <Badge label={getFactorTypeTableLabel(item)} color="#1d4ed8" background="#dbeafe" />
+                              <Badge label={getFactorTypeTableLabel(item)} color="#475569" background="#F8FAFC" />
                             </span>
                           ) : (
                             <span title={getFactorTypeLabel(item)}>
-                              <Badge label={getFactorTypeTableLabel(item)} color="#047857" background="#dcfce7" />
+                              <Badge label={getFactorTypeTableLabel(item)} color="#047857" background="#ECFDF5" />
                             </span>
                           )}
                         </td>
@@ -1755,7 +1831,7 @@ function SummaryCard({
   title,
   value,
   subtitle,
-  accent = '#111827',
+  accent = factorsPalette.primaryText,
 }: {
   icon: string;
   title: string;
@@ -1766,11 +1842,11 @@ function SummaryCard({
   return (
     <div style={summaryCardStyle}>
       <div style={{ fontSize: 26 }}>{icon}</div>
-      <div style={{ marginTop: 12, color: '#666', fontSize: 14 }}>{title}</div>
+      <div style={{ marginTop: 12, color: factorsPalette.secondaryText, fontSize: 14 }}>{title}</div>
       <div style={{ marginTop: 6, fontSize: 28, fontWeight: 800, color: accent }}>
         {value}
       </div>
-      <div style={{ marginTop: 8, color: '#777', fontSize: 13 }}>{subtitle}</div>
+      <div style={{ marginTop: 8, color: factorsPalette.secondaryText, fontSize: 13 }}>{subtitle}</div>
     </div>
   );
 }
@@ -1783,7 +1859,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label style={{ display: 'block', fontWeight: 600 }}>
+    <label style={{ display: 'block', fontWeight: 700, color: factorsPalette.primaryText }}>
       <span style={{ display: 'block', marginBottom: 6 }}>{label}</span>
       {children}
     </label>
@@ -1810,6 +1886,8 @@ function Badge({
         fontWeight: 700,
         color,
         background,
+        border: `1px solid ${factorsPalette.border}`,
+        lineHeight: 1.4,
       }}
     >
       {label}
@@ -1871,14 +1949,14 @@ function FactorDetailsModal({
         >
           <div style={modalBadgeRowStyle}>
             {isSystemFactor(item) ? (
-              <Badge label={getFactorTypeLabel(item)} color="#1d4ed8" background="#dbeafe" />
+              <Badge label={getFactorTypeLabel(item)} color="#475569" background="#F8FAFC" />
             ) : (
-              <Badge label={getFactorTypeLabel(item)} color="#047857" background="#dcfce7" />
+              <Badge label={getFactorTypeLabel(item)} color="#047857" background="#ECFDF5" />
             )}
             {traceability.verified ? (
-              <Badge label="Verified" color="#047857" background="#dcfce7" />
+              <Badge label="Verified" color="#047857" background="#ECFDF5" />
             ) : (
-              <Badge label="Internal Review Required" color="#b45309" background="#fef3c7" />
+              <Badge label="Internal Review Required" color="#B45309" background="#FFFBEB" />
             )}
           </div>
           {isSystemFactor(item) ? (
@@ -1900,10 +1978,12 @@ function FactorDetailsModal({
               <DetailItem label="Factor Name" value={formatFactorNameDisplay(item)} />
               <DetailItem label="Activity Type" value={formatActivityTypeDisplay(item.activityType)} />
               <DetailItem label="Value" value={formatFactorValueDisplay(item)} />
-              <DetailItem label="Activity Unit" value={item.unit} />
+              <DetailItem label="Activity Unit" value={formatInputUnitDisplay(item.unit || item.inputUnit)} />
               <DetailItem label="Factor Unit" value={formatFactorResultUnitDisplay(item)} />
               <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
               <DetailItem label="Source Year" value={traceability.sourceYear} />
+              <DetailItem label="Effective Year" value={traceability.effectiveYear} />
+              <DetailItem label="Factor Set" value={traceability.factorSet} />
               <DetailItem label="Version" value={traceability.factorVersion} />
               <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
               {isWaterTrackedFactor(item) ? (
@@ -1915,7 +1995,9 @@ function FactorDetailsModal({
               <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
               <DetailItem label="Source Document" value={traceability.sourceDocument} />
               <DetailItem label="Verification Status" value={traceability.verificationStatus} />
+              <DetailItem label="Factor Status" value={traceability.factorStatus} />
               <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
+              <DetailItem label="Boundary" value={traceability.boundary} />
               <DetailItem
                 label="Consultant Review"
                 value={isScope3Factor(item) || isPilotDefaultFactor(item) ? 'Recommended before formal reporting' : 'Use documented review status'}
@@ -1977,7 +2059,7 @@ function DetailItem({
 }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: factorsPalette.infoText }}>
         {label}
       </div>
       <div style={detailValueStyle}>{isMissingDetailValue(value) ? 'Not specified' : value}</div>
@@ -1996,6 +2078,24 @@ const pageHeaderStyle: React.CSSProperties = {
   gap: 16,
   flexWrap: 'wrap',
   marginBottom: 24,
+};
+
+const factorsPalette = {
+  primaryGreen: '#047857',
+  primaryText: '#0F172A',
+  secondaryText: '#64748B',
+  mutedText: '#94A3B8',
+  border: '#E2E8F0',
+  subtleBorder: '#F1F5F9',
+  white: '#FFFFFF',
+  subtleBackground: '#F8FAFC',
+  disabledBackground: '#F1F5F9',
+  successBackground: '#ECFDF5',
+  warningBackground: '#FFFBEB',
+  warningText: '#B45309',
+  errorBackground: '#FEF2F2',
+  errorText: '#B91C1C',
+  infoText: '#475569',
 };
 
 const printHeaderStyle: React.CSSProperties = {
@@ -2022,9 +2122,9 @@ const printFooterStyle: React.CSSProperties = {
 const printButtonStyle: React.CSSProperties = {
   padding: '10px 16px',
   borderRadius: 10,
-  border: '1px solid #10b981',
-  background: '#10b981',
-  color: '#fff',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
+  color: '#334155',
   fontWeight: 700,
   cursor: 'pointer',
 };
@@ -2042,20 +2142,18 @@ const summaryLoadingIndicatorStyle: React.CSSProperties = {
 };
 
 const summaryCardStyle: React.CSSProperties = {
-  borderRadius: 16,
+  borderRadius: 10,
   padding: 20,
-  background: '#fff',
-  border: '1px solid #eee',
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+  background: factorsPalette.white,
+  border: `1px solid ${factorsPalette.border}`,
 };
 
 const formCardStyle: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 16,
-  background: '#fff',
+  border: `1px solid ${factorsPalette.border}`,
+  borderRadius: 12,
+  background: factorsPalette.white,
   padding: 20,
   marginBottom: 20,
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
 };
 
 const collapsedFormStyle: React.CSSProperties = {
@@ -2069,11 +2167,11 @@ const collapsedFormStyle: React.CSSProperties = {
 
 const readOnlyNoticeStyle: React.CSSProperties = {
   ...formCardStyle,
-  color: '#475569',
+  color: factorsPalette.infoText,
   fontSize: 13,
   lineHeight: 1.5,
-  background: '#f8fafc',
-  border: '1px solid #cbd5e1',
+  background: factorsPalette.subtleBackground,
+  border: `1px solid ${factorsPalette.border}`,
 };
 
 const formGridStyle: React.CSSProperties = {
@@ -2085,7 +2183,7 @@ const formGridStyle: React.CSSProperties = {
 const sourceSectionStyle: React.CSSProperties = {
   marginTop: 20,
   paddingTop: 18,
-  borderTop: '1px solid #e5e7eb',
+  borderTop: `1px solid ${factorsPalette.border}`,
 };
 
 const filterBarStyle: React.CSSProperties = {
@@ -2095,8 +2193,8 @@ const filterBarStyle: React.CSSProperties = {
   gap: 10,
   rowGap: 14,
   padding: '12px 16px 14px',
-  borderBottom: '1px solid #e5e7eb',
-  background: '#f8fafc',
+  borderBottom: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.subtleBackground,
 };
 
 const filterActionsStyle: React.CSSProperties = {
@@ -2112,11 +2210,11 @@ const filterActionsStyle: React.CSSProperties = {
 const filterHintStyle: React.CSSProperties = {
   margin: '0 0 12px',
   padding: '10px 12px',
-  color: '#1d4ed8',
+  color: factorsPalette.infoText,
   fontSize: 13,
   fontWeight: 700,
-  background: '#eff6ff',
-  border: '1px solid #bfdbfe',
+  background: factorsPalette.subtleBackground,
+  border: `1px solid ${factorsPalette.border}`,
   borderRadius: 10,
 };
 
@@ -2131,9 +2229,9 @@ const pilotDisclaimerStyle: React.CSSProperties = {
   marginBottom: 20,
   padding: 12,
   borderRadius: 12,
-  border: '1px solid #fde68a',
-  background: '#fffbeb',
-  color: '#92400e',
+  border: '1px solid #FDE68A',
+  background: factorsPalette.warningBackground,
+  color: factorsPalette.warningText,
   fontWeight: 600,
 };
 
@@ -2142,9 +2240,9 @@ const pilotCoverageNoteStyle: React.CSSProperties = {
   marginBottom: 20,
   padding: 10,
   borderRadius: 10,
-  border: '1px solid #bfdbfe',
-  background: '#eff6ff',
-  color: '#1e40af',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.subtleBackground,
+  color: factorsPalette.infoText,
   fontSize: 13,
   fontWeight: 700,
 };
@@ -2153,7 +2251,9 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   borderRadius: 10,
-  border: '1px solid #d1d5db',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
+  color: factorsPalette.primaryText,
   outline: 'none',
 };
 
@@ -2168,16 +2268,16 @@ const checkboxRowStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 8,
-  color: '#444',
+  color: '#334155',
 };
 
 const waterCustomFactorNoticeStyle: React.CSSProperties = {
   marginTop: 12,
   padding: 10,
   borderRadius: 10,
-  border: '1px solid #bfdbfe',
-  background: '#eff6ff',
-  color: '#1e40af',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.subtleBackground,
+  color: factorsPalette.infoText,
   fontSize: 13,
   fontWeight: 700,
 };
@@ -2186,10 +2286,10 @@ function primaryButtonStyle(disabled: boolean): React.CSSProperties {
   return {
     height: 42,
     padding: '0 16px',
-    borderRadius: 10,
-    border: 'none',
-    background: disabled ? '#9ca3af' : '#10b981',
-    color: '#fff',
+    borderRadius: 8,
+    border: disabled ? `1px solid ${factorsPalette.border}` : `1px solid ${factorsPalette.primaryGreen}`,
+    background: disabled ? factorsPalette.disabledBackground : factorsPalette.primaryGreen,
+    color: disabled ? factorsPalette.mutedText : factorsPalette.white,
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -2199,8 +2299,8 @@ const cancelButtonStyle: React.CSSProperties = {
   marginLeft: 10,
   padding: '10px 16px',
   borderRadius: 10,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
   color: '#334155',
   fontWeight: 700,
   cursor: 'pointer',
@@ -2210,8 +2310,8 @@ const filterClearButtonStyle: React.CSSProperties = {
   height: 42,
   padding: '0 14px',
   borderRadius: 10,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
   color: '#334155',
   fontWeight: 700,
   cursor: 'pointer',
@@ -2221,31 +2321,30 @@ const successStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #bbf7d0',
-  background: '#f0fdf4',
-  color: '#166534',
+  border: '1px solid #BBF7D0',
+  background: factorsPalette.successBackground,
+  color: factorsPalette.primaryGreen,
 };
 
 const errorStyle: React.CSSProperties = {
   marginBottom: 16,
   padding: 12,
   borderRadius: 10,
-  border: '1px solid #fecaca',
-  background: '#fef2f2',
-  color: '#991b1b',
+  border: '1px solid #FECACA',
+  background: factorsPalette.errorBackground,
+  color: factorsPalette.errorText,
 };
 
 const tableCardStyle: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 16,
+  border: `1px solid ${factorsPalette.border}`,
+  borderRadius: 12,
   overflow: 'hidden',
-  background: '#fff',
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+  background: factorsPalette.white,
 };
 
 const tableHeaderStyle: React.CSSProperties = {
   padding: 16,
-  borderBottom: '1px solid #eee',
+  borderBottom: `1px solid ${factorsPalette.border}`,
 };
 
 const tableScrollHintStyle: React.CSSProperties = {
@@ -2275,10 +2374,12 @@ const factorNameColStyle: React.CSSProperties = { width: 240 };
 const factorJurisdictionColStyle: React.CSSProperties = { width: 180 };
 const factorValueColStyle: React.CSSProperties = { width: 120 };
 const factorInputUnitColStyle: React.CSSProperties = { width: 150 };
+const factorSetColStyle: React.CSSProperties = { width: 170 };
 const factorSourceAuthorityColStyle: React.CSSProperties = { width: 180 };
 const factorSourceDocumentColStyle: React.CSSProperties = { width: 220 };
 const factorSourceYearColStyle: React.CSSProperties = { width: 120 };
 const factorVersionColStyle: React.CSSProperties = { width: 120 };
+const factorStatusColStyle: React.CSSProperties = { width: 180 };
 const factorConfidenceColStyle: React.CSSProperties = { width: 220 };
 const factorVerificationColStyle: React.CSSProperties = { width: 240 };
 const factorAssumptionsColStyle: React.CSSProperties = { width: 260 };
@@ -2288,8 +2389,8 @@ const factorActionsColStyle: React.CSSProperties = { width: 160 };
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 12px',
-  borderBottom: '1px solid #ddd',
-  color: '#475569',
+  borderBottom: `1px solid ${factorsPalette.border}`,
+  color: factorsPalette.infoText,
   fontSize: 12,
   fontWeight: 800,
   lineHeight: 1.25,
@@ -2301,9 +2402,9 @@ const stickyActionBaseStyle: React.CSSProperties = {
   position: 'sticky',
   right: 0,
   zIndex: 4,
-  background: '#fff',
-  borderLeft: '1px solid #e2e8f0',
-  boxShadow: '-8px 0 12px rgba(15, 23, 42, 0.08)',
+  background: factorsPalette.white,
+  borderLeft: `1px solid ${factorsPalette.border}`,
+  boxShadow: '-8px 0 12px rgba(15, 23, 42, 0.04)',
   width: 160,
   minWidth: 160,
   maxWidth: 160,
@@ -2313,16 +2414,17 @@ const stickyActionThStyle: React.CSSProperties = {
   ...thStyle,
   ...stickyActionBaseStyle,
   zIndex: 5,
-  background: '#f8fafc',
+  background: factorsPalette.subtleBackground,
   textAlign: 'center',
 };
 
 const tdStyle: React.CSSProperties = {
   padding: '7px 12px',
-  borderBottom: '1px solid #eee',
+  borderBottom: `1px solid ${factorsPalette.subtleBorder}`,
   verticalAlign: 'middle',
   fontSize: 13,
   lineHeight: 1.25,
+  color: factorsPalette.primaryText,
 };
 
 const nowrapCellStyle: React.CSSProperties = {
@@ -2334,13 +2436,14 @@ const nowrapCellStyle: React.CSSProperties = {
 
 const factorValueCellStyle: React.CSSProperties = {
   ...tdStyle,
-  color: '#065f46',
+  color: factorsPalette.primaryText,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
   fontSize: 16,
   fontWeight: 900,
   letterSpacing: 0,
+  fontVariantNumeric: 'tabular-nums',
 };
 
 const factorNameCellStyle: React.CSSProperties = {
@@ -2356,7 +2459,7 @@ const sourceAuthorityCellStyle: React.CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  color: '#475569',
+  color: factorsPalette.infoText,
 };
 
 const truncateCellStyle: React.CSSProperties = {
@@ -2364,7 +2467,7 @@ const truncateCellStyle: React.CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  color: '#475569',
+  color: factorsPalette.infoText,
 };
 
 const factorTypeCellStyle: React.CSSProperties = {
@@ -2383,7 +2486,7 @@ const actionsCellStyle: React.CSSProperties = {
 };
 
 const readOnlyActionLabelStyle: React.CSSProperties = {
-  color: '#64748b',
+  color: factorsPalette.secondaryText,
   fontSize: 12,
   fontWeight: 700,
   whiteSpace: 'nowrap',
@@ -2398,9 +2501,9 @@ const overflowButtonStyle: React.CSSProperties = {
   width: 30,
   height: 30,
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
-  color: '#0f172a',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
+  color: factorsPalette.primaryText,
   fontSize: 20,
   lineHeight: 1,
   fontWeight: 800,
@@ -2415,14 +2518,14 @@ const overflowMenuStyle: React.CSSProperties = {
   minWidth: 130,
   padding: 6,
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
-  boxShadow: '0 12px 32px rgba(15, 23, 42, 0.16)',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
+  boxShadow: '0 12px 32px rgba(15, 23, 42, 0.12)',
 };
 
 const lockedMenuLabelStyle: React.CSSProperties = {
   padding: '7px 9px',
-  color: '#64748b',
+  color: factorsPalette.secondaryText,
   fontSize: 12,
   fontWeight: 800,
 };
@@ -2435,7 +2538,7 @@ function menuItemButtonStyle(disabled: boolean): React.CSSProperties {
     borderRadius: 6,
     border: 'none',
     background: 'transparent',
-    color: disabled ? '#9ca3af' : '#0f172a',
+    color: disabled ? factorsPalette.mutedText : factorsPalette.primaryText,
     textAlign: 'left',
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
@@ -2445,16 +2548,16 @@ function menuItemButtonStyle(disabled: boolean): React.CSSProperties {
 function menuItemDangerStyle(disabled: boolean): React.CSSProperties {
   return {
     ...menuItemButtonStyle(disabled),
-    color: disabled ? '#9ca3af' : '#dc2626',
+    color: disabled ? factorsPalette.mutedText : factorsPalette.errorText,
   };
 }
 
 const detailsButtonStyle: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
-  color: '#0f172a',
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
+  color: factorsPalette.primaryText,
   fontSize: 12,
   fontWeight: 700,
   cursor: 'pointer',
@@ -2474,10 +2577,10 @@ const modalBadgeRowStyle: React.CSSProperties = {
 };
 
 const systemFactorNoticeStyle: React.CSSProperties = {
-  border: '1px solid #bfdbfe',
+  border: `1px solid ${factorsPalette.border}`,
   borderRadius: 8,
-  background: '#eff6ff',
-  color: '#1e40af',
+  background: factorsPalette.subtleBackground,
+  color: factorsPalette.infoText,
   padding: '10px 12px',
   marginBottom: 14,
   fontSize: 13,
@@ -2485,10 +2588,10 @@ const systemFactorNoticeStyle: React.CSSProperties = {
 };
 
 const pilotReviewNoticeStyle: React.CSSProperties = {
-  border: '1px solid #bfdbfe',
+  border: '1px solid #FDE68A',
   borderRadius: 8,
-  background: '#eff6ff',
-  color: '#1e40af',
+  background: factorsPalette.warningBackground,
+  color: factorsPalette.warningText,
   padding: '10px 12px',
   marginBottom: 14,
   fontSize: 13,
@@ -2497,15 +2600,15 @@ const pilotReviewNoticeStyle: React.CSSProperties = {
 };
 
 const detailSectionStyle: React.CSSProperties = {
-  border: '1px solid #e2e8f0',
+  border: `1px solid ${factorsPalette.border}`,
   borderRadius: 8,
   padding: 14,
-  background: '#fff',
+  background: factorsPalette.subtleBackground,
 };
 
 const detailSectionTitleStyle: React.CSSProperties = {
   margin: '0 0 12px',
-  color: '#0f172a',
+  color: factorsPalette.primaryText,
   fontSize: 14,
 };
 
@@ -2517,7 +2620,7 @@ const detailSectionGridStyle: React.CSSProperties = {
 
 const detailValueStyle: React.CSSProperties = {
   marginTop: 4,
-  color: '#0f172a',
+  color: factorsPalette.primaryText,
   whiteSpace: 'pre-line',
   overflowWrap: 'anywhere',
   lineHeight: 1.45,
@@ -2541,8 +2644,9 @@ const modalStyle: React.CSSProperties = {
   overflow: 'hidden',
   display: 'flex',
   flexDirection: 'column',
-  borderRadius: 8,
-  background: '#fff',
+  borderRadius: 12,
+  border: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
   boxShadow: '0 24px 70px rgba(15, 23, 42, 0.24)',
 };
 
@@ -2552,8 +2656,8 @@ const modalHeaderStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   gap: 16,
   padding: '20px 24px 16px',
-  borderBottom: '1px solid #e2e8f0',
-  background: '#fff',
+  borderBottom: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
   flexShrink: 0,
   position: 'sticky',
   top: 0,
@@ -2573,16 +2677,16 @@ const modalFooterStyle: React.CSSProperties = {
   justifyContent: 'flex-end',
   flexShrink: 0,
   padding: '16px 24px',
-  borderTop: '1px solid #e2e8f0',
-  background: '#fff',
+  borderTop: `1px solid ${factorsPalette.border}`,
+  background: factorsPalette.white,
 };
 
 const modalCloseStyle: React.CSSProperties = {
   width: 36,
   height: 36,
-  border: '1px solid #cbd5e1',
+  border: `1px solid ${factorsPalette.border}`,
   borderRadius: 6,
-  background: '#fff',
+  background: factorsPalette.white,
   color: '#334155',
   fontSize: 24,
   lineHeight: 1,

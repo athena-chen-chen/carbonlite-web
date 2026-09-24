@@ -12,7 +12,9 @@ export type BulkProvinceToolbarProps = {
   showEligibleCount?: boolean;
   label?: string;
   applyLabel?: string;
+  applyingLabel?: string;
   helperText?: string;
+  disabledReason?: string | null;
   className?: string;
   provinceOptions?: string[];
 };
@@ -26,17 +28,23 @@ export function BulkProvinceToolbar({
   isApplying = false,
   disabled = false,
   showEligibleCount = true,
-  label = 'Set province for electricity records',
-  applyLabel = 'Apply province',
+  label = 'Set province for selected electricity records',
+  applyLabel = 'Set province',
+  applyingLabel = 'Applying...',
   helperText,
+  disabledReason,
   className,
   provinceOptions,
 }: BulkProvinceToolbarProps) {
   const effectiveHelperText =
     helperText ??
+    disabledReason ??
     (eligibleCount === 0
-      ? 'No selected electricity records need province.'
-      : 'Apply a province to selected electricity records that need province-specific factor matching.');
+      ? 'No selected electricity records.'
+      : 'Apply a province to selected electricity records. Non-electricity records will be ignored.');
+  const shouldShowDisabledReason = Boolean(
+    disabledReason && disabledReason !== effectiveHelperText && selectedCount > 0,
+  );
   const applyDisabled =
     disabled ||
     isApplying ||
@@ -49,6 +57,7 @@ export function BulkProvinceToolbar({
       <div style={labelGroupStyle}>
         <span style={labelStyle}>{label}</span>
         <span style={helperTextStyle}>{effectiveHelperText}</span>
+        {shouldShowDisabledReason ? <span style={disabledReasonStyle}>{disabledReason}</span> : null}
       </div>
       <ProvinceSelect
         value={selectedProvince}
@@ -62,9 +71,10 @@ export function BulkProvinceToolbar({
         type="button"
         onClick={onApply}
         disabled={applyDisabled}
+        title={applyDisabled ? disabledReason ?? undefined : undefined}
         style={buttonStyle(!applyDisabled)}
       >
-        {isApplying ? 'Applying...' : applyLabel}
+        {isApplying ? applyingLabel : applyLabel}
       </button>
       <span style={countStyle}>{formatCountMessage(selectedCount, eligibleCount, showEligibleCount)}</span>
     </div>
@@ -76,10 +86,17 @@ function formatCountMessage(
   eligibleCount?: number,
   showEligibleCount = true,
 ) {
-  const selectedLabel = selectedCount === 0 ? 'No records selected' : `${selectedCount} selected`;
+  const selectedLabel =
+    selectedCount === 0
+      ? 'No records selected.'
+      : `${selectedCount} record${selectedCount === 1 ? '' : 's'} selected`;
 
   if (showEligibleCount && eligibleCount !== undefined) {
-    return `${selectedLabel} · ${eligibleCount} electricity records eligible`;
+    if (selectedCount === 0) {
+      return selectedLabel;
+    }
+
+    return `${selectedLabel} · ${eligibleCount} electricity record${eligibleCount === 1 ? '' : 's'} selected.`;
   }
 
   return selectedLabel;
@@ -90,6 +107,10 @@ const toolbarStyle: CSSProperties = {
   alignItems: 'center',
   gap: 10,
   flexWrap: 'wrap',
+  padding: '12px 14px',
+  borderRadius: 12,
+  border: '1px solid #E2E8F0',
+  background: '#F8FAFC',
 };
 
 const labelGroupStyle: CSSProperties = {
@@ -111,6 +132,13 @@ const helperTextStyle: CSSProperties = {
   lineHeight: 1.25,
 };
 
+const disabledReasonStyle: CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: 1.25,
+};
+
 const countStyle: CSSProperties = {
   color: '#64748b',
   fontSize: 12,
@@ -122,8 +150,8 @@ function buttonStyle(enabled: boolean): CSSProperties {
   return {
     padding: '8px 12px',
     borderRadius: 8,
-    border: enabled ? '1px solid #2563eb' : '1px solid #d1d5db',
-    background: enabled ? '#2563eb' : '#f3f4f6',
+    border: enabled ? '1px solid #047857' : '1px solid #E2E8F0',
+    background: enabled ? '#047857' : '#F1F5F9',
     color: enabled ? '#fff' : '#6b7280',
     cursor: enabled ? 'pointer' : 'not-allowed',
     fontWeight: 700,

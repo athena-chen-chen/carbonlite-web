@@ -184,11 +184,11 @@ function toTitleCase(value: string) {
 
 function badgeStyle(tone: BadgeTone, size: BadgeSize, variant: BadgeVariant): CSSProperties {
   const palette = {
-    success: { color: '#047857', background: '#d1fae5', border: '#bbf7d0' },
-    warning: { color: '#92400e', background: '#fef3c7', border: '#fde68a' },
-    danger: { color: '#be123c', background: '#fff1f2', border: '#fecdd3' },
-    info: { color: '#0369a1', background: '#dbeafe', border: '#bfdbfe' },
-    neutral: { color: '#475569', background: '#f1f5f9', border: '#e2e8f0' },
+    success: { color: '#047857', background: '#ECFDF5', border: '#BBF7D0' },
+    warning: { color: '#B45309', background: '#FFFBEB', border: '#FDE68A' },
+    danger: { color: '#B91C1C', background: '#FEF2F2', border: '#FECACA' },
+    info: { color: '#475569', background: '#F8FAFC', border: '#E2E8F0' },
+    neutral: { color: '#475569', background: '#F1F5F9', border: '#E2E8F0' },
   }[tone];
   const isSolid = variant === 'solid';
   const isOutline = variant === 'outline';

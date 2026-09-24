@@ -11,7 +11,7 @@ const navItems = [
   { to: '/data-collection-guide', label: 'Data Guide' },
   { to: '/data-records', label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
   { to: '/conversion-factors', label: 'Factors' },
-  { to: '/metrics-summary', label: 'Calculation Review' },
+  { to: '/metrics-summary', label: 'Calculation Review', activePaths: ['/calculation-review'] },
   { to: '/reports', label: 'Reports' },
 ] as const;
 
@@ -119,13 +119,11 @@ export function AppNav() {
   const settingsMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const userMenuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const isSettingsSectionActive = settingsNavItems.some(
-    (item) => location.pathname === item.to,
+  const isSettingsSectionActive = settingsNavItems.some((item) =>
+    isNavItemActive(item, location.pathname),
   );
   const isAdminSectionActive = adminNavItems.some(
-    (item) =>
-      location.pathname === item.to ||
-      ('activePaths' in item && item.activePaths.includes(location.pathname)),
+    (item) => isNavItemActive(item, location.pathname),
   );
 
   useEffect(() => {
@@ -208,11 +206,7 @@ export function AppNav() {
                   to={item.to}
                   style={({ isActive }) =>
                     getLinkStyle(
-                      isActive ||
-                        Boolean(
-                          'activePaths' in item &&
-                            item.activePaths.includes(location.pathname),
-                        ),
+                      isActive || isNavItemActive(item, location.pathname),
                     )
                   }
                 >
@@ -250,7 +244,11 @@ export function AppNav() {
                           key={item.to}
                           to={item.to}
                           role="menuitem"
-                          style={({ isActive }) => getAdminMenuLinkStyle(isActive)}
+                          style={({ isActive }) =>
+                            getAdminMenuLinkStyle(
+                              isActive || isNavItemActive(item, location.pathname),
+                            )
+                          }
                         >
                           {item.label}
                         </NavLink>
@@ -284,11 +282,7 @@ export function AppNav() {
                           role="menuitem"
                           style={({ isActive }) =>
                             getAdminMenuLinkStyle(
-                              isActive ||
-                                Boolean(
-                                  'activePaths' in item &&
-                                    item.activePaths.includes(location.pathname),
-                                ),
+                              isActive || isNavItemActive(item, location.pathname),
                             )
                           }
                         >
@@ -359,6 +353,23 @@ export function AppNav() {
         ) : null}
       </div>
     </header>
+  );
+}
+
+type NavItemWithActivePaths = {
+  to: string;
+  activePaths?: readonly string[];
+};
+
+function isRouteMatch(pathname: string, routePath: string) {
+  if (routePath === '/') return pathname === '/';
+  return pathname === routePath || pathname.startsWith(`${routePath}/`);
+}
+
+function isNavItemActive(item: NavItemWithActivePaths, pathname: string) {
+  return (
+    isRouteMatch(pathname, item.to) ||
+    item.activePaths?.some((activePath) => isRouteMatch(pathname, activePath)) === true
   );
 }
 

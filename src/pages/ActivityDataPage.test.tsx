@@ -1,8 +1,9 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import {
   bulkDeleteActivityData,
+  bulkUpdateActivityProvince,
   deleteActivityData,
   getAllActivityData,
   getActivityDataList,
@@ -19,6 +20,7 @@ vi.mock('../components/ExcelInputTable', () => ({
 
 vi.mock('../services/activityData', () => ({
   bulkDeleteActivityData: vi.fn(),
+  bulkUpdateActivityProvince: vi.fn(),
   createActivityData: vi.fn(),
   deleteActivityData: vi.fn(),
   getAllActivityData: vi.fn(),
@@ -157,11 +159,30 @@ describe('ActivityDataPage delete flows', () => {
     );
   }
 
+  async function readBlobAsText(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+  }
+
   function InputDataRouteProbe() {
     const location = useLocation();
     const routeState = location.state as { focusInputMethod?: string } | null;
 
     return <div>Input Data focus: {routeState?.focusInputMethod ?? 'none'}</div>;
+  }
+
+  function DocumentFilterControl() {
+    const [, setSearchParams] = useSearchParams();
+
+    return (
+      <button type="button" onClick={() => setSearchParams({ documentId: 'doc-utility' })}>
+        Apply document filter
+      </button>
+    );
   }
 
   async function clickFirstRowDeleteAction() {
@@ -240,6 +261,26 @@ describe('ActivityDataPage delete flows', () => {
     expect(await screen.findByText('Diesel')).toBeInTheDocument();
   });
 
+  it('shows Site / Facility values and groups blank records as Unassigned', async () => {
+    mockActivityRecords([
+      {
+        ...records[0],
+        id: 'activity-facility',
+        facility: 'Calgary Office',
+      },
+      {
+        ...records[1],
+        id: 'activity-unassigned',
+        facilityId: '',
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('Calgary Office')).toBeInTheDocument();
+    expect(screen.getByText('Unassigned')).toBeInTheDocument();
+  });
+
   it('shows activity records in read-only mode for viewers', async () => {
     localStorage.setItem(
       'currentUser',
@@ -255,6 +296,13 @@ describe('ActivityDataPage delete flows', () => {
     expect(screen.queryByRole('button', { name: /^Delete Selected/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
+  });
+
+  it('shows no selected rows in the Set Province panel before selection', async () => {
+    renderPage();
+
+    expect(await screen.findByText('No records selected.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
   });
 
   it('requires admins to type RESET DEMO DATA before confirming demo data reset', async () => {
@@ -313,7 +361,7 @@ describe('ActivityDataPage delete flows', () => {
     window.removeEventListener('carbonlite:demo-data-reset', resetEventListener);
   });
 
-  it('uses neutral disabled state when no rows are selected and red enabled state when selected', async () => {
+  it('uses restrained danger styling for Delete Selected states', async () => {
     renderPage();
 
     const deleteButton = await screen.findByRole('button', {
@@ -322,8 +370,8 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(deleteButton).toBeDisabled();
     expect(deleteButton).toHaveStyle({
-      background: '#f3f4f6',
-      color: '#6b7280',
+      background: '#f1f5f9',
+      color: '#94a3b8',
     });
 
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
@@ -334,9 +382,489 @@ describe('ActivityDataPage delete flows', () => {
     expect(
       screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
     ).toHaveStyle({
-      background: '#dc2626',
-      color: '#fff',
+      background: '#ffffff',
+      color: '#b91c1c',
     });
+  });
+
+  it('sets province for selected electricity records and ignores non-electricity records', async () => {
+    vi.mocked(bulkUpdateActivityProvince).mockResolvedValue({ updatedCount: 3 } as any);
+    mockActivityRecords([
+      {
+        id: 'electricity-null-province',
+        activityType: 'Power',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: null,
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'electricity-dash-province',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-16',
+        quantity: 150,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '-',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'natural-gas-missing-province',
+        activityType: 'NATURAL_GAS',
+        recordDate: '2026-05-17',
+        quantity: 10,
+        unit: 'm3',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'electricity-has-province',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-18',
+        quantity: 100,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    const nullProvinceRow = await screen.findByTestId('activity-row-electricity-null-province');
+    const dashProvinceRow = await screen.findByTestId('activity-row-electricity-dash-province');
+    const naturalGasRow = await screen.findByTestId('activity-row-natural-gas-missing-province');
+    const existingProvinceRow = await screen.findByTestId('activity-row-electricity-has-province');
+
+    await userEvent.click(within(nullProvinceRow).getByRole('checkbox'));
+    await userEvent.click(within(dashProvinceRow).getByRole('checkbox'));
+    await userEvent.click(within(naturalGasRow).getByRole('checkbox'));
+    await userEvent.click(within(existingProvinceRow).getByRole('checkbox'));
+
+    expect(screen.getByText('4 records selected · 3 electricity records selected.')).toBeInTheDocument();
+
+    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
+    expect(setProvinceButton).toBeDisabled();
+
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'British Columbia',
+    );
+
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+    await userEvent.click(screen.getByRole('button', { name: /^Update Province$/i }));
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(
+        ['electricity-null-province', 'electricity-dash-province', 'electricity-has-province'],
+        'BC',
+      );
+    });
+    expect(updateActivityData).not.toHaveBeenCalled();
+    expect(await screen.findByText('Province updated for 3 electricity records.')).toBeInTheDocument();
+  });
+
+  it('enables Set Province for 15 selected records when 3 selected electricity records already have province', async () => {
+    vi.mocked(bulkUpdateActivityProvince).mockResolvedValue({ updatedCount: 3 } as any);
+    const fifteenRecords = Array.from({ length: 15 }, (_, index) => {
+      const rowNumber = index + 1;
+      const electricityRows: Record<number, Partial<(typeof records)[number]>> = {
+        2: {
+          id: 'electricity-existing-bc',
+          activityType: 'ELECTRICITY',
+          jurisdictionRegion: 'British Columbia',
+        },
+        7: {
+          id: 'electricity-existing-ab-1',
+          activityType: 'ELECTRICITY',
+          jurisdictionRegion: 'Alberta',
+        },
+        13: {
+          id: 'electricity-existing-ab-2',
+          activityType: 'ELECTRICITY',
+          jurisdictionRegion: 'Alberta',
+        },
+      };
+
+      return {
+        id: `non-electricity-${rowNumber}`,
+        activityType: rowNumber % 2 === 0 ? 'NATURAL_GAS' : 'DIESEL',
+        recordDate: '2026-05-15',
+        quantity: rowNumber,
+        unit: rowNumber % 2 === 0 ? 'm3' : 'L',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '',
+        sourceType: 'MANUAL',
+        ...electricityRows[rowNumber],
+      };
+    });
+    const refreshedFifteenRecords = fifteenRecords.map((record) =>
+      ['electricity-existing-bc', 'electricity-existing-ab-1', 'electricity-existing-ab-2'].includes(
+        String(record.id),
+      )
+        ? { ...record, jurisdictionRegion: 'Alberta' }
+        : record,
+    );
+    vi.mocked(getAllActivityData)
+      .mockResolvedValueOnce(fifteenRecords as any)
+      .mockResolvedValueOnce(refreshedFifteenRecords as any);
+    vi.mocked(getActivityDataList).mockResolvedValue({
+      items: fifteenRecords as any,
+      page: 1,
+      pageSize: 20,
+      total: fifteenRecords.length,
+      totalPages: 1,
+    });
+
+    renderPage();
+
+    const britishColumbiaRow = await screen.findByTestId('activity-row-electricity-existing-bc');
+    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+
+    expect(screen.getByText('15 records selected · 3 electricity records selected.')).toBeInTheDocument();
+
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+    await userEvent.click(screen.getByRole('button', { name: /^Update Province$/i }));
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(
+        ['electricity-existing-bc', 'electricity-existing-ab-1', 'electricity-existing-ab-2'],
+        'AB',
+      );
+    });
+
+    expect(await screen.findByText('Province updated for 3 electricity records.')).toBeInTheDocument();
+    expect(screen.getByText('15 records selected · 3 electricity records selected.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+    ).toHaveValue('');
+    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
+
+    for (const rowId of [
+      'electricity-existing-bc',
+      'electricity-existing-ab-1',
+      'electricity-existing-ab-2',
+    ]) {
+      const row = await screen.findByTestId(`activity-row-${rowId}`);
+      expect(within(row).getByRole('checkbox')).toBeChecked();
+      expect(within(row).getByText('Alberta')).toBeInTheDocument();
+    }
+
+    expect(within(britishColumbiaRow).queryByText('British Columbia')).not.toBeInTheDocument();
+  });
+
+  it('keeps selected activity records when province, columns, or unrelated UI state changes', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Diesel');
+    await user.click(screen.getAllByRole('checkbox')[0]);
+
+    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: /^Columns$/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Source Reference/i }));
+
+    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+
+    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeEnabled();
+  });
+
+  it('clears selected activity records when the document filter context actually changes', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/activity-records']}>
+        <AppDialogProvider>
+          <DocumentFilterControl />
+          <ActivityDataPage />
+        </AppDialogProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Diesel');
+    await user.click(screen.getAllByRole('checkbox')[0]);
+
+    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Apply document filter/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('No records selected.')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
+      expect(screen.getByText('Electricity')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps Set Province disabled when selected rows contain no electricity records', async () => {
+    mockActivityRecords([
+      {
+        id: 'natural-gas-selected',
+        activityType: 'NATURAL_GAS',
+        recordDate: '2026-05-15',
+        quantity: 10,
+        unit: 'm3',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'diesel-selected',
+        activityType: 'DIESEL',
+        recordDate: '2026-05-16',
+        quantity: 50,
+        unit: 'L',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '',
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    const naturalGasRow = await screen.findByTestId('activity-row-natural-gas-selected');
+    const dieselRow = await screen.findByTestId('activity-row-diesel-selected');
+    await userEvent.click(within(naturalGasRow).getByRole('checkbox'));
+    await userEvent.click(within(dieselRow).getByRole('checkbox'));
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    expect(screen.getByText('2 records selected · 0 electricity records selected.')).toBeInTheDocument();
+    expect(screen.getByText('No selected electricity records.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
+  });
+
+  it('sets province for a selected electricity record with no province', async () => {
+    vi.mocked(bulkUpdateActivityProvince).mockResolvedValue({ updatedCount: 1 } as any);
+    mockActivityRecords([
+      {
+        id: 'electricity-missing-province-1',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: null,
+        province: null,
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-electricity-missing-province-1');
+    await userEvent.click(within(row).getByRole('checkbox'));
+
+    expect(screen.getByText('1 record selected · 1 electricity record selected.')).toBeInTheDocument();
+
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(
+        ['electricity-missing-province-1'],
+        'AB',
+      );
+    });
+  });
+
+  it('confirms before updating selected electricity records that already have province', async () => {
+    vi.mocked(bulkUpdateActivityProvince).mockResolvedValue({ updatedCount: 1 } as any);
+    mockActivityRecords([
+      {
+        id: 'electricity-has-province-1',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        province: null,
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-electricity-has-province-1');
+    await userEvent.click(within(row).getByRole('checkbox'));
+
+    expect(screen.getByText('1 record selected · 1 electricity record selected.')).toBeInTheDocument();
+
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+
+    expect(await screen.findByRole('dialog', { name: /Update province/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 selected electricity record already has a province/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Their existing province will be replaced with Alberta/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Update Province$/i }));
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(['electricity-has-province-1'], 'AB');
+    });
+  });
+
+  it('does not update existing province records when overwrite confirmation is cancelled', async () => {
+    mockActivityRecords([
+      {
+        id: 'electricity-has-province-cancel',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'British Columbia',
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-electricity-has-province-cancel');
+    await userEvent.click(within(row).getByRole('checkbox'));
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /^Set province$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Cancel$/i }));
+
+    expect(bulkUpdateActivityProvince).not.toHaveBeenCalled();
+  });
+
+  it('maps selected checkbox rows back to records using normalized row ids', async () => {
+    vi.mocked(bulkUpdateActivityProvince).mockResolvedValue({ updatedCount: 1 } as any);
+    mockActivityRecords([
+      {
+        id: 12345,
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '',
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-12345');
+    await userEvent.click(within(row).getByRole('checkbox'));
+
+    expect(screen.getByText('1 record selected · 1 electricity record selected.')).toBeInTheDocument();
+
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(['12345'], 'AB');
+    });
+  });
+
+  it('allows customer users to set province without edit or delete controls', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'user@example.com',
+        role: 'USER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    );
+    vi.mocked(bulkUpdateActivityProvince).mockResolvedValue({ updatedCount: 1 } as any);
+    mockActivityRecords([
+      {
+        id: 'electricity-user-missing-province',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: '',
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-electricity-user-missing-province');
+    expect(screen.queryByRole('button', { name: /^Add data$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Delete Selected/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('checkbox'));
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+      'Alberta',
+    );
+
+    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
+    expect(setProvinceButton).toBeEnabled();
+
+    await userEvent.click(setProvinceButton);
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(
+        ['electricity-user-missing-province'],
+        'AB',
+      );
+    });
+    expect(updateActivityData).not.toHaveBeenCalled();
+    expect(await screen.findByText('Province updated for 1 electricity record.')).toBeInTheDocument();
   });
 
   it('deletes one selected record and removes it from the UI after backend refresh', async () => {
@@ -452,6 +980,98 @@ describe('ActivityDataPage delete flows', () => {
     expect(
       screen.getByText('utility.pdf · Utility bill usage · Page 1 · Line item 3'),
     ).toBeInTheDocument();
+  });
+
+  it('exports selected data records as user-facing CSV without internal ids', async () => {
+    const user = userEvent.setup();
+    const exportedBlobs: Blob[] = [];
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation((blob) => {
+        exportedBlobs.push(blob as Blob);
+        return 'blob:activity-records';
+      });
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const clickAnchor = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    renderPage();
+
+    await screen.findByText('Diesel');
+    await user.click(screen.getAllByRole('checkbox')[1]);
+    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Export selected records/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickAnchor).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:activity-records');
+    expect(await screen.findByText('Export prepared.')).toBeInTheDocument();
+
+    const csv = await readBlobAsText(exportedBlobs[0]);
+    expect(csv).toContain('Record Date,Activity Type,Quantity,Unit,Country,Province,Site / Facility');
+    expect(csv).toContain('Diesel');
+    expect(csv).not.toContain('Electricity');
+    expect(csv).not.toContain('activity-1');
+    expect(csv).not.toContain('org-1');
+    expect(csv).not.toContain('doc-manual');
+  });
+
+  it('exports current filtered records only', async () => {
+    const user = userEvent.setup();
+    const exportedBlobs: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exportedBlobs.push(blob as Blob);
+      return 'blob:filtered-records';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    mockActivityRecords([
+      {
+        ...records[0],
+        matchingStatus: 'MATCHED',
+        reportTreatment: 'INCLUDED',
+        calculationStatus: 'CALCULATED',
+      },
+      {
+        ...records[1],
+        id: 'activity-water',
+        activityType: 'WATER',
+        quantity: 100,
+        unit: 'm3',
+        matchingStatus: 'TRACKED_ONLY',
+        reportTreatment: 'TRACKED_ONLY',
+        calculationStatus: 'TRACKED_ONLY',
+        scope: 'TRACKED_METRIC',
+      },
+    ] as any);
+
+    renderPage();
+
+    await screen.findByText('Diesel');
+    await user.selectOptions(screen.getByRole('combobox', { name: /Show/i }), 'tracked-metric');
+    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Export current filtered records/i }));
+
+    const csv = await readBlobAsText(exportedBlobs[0]);
+    expect(csv).toContain('Water');
+    expect(csv).toContain('Tracked Only');
+    expect(csv).not.toContain('Diesel');
+  });
+
+  it('shows a friendly message instead of downloading when there are no records', async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL');
+    mockActivityRecords([]);
+
+    renderPage();
+
+    await screen.findByText('No saved activity records yet. Add data from Input Data to create records for review.');
+    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Export all records/i }));
+
+    expect(await screen.findByText('No records available to export.')).toBeInTheDocument();
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it('shows horizontal scroll hint as text above the records table', async () => {
@@ -968,6 +1588,51 @@ describe('ActivityDataPage delete flows', () => {
         'activity-date-edit',
         expect.objectContaining({
           recordDate: '2026-07-20',
+        }),
+      );
+    });
+  });
+
+  it('preserves an existing edit unit until activity type changes', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+    );
+    vi.mocked(updateActivityData).mockResolvedValue({} as any);
+    mockActivityRecords([
+      {
+        id: 'activity-natural-gas-gj-edit',
+        activityType: 'NATURAL_GAS',
+        recordDate: '2026-07-20T00:00:00.000Z',
+        quantity: 3,
+        unit: 'GJ',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        sourceType: 'MANUAL',
+        sourceReference: 'manual',
+      },
+    ] as any);
+
+    renderPage();
+
+    await screen.findByTestId('activity-row-activity-natural-gas-gj-edit');
+    await userEvent.click(screen.getByLabelText(/More actions for Natural Gas 2026-07-20/i));
+    await userEvent.click(screen.getByRole('menuitem', { name: /^Edit$/i }));
+
+    const unitInput = screen.getByLabelText('Unit') as HTMLInputElement;
+    expect(unitInput).toHaveValue('GJ');
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Activity Type/i }), 'ELECTRICITY');
+    expect(unitInput).toHaveValue('kWh');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(updateActivityData).toHaveBeenCalledWith(
+        'activity-natural-gas-gj-edit',
+        expect.objectContaining({
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
         }),
       );
     });

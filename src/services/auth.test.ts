@@ -1,9 +1,14 @@
 import {
   canClearActivityRecords,
+  canEditDraftRows,
   canImportActivityRecords,
+  canImportDraftRows,
   canManageActivityRecords,
   canManageConversionFactors,
+  canSetProvinceForActivityRecords,
+  canUploadFiles,
   getAccountType,
+  getCurrentUser,
   getUserRole,
   isAccountExpired,
   isInternalTestAccount,
@@ -94,6 +99,52 @@ describe('user role permissions', () => {
     expect(canManageConversionFactors(user('OWNER'))).toBe(true);
   });
 
+  it('allows customer contributor roles to upload and import draft rows', () => {
+    expect(canEditDraftRows(user('OWNER'))).toBe(true);
+    expect(canEditDraftRows(user('ADMIN'))).toBe(true);
+    expect(canEditDraftRows(user('EDITOR'))).toBe(true);
+    expect(canEditDraftRows(user('MEMBER'))).toBe(true);
+    expect(canEditDraftRows(user('USER'))).toBe(true);
+    expect(canUploadFiles(user('USER'))).toBe(true);
+    expect(canImportDraftRows(user('USER'))).toBe(true);
+    expect(canEditDraftRows(user('VIEWER'))).toBe(false);
+    expect(canUploadFiles(user('VIEWER'))).toBe(false);
+    expect(canImportDraftRows(user('VIEWER'))).toBe(false);
+    expect(canEditDraftRows({ email: 'admin@example.com', role: 'ADMIN' })).toBe(false);
+  });
+
+  it('allows customer users to contribute activity data without broader record management access', () => {
+    expect(canSetProvinceForActivityRecords(user('OWNER'))).toBe(true);
+    expect(canSetProvinceForActivityRecords(user('ADMIN'))).toBe(true);
+    expect(canSetProvinceForActivityRecords(user('EDITOR'))).toBe(true);
+    expect(canSetProvinceForActivityRecords(user('MEMBER'))).toBe(true);
+    expect(canSetProvinceForActivityRecords(user('USER'))).toBe(true);
+    expect(canEditDraftRows(user('USER'))).toBe(true);
+    expect(canImportActivityRecords(user('USER'))).toBe(true);
+    expect(canUploadFiles(user('USER'))).toBe(true);
+    expect(canManageActivityRecords(user('USER'))).toBe(false);
+    expect(canSetProvinceForActivityRecords(user('VIEWER'))).toBe(false);
+    expect(
+      canSetProvinceForActivityRecords({
+        email: 'viewer-member@example.com',
+        role: 'USER',
+        membershipRole: 'VIEWER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    ).toBe(false);
+    expect(
+      canUploadFiles({
+        email: 'viewer-member@example.com',
+        role: 'USER',
+        membershipRole: 'VIEWER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    ).toBe(false);
+    expect(canSetProvinceForActivityRecords({ email: 'user@example.com', role: 'USER' })).toBe(false);
+  });
+
   it('keeps pilot reviewers read-only even if a role is misconfigured', () => {
     const reviewer: AuthUser = {
       email: 'reviewer@example.com',
@@ -110,6 +161,10 @@ describe('user role permissions', () => {
 
     [reviewer, misconfiguredAdminReviewer].forEach((account) => {
       expect(canImportActivityRecords(account)).toBe(false);
+      expect(canEditDraftRows(account)).toBe(false);
+      expect(canUploadFiles(account)).toBe(false);
+      expect(canImportDraftRows(account)).toBe(false);
+      expect(canSetProvinceForActivityRecords(account)).toBe(false);
       expect(canManageActivityRecords(account)).toBe(false);
       expect(canClearActivityRecords(account)).toBe(false);
       expect(canManageConversionFactors(account)).toBe(false);
@@ -218,6 +273,95 @@ describe('public signup controls', () => {
     ).rejects.toThrow(
       'This account has been deactivated. Please contact hello@carbonliteapp.ca.',
     );
+  });
+});
+
+describe('login session organization context', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it('stores organization context from a customer admin login response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          accessToken: 'customer-admin-token',
+          user: {
+            email: 'admin@example.com',
+            role: 'ADMIN',
+            accountType: 'CUSTOMER',
+            organizationId: 'org-customer-1',
+            organizationName: 'Customer Workspace',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await login({ email: 'admin@example.com', password: 'Password123!' });
+
+    expect(getCurrentUser()).toMatchObject({
+      email: 'admin@example.com',
+      role: 'ADMIN',
+      accountType: 'CUSTOMER',
+      organizationId: 'org-customer-1',
+      organizationName: 'Customer Workspace',
+    });
+    expect(canImportActivityRecords(getCurrentUser())).toBe(true);
+  });
+
+  it('normalizes equivalent workspace context before saving currentUser', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          accessToken: 'workspace-token',
+          user: {
+            email: 'owner@example.com',
+            role: 'ADMIN',
+            accountType: 'CUSTOMER',
+            workspaceId: 'workspace-1',
+            workspace: { id: 'workspace-1', name: 'Workspace One' },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await login({ email: 'owner@example.com', password: 'Password123!' });
+
+    expect(getCurrentUser()).toMatchObject({
+      email: 'owner@example.com',
+      organizationId: 'workspace-1',
+      organizationName: 'Workspace One',
+    });
+    expect(canImportActivityRecords(getCurrentUser())).toBe(true);
+  });
+
+  it('keeps editable permissions disabled when login response lacks organization context', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          accessToken: 'missing-context-token',
+          user: {
+            email: 'admin@example.com',
+            role: 'ADMIN',
+            accountType: 'CUSTOMER',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await login({ email: 'admin@example.com', password: 'Password123!' });
+
+    expect(getCurrentUser()).toMatchObject({
+      email: 'admin@example.com',
+      role: 'ADMIN',
+      accountType: 'CUSTOMER',
+    });
+    expect(getCurrentUser()?.organizationId).toBeUndefined();
+    expect(canImportActivityRecords(getCurrentUser())).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
-import { canImportActivityRecords, requirePermission } from '../utils/permissions';
+import { canImportDraftRows, requirePermission } from '../utils/permissions';
 import { getCurrentUser } from './auth';
 
 export type ParsedActivity = {
@@ -10,6 +10,14 @@ export type ParsedActivity = {
   unit: string;
   jurisdictionCountry?: string | null;
   jurisdictionRegion?: string | null;
+  facility?: string | null;
+  facilityId?: string | null;
+  facilityName?: string | null;
+  site?: string | null;
+  siteName?: string | null;
+  location?: string | null;
+  branch?: string | null;
+  factory?: string | null;
   sourceType?: string | null;
   sourceReference?: string | null;
   sourceDocumentId?: string | null;
@@ -58,7 +66,7 @@ export class DuplicateDocumentImportError extends Error {
 }
 
 export async function extractDocument(documentId: string) {
-  requirePermission(canImportActivityRecords(getCurrentUser()));
+  requirePermission(canImportDraftRows(getCurrentUser()));
 
   track('EXTRACTION_STARTED', {
     documentCount: 1,
@@ -99,7 +107,7 @@ export async function confirmDocumentImport(
   activities: ParsedActivity[],
   importBatchId?: string,
 ) {
-  requirePermission(canImportActivityRecords(getCurrentUser()));
+  requirePermission(canImportDraftRows(getCurrentUser()));
 
   try {
     const response = await apiFetch<ConfirmImportResponse>('/document-extraction/confirm', {

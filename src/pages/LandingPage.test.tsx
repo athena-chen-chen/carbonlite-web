@@ -85,18 +85,22 @@ describe('LandingPage auth buttons', () => {
     expect(screen.queryByText('Workspace: KACH CANADA LTD.')).not.toBeInTheDocument();
   });
 
-  it('shows updated positioning sections for SMEs, factors, hotspots, and pilot access', () => {
+  it('shows source-data readiness positioning and review-package output', () => {
     renderLanding();
 
     expect(
       screen.getByRole('heading', {
-        name: /messy operational records into traceable emissions insights/i,
+        name: /bills, invoices, and spreadsheets into review-ready emissions data/i,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Data readiness for SMEs/i)).toBeInTheDocument();
-    expect(screen.getByText(/Emission factors should be explainable/i)).toBeInTheDocument();
-    expect(screen.getByText(/Know where to focus first/i)).toBeInTheDocument();
-    expect(screen.getByText(/CarbonLite does not determine carbon credit eligibility/i)).toBeInTheDocument();
+    expect(screen.getByText(/Spend less time cleaning source data/i)).toBeInTheDocument();
+    expect(screen.getByText(/The hard part often starts before the calculation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Know which factor was used/i)).toBeInTheDocument();
+    expect(screen.getByText(/Give reviewers something they can actually work with/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Activity Records/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Calculation Traceability/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Carbon Credit Readiness/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Know where to focus first/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Start with pilot access/i)).toBeInTheDocument();
   });
 });

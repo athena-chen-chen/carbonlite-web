@@ -17,6 +17,7 @@ export type PilotActivityTypeDefinition = {
   provinceRequired: boolean;
   factorRequired: boolean;
   supportedUnits: string[];
+  defaultUnit?: string;
 };
 
 export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
@@ -28,6 +29,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: true,
     factorRequired: true,
     supportedUnits: ['kWh'],
+    defaultUnit: 'kWh',
   },
   {
     value: 'NATURAL_GAS',
@@ -37,6 +39,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['m3', 'GJ'],
+    defaultUnit: 'm3',
   },
   {
     value: 'GASOLINE',
@@ -46,6 +49,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['liters', 'L'],
+    defaultUnit: 'L',
   },
   {
     value: 'DIESEL',
@@ -55,6 +59,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['liters', 'L'],
+    defaultUnit: 'L',
   },
   {
     value: 'AIR_TRAVEL',
@@ -64,6 +69,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['km'],
+    defaultUnit: 'km',
   },
   {
     value: 'HOTEL',
@@ -73,6 +79,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['nights'],
+    defaultUnit: 'nights',
   },
   {
     value: 'GROUND_TRANSPORT',
@@ -82,6 +89,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['km'],
+    defaultUnit: 'km',
   },
   {
     value: 'WATER',
@@ -90,6 +98,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: false,
     supportedUnits: ['m3'],
+    defaultUnit: 'm3',
   },
   {
     value: 'SHIPPING',
@@ -99,6 +108,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['ton-km'],
+    defaultUnit: 'ton-km',
   },
 ];
 
@@ -110,7 +120,7 @@ export const activityTypeDefaultUnits: Record<string, string> =
   Object.fromEntries(
     pilotActivityTypeDefinitions.map((item) => [
       item.value,
-      item.supportedUnits[0] ?? '',
+      item.defaultUnit ?? item.supportedUnits[0] ?? '',
     ]),
   );
 
@@ -123,4 +133,11 @@ export const supportedPilotActivityTypeSet = new Set<string>(activityTypes);
 
 export function getPilotActivityTypeDefinition(value?: string | null) {
   return pilotActivityTypeDefinitions.find((item) => item.value === value);
+}
+
+export function getDefaultUnitForActivityType(value?: string | null) {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  const definition = getPilotActivityTypeDefinition(normalized);
+
+  return definition?.defaultUnit ?? definition?.supportedUnits[0] ?? '';
 }

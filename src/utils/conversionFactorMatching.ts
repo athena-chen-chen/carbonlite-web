@@ -1,5 +1,9 @@
 import { normalizeUnitKey } from './unitNormalization';
-import { normalizeActivityType as normalizeSharedActivityType } from './activityType';
+import {
+  getActivityTypeLabel,
+  normalizeActivityType as normalizeSharedActivityType,
+} from './activityType';
+import { normalizeUnitForDisplay } from './unitNormalization';
 
 export type MatchableConversionFactor = {
   id: string;
@@ -28,7 +32,14 @@ export type MatchableConversionFactor = {
   sourceReference?: string | null;
   sourceUrl?: string | null;
   sourceYear?: number | null;
+  effectiveYear?: number | null;
   factorVersion?: string | null;
+  factorSet?: string | null;
+  factorStatus?: string | null;
+  confidence?: string | null;
+  boundary?: string | null;
+  notes?: string | null;
+  lastReviewedAt?: string | null;
   factorVersionId?: string | null;
   assumptions?: string | null;
   methodology?: string | null;
@@ -56,7 +67,69 @@ export type ConversionFactorMatch = {
   sourceLabel: 'Organization Custom Factor' | 'System Default Factor';
   factorYear?: number | null;
   usedPriorYearFallback?: boolean;
+  exactYearMatch?: boolean;
+  usedProxyFactor?: boolean;
+  reviewRecommended?: boolean;
+  proxyReason?: string | null;
 };
+
+export type ActivityYearResolution = {
+  year: number | null;
+  source:
+    | 'servicePeriodEndDate'
+    | 'servicePeriodStartDate'
+    | 'recordDate'
+    | 'billDate'
+    | 'reportingYear'
+    | 'unavailable';
+  crossYearServicePeriod: boolean;
+  reviewNote?: string | null;
+};
+
+export function resolveActivityYear(input: {
+  servicePeriodEndDate?: string | null;
+  servicePeriodStartDate?: string | null;
+  periodEndDate?: string | null;
+  periodStartDate?: string | null;
+  periodEnd?: string | null;
+  periodStart?: string | null;
+  recordDate?: string | null;
+  billDate?: string | null;
+  reportingYear?: string | number | null;
+}): ActivityYearResolution {
+  const servicePeriodEndDate = input.servicePeriodEndDate ?? input.periodEndDate ?? input.periodEnd;
+  const servicePeriodStartDate = input.servicePeriodStartDate ?? input.periodStartDate ?? input.periodStart;
+  const endYear = getDateYear(servicePeriodEndDate);
+  const startYear = getDateYear(servicePeriodStartDate);
+  const crossYearServicePeriod = Boolean(startYear && endYear && startYear !== endYear);
+  const reviewNote = crossYearServicePeriod
+    ? 'Cross-year service period · Review recommended'
+    : null;
+
+  if (endYear) {
+    return { year: endYear, source: 'servicePeriodEndDate', crossYearServicePeriod, reviewNote };
+  }
+  if (startYear) {
+    return { year: startYear, source: 'servicePeriodStartDate', crossYearServicePeriod, reviewNote };
+  }
+
+  const recordYear = getDateYear(input.recordDate);
+  if (recordYear) {
+    return { year: recordYear, source: 'recordDate', crossYearServicePeriod: false };
+  }
+
+  const billYear = getDateYear(input.billDate);
+  if (billYear) {
+    return { year: billYear, source: 'billDate', crossYearServicePeriod: false };
+  }
+
+  const reportingYear = Number(input.reportingYear);
+  if (Number.isInteger(reportingYear) && reportingYear >= 1900 && reportingYear <= 2100) {
+    return { year: reportingYear, source: 'reportingYear', crossYearServicePeriod: false };
+  }
+
+  return { year: null, source: 'unavailable', crossYearServicePeriod: false };
+}
 
 export function findBestConversionFactorMatch(input: {
   activityType?: string | null;
@@ -87,7 +160,6 @@ export function findBestConversionFactorMatch(input: {
       normalizeFactorActivityType(factor) === activityType &&
       !(activityType === 'ELECTRICITY' && isPlaceholderFactor(factor, input.allowPlaceholderConfidence)) &&
       normalizeUnit(getFactorInputUnit(factor)) === inputUnit &&
-      factorYearMatches(getFactorYear(factor), recordYear) &&
       countryMatches(getFactorCountry(factor), country) &&
       regionCompatibleForActivity(activityType, getFactorRegion(factor), region) &&
       hasUsableFactorValue(factor)
@@ -103,12 +175,11 @@ export function findBestConversionFactorMatch(input: {
     .sort((a, b) => compareBestApplicableFactor(a, b, recordYear))[0];
 
   if (organizationFactor) {
-    return {
+    return buildConversionFactorMatch({
       factor: organizationFactor,
       sourceLabel: 'Organization Custom Factor',
-      factorYear: getFactorYear(organizationFactor),
-      usedPriorYearFallback: usedPriorYearFallback(organizationFactor, recordYear),
-    };
+      recordYear,
+    });
   }
 
   const systemFactor = matchingFactors
@@ -116,15 +187,121 @@ export function findBestConversionFactorMatch(input: {
     .sort((a, b) => compareBestApplicableFactor(a, b, recordYear))[0];
 
   if (systemFactor) {
-    return {
+    return buildConversionFactorMatch({
       factor: systemFactor,
       sourceLabel: 'System Default Factor',
-      factorYear: getFactorYear(systemFactor),
-      usedPriorYearFallback: usedPriorYearFallback(systemFactor, recordYear),
-    };
+      recordYear,
+    });
   }
 
   return undefined;
+}
+
+function buildConversionFactorMatch(input: {
+  factor: MatchableConversionFactor;
+  sourceLabel: ConversionFactorMatch['sourceLabel'];
+  recordYear: number | null;
+}): ConversionFactorMatch {
+  const factorYear = getFactorYear(input.factor);
+  const exactYearMatch = Boolean(input.recordYear && factorYear && Number(factorYear) === Number(input.recordYear));
+  const usedPrior = usedPriorYearFallback(input.factor, input.recordYear);
+  const usedFutureProxy = Boolean(input.recordYear && factorYear && Number(factorYear) > Number(input.recordYear));
+  const usedProxyFactor = usedPrior || usedFutureProxy;
+
+  return {
+    factor: input.factor,
+    sourceLabel: input.sourceLabel,
+    factorYear,
+    usedPriorYearFallback: usedPrior,
+    exactYearMatch,
+    usedProxyFactor,
+    reviewRecommended: usedProxyFactor,
+    proxyReason: usedProxyFactor && input.recordYear && factorYear
+      ? `No exact ${input.recordYear} factor was available. The nearest available factor was used for internal review only.`
+      : null,
+  };
+}
+
+export function getCompatibleFactorUnitLabels(input: {
+  activityType?: string | null;
+  inputUnit?: string | null;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  recordYear?: number | null;
+  organizationId?: string | null;
+  allowPlaceholderConfidence?: boolean;
+  factors: MatchableConversionFactor[];
+}) {
+  const activityType = normalizeActivityType(input.activityType);
+  const country = normalizeJurisdictionCountry(input.jurisdictionCountry) ?? 'Canada';
+  const region = normalizeJurisdictionRegion(input.jurisdictionRegion);
+  const recordYear = input.recordYear ?? null;
+  const organizationId = String(input.organizationId ?? '').trim();
+
+  if (!activityType) return [];
+  if (activityType === 'ELECTRICITY' && !region) return [];
+
+  const labels = input.factors
+    .filter((factor) => {
+      const factorKind = String(factor.type ?? 'EMISSION').trim().toUpperCase();
+      const factorOrganizationId = String(factor.organizationId ?? '').trim();
+      const isAllowedScope =
+        isSystemFactor(factor) ||
+        (organizationId
+          ? factorOrganizationId === organizationId
+          : Boolean(factorOrganizationId) && !isSystemFactor(factor));
+
+      return (
+        isAllowedScope &&
+        factorKind === 'EMISSION' &&
+        isUsableFactor(factor) &&
+        normalizeFactorActivityType(factor) === activityType &&
+        !(activityType === 'ELECTRICITY' && isPlaceholderFactor(factor, input.allowPlaceholderConfidence)) &&
+        factorYearMatches(getFactorYear(factor), recordYear) &&
+        countryMatches(getFactorCountry(factor), country) &&
+        regionCompatibleForActivity(activityType, getFactorRegion(factor), region) &&
+        hasUsableFactorValue(factor)
+      );
+    })
+    .map((factor) => normalizeUnitForDisplay(getFactorInputUnit(factor)))
+    .filter((unit): unit is { status: 'valid'; value: string } => unit.status === 'valid')
+    .map((unit) => unit.value);
+
+  return Array.from(new Set(labels)).sort((a, b) => a.localeCompare(b));
+}
+
+export function hasCompatibleFactorWithDifferentUnit(input: Parameters<typeof getCompatibleFactorUnitLabels>[0]) {
+  const inputUnit = normalizeUnit(input.inputUnit);
+  if (!inputUnit) return false;
+
+  return getCompatibleFactorUnitLabels(input).some((unit) => normalizeUnit(unit) !== inputUnit);
+}
+
+export function buildFactorUnitMismatchMessage(input: {
+  activityType?: string | null;
+  inputUnit?: string | null;
+  availableUnits: string[];
+}) {
+  const activityType = normalizeActivityType(input.activityType);
+  const unit = normalizeUnitForDisplay(input.inputUnit);
+  const inputUnit = unit.status === 'valid' ? unit.value : String(input.inputUnit ?? '').trim();
+  const availableUnits = input.availableUnits.filter(Boolean);
+  const availableUnitText = availableUnits.length === 1
+    ? availableUnits[0]
+    : availableUnits.join(', ');
+
+  if (activityType === 'NATURAL_GAS' && inputUnit && availableUnitText) {
+    const verb = availableUnits.length === 1 ? 'uses' : 'use';
+    return `Natural gas usage is in ${inputUnit}, but the available factor ${verb} ${availableUnitText}.`;
+  }
+
+  const activityLabel = getActivityTypeLabel(activityType);
+  if (inputUnit && availableUnitText) {
+    const verb = availableUnits.length === 1 ? 'uses' : 'use';
+    return `${activityLabel} is in ${inputUnit}, but the available factor ${verb} ${availableUnitText}.`;
+  }
+
+  return 'Unit mismatch. This record is excluded from emissions totals.';
 }
 
 export function getFactorSourceAuthority(factor: MatchableConversionFactor) {
@@ -171,7 +348,15 @@ function getFactorRegion(factor: MatchableConversionFactor) {
 
 function getFactorYear(factor: MatchableConversionFactor) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
-  return currentVersion?.sourceYear ?? currentVersion?.factorYear ?? factor.sourceYear ?? factor.factorYear ?? null;
+  return (
+    currentVersion?.effectiveYear ??
+    currentVersion?.sourceYear ??
+    currentVersion?.factorYear ??
+    factor.effectiveYear ??
+    factor.sourceYear ??
+    factor.factorYear ??
+    null
+  );
 }
 
 export function normalizeFactorActivityType(factor: MatchableConversionFactor) {
@@ -193,7 +378,13 @@ function isSystemFactor(factor: MatchableConversionFactor) {
 
 function isUsableFactor(factor: MatchableConversionFactor) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
-  const status = String(currentVersion?.status ?? factor.status ?? '').trim().toUpperCase();
+  const status = String(
+    currentVersion?.factorStatus ??
+      currentVersion?.status ??
+      factor.factorStatus ??
+      factor.status ??
+      '',
+  ).trim().toUpperCase();
 
   if (factor.isActive === false || currentVersion?.isActive === false) return false;
   if (['ARCHIVED', 'DEPRECATED'].includes(status)) return false;
@@ -223,6 +414,17 @@ function compareBestApplicableFactor(
   b: MatchableConversionFactor,
   recordYear: number | null,
 ) {
+  if (recordYear) {
+    const aYear = Number(getFactorYear(a) ?? Number.NaN);
+    const bYear = Number(getFactorYear(b) ?? Number.NaN);
+    const aExact = Number.isFinite(aYear) && aYear === Number(recordYear);
+    const bExact = Number.isFinite(bYear) && bYear === Number(recordYear);
+
+    if (Number(aExact) !== Number(bExact)) {
+      return Number(bExact) - Number(aExact);
+    }
+  }
+
   if (Number(a.isDefault) !== Number(b.isDefault)) {
     return Number(b.isDefault) - Number(a.isDefault);
   }
@@ -230,7 +432,10 @@ function compareBestApplicableFactor(
   if (recordYear) {
     const aYear = Number(getFactorYear(a) ?? Number.NEGATIVE_INFINITY);
     const bYear = Number(getFactorYear(b) ?? Number.NEGATIVE_INFINITY);
+    const aDistance = Number.isFinite(aYear) ? Math.abs(aYear - Number(recordYear)) : Number.POSITIVE_INFINITY;
+    const bDistance = Number.isFinite(bYear) ? Math.abs(bYear - Number(recordYear)) : Number.POSITIVE_INFINITY;
 
+    if (aDistance !== bDistance) return aDistance - bDistance;
     if (aYear !== bYear) return bYear - aYear;
   }
 
@@ -327,6 +532,20 @@ function regionMatchesExactly(factorRegion?: string | null, recordRegion?: strin
 
 function factorYearMatches(factorYear?: number | null, recordYear?: number | null) {
   return !factorYear || !recordYear || Number(factorYear) <= Number(recordYear);
+}
+
+function getDateYear(value?: string | null) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const directYear = Number(text.slice(0, 4));
+  if (/^\d{4}/.test(text) && Number.isInteger(directYear) && directYear >= 1900 && directYear <= 2100) {
+    return directYear;
+  }
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getUTCFullYear();
+  return year >= 1900 && year <= 2100 ? year : null;
 }
 
 function titleCase(value: string) {

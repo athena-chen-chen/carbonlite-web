@@ -118,6 +118,12 @@ export type FormalConversionFactorUsed = {
   sourcePage?: string | number | null;
   sourceTable?: string | null;
   sourceYear?: number | null;
+  effectiveYear?: number | null;
+  factorSet?: string | null;
+  confidence?: string | null;
+  boundary?: string | null;
+  notes?: string | null;
+  lastReviewedAt?: string | null;
   reportingYear?: number | null;
   factorType: 'System' | 'Custom';
   verified: boolean;
@@ -646,14 +652,14 @@ export function FormalReportPreview({
       ) : null}
 
       <ReportSection
-        title="A. Inventory Boundary"
+        title="A. Reporting Boundary"
         sectionId="inventory-boundary"
         expanded={expandedSections['inventory-boundary']}
         onToggle={toggleSection}
         summary={inventoryBoundarySummary}
       >
         <div style={factsGridStyle}>
-          <Fact label="Organization / Workspace" value={inventoryBoundary.organizationWorkspace} />
+          <Fact label="Organization / Workspace" value={formatBoundaryValue(inventoryBoundary.organizationWorkspace)} />
           {inventoryBoundary.industry ? (
             <Fact label="Industry" value={inventoryBoundary.industry} />
           ) : null}
@@ -666,21 +672,20 @@ export function FormalReportPreview({
           {inventoryBoundary.city ? (
             <Fact label="City" value={inventoryBoundary.city} />
           ) : null}
-          <Fact label="Reporting period" value={inventoryBoundary.reportingPeriod} />
-          <Fact label="Geographic boundary" value={inventoryBoundary.geographicBoundary} />
-          <Fact label="Included facilities or locations" value={inventoryBoundary.includedFacilitiesOrLocations} />
-          {inventoryBoundary.excludedFacilitiesOrLocations ? (
-            <Fact
-              label="Excluded facilities or locations"
-              value={inventoryBoundary.excludedFacilitiesOrLocations}
-            />
-          ) : null}
-          <Fact label="Included scopes" value={inventoryBoundary.includedScopes} />
-          <Fact label="Scope 3 coverage note" value={inventoryBoundary.scope3CoverageNote} />
-          <Fact label="Exclusions / limitations" value={inventoryBoundary.exclusionsLimitations} />
-          {inventoryBoundary.boundaryNotes ? (
-            <Fact label="Boundary notes" value={inventoryBoundary.boundaryNotes} />
-          ) : null}
+          <Fact label="Reporting period" value={formatBoundaryValue(inventoryBoundary.reportingPeriod)} />
+          <Fact label="Geographic boundary" value={formatBoundaryValue(inventoryBoundary.geographicBoundary)} />
+          <Fact
+            label="Included facilities or locations"
+            value={formatBoundaryValue(inventoryBoundary.includedFacilitiesOrLocations)}
+          />
+          <Fact
+            label="Excluded facilities or locations"
+            value={formatBoundaryValue(inventoryBoundary.excludedFacilitiesOrLocations)}
+          />
+          <Fact label="Included scopes" value={formatBoundaryValue(inventoryBoundary.includedScopes)} />
+          <Fact label="Scope 3 coverage note" value={formatBoundaryValue(inventoryBoundary.scope3CoverageNote)} />
+          <Fact label="Exclusions / limitations" value={formatBoundaryValue(inventoryBoundary.exclusionsLimitations)} />
+          <Fact label="Boundary notes" value={formatBoundaryValue(inventoryBoundary.boundaryNotes)} />
         </div>
       </ReportSection>
 
@@ -956,6 +961,11 @@ function Fact({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
+}
+
+function formatBoundaryValue(value?: string | null) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed || 'Not specified';
 }
 
 function SimpleTable({

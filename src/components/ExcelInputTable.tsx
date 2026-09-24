@@ -4,12 +4,14 @@ import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { getAllConversionFactors } from '../services/conversionFactors';
 import {
-  activityTypeDefaultUnits,
   activityTypes,
+  getDefaultUnitForActivityType,
 } from '../constants/activityTypes';
 import * as XLSX from 'xlsx';
 import {
+  buildFactorUnitMismatchMessage,
   findBestConversionFactorMatch,
+  getCompatibleFactorUnitLabels,
   getFactorResultUnit,
   getFactorSourceAuthority,
   getFactorSourceYear,
@@ -17,6 +19,7 @@ import {
   normalizeActivityType,
   normalizeFactorActivityType,
   normalizeJurisdictionRegion,
+  resolveActivityYear,
 } from '../utils/conversionFactorMatching';
 import {
   buildMatchedFactorSnapshot,
@@ -93,17 +96,44 @@ type Row = {
   savedActivityId?: string;
 };
 
-export function ExcelInputTable({ onSuccess }: { onSuccess: () => void }) {
+const SITE_FACILITY_ALIASES = [
+  'Facility',
+  'facility',
+  'facilityName',
+  'Facility Name',
+  'site',
+  'Site',
+  'siteName',
+  'Site Name',
+  'location',
+  'Location',
+  'branch',
+  'Branch',
+  'factory',
+  'Factory',
+];
+
+type ExcelInputTableMode = 'spreadsheet' | 'manual';
+
+export function ExcelInputTable({
+  onSuccess,
+  mode = 'manual',
+}: {
+  onSuccess: () => void;
+  mode?: ExcelInputTableMode;
+}) {
   const canImportRows = canImportActivityRecords(getCurrentUser());
   const toast = useToast();
   const { showError } = useAppDialog();
   const [rows, setRows] = useState<Row[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
+  const spreadsheetFileInputRef = useRef<HTMLInputElement>(null);
   const [entrySourceType, setEntrySourceType] = useState<'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE'>('MANUAL');
   const [bulkProvince, setBulkProvince] = useState('');
   const [bulkProvinceMessage, setBulkProvinceMessage] = useState('');
   const [facilities, setFacilities] = useState<FacilityItem[]>([]);
+  const isSpreadsheetMode = mode === 'spreadsheet';
   useEffect(() => {
   async function loadReferenceData() {
     try {
@@ -228,7 +258,7 @@ function findMatchingFactor(row: Pick<Row, 'activityType' | 'unit' | 'jurisdicti
   const { activityType, unit } = row;
   if (!activityType || !unit) return undefined;
 
-  const recordYear = getDateOnlyYear(row.recordDate);
+  const recordYear = resolveActivityYear({ recordDate: row.recordDate }).year;
   const matchInput = {
     activityType,
     inputUnit: unit,
@@ -256,7 +286,9 @@ function isTrackedMetricActivity(activityType: string) {
   return ['WATER', 'WATER_USAGE'].includes(String(activityType).toUpperCase());
 }
 
-function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'jurisdictionRegion'>) {
+function getRowCalculationReview(
+  row: Pick<Row, 'activityType' | 'unit' | 'jurisdictionCountry' | 'jurisdictionRegion' | 'recordDate'>,
+) {
   if (!row.activityType || !row.unit) {
     return {
       calculationStatus: undefined,
@@ -287,6 +319,7 @@ function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'juris
 
   const normalizedUnit = normalizeUnitForDisplay(row.unit);
   const activityTypeLabel = getActivityTypeLabel(row.activityType);
+  const recordYear = resolveActivityYear({ recordDate: row.recordDate }).year;
   if (normalizedUnit.status !== 'valid') {
     return {
       calculationStatus: 'invalidUnit' as const,
@@ -297,9 +330,26 @@ function getRowCalculationReview(row: Pick<Row, 'activityType' | 'unit' | 'juris
 
   const normalizedSupportedUnits = supportedUnits.map((unit) => normalizeUnitForDisplay(unit).value);
   if (supportedUnits.length > 0 && !normalizedSupportedUnits.includes(normalizedUnit.value)) {
+    const compatibleUnits = getCompatibleFactorUnitLabels({
+      activityType: row.activityType,
+      inputUnit: normalizedUnit.value,
+      jurisdictionCountry: row.jurisdictionCountry,
+      jurisdictionRegion: row.jurisdictionRegion,
+      recordYear,
+      organizationId: getOrganizationId(getCurrentUser()),
+      allowPlaceholderConfidence: true,
+      factors: conversionFactors,
+    }).filter((unit) => unit.toLowerCase() !== normalizedUnit.value.toLowerCase());
+
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      calculationMessage: compatibleUnits.length > 0
+        ? buildFactorUnitMismatchMessage({
+          activityType: row.activityType,
+          inputUnit: normalizedUnit.value,
+          availableUnits: compatibleUnits,
+        })
+        : `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
       supportedUnits,
     };
   }
@@ -413,7 +463,9 @@ function applyFactorToRow(row: Row): Row {
     factorResultUnit: getFactorResultUnit(factor),
     factorStatus: 'matched',
     calculationStatus: 'calculated',
-    calculationMessage: match.usedPriorYearFallback && match.factorYear
+    calculationMessage: match.usedProxyFactor && match.proxyReason
+      ? `Proxy factor · Review recommended. ${match.proxyReason}`
+      : match.usedPriorYearFallback && match.factorYear
       ? `Matched factor. Using latest available factor year: ${match.factorYear}.`
       : 'Matched factor. This row can be included in emissions totals.',
     supportedUnits: getSupportedUnitsForActivityType(row.activityType),
@@ -463,7 +515,7 @@ function importExcelFile(file: File) {
           'Facility Province',
           'facilityProvince',
         ])),
-        facilityName: readAliasedField(row, ['Facility', 'facility', 'facilityName', 'Facility Name']),
+        facilityName: readAliasedField(row, SITE_FACILITY_ALIASES),
         sourceReference: readAliasedField(row, ['Source Reference', 'sourceReference', 'reference']),
         notes: readAliasedField(row, ['Notes', 'notes']),
       };
@@ -528,7 +580,17 @@ function parseCSVText(text: string) {
     'facilityProvince',
     'facility province',
   ]);
-  const facilityIndex = findColumnIndex(headers, ['facility', 'facilityName', 'facility name']);
+  const facilityIndex = findColumnIndex(headers, [
+    'facility',
+    'facilityName',
+    'facility name',
+    'site',
+    'siteName',
+    'site name',
+    'location',
+    'branch',
+    'factory',
+  ]);
   const sourceReferenceIndex = findColumnIndex(headers, ['sourceReference', 'source reference', 'reference']);
   const notesIndex = findColumnIndex(headers, ['notes', 'note']);
 
@@ -625,13 +687,14 @@ function buildActivityPayload(row: Row) {
     unit: row.unit,
     jurisdictionCountry: normalizeOptional(row.jurisdictionCountry) ?? 'Canada',
     jurisdictionRegion: normalizeOptional(row.jurisdictionRegion),
+    facility: normalizeOptional(row.facilityName) ?? normalizeOptional(row.facilityId),
     facilityId: normalizeOptional(row.facilityId),
     recordYear: getDateOnlyYear(row.recordDate),
     sourceType: row.origin ?? entrySourceType,
     sourceReference: normalizeOptional(row.sourceReference) ?? String(row.origin ?? entrySourceType).toLowerCase(),
     notes: matchedNotes || [
       row.notes,
-      row.facilityName ? `Facility: ${row.facilityName}` : '',
+      row.facilityName ? `Site / Facility: ${row.facilityName}` : '',
       isMissingElectricityProvince
         ? 'Requires Review. Status: MISSING_PROVINCE. excludedFromTotals=true. Province is required before this electricity record can be calculated.'
         : '',
@@ -1002,6 +1065,12 @@ function renderFactorCell(row: Row) {
         <strong>Unit Mismatch</strong>
         <br />
         Submitted unit does not match available factor units.
+        {row.calculationMessage ? (
+          <>
+            <br />
+            {row.calculationMessage}
+          </>
+        ) : null}
         {row.supportedUnits?.length ? (
           <>
             <br />
@@ -1130,7 +1199,7 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
     case 'trackedMetric':
       return { badge: 'Not Emissions Factor Required', detail: 'Tracked only, excluded from GHG totals.' };
     case 'invalidUnit':
-      return { badge: 'Unit Mismatch', detail: 'Review unit before calculation.' };
+      return { badge: 'Unit Mismatch', detail: row.calculationMessage || 'Review unit before calculation.' };
     case 'missingFactor':
       return { badge: 'Missing Factor', detail: 'No matching factor found.' };
     case 'needsReview':
@@ -1234,7 +1303,7 @@ function renderPreviewPanel(title: string, helpText: string, children: ReactNode
 }
 
 function getDefaultUnit(activityType: string) {
-  return activityTypeDefaultUnits[activityType] ?? '';
+  return getDefaultUnitForActivityType(activityType);
 }
 function updateRow(id: string, key: keyof Row, value: string) {
   setRows((prev) =>
@@ -1430,6 +1499,25 @@ function handleImportExcel(event: React.ChangeEvent<HTMLInputElement>) {
   event.target.value = '';
   setEntrySourceType('EXCEL');
 }
+
+function handleImportSpreadsheet(event: React.ChangeEvent<HTMLInputElement>) {
+  if (!canImportRows) {
+    event.target.value = '';
+    showError({
+      title: 'Permission required',
+      message: 'You do not have permission to perform this action.',
+    });
+    return;
+  }
+
+  const file = event.target.files?.[0];
+  if (file) {
+    importFile(file);
+    const sourceType = getSourceTypeFromFile(file);
+    setEntrySourceType(sourceType === 'CSV' ? 'CSV' : 'EXCEL');
+  }
+  event.target.value = '';
+}
 async function saveRow(row: Row) {
   if (!canImportRows) {
     updateRowStatus(row.id, {
@@ -1561,18 +1649,20 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
 
 <div style={{
     ...cardStyle,
-    border: isDragging ? '2px dashed #10b981' : '1px solid #e5e7eb',
-    background: isDragging ? '#ecfdf5' : '#fff',
+    border: isSpreadsheetMode && isDragging ? '2px dashed #047857' : '1px solid #E2E8F0',
+    background: isSpreadsheetMode && isDragging ? '#ECFDF5' : '#fff',
   }}
-  onDragEnter={handleDragEnter}
-  onDragOver={handleDragOver}
-  onDragLeave={handleDragLeave}
-  onDrop={handleDrop}>
+  onDragEnter={isSpreadsheetMode ? handleDragEnter : undefined}
+  onDragOver={isSpreadsheetMode ? handleDragOver : undefined}
+  onDragLeave={isSpreadsheetMode ? handleDragLeave : undefined}
+  onDrop={isSpreadsheetMode ? handleDrop : undefined}>
   <div style={headerStyle}>
     <div>
-      <h3 style={{ margin: 0 }}>Activity Rows</h3>
+      <h3 style={{ margin: 0 }}>{isSpreadsheetMode ? 'Spreadsheet rows' : 'Manual activity rows'}</h3>
       <p style={{ margin: '6px 0 0', color: '#64748b' }}>
-        Type directly, paste rows from Excel, import CSV/XLSX files, or drag and drop a file here. Use + Add Row to add another row.
+        {isSpreadsheetMode
+          ? 'Upload a CSV/XLSX file using the CarbonLite template, or paste rows copied from Excel.'
+          : 'Enter one activity record manually when no file is available.'}
       </p>
       {!canImportRows ? (
         <p style={readOnlyNoticeStyle}>
@@ -1605,17 +1695,40 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
     </div>
   </div>
 
-  <div style={manualEntryToolbarStyle} aria-label="Manual entry toolbar">
+  <div style={manualEntryToolbarStyle} aria-label={isSpreadsheetMode ? 'Spreadsheet import toolbar' : 'Manual entry toolbar'}>
     <div style={manualEntryToolbarRowStyle}>
       <div style={manualEntryToolbarGroupStyle}>
-        <button
-          type="button"
-          onClick={addRow}
-          disabled={!canImportRows}
-          style={secondaryButtonStyle}
-        >
-          + Add Row
-        </button>
+        {isSpreadsheetMode ? (
+          <>
+            <button
+              type="button"
+              onClick={() => spreadsheetFileInputRef.current?.click()}
+              disabled={!canImportRows}
+              style={secondaryButtonStyle}
+            >
+              Choose spreadsheet file
+            </button>
+            <input
+              ref={spreadsheetFileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              onChange={handleImportSpreadsheet}
+              style={{ display: 'none' }}
+            />
+            <span style={{ color: '#64748b', fontSize: 13 }}>
+              Paste spreadsheet rows into this area.
+            </span>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={addRow}
+            disabled={!canImportRows}
+            style={secondaryButtonStyle}
+          >
+            {rows.length === 0 ? 'Add activity record' : 'Add another manual row'}
+          </button>
+        )}
       </div>
     </div>
 
@@ -1629,6 +1742,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
             onProvinceChange={setBulkProvince}
             provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
             label="Bulk set province for selected imported rows"
+            applyLabel="Apply province"
             helperText="Apply a province to selected imported electricity rows that need province-specific factor matching."
             onApply={() => {
               const normalizedBulkProvince = normalizeProvince(bulkProvince);
@@ -1694,18 +1808,28 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
     </div>
   </div>
 
-  <div style={manualEntryFormListStyle} onPaste={handlePasteRows} onKeyDown={handleQuickEntryKeyDown}>
+  <div
+    style={manualEntryFormListStyle}
+    onPaste={isSpreadsheetMode ? handlePasteRows : undefined}
+    onKeyDown={handleQuickEntryKeyDown}
+  >
     {rows.length === 0 ? (
       <>
         <div style={manualEntryFormTitleStyle}>
-          <strong>Add activity record</strong>
+          <strong>{isSpreadsheetMode ? 'Paste spreadsheet rows' : 'Add activity record'}</strong>
           <span>
-            Enter one activity record manually. Electricity records require province before emissions can be calculated.
+            {isSpreadsheetMode
+              ? 'Upload a CSV/XLSX file or paste rows from Excel to begin.'
+              : 'Enter one activity record manually. Electricity records require province before emissions can be calculated.'}
           </span>
         </div>
         <div style={quickEntryEmptyStyle}>
-          <strong>No activity rows.</strong>
-          <span>Click "+ Add Row" to begin.</span>
+          <strong>{isSpreadsheetMode ? 'No spreadsheet rows yet.' : 'No manual activity rows yet.'}</strong>
+          <span>
+            {isSpreadsheetMode
+              ? 'Upload a CSV/XLSX file or paste rows from Excel to begin.'
+              : 'Click "Add activity record" to begin.'}
+          </span>
         </div>
       </>
     ) : (
@@ -1715,10 +1839,12 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
             key={row.id}
             values={row}
             rowNumber={index + 1}
-            title={index === 0 ? 'Add activity record' : undefined}
+            title={index === 0 ? (isSpreadsheetMode ? 'Review spreadsheet row' : 'Add activity record') : undefined}
             description={
               index === 0
-                ? 'Enter one activity record manually. Electricity records require province before emissions can be calculated.'
+                ? isSpreadsheetMode
+                  ? 'Review imported spreadsheet rows before saving. Electricity records require province before emissions can be calculated.'
+                  : 'Enter one activity record manually. Electricity records require province before emissions can be calculated.'
                 : undefined
             }
             activityTypes={activityTypes}
@@ -1786,7 +1912,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                     disabled={!canImportRows}
                     style={secondaryButtonStyle}
                   >
-                    Add Another Record
+                    {isSpreadsheetMode ? 'Add another manual row' : 'Add Another Record'}
                   </button>
                   <button
                     type="button"
@@ -1824,11 +1950,10 @@ const card = {
 
 const cardStyle: React.CSSProperties = {
   padding: 20,
-  border: '1px solid #e5e7eb',
-  borderRadius: 16,
+  border: '1px solid #E2E8F0',
+  borderRadius: 12,
   background: '#fff',
   marginBottom: 24,
-  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
 };
 
 const headerStyle: React.CSSProperties = {
@@ -1913,10 +2038,10 @@ const quickEntryEmptyStyle: React.CSSProperties = {
 function primaryButtonStyle(disabled = false): React.CSSProperties {
   return {
     padding: '10px 16px',
-    borderRadius: 10,
-    border: 'none',
-    background: disabled ? '#9ca3af' : '#10b981',
-    color: '#fff',
+    borderRadius: 8,
+    border: disabled ? '1px solid #E2E8F0' : '1px solid #047857',
+    background: disabled ? '#F1F5F9' : '#047857',
+    color: disabled ? '#94A3B8' : '#fff',
     fontWeight: 700,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
@@ -1924,10 +2049,10 @@ function primaryButtonStyle(disabled = false): React.CSSProperties {
 
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '10px 16px',
-  borderRadius: 10,
-  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  border: '1px solid #E2E8F0',
   background: '#fff',
-  color: '#111827',
+  color: '#334155',
   fontWeight: 700,
   cursor: 'pointer',
 };
@@ -2023,7 +2148,7 @@ const factorCredibilityBadgeStyle: React.CSSProperties = {
   borderRadius: 999,
   border: '1px solid #f59e0b',
   background: '#fffbeb',
-  color: '#92400e',
+  color: '#B45309',
   fontSize: 11,
   fontWeight: 800,
 };
