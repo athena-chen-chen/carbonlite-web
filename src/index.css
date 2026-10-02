@@ -29,3 +29,31 @@ a {
 button {
   font: inherit;
 }
+
+.input-data-success-link:visited {
+  color: #047857;
+}
+
+.input-data-success-link:hover {
+  color: #065F46;
+  text-decoration: underline;
+}
+
+.input-data-success-link:focus-visible {
+  color: #065F46;
+  text-decoration: underline;
+  outline: 2px solid #047857;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.input-data-post-import-action:hover {
+  border-color: #047857;
+  color: #065F46;
+  background: #ECFDF5;
+}
+
+.input-data-post-import-action:focus-visible {
+  outline: 2px solid #047857;
+  outline-offset: 2px;
+}

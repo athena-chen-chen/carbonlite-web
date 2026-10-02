@@ -5,7 +5,9 @@ import {
   FORMAL_REPORT_METHODOLOGY,
   FormalReportPreview,
   buildConversionFactorTraceabilityRows,
+  buildEmissionFactorsUsedInventory,
   formatExecutiveSummaryPreview,
+  buildReportCountSummary,
   buildReportExecutiveSummary,
   buildSourceEvidenceRows,
   buildSourceEvidenceSummaryRows,
@@ -33,7 +35,246 @@ const countSummary = {
   missingFactorRecords: 0,
 };
 
+function reportFactor(overrides: Record<string, unknown>) {
+  return {
+    factorId: 'factor-electricity',
+    activityType: 'ELECTRICITY',
+    factorName: 'Electricity - Alberta',
+    factorValue: 0.53,
+    inputUnit: 'kWh',
+    resultUnit: 'kgCO2e',
+    jurisdiction: 'Alberta, Canada',
+    sourceAuthority: 'CarbonLite',
+    sourceYear: 2026,
+    factorType: 'System',
+    verified: false,
+    ...overrides,
+  } as any;
+}
+
+function calculatedDetail(overrides: Record<string, unknown>) {
+  return {
+    activityDataId: 'activity-electricity',
+    activityType: 'ELECTRICITY',
+    recordDate: '2026-03-01',
+    dateEstimated: false,
+    reportingYear: 2026,
+    jurisdiction: 'Alberta, Canada',
+    activityQuantity: 980,
+    activityUnit: 'kWh',
+    factorId: 'factor-electricity',
+    factorName: 'Electricity - Alberta',
+    factorValue: 0.53,
+    factorInputUnit: 'kWh',
+    factorResultUnit: 'kgCO2e',
+    factorSource: 'CarbonLite',
+    sourceAuthority: 'CarbonLite',
+    sourceYear: 2026,
+    factorVerified: false,
+    factorType: 'System',
+    calculatedEmissionsKgCO2e: 519.4,
+    calculationStatus: 'CALCULATED',
+    status: 'CALCULATED',
+    sourceType: 'DOCUMENT_AI',
+    sourceReference: 'MARCH-ELEC-001',
+    ...overrides,
+  } as any;
+}
+
 describe('FormalReportPreview', () => {
+  it('counts distinct actual emission factors and excludes tracked-only metrics', () => {
+    const inventory = buildEmissionFactorsUsedInventory(
+      [
+        reportFactor({ factorId: 'factor-electricity', factorName: 'Electricity - Alberta' }),
+        reportFactor({
+          factorId: 'factor-hotel',
+          activityType: 'HOTEL',
+          factorName: 'Hotel stays',
+          factorValue: 15,
+          inputUnit: 'nights',
+        }),
+        reportFactor({
+          factorId: null,
+          activityType: 'WATER',
+          factorName: 'N/A — Tracked Metric',
+          factorValue: '',
+          inputUnit: 'm3',
+        }),
+      ],
+      [
+        calculatedDetail({ activityDataId: 'activity-electricity', factorId: 'factor-electricity' }),
+        calculatedDetail({
+          activityDataId: 'activity-hotel',
+          activityType: 'HOTEL',
+          factorId: 'factor-hotel',
+          factorName: 'Hotel stays',
+          factorValue: 15,
+          factorInputUnit: 'nights',
+          activityUnit: 'nights',
+          calculatedEmissionsKgCO2e: 60,
+        }),
+        calculatedDetail({
+          activityDataId: 'activity-water',
+          activityType: 'WATER',
+          factorId: null,
+          factorName: null,
+          factorValue: null,
+          factorInputUnit: null,
+          calculationStatus: 'TRACKED_ONLY',
+          status: 'TRACKED_ONLY',
+          scopeOverride: 'TRACKED_METRIC',
+          calculatedEmissionsKgCO2e: null,
+        }),
+      ],
+    );
+
+    expect(inventory.map((factor) => factor.factorName)).toEqual([
+      'Electricity - Alberta',
+      'Hotel stays',
+    ]);
+  });
+
+  it('counts a reused factor once and keeps the used record count', () => {
+    const inventory = buildEmissionFactorsUsedInventory(
+      [reportFactor({ factorId: 'factor-electricity' })],
+      [
+        calculatedDetail({ activityDataId: 'activity-electricity-1', factorId: 'factor-electricity' }),
+        calculatedDetail({ activityDataId: 'activity-electricity-2', factorId: 'factor-electricity' }),
+      ],
+    );
+
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0].usedRecordsCount).toBe(2);
+  });
+
+  it('returns no emission factors for tracked metrics only', () => {
+    const inventory = buildEmissionFactorsUsedInventory(
+      [
+        reportFactor({
+          factorId: null,
+          activityType: 'WATER',
+          factorName: 'No factor required',
+          factorValue: '',
+          inputUnit: 'm3',
+        }),
+      ],
+      [
+        calculatedDetail({
+          activityDataId: 'activity-water',
+          activityType: 'WATER',
+          factorId: null,
+          factorName: null,
+          factorValue: null,
+          calculationStatus: 'TRACKED_ONLY',
+          status: 'TRACKED_ONLY',
+          scopeOverride: 'TRACKED_METRIC',
+          calculatedEmissionsKgCO2e: null,
+        }),
+      ],
+    );
+
+    expect(inventory).toEqual([]);
+  });
+
+  it('excludes missing-factor records from the emission factor inventory', () => {
+    const inventory = buildEmissionFactorsUsedInventory(
+      [
+        reportFactor({ factorId: 'factor-electricity' }),
+        reportFactor({
+          factorId: null,
+          activityType: 'HOTEL',
+          factorName: 'Missing factor',
+          factorValue: '',
+          inputUnit: 'nights',
+        }),
+      ],
+      [
+        calculatedDetail({ activityDataId: 'activity-electricity', factorId: 'factor-electricity' }),
+        calculatedDetail({
+          activityDataId: 'activity-hotel',
+          activityType: 'HOTEL',
+          factorId: null,
+          factorName: null,
+          factorValue: null,
+          calculationStatus: 'MISSING_FACTOR',
+          status: 'MISSING_FACTOR',
+          calculatedEmissionsKgCO2e: null,
+        }),
+      ],
+    );
+
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0].factorName).toBe('Electricity - Alberta');
+  });
+
+  it('renders only actual factors in the Emission Factors Used report table', async () => {
+    render(
+      <FormalReportPreview
+        organizationName="KACH CANADA LTD."
+        reportPeriod="2026-03-01 to 2026-03-31"
+        scopeLabel="Selected Documents"
+        generatedAt="2026-10-01"
+        usageTotals={usageTotals}
+        totalEstimatedEmissionsKgCO2e={579.4}
+        countSummary={{ totalRecordsFound: 3, processedRecords: 2, skippedRecords: 1, missingFactorRecords: 0 }}
+        matchedActivityEmissions={[]}
+        conversionFactorsUsed={[
+          reportFactor({ factorId: 'factor-electricity', factorName: 'Electricity - Alberta' }),
+          reportFactor({
+            factorId: 'factor-hotel',
+            activityType: 'HOTEL',
+            factorName: 'Hotel stays',
+            factorValue: 15,
+            inputUnit: 'nights',
+          }),
+          reportFactor({
+            factorId: null,
+            activityType: 'WATER',
+            factorName: 'N/A — Tracked Metric',
+            factorValue: '',
+            inputUnit: 'm3',
+          }),
+        ]}
+        sourceEvidenceRows={[]}
+        calculationDetails={[
+          calculatedDetail({ activityDataId: 'activity-electricity', factorId: 'factor-electricity' }),
+          calculatedDetail({
+            activityDataId: 'activity-hotel',
+            activityType: 'HOTEL',
+            factorId: 'factor-hotel',
+            factorName: 'Hotel stays',
+            factorValue: 15,
+            factorInputUnit: 'nights',
+            activityUnit: 'nights',
+            calculatedEmissionsKgCO2e: 60,
+          }),
+          calculatedDetail({
+            activityDataId: 'activity-water',
+            activityType: 'WATER',
+            factorId: null,
+            factorName: null,
+            factorValue: null,
+            calculationStatus: 'TRACKED_ONLY',
+            status: 'TRACKED_ONLY',
+            scopeOverride: 'TRACKED_METRIC',
+            calculatedEmissionsKgCO2e: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('2 factors used')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand I. Emission Factors Used' }));
+
+    const factorSection = screen.getByText('Emission Factors Summary').closest('div');
+    expect(factorSection).toBeTruthy();
+    expect(within(factorSection!).getAllByText('Electricity - Alberta').length).toBeGreaterThan(0);
+    expect(within(factorSection!).getAllByText('Hotel stays').length).toBeGreaterThan(0);
+    expect(within(factorSection!).queryByText('Water')).not.toBeInTheDocument();
+    expect(within(factorSection!).queryByText('N/A — Tracked Metric')).not.toBeInTheDocument();
+  });
+
   it('renders consultant report sections from the shared summary model', async () => {
     render(
       <FormalReportPreview
@@ -158,23 +399,24 @@ describe('FormalReportPreview', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 
-    expect(screen.getAllByText('321.60 kgCO2e').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('321.60 kg CO₂e').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/CarbonLite system defaults/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta, Canada').length).toBeGreaterThan(0);
     expect(screen.getByText(/Pilot default factor library/)).toBeInTheDocument();
     expect(screen.getAllByText('Unverified / user review required').length).toBeGreaterThan(0);
     expect(screen.getAllByText('100%').length).toBeGreaterThan(0);
-    expect(screen.getByText('Import Readiness')).toBeInTheDocument();
-    expect(screen.getByText(/Calculation Coverage is the percentage of imported activity records/i)).toBeInTheDocument();
-    expect(screen.getByText(/Import Readiness is the percentage of draft or imported records/i)).toBeInTheDocument();
-    expect(screen.getByText(/Calculation Coverage and Import Readiness may differ/i)).toBeInTheDocument();
-    expect(screen.getByText(/Tracked-only operational metrics and records missing required data/i)).toBeInTheDocument();
+    expect(screen.getByText('Emissions Workflow Readiness')).toBeInTheDocument();
+    expect(screen.getByText(/Calculation Coverage is calculated emission-bearing records divided by eligible emission-bearing records/i)).toBeInTheDocument();
+    expect(screen.getByText(/Emissions Workflow Readiness is the percentage of draft or imported records/i)).toBeInTheDocument();
+    expect(screen.getByText(/Calculation Coverage and Emissions Workflow Readiness may differ/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tracked-only operational metrics are retained for review but excluded from the Calculation Coverage denominator/i)).toBeInTheDocument();
     expect(screen.getAllByText('Diesel').length).toBeGreaterThan(0);
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
-    expect(screen.getByText('100 liters × 2.68 kgCO2e/liter = 268 kgCO2e')).toBeInTheDocument();
-    expect(screen.getAllByText('2.68 kgCO2e/L').length).toBeGreaterThan(0);
+    expect(screen.getByText('100 liters × 2.68 kg CO₂e/liter = 268 kg CO₂e')).toBeInTheDocument();
+    expect(screen.getAllByText('2.68 kg CO₂e/L').length).toBeGreaterThan(0);
     expect(screen.getByText('Source File')).toBeInTheDocument();
 
+    expect(screen.getByText('1 record-level reference')).toBeInTheDocument();
     expect(screen.queryByText('fuel-invoice.pdf · Page 1 · Line item 3')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Expand Record-Level Source Evidence' }));
     expect(screen.getByText('fuel-invoice.pdf · Page 1 · Line item 3')).toBeInTheDocument();
@@ -268,10 +510,10 @@ describe('FormalReportPreview', () => {
       />,
     );
 
-    expect(screen.getAllByText('kgCO2e/liter').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('kgCO2e/night').length).toBeGreaterThan(0);
-    expect(screen.queryByText('kgCO2e/liters')).not.toBeInTheDocument();
-    expect(screen.queryByText('kgCO2e/nights')).not.toBeInTheDocument();
+    expect(screen.getAllByText('kg CO₂e/liter').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('kg CO₂e/night').length).toBeGreaterThan(0);
+    expect(screen.queryByText('kg CO₂e/liters')).not.toBeInTheDocument();
+    expect(screen.queryByText('kg CO₂e/nights')).not.toBeInTheDocument();
   });
 
   it('shows pilot electricity factors under internal review even when stored as draft', () => {
@@ -335,7 +577,7 @@ describe('FormalReportPreview', () => {
     );
 
     expect(screen.getByRole('columnheader', { name: 'Review Note' })).toBeInTheDocument();
-    expect(screen.getByText('12,500 kWh × 0.53 kgCO2e/kWh = 6,625 kgCO2e')).toBeInTheDocument();
+    expect(screen.getByText('12,500 kWh × 0.53 kg CO₂e/kWh = 6,625 kg CO₂e')).toBeInTheDocument();
     expect(screen.getByText('Prior-year factor used; review before formal reporting.')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Version' })).not.toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Assumptions' })).not.toBeInTheDocument();
@@ -411,7 +653,7 @@ describe('Version 1 report presentation data', () => {
         ],
       }),
     ).toEqual({
-      estimatedEmissions: '268 kgCO2e',
+      estimatedEmissions: '268 kg CO₂e',
       recordsIncluded: 3,
       recordsSkipped: 1,
       trackedMetrics: 0,
@@ -484,7 +726,7 @@ describe('Version 1 report presentation data', () => {
     expect(summary.trackedMetrics).toBe(1);
     expect(summary.recordsRequiringReview).toBe(0);
     expect(formatExecutiveSummaryPreview(summary)).toBe(
-      '37,285 kgCO2e · 9 included · 1 tracked metric',
+      '37,285 kg CO₂e · 9 included · 1 tracked metric',
     );
     expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 require review');
     expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 requires review');
@@ -519,6 +761,221 @@ describe('Version 1 report presentation data', () => {
     expect(screen.getByText(/Tracked operational metrics are retained for review/i)).toBeInTheDocument();
   });
 
+  it('reports the carbonlite needs-review first import without duplicate accommodation or tracked-metric coverage drag', async () => {
+    const calculationDetails = [
+      {
+        activityDataId: 'activity-march-elec-001',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-03-01',
+        dateEstimated: false,
+        reportingYear: 2026,
+        recordYear: 2026,
+        jurisdiction: 'Alberta, Canada',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        activityQuantity: 980,
+        activityUnit: 'kWh',
+        factorName: 'Electricity - Alberta',
+        factorValue: 0.53,
+        factorInputUnit: 'kWh',
+        factorResultUnit: 'kgCO2e',
+        factorSource: 'CarbonLite',
+        factorVerified: false,
+        calculatedEmissionsKgCO2e: 519.4,
+        status: 'CALCULATED' as const,
+        scopeOverride: 'SCOPE_2',
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceReference: 'MARCH-ELEC-001',
+        sourceRow: 2,
+      },
+      {
+        activityDataId: 'activity-march-water-007',
+        activityType: 'WATER',
+        recordDate: '2026-03-07',
+        dateEstimated: false,
+        reportingYear: 2026,
+        jurisdiction: 'Alberta, Canada',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        activityQuantity: 18,
+        activityUnit: 'm3',
+        factorSource: 'Tracked metric',
+        factorVerified: false,
+        calculatedEmissionsKgCO2e: 0,
+        calculationStatus: 'TRACKED_ONLY',
+        matchingStatus: 'TRACKED_ONLY',
+        status: 'TRACKED_ONLY' as const,
+        scopeOverride: 'TRACKED_METRIC',
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceReference: 'MARCH-WATER-007',
+        sourceRow: 8,
+      },
+      {
+        activityDataId: 'activity-march-hotel-010',
+        activityType: 'HOTEL',
+        recordDate: '2026-03-10',
+        dateEstimated: false,
+        reportingYear: 2026,
+        recordYear: 2026,
+        jurisdiction: 'Ontario, Canada',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Ontario',
+        activityQuantity: 4,
+        activityUnit: 'nights',
+        factorName: 'Business Travel - Accommodation - Ontario - 2026',
+        factorValue: 15,
+        factorInputUnit: 'nights',
+        factorResultUnit: 'kgCO2e',
+        factorSource: 'CarbonLite',
+        factorVerified: false,
+        calculatedEmissionsKgCO2e: 60,
+        status: 'CALCULATED' as const,
+        scopeOverride: 'SCOPE_3',
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceReference: 'MARCH-HOTEL-010',
+        sourceRow: 11,
+      },
+    ];
+    const reportCountSummary = buildReportCountSummary(
+      {
+        totalRecordsFound: 3,
+        processedRecords: 3,
+        skippedRecords: 0,
+        missingFactorRecords: 0,
+      },
+      calculationDetails,
+    );
+    const matchedActivityEmissions = [
+      {
+        activityDataId: 'activity-march-elec-001',
+        activityType: 'ELECTRICITY',
+        quantity: 980,
+        unit: 'kWh',
+        estimatedEmissionsKgCO2e: 519.4,
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceReference: 'MARCH-ELEC-001',
+        factorId: 'factor-electricity-ab',
+      },
+      {
+        activityDataId: 'activity-march-hotel-010',
+        activityType: 'HOTEL',
+        quantity: 4,
+        unit: 'nights',
+        estimatedEmissionsKgCO2e: 60,
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceReference: 'MARCH-HOTEL-010',
+        factorId: 'factor-hotel-on',
+      },
+    ];
+    const executiveSummary = buildReportExecutiveSummary({
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      countSummary: reportCountSummary,
+      matchedActivityEmissions,
+      calculationDetails,
+    });
+    const sourceEvidenceRows = buildSourceEvidenceRows(
+      [
+        {
+          id: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          quantity: 980,
+          unit: 'kWh',
+          recordDate: '2026-03-01',
+          sourceType: 'SPREADSHEET',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceReference: 'MARCH-ELEC-001',
+          sourceRow: 2,
+        },
+        {
+          id: 'activity-march-water-007',
+          activityType: 'WATER',
+          quantity: 18,
+          unit: 'm3',
+          recordDate: '2026-03-07',
+          sourceType: 'SPREADSHEET',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceReference: 'MARCH-WATER-007',
+          sourceRow: 8,
+        },
+        {
+          id: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          quantity: 4,
+          unit: 'nights',
+          recordDate: '2026-03-10',
+          sourceType: 'SPREADSHEET',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceReference: 'MARCH-HOTEL-010',
+          sourceRow: 11,
+        },
+      ],
+      calculationDetails,
+    );
+
+    expect(reportCountSummary.totalRecordsFound).toBe(3);
+    expect(reportCountSummary.processedRecords).toBe(2);
+    expect(executiveSummary).toMatchObject({
+      estimatedEmissions: '579.40 kg CO₂e',
+      recordsIncluded: 2,
+      trackedMetrics: 1,
+      recordsRequiringReview: 0,
+      dataQualityCoverage: '100%',
+    });
+    expect(
+      calculationDetails.filter((detail) => detail.activityDataId === 'activity-march-hotel-010'),
+    ).toHaveLength(1);
+    expect(sourceEvidenceRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceReference: 'MARCH-ELEC-001 · Line item 2',
+          reportTreatment: 'Included',
+        }),
+        expect.objectContaining({
+          sourceReference: 'MARCH-WATER-007 · Line item 8',
+          reportTreatment: 'Tracked Only',
+        }),
+        expect.objectContaining({
+          sourceReference: 'MARCH-HOTEL-010 · Line item 11',
+          reportTreatment: 'Included',
+        }),
+      ]),
+    );
+
+    render(
+      <FormalReportPreview
+        organizationName="KACH CANADA LTD."
+        reportPeriod="2026-03-01 to 2026-03-31"
+        scopeLabel="Date Range"
+        generatedAt="2026-10-01"
+        usageTotals={{
+          fuel: 0,
+          electricity: 980,
+          fuelUnitLabel: 'Grouped by type and unit',
+          electricityUnitLabel: 'kWh',
+          fuelUsageBreakdown: [],
+        }}
+        totalEstimatedEmissionsKgCO2e={579.4}
+        countSummary={reportCountSummary}
+        matchedActivityEmissions={matchedActivityEmissions}
+        conversionFactorsUsed={[]}
+        sourceEvidenceRows={sourceEvidenceRows}
+        calculationDetails={calculationDetails}
+      />,
+    );
+
+    expect(screen.getAllByText('579.40 kg CO₂e').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('100%').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Business Travel - Accommodation').length).toBeGreaterThan(0);
+    expect(screen.queryByText('120 kg CO₂e')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Expand Record-Level Source Evidence' }));
+    expect(screen.getByText('MARCH-HOTEL-010 · Line item 11')).toBeInTheDocument();
+  });
+
   it('shows singular grammar for one true record requiring review', () => {
     const summary = buildReportExecutiveSummary({
       totalEstimatedEmissionsKgCO2e: 37285,
@@ -551,7 +1008,7 @@ describe('Version 1 report presentation data', () => {
     expect(summary.recordsRequiringReview).toBe(1);
     expect(summary.trackedMetrics).toBe(0);
     expect(formatExecutiveSummaryPreview(summary)).toBe(
-      '37,285 kgCO2e · 9 included · 1 requires review',
+      '37,285 kg CO₂e · 9 included · 1 requires review',
     );
   });
 
@@ -577,7 +1034,7 @@ describe('Version 1 report presentation data', () => {
         'Diesel',
         '2.68',
         'L',
-        'kgCO2e',
+        'kg CO₂e',
         'Not specified',
         'Source not specified',
         'Source not specified',
@@ -632,7 +1089,7 @@ describe('buildSourceEvidenceRows', () => {
           sourceFile: 'Golden Test Data.xlsx',
           sourceType: 'Spreadsheet Import',
           importMethod: 'Spreadsheet Import',
-          sourceReference: 'Golden Test Data.xlsx',
+          sourceReference: 'MARCH-ELEC-001',
           matchingStatus: 'Matched',
           reportTreatment: 'Included',
           notes: '',
@@ -645,7 +1102,7 @@ describe('buildSourceEvidenceRows', () => {
           sourceFile: 'Golden Test Data.xlsx',
           sourceType: 'Spreadsheet Import',
           importMethod: 'Spreadsheet Import',
-          sourceReference: 'Golden Test Data.xlsx',
+          sourceReference: 'MARCH-WATER-007',
           matchingStatus: 'Tracked Metric',
           reportTreatment: 'Tracked Only',
           notes: '',
@@ -658,7 +1115,7 @@ describe('buildSourceEvidenceRows', () => {
           sourceFile: 'Golden Test Data.xlsx',
           sourceType: 'Spreadsheet Import',
           importMethod: 'Spreadsheet Import',
-          sourceReference: 'Golden Test Data.xlsx',
+          sourceReference: 'MARCH-HOTEL-010',
           matchingStatus: 'Missing Factor',
           reportTreatment: 'Requires Review',
           notes: '',
@@ -669,7 +1126,9 @@ describe('buildSourceEvidenceRows', () => {
         sourceFile: 'Golden Test Data.xlsx',
         sourceType: 'Spreadsheet Import',
         importMethod: 'Spreadsheet Import',
-        sourceReference: 'Golden Test Data.xlsx',
+        sourceReference: '3 record-level references',
+        sourceReferences: ['MARCH-ELEC-001', 'MARCH-WATER-007', 'MARCH-HOTEL-010'],
+        recordLevelReferenceCount: 3,
         includedRecords: 1,
         trackedMetrics: 1,
         recordsRequiringReview: 1,
@@ -707,7 +1166,7 @@ describe('buildSourceEvidenceRows', () => {
         unit: 'kWh',
         recordDate: '2026-01-31',
         sourceFile: 'utility.pdf',
-        sourceReference: 'utility.pdf',
+        sourceReference: 'utility.pdf · Page 2 · Line item 3',
         sourceType: 'PDF Extraction',
         importMethod: 'PDF Extraction',
         matchingStatus: 'Source Review Required',
@@ -750,7 +1209,7 @@ describe('buildSourceEvidenceRows', () => {
         unit: 'kWh',
         recordDate: '2026-07-20',
         sourceFile: 'Golden Test Data.xlsx',
-        sourceReference: 'Golden Test Data.xlsx',
+        sourceReference: 'Not provided',
         sourceType: 'Spreadsheet Import',
         importMethod: 'Spreadsheet Import',
         matchingStatus: 'Source Review Required',
@@ -795,7 +1254,7 @@ describe('buildSourceEvidenceRows', () => {
       sourceFile: 'Golden Test Data.xlsx',
       sourceType: 'Spreadsheet Import',
       importMethod: 'Spreadsheet Import',
-      sourceReference: 'Golden Test Data.xlsx',
+      sourceReference: 'Not provided',
       matchingStatus: 'Tracked Metric',
       reportTreatment: 'Tracked Only',
     });
@@ -817,7 +1276,7 @@ describe('buildSourceEvidenceRows', () => {
 
     expect(rows[0]).toMatchObject({
       sourceFile: 'Source file unavailable',
-      sourceReference: 'Source file unavailable',
+      sourceReference: 'Not provided',
       sourceType: 'Spreadsheet Import',
       importMethod: 'Spreadsheet Import',
     });
@@ -937,8 +1396,43 @@ describe('report data quality and source consistency', () => {
       />,
     );
 
-    expect(screen.getByText('Golden Test Data.xlsx · Spreadsheet Import')).toBeInTheDocument();
+    expect(screen.getByText('Not provided · Spreadsheet Import')).toBeInTheDocument();
     expect(screen.queryByText('PDF extraction')).not.toBeInTheDocument();
+  });
+
+  it('uses row-level spreadsheet references in activity breakdown', () => {
+    render(
+      <ActivityBreakdownSection
+        matchedActivityEmissions={[
+          {
+            activityDataId: 'activity-march-elec-001',
+            activityType: 'ELECTRICITY',
+            quantity: 980,
+            unit: 'kWh',
+            estimatedEmissionsKgCO2e: 519.4,
+            sourceType: 'SPREADSHEET',
+            sourceFileName: 'carbonlite_needs_review_test.xlsx',
+            sourceReference: 'MARCH-ELEC-001',
+            factorId: 'factor-electricity-ab',
+          },
+          {
+            activityDataId: 'activity-march-hotel-010',
+            activityType: 'HOTEL',
+            quantity: 4,
+            unit: 'nights',
+            estimatedEmissionsKgCO2e: 60,
+            sourceType: 'SPREADSHEET',
+            sourceFileName: 'carbonlite_needs_review_test.xlsx',
+            sourceReference: 'MARCH-HOTEL-010',
+            factorId: 'factor-hotel-on',
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('MARCH-ELEC-001 · Spreadsheet Import')).toBeInTheDocument();
+    expect(screen.getByText('MARCH-HOTEL-010 · Spreadsheet Import')).toBeInTheDocument();
+    expect(screen.queryByText('carbonlite_needs_review_test.xlsx · Spreadsheet Import')).not.toBeInTheDocument();
   });
 });
 
@@ -1000,7 +1494,37 @@ describe('RecordsRequiringReviewSection', () => {
       />,
     );
 
-    expect(screen.getByText('Golden Test Data.xlsx · Spreadsheet Import')).toBeInTheDocument();
+    expect(screen.getByText('Not provided · Spreadsheet Import')).toBeInTheDocument();
     expect(screen.queryByText(/Golden Test Data\.xlsx · PDF extraction/i)).not.toBeInTheDocument();
+  });
+
+  it('uses row-level spreadsheet references for tracked metrics', () => {
+    render(
+      <RecordsRequiringReviewSection
+        formatRecordUnit={(unit) => String(unit ?? '')}
+        calculationDetails={[
+          {
+            activityDataId: 'activity-march-water-007',
+            activityType: 'WATER',
+            recordDate: '2026-03-07',
+            dateEstimated: false,
+            reportingYear: 2026,
+            jurisdiction: 'Alberta, Canada',
+            activityQuantity: 18,
+            activityUnit: 'm3',
+            calculationStatus: 'TRACKED_ONLY',
+            matchingStatus: 'TRACKED_ONLY',
+            status: 'TRACKED_ONLY',
+            sourceType: 'SPREADSHEET',
+            sourceFileName: 'carbonlite_needs_review_test.xlsx',
+            sourceReference: 'MARCH-WATER-007',
+            sourceRow: 8,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('MARCH-WATER-007 · Spreadsheet Import · Row 8')).toBeInTheDocument();
+    expect(screen.queryByText(/carbonlite_needs_review_test\.xlsx · Spreadsheet Import/i)).not.toBeInTheDocument();
   });
 });

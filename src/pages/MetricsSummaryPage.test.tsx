@@ -281,7 +281,7 @@ describe('buildMetricsSummaryTableRows', () => {
       },
       {
         metricType: 'Total Calculated Emissions',
-        unit: 'kgCO2e',
+        unit: 'kg CO₂e',
         totalValue: '1,234.50',
         category: 'calculated',
       },
@@ -347,7 +347,7 @@ describe('buildMetricsSummaryTableRows', () => {
         }),
         expect.objectContaining({
           metricType: 'Total Calculated Emissions',
-          unit: 'kgCO2e',
+          unit: 'kg CO₂e',
           totalValue: '37,285',
           category: 'calculated',
         }),
@@ -382,7 +382,7 @@ describe('buildMetricsSummaryTableRows', () => {
       expect.arrayContaining([
         expect.objectContaining({
           metricType: 'Total Calculated Emissions',
-          unit: 'kgCO2e',
+          unit: 'kg CO₂e',
           totalValue: '268',
           category: 'calculated',
         }),
@@ -641,9 +641,9 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('Calculated Result')).toBeInTheDocument();
     expect(screen.getAllByText('Total Calculated Emissions').length).toBeGreaterThan(0);
     expect(screen.getByText('231')).toBeInTheDocument();
-    expect(screen.getByText('kgCO2e')).toBeInTheDocument();
+    expect(screen.getByText('kg CO₂e')).toBeInTheDocument();
     expect(
-      screen.getByText('Calculated from: 100 liters gasoline × 2.31 kgCO2e/liter'),
+      screen.getByText('Calculated from: 100 liters gasoline × 2.31 kg CO₂e/liter'),
     ).toBeInTheDocument();
     expect(screen.getByText('Calculation details and traceability (1 records)')).toBeInTheDocument();
     expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(0);
@@ -663,7 +663,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('Factor Source')).toBeInTheDocument();
     expect(within(dialog).getByText('ECCC 2025')).toBeInTheDocument();
     expect(within(dialog).getByText('Formula')).toBeInTheDocument();
-    expect(within(dialog).getByText('100 liters × 2.31 kgCO2e/liter = 231 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('100 liters × 2.31 kg CO₂e/liter = 231 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Matching Explanation')).toBeInTheDocument();
     expect(within(dialog).getByText('Matched factor')).toBeInTheDocument();
   });
@@ -698,7 +698,7 @@ describe('buildMetricsSummaryTableRows', () => {
       minHeight: '0',
     });
     expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
-    expect(within(dialog).getByText('37,285 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('37,285 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('9');
     expect(within(dialog).getByText('Tracked metrics').parentElement).toHaveTextContent('1');
     expect(within(dialog).getByText('Electricity - Alberta')).toBeInTheDocument();
@@ -778,21 +778,21 @@ describe('buildMetricsSummaryTableRows', () => {
 
     fireEvent.click(scopeButtons[0]);
     let dialog = screen.getByRole('dialog', { name: /Scope 1 Calculation Trail/i });
-    expect(within(dialog).getByText('3,313 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('3,313 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getAllByText(/Natural Gas · Canada/i).length).toBeGreaterThan(0);
     expect(within(dialog).queryByText(/Electricity · Alberta · 12,500 kWh/i)).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
 
     fireEvent.click(scopeButtons[1]);
     dialog = screen.getByRole('dialog', { name: /Scope 2 Calculation Trail/i });
-    expect(within(dialog).getByText('33,247 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('33,247 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getAllByText(/50 MWh × 1,000 = 50,000 kWh/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText(/Electricity ·/i).length).toBeGreaterThanOrEqual(4);
     fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
 
     fireEvent.click(scopeButtons[2]);
     dialog = screen.getByRole('dialog', { name: /Scope 3 Calculation Trail/i });
-    expect(within(dialog).getByText('725 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('725 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getAllByText(/Air Travel · Canada/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText(/Business Travel - Accommodation · Canada/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText('Consultant Review Recommended').length).toBeGreaterThan(0);
@@ -806,7 +806,7 @@ describe('buildMetricsSummaryTableRows', () => {
       })[0],
     );
     dialog = screen.getByRole('dialog', { name: /Electricity Calculation Trail/i });
-    expect(within(dialog).getByText('33,247 kgCO2e')).toBeInTheDocument();
+    expect(within(dialog).getByText('33,247 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('4');
     expect(within(dialog).queryByText(/Natural Gas/i)).not.toBeInTheDocument();
   });
@@ -866,7 +866,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(summaryToggle).toHaveTextContent('Expand');
     expect(summaryToggle).toHaveAttribute('aria-expanded', 'false');
     expect(summarySection).toHaveTextContent(
-      'Total: 37,285 kgCO2e · Scope 1: 3,313 · Scope 2: 33,247 · Scope 3: 725',
+      'Total: 37,285 kg CO₂e · Scope 1: 3,313 kg CO₂e · Scope 2: 33,247 kg CO₂e · Scope 3: 725 kg CO₂e',
     );
     expect(within(summarySection).queryByText('Input Data')).not.toBeInTheDocument();
   });
@@ -975,9 +975,9 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
-    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('0 kg CO2e');
-    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('144 kg CO2e');
-    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('0 kg CO2e');
+    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('0 kg CO₂e');
+    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('144 kg CO₂e');
+    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('0 kg CO₂e');
   });
 
   it('reconciles total emissions to Scope 1 + Scope 2 + Scope 3 and excludes review rows', () => {
@@ -1073,10 +1073,10 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
-    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('457 kg CO2e');
-    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('265 kg CO2e');
-    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('210 kg CO2e');
-    expect(screen.getByText('932 kg CO2e')).toBeInTheDocument();
+    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('457 kg CO₂e');
+    expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('265 kg CO₂e');
+    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('210 kg CO₂e');
+    expect(screen.getByText('932 kg CO₂e')).toBeInTheDocument();
     expect(
       pilotExpectedEmissions.scope1KgCO2e +
         pilotExpectedEmissions.scope2KgCO2e +
@@ -1111,7 +1111,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText(/Natural Gas: 400 m3/)).toBeInTheDocument();
     expect(screen.queryByText(/L \/ m3/)).not.toBeInTheDocument();
     expect(screen.getAllByText('Total Calculated Emissions').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('1,234.50 kg CO2e').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1,234.50 kg CO₂e').length).toBeGreaterThan(0);
 
     const table = screen.getByRole('table');
     expect(within(table).queryByText('Count')).not.toBeInTheDocument();
@@ -1482,9 +1482,127 @@ describe('buildDataReadinessSummary', () => {
     ]);
 
     expect(summary.level).toBe('Good');
+    expect(summary.score).toBe(100);
     expect(summary.recordsReadyForCalculation).toBe(2);
     expect(summary.recordsRequiringReview).toBe(0);
+    expect(summary.optionalDataCompleteness.score).toBe(0);
     expect(Number.isNaN(summary.score)).toBe(false);
+  });
+
+  it('keeps emissions workflow readiness at 100 when optional cost data is missing', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'ELECTRICITY', activityUnit: 'kWh', sourceReference: 'MARCH-ELEC-001' }),
+      detail({ activityType: 'HOTEL', activityUnit: 'nights', sourceReference: 'MARCH-HOTEL-010' }),
+    ]);
+
+    expect(summary.score).toBe(100);
+    expect(summary.level).toBe('Good');
+    expect(summary.message).toContain('Emissions workflow readiness is 100%');
+    expect(summary.message).not.toMatch(/optional cost|remaining readiness gap/i);
+    expect(summary.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        score: 0,
+        costDataCount: 0,
+        totalRecords: 2,
+        missingCostDataCount: 2,
+      }),
+    );
+  });
+
+  it('keeps emissions workflow readiness at 100 when optional cost data is populated', () => {
+    const summary = buildDataReadinessSummary([
+      detail({
+        activityType: 'ELECTRICITY',
+        activityUnit: 'kWh',
+        sourceReference: 'MARCH-ELEC-001',
+        costCad: 120.5,
+      }),
+      detail({
+        activityType: 'HOTEL',
+        activityUnit: 'nights',
+        sourceReference: 'MARCH-HOTEL-010',
+        sourceTextSnippet: 'Cost CAD 900',
+      }),
+    ]);
+
+    expect(summary.score).toBe(100);
+    expect(summary.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        score: 100,
+        costDataCount: 2,
+        totalRecords: 2,
+        missingCostDataCount: 0,
+      }),
+    );
+  });
+
+  it('scores partial optional cost coverage with a record-based denominator', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'ELECTRICITY', costCad: 214.55 }),
+      detail({ activityType: 'HOTEL' }),
+      detail({ activityType: 'DIESEL', costCad: 80 }),
+    ]);
+
+    expect(summary.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        score: 66.67,
+        costDataCount: 2,
+        totalRecords: 3,
+        missingCostDataCount: 1,
+      }),
+    );
+  });
+
+  it('treats cost = 0 as populated optional cost data', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'ELECTRICITY', costCad: 0 }),
+    ]);
+
+    expect(summary.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        score: 100,
+        costDataCount: 1,
+        totalRecords: 1,
+        missingCostDataCount: 0,
+      }),
+    );
+  });
+
+  it('includes tracked-only records with optional cost in optional completeness scoring', () => {
+    const summary = buildDataReadinessSummary([
+      detail({
+        activityType: 'WATER',
+        status: 'TRACKED_ONLY',
+        calculatedEmissionsKgCO2e: null,
+        costCad: 64,
+      }),
+      detail({ activityType: 'HOTEL' }),
+    ]);
+
+    expect(summary.trackedOnlyCount).toBe(1);
+    expect(summary.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        score: 50,
+        costDataCount: 1,
+        totalRecords: 2,
+        missingCostDataCount: 1,
+      }),
+    );
+  });
+
+  it('does not count unsupported optional fields in the completeness numerator', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'ELECTRICITY', vendorAccount: 'ENMAX-7781' }),
+    ]);
+
+    expect(summary.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        score: 0,
+        costDataCount: 0,
+        totalRecords: 1,
+        missingCostDataCount: 1,
+      }),
+    );
   });
 
   it('counts invalid units, missing jurisdiction, missing factors, and tracked metrics', () => {
@@ -1501,6 +1619,77 @@ describe('buildDataReadinessSummary', () => {
     expect(summary.missingJurisdictionCount).toBe(1);
     expect(summary.missingFactorCount).toBe(1);
     expect(summary.trackedOnlyCount).toBe(1);
+  });
+
+  it('reduces emissions workflow readiness when a required unit is missing or invalid', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'DIESEL', status: 'INVALID_UNIT', activityUnit: '', calculatedEmissionsKgCO2e: null }),
+      detail({ activityType: 'HOTEL', activityUnit: 'nights', status: 'CALCULATED' }),
+    ]);
+
+    expect(summary.score).toBeLessThan(100);
+    expect(summary.recordsRequiringReview).toBe(1);
+    expect(summary.invalidUnitCount).toBe(1);
+  });
+
+  it('reduces emissions workflow readiness when electricity province is missing', () => {
+    const summary = buildDataReadinessSummary([
+      detail({
+        activityType: 'ELECTRICITY',
+        activityUnit: 'kWh',
+        status: 'MISSING_JURISDICTION',
+        jurisdictionRegion: null,
+        calculatedEmissionsKgCO2e: null,
+      }),
+      detail({ activityType: 'HOTEL', activityUnit: 'nights', status: 'CALCULATED' }),
+    ]);
+
+    expect(summary.score).toBeLessThan(100);
+    expect(summary.recordsRequiringReview).toBe(1);
+    expect(summary.missingJurisdictionCount).toBe(1);
+  });
+
+  it('reduces emissions workflow readiness for missing factors on emissions-bearing records', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'HOTEL', activityUnit: 'nights', status: 'MISSING_FACTOR', calculatedEmissionsKgCO2e: null }),
+      detail({ activityType: 'ELECTRICITY', activityUnit: 'kWh', status: 'CALCULATED' }),
+    ]);
+
+    expect(summary.score).toBeLessThan(100);
+    expect(summary.recordsRequiringReview).toBe(1);
+    expect(summary.missingFactorCount).toBe(1);
+  });
+
+  it('excludes tracked metrics from GHG calculation coverage checks', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'ELECTRICITY', activityUnit: 'kWh', calculatedEmissionsKgCO2e: 519.4 }),
+      detail({ activityType: 'WATER', status: 'TRACKED_ONLY', activityUnit: 'm3', calculatedEmissionsKgCO2e: null }),
+    ]);
+
+    expect(summary.recordsReadyForCalculation).toBe(1);
+    expect(summary.score).toBe(100);
+    expect(summary.recordsRequiringReview).toBe(0);
+    expect(summary.trackedOnlyCount).toBe(1);
+    expect(summary.checks.find((check) => check.key === 'factor-coverage')).toEqual(
+      expect.objectContaining({
+        count: 1,
+        total: 1,
+        passed: true,
+      }),
+    );
+    expect(summary.message).not.toMatch(/missing fields, factors, jurisdiction/i);
+  });
+
+  it('does not reduce readiness for tracked-only water or missing optional metadata', () => {
+    const summary = buildDataReadinessSummary([
+      detail({ activityType: 'WATER', status: 'TRACKED_ONLY', activityUnit: 'm3', calculatedEmissionsKgCO2e: null }),
+    ]);
+
+    expect(summary.score).toBe(100);
+    expect(summary.level).toBe('Good');
+    expect(summary.trackedOnlyCount).toBe(1);
+    expect(summary.recordsRequiringReview).toBe(0);
+    expect(summary.optionalDataCompleteness.score).toBe(0);
   });
 
   it('returns an incomplete non-NaN score for empty data', () => {
@@ -1664,6 +1853,28 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
     expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
+  });
+
+  it('loads Calculation Review for the selected imported document when route state provides a document scope', async () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/calculation-review',
+            state: { selectedDocumentIds: ['current-doc'] },
+          },
+        ]}
+      >
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(loadMetricsOverview).toHaveBeenCalledWith({
+        recalculate: true,
+        selectedDocumentIds: ['current-doc'],
+      });
+    });
   });
 
   it('uses saved organization profile values in the Inventory Boundary', async () => {
@@ -1871,7 +2082,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     const siteSection = screen.getByRole('region', { name: 'Site / Facility Breakdown' });
-    expect(siteSection).toHaveTextContent('Organization total: 9,240 kgCO2e');
+    expect(siteSection).toHaveTextContent('Organization total: 9,240 kg CO₂e');
     expect(siteSection).toHaveTextContent('2 site/facility groups');
     expect(within(siteSection).queryByText('Calgary Shop')).not.toBeInTheDocument();
 
@@ -1881,11 +2092,11 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
     expect(within(siteSection).getByText('Calgary Shop')).toBeInTheDocument();
     expect(within(siteSection).getByText('Unassigned')).toBeInTheDocument();
-    expect(within(siteSection).getByText('8,665 kgCO2e')).toBeInTheDocument();
-    expect(within(siteSection).getAllByText('575 kgCO2e').length).toBeGreaterThan(0);
-    expect(siteSection).toHaveTextContent('Electricity: 6,625 kgCO2e');
-    expect(siteSection).toHaveTextContent('Natural Gas: 1,890 kgCO2e');
-    expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 150 kgCO2e');
+    expect(within(siteSection).getByText('8,665 kg CO₂e')).toBeInTheDocument();
+    expect(within(siteSection).getAllByText('575 kg CO₂e').length).toBeGreaterThan(0);
+    expect(siteSection).toHaveTextContent('Electricity: 6,625 kg CO₂e');
+    expect(siteSection).toHaveTextContent('Natural Gas: 1,890 kg CO₂e');
+    expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 150 kg CO₂e');
   });
 
   it('renders Calculation Review for pilot reviewer without mutation controls', async () => {
@@ -1958,7 +2169,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Preparing calculation review...');
     expect(screen.getAllByText('Preparing calculation review...').length).toBeGreaterThan(0);
     expect(screen.queryByText('No activity records yet. Import activity data to generate metrics.')).not.toBeInTheDocument();
-    expect(screen.queryByText('0 kg CO2e')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 kg CO₂e')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('2025-01-01')).not.toBeDisabled();
     expect(screen.getByDisplayValue('2026-12-31')).not.toBeDisabled();
 

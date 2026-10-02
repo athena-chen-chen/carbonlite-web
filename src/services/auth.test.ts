@@ -113,7 +113,7 @@ describe('user role permissions', () => {
     expect(canEditDraftRows({ email: 'admin@example.com', role: 'ADMIN' })).toBe(false);
   });
 
-  it('allows customer users to contribute activity data without broader record management access', () => {
+  it('allows legacy customer users to contribute and manage activity records', () => {
     expect(canSetProvinceForActivityRecords(user('OWNER'))).toBe(true);
     expect(canSetProvinceForActivityRecords(user('ADMIN'))).toBe(true);
     expect(canSetProvinceForActivityRecords(user('EDITOR'))).toBe(true);
@@ -122,7 +122,7 @@ describe('user role permissions', () => {
     expect(canEditDraftRows(user('USER'))).toBe(true);
     expect(canImportActivityRecords(user('USER'))).toBe(true);
     expect(canUploadFiles(user('USER'))).toBe(true);
-    expect(canManageActivityRecords(user('USER'))).toBe(false);
+    expect(canManageActivityRecords(user('USER'))).toBe(true);
     expect(canSetProvinceForActivityRecords(user('VIEWER'))).toBe(false);
     expect(
       canSetProvinceForActivityRecords({

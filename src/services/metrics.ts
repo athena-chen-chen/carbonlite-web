@@ -183,6 +183,13 @@ export type MetricsSummaryResponse = {
     sourceRow?: string | number | null;
     sourceTextSnippet?: string | null;
     sourceDocumentId?: string | null;
+    jurisdictionCountry?: string | null;
+    jurisdictionRegion?: string | null;
+    jurisdiction?: string | null;
+    jurisdictionSource?: 'record' | 'facility' | 'organization' | 'user' | 'unknown' | string | null;
+    jurisdictionAssumed?: boolean | null;
+    costCad?: number | string | null;
+    costCurrency?: string | null;
     notes?: string | null;
     factorId: string;
     factorVersionId?: string | null;
@@ -233,6 +240,8 @@ export type MetricsSummaryResponse = {
     sourcePage?: string | number | null;
     sourceRow?: string | number | null;
     sourceTextSnippet?: string | null;
+    costCad?: number | string | null;
+    costCurrency?: string | null;
   }>;
 };
 
@@ -317,6 +326,8 @@ export type CalculationAuditDetail = {
   sourceRow?: string | number | null;
   sourceTextSnippet?: string | null;
   sourceDocumentId?: string | null;
+  costCad?: number | string | null;
+  costCurrency?: string | null;
   notes?: string | null;
 };
 
@@ -378,6 +389,8 @@ export type CalculationExplanation = {
   };
   formula?: string | null;
   warning?: string | null;
+  costCad?: number | string | null;
+  costCurrency?: string | null;
 };
 
 export async function calculateMetrics(activityDataIds: string[]) {

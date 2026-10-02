@@ -4,12 +4,14 @@ const now = '2026-06-13T16:00:00.000Z';
 
 type TestDocument = {
   id: string;
+  organizationId?: string | null;
   fileName: string;
   fileUrl: string;
   mimeType: string;
   fileSize: number;
   type: string;
   status: string;
+  fileHash?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -21,6 +23,7 @@ type TestActivity = {
   sourceDocumentId: string;
   sourceFileName: string;
   importBatchId: string;
+  sourceRow?: string | number | null;
   activityType: string;
   recordDate: string;
   quantity: number;
@@ -73,6 +76,7 @@ export type CarbonLiteApiState = {
   metricGenerationRequests: number;
   summaryRequests: number;
   documentDeleteRequests: number;
+  activityDeleteRequests: number;
   factorCreateRequests: number;
   factorDeleteRequests: number;
   unexpectedRequests: string[];
@@ -97,6 +101,7 @@ export function createCarbonLiteApiState(): CarbonLiteApiState {
     metricGenerationRequests: 0,
     summaryRequests: 0,
     documentDeleteRequests: 0,
+    activityDeleteRequests: 0,
     factorCreateRequests: 0,
     factorDeleteRequests: 0,
     unexpectedRequests: [],
@@ -127,18 +132,39 @@ export async function installCarbonLiteApiMock(
 
     if (method === 'POST' && path === '/documents/upload') {
       state.uploadRequests += 1;
+      const formData = request.postData() ?? '';
+      const fileHash = getMultipartField(formData, 'fileHash');
+      const existingDocument = fileHash
+        ? state.documents.find((document) => document.fileHash === fileHash)
+        : undefined;
+      if (existingDocument) {
+        await fulfillJson(route, {
+          duplicate: true,
+          existingDocumentId: existingDocument.id,
+          existingDocument: {
+            id: existingDocument.id,
+            fileName: existingDocument.fileName,
+            createdAt: existingDocument.createdAt,
+            fileHash: existingDocument.fileHash,
+          },
+          message: 'This file has already been uploaded.',
+        }, 409);
+        return;
+      }
       const document: TestDocument = {
-        id: 'document-1',
+        id: `document-${state.documents.length + 1}`,
+        organizationId: 'organization-1',
         fileName: 'enmax-electricity.csv',
         fileUrl: '/storage/enmax-electricity.csv',
         mimeType: 'text/csv',
         fileSize: 113,
         type: 'SPREADSHEET',
         status: 'UPLOADED',
+        fileHash,
         createdAt: now,
         updatedAt: now,
       };
-      state.documents = [document];
+      state.documents = [document, ...state.documents];
       await fulfillJson(route, document, 201);
       return;
     }
@@ -248,28 +274,47 @@ export async function installCarbonLiteApiMock(
 
     if (method === 'POST' && path === '/document-extraction/confirm') {
       state.importRequests += 1;
+      const input = request.postDataJSON() as {
+        documentId?: string;
+        importBatchId?: string;
+        activities?: Array<Record<string, unknown>>;
+      };
+      const documentId = String(input.documentId ?? 'document-1');
+      const importBatchId = String(input.importBatchId ?? `document-${documentId}`);
+      const activities = input.activities?.length ? input.activities : [buildImportedActivity()];
+      const existingKeys = new Set(
+        state.activities.map((activity) =>
+          getActivityRecordImportKey(activity, state.documents),
+        ),
+      );
+      const created: TestActivity[] = [];
 
-      if (state.activities.length > 0) {
-        await fulfillJson(route, {
-          count: 0,
-          createdIds: [],
-          importBatchId: 'document-document-1',
-          alreadyImported: true,
+      activities.forEach((activity, index) => {
+        const normalized = normalizeImportedActivity(activity, {
+          id: `activity-${state.activities.length + created.length + 1}`,
+          documentId,
+          importBatchId,
+          index,
         });
-        return;
-      }
+        const key = getActivityRecordImportKey(normalized, state.documents);
+        if (existingKeys.has(key)) return;
+        existingKeys.add(key);
+        created.push(normalized);
+      });
 
-      state.activities = [buildImportedActivity()];
+      state.activities = [...state.activities, ...created];
       state.documents = state.documents.map((document) => ({
         ...document,
-        status: 'IMPORTED',
+        status: created.length > 0 ? 'IMPORTED' : document.status,
         updatedAt: now,
       }));
       await fulfillJson(route, {
-        count: 1,
-        createdIds: ['activity-1'],
-        importBatchId: 'document-document-1',
-        alreadyImported: false,
+        count: created.length,
+        createdIds: created.map((activity) => activity.id),
+        importBatchId,
+        alreadyImported: created.length === 0,
+        skippedCount: activities.length - created.length,
+        message: created.length === 0 ? 'No new Ready records to import.' : undefined,
       });
       return;
     }
@@ -294,6 +339,29 @@ export async function installCarbonLiteApiMock(
 
     if (method === 'GET' && path === '/activity-data') {
       await fulfillJson(route, paginated(state.activities));
+      return;
+    }
+
+    if (method === 'DELETE' && path.startsWith('/activity-data/')) {
+      state.activityDeleteRequests += 1;
+      const activityId = path.split('/').pop();
+      const beforeCount = state.activities.length;
+      state.activities = state.activities.filter((activity) => activity.id !== activityId);
+      await fulfillJson(route, {
+        deletedCount: beforeCount - state.activities.length,
+      });
+      return;
+    }
+
+    if (method === 'POST' && path === '/activity-data/bulk-delete') {
+      state.activityDeleteRequests += 1;
+      const input = request.postDataJSON() as { ids?: unknown[] };
+      const ids = new Set((input.ids ?? []).map((id) => String(id)));
+      const beforeCount = state.activities.length;
+      state.activities = state.activities.filter((activity) => !ids.has(activity.id));
+      await fulfillJson(route, {
+        deletedCount: beforeCount - state.activities.length,
+      });
       return;
     }
 
@@ -390,10 +458,54 @@ function buildImportedActivity(): TestActivity {
     jurisdictionRegion: 'Alberta',
     sourceType: 'AI_EXTRACTION',
     sourceReference: 'enmax-electricity.csv',
+    sourceRow: 2,
     notes: 'Imported from document extraction.',
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function normalizeImportedActivity(
+  activity: Record<string, unknown>,
+  defaults: { id: string; documentId: string; importBatchId: string; index: number },
+): TestActivity {
+  return {
+    id: defaults.id,
+    organizationId: 'organization-1',
+    documentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
+    sourceDocumentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
+    sourceFileName: String(activity.sourceFileName ?? 'enmax-electricity.csv'),
+    importBatchId: String(activity.importBatchId ?? defaults.importBatchId),
+    sourceRow: activity.sourceRow as string | number | null | undefined ?? defaults.index + 2,
+    activityType: String(activity.activityType ?? 'ELECTRICITY'),
+    recordDate: String(activity.recordDate ?? '2026-05-31'),
+    quantity: Number(activity.quantity ?? 4280),
+    unit: String(activity.unit ?? 'kWh'),
+    jurisdictionCountry: String(activity.jurisdictionCountry ?? 'Canada'),
+    jurisdictionRegion: String(activity.jurisdictionRegion ?? 'Alberta'),
+    sourceType: String(activity.sourceType ?? 'AI_EXTRACTION'),
+    sourceReference: String(activity.sourceReference ?? activity.sourceFileName ?? 'enmax-electricity.csv'),
+    notes: String(activity.notes ?? 'Imported from document extraction.'),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function getActivityRecordImportKey(activity: TestActivity, documents: TestDocument[] = []) {
+  const sourceDocument = documents.find((document) => document.id === activity.sourceDocumentId);
+  const fileHash = String(sourceDocument?.fileHash ?? '').trim();
+  const sourceRow = String(activity.sourceRow ?? '').trim();
+  if (fileHash && sourceRow) return `${fileHash}::row:${sourceRow}`;
+  if (sourceRow) return `${activity.sourceDocumentId}::row:${sourceRow}`;
+
+  return [
+    activity.sourceDocumentId,
+    activity.sourceReference,
+    activity.activityType,
+    activity.recordDate,
+    activity.quantity,
+    activity.unit,
+  ].join('::');
 }
 
 function buildSystemConversionFactors(): TestConversionFactor[] {
@@ -663,6 +775,13 @@ function paginated<T>(items: T[]) {
     total: items.length,
     totalPages: 1,
   };
+}
+
+function getMultipartField(body: string, fieldName: string) {
+  const match = body.match(
+    new RegExp(`name="${fieldName}"\\r?\\n\\r?\\n([^\\r\\n-]+)`),
+  );
+  return match?.[1]?.trim() || null;
 }
 
 async function fulfillJson(route: Route, body: unknown, status = 200) {

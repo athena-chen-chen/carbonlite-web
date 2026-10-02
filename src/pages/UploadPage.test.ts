@@ -124,6 +124,7 @@ describe('document import factor matching metadata', () => {
       quantity: 100,
       unit: ' KWH ',
       jurisdictionRegion: 'BC',
+      sourceType: 'DOCUMENT_AI',
       matchingStatus: 'MATCHED',
       reportTreatment: 'INCLUDED',
       scope: 'SCOPE_2',
@@ -467,7 +468,7 @@ describe('document upload action model', () => {
     expect(model.menuActions.map((action) => action.label)).toEqual([
       'View Details',
       'Download Source File',
-      'Delete',
+      'Delete Source Document',
     ]);
   });
 
@@ -489,7 +490,7 @@ describe('document upload action model', () => {
       'Download Source File',
       'Import',
       'Re-extract',
-      'Delete',
+      'Delete Source Document',
     ]);
   });
 
@@ -508,7 +509,7 @@ describe('document upload action model', () => {
     expect(model.menuActions.map((action) => action.label)).toEqual([
       'View Details',
       'Download Source File',
-      'Delete',
+      'Delete Source Document',
     ]);
     expect(model.menuActions.map((action) => action.label)).not.toContain('Import');
     expect(model.menuActions.map((action) => action.label)).not.toContain('Extract');
@@ -523,7 +524,7 @@ describe('document upload action model', () => {
       label: 'Retry Extraction',
       title: 'Run extraction again',
     });
-    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete Source Document']);
   });
 
   it('file missing documents show Upload Again and direct Delete actions', () => {
@@ -535,7 +536,7 @@ describe('document upload action model', () => {
       label: 'Upload Again',
       title: FILE_MISSING_TOOLTIP,
     });
-    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete Source Document']);
   });
 
   it('handles backend REUPLOAD_REQUIRED status the same as FILE_MISSING', () => {
@@ -547,7 +548,7 @@ describe('document upload action model', () => {
       label: 'Upload Again',
       title: FILE_MISSING_TOOLTIP,
     });
-    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete']);
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete Source Document']);
     expect(FILE_MISSING_EXPLANATION).toContain(
       'system updates or temporary storage cleanup',
     );

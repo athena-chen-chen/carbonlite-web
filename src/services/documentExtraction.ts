@@ -56,6 +56,9 @@ export type ConfirmImportResponse = {
   createdIds: string[];
   importBatchId?: string;
   alreadyImported?: boolean;
+  skippedCount?: number;
+  message?: string;
+  createdRecordKeys?: string[];
 };
 
 export class DuplicateDocumentImportError extends Error {
@@ -118,10 +121,6 @@ export async function confirmDocumentImport(
         activities,
       }),
     });
-
-    if (response.alreadyImported) {
-      throw new DuplicateDocumentImportError();
-    }
 
     if (response.count > 0) {
       track('ACTIVITY_RECORD_CREATED', {

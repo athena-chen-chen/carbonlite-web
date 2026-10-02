@@ -11,6 +11,7 @@ import { formatCredibilityLabel } from './factorCredibility';
 import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
 import { escapeCsvValue } from './reportCsvExport';
 import {
+  formatReportSourceReference,
   isRecordRequiringCorrection,
   isTrackedMetricDetail,
 } from './reportCredibility';
@@ -81,9 +82,13 @@ function getStatus(detail: CalculationAuditDetail) {
 }
 
 function getSourceReference(detail: CalculationAuditDetail) {
+  const sourceReference = formatReportSourceReference({
+    sourceFileName: detail.sourceFileName,
+    sourceReference: detail.sourceReference,
+    sourceType: detail.sourceType,
+  });
   const parts = [
-    detail.sourceFileName,
-    detail.sourceReference,
+    sourceReference,
     detail.sourcePage ? `Page ${detail.sourcePage}` : '',
     detail.sourceRow ? `Line item ${detail.sourceRow}` : '',
   ].map(clean).filter(Boolean);

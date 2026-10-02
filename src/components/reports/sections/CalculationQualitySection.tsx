@@ -48,19 +48,19 @@ export function CalculationQualitySection({
         <Fact label="Invalid Unit" value={String(primarySkippedReasons.invalidUnit)} />
         <Fact label="Calculation Coverage" value={dataQualityCoverage} />
         {dataReadinessScore ? (
-          <Fact label="Import Readiness" value={dataReadinessScore} />
+          <Fact label="Emissions Workflow Readiness" value={dataReadinessScore} />
         ) : null}
       </div>
       <div style={qualityExplanationStyle}>
         <strong>How to read these metrics:</strong>
         <p>
-          Calculation Coverage is the percentage of imported activity records that could be matched to an emissions factor and included in the calculated GHG total.
+          Calculation Coverage is calculated emission-bearing records divided by eligible emission-bearing records.
         </p>
         <p>
-          Import Readiness is the percentage of draft or imported records that are complete enough to proceed without manual review.
+          Emissions Workflow Readiness is the percentage of draft or imported records that are complete enough to calculate, trace, and report without manual correction.
         </p>
         <p>
-          Calculation Coverage and Import Readiness may differ. Tracked-only operational metrics and records missing required data are excluded from Calculation Coverage.
+          Calculation Coverage and Emissions Workflow Readiness may differ. Tracked-only operational metrics are retained for review but excluded from the Calculation Coverage denominator. Optional metadata such as cost is tracked separately and does not reduce readiness.
         </p>
       </div>
       {recordsRequiringReview > 0 ? (

@@ -4,15 +4,22 @@ import { useAuth } from '../auth/AuthProvider';
 import { getOrganizationName, getUserDisplayName } from '../services/auth';
 import { canViewAdmin, isPilotReviewer } from '../utils/permissions';
 import { openFeedbackOverlay } from '../utils/feedbackOverlay';
+import {
+  CALCULATION_REVIEW_ROUTE,
+  DATA_RECORDS_ROUTE,
+  INPUT_DATA_ROUTE,
+  LEGACY_UPLOAD_ROUTE,
+  REPORTS_ROUTE,
+} from '../constants/routes';
 
 const navItems = [
   { to: '/', label: 'Home' },
-  { to: '/input-data', label: 'Input Data', activePaths: ['/upload'] },
+  { to: INPUT_DATA_ROUTE, label: 'Input Data', activePaths: [LEGACY_UPLOAD_ROUTE] },
   { to: '/data-collection-guide', label: 'Data Guide' },
-  { to: '/data-records', label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
+  { to: DATA_RECORDS_ROUTE, label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
   { to: '/conversion-factors', label: 'Factors' },
-  { to: '/metrics-summary', label: 'Calculation Review', activePaths: ['/calculation-review'] },
-  { to: '/reports', label: 'Reports' },
+  { to: CALCULATION_REVIEW_ROUTE, label: 'Calculation Review', activePaths: ['/calculation-review'] },
+  { to: REPORTS_ROUTE, label: 'Reports' },
 ] as const;
 
 const settingsNavItems = [
@@ -108,7 +115,7 @@ export function AppNav() {
   const userLabel = getUserDisplayName(user);
   const showPilotReviewerBanner = isAuthenticated && isPilotReviewer(user);
   const visibleNavItems = showPilotReviewerBanner
-    ? navItems.filter((item) => !['/', '/input-data'].includes(item.to))
+    ? navItems.filter((item) => !['/', INPUT_DATA_ROUTE].includes(item.to))
     : navItems;
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);

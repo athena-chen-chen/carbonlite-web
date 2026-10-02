@@ -1,6 +1,7 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
   bulkDeleteActivityData,
+  bulkUpdateActivityFacility,
   bulkUpdateActivityProvince,
   clearActivityRecordsForCurrentCompany,
   createActivityData,
@@ -88,9 +89,112 @@ describe('createActivityData', () => {
     );
     expect(requestBody).toMatchObject({
       recordDate: '2026-05-29',
+      sourceType: 'DOCUMENT_AI',
       sourceDocumentId: 'doc-1',
       sourceFileName: 'water.pdf',
       dateEstimated: true,
+    });
+  });
+
+  it('maps spreadsheet source formats to the canonical import source type', async () => {
+    setMemberUser();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await createActivityData({
+      activityType: 'ELECTRICITY',
+      recordDate: '2026-03-01',
+      quantity: 980,
+      unit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      sourceType: 'EXCEL',
+      sourceReference: 'MARCH-ELEC-001',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceRow: 2,
+    });
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody).toMatchObject({
+      sourceType: 'IMPORT',
+      sourceReference: 'MARCH-ELEC-001',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceRow: 2,
+    });
+  });
+
+  it('preserves optional Cost CAD metadata, including zero cost values', async () => {
+    setMemberUser();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await createActivityData({
+      activityType: 'WATER',
+      recordDate: '2026-03-08',
+      quantity: 18,
+      unit: 'm3',
+      sourceType: 'EXCEL',
+      sourceReference: 'MARCH-WATER-007',
+      costCad: 0,
+      costCurrency: 'CAD',
+    });
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody).toMatchObject({
+      sourceType: 'IMPORT',
+      sourceReference: 'MARCH-WATER-007',
+      costCad: 0,
+      costCurrency: 'CAD',
+    });
+  });
+
+  it('preserves Ontario jurisdiction for the golden accommodation spreadsheet row', async () => {
+    setMemberUser();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-march-hotel-010' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await createActivityData({
+      activityType: 'HOTEL',
+      recordDate: '2026-03-10',
+      quantity: 4,
+      unit: 'nights',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Ontario',
+      facilityName: 'Toronto Client Visit',
+      sourceType: 'EXCEL',
+      sourceReference: 'MARCH-HOTEL-010',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceRow: 11,
+    });
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody).toMatchObject({
+      activityType: 'HOTEL',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Ontario',
+      facility: 'Toronto Client Visit',
+      sourceType: 'IMPORT',
+      sourceReference: 'MARCH-HOTEL-010',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceRow: 11,
     });
   });
 
@@ -665,6 +769,56 @@ describe('bulkUpdateActivityProvince', () => {
 
     await expect(
       bulkUpdateActivityProvince(['activity-1'], 'Alberta'),
+    ).rejects.toThrow('You do not have permission to perform this action.');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('bulkUpdateActivityFacility', () => {
+  beforeEach(() => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+    );
+  });
+
+  it('calls PATCH /activity-data/bulk-facility with unique ids and canonical facility field', async () => {
+    localStorage.setItem('accessToken', 'activity-token');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ updatedCount: 2 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      bulkUpdateActivityFacility(['activity-1', 'activity-2', 'activity-1'], ' Calgary Office '),
+    ).resolves.toEqual({ updatedCount: 2 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/activity-data/bulk-facility`,
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          ids: ['activity-1', 'activity-2'],
+          facilityName: 'Calgary Office',
+        }),
+        headers: expect.objectContaining({
+          Authorization: 'Bearer activity-token',
+        }),
+      }),
+    );
+  });
+
+  it('blocks viewer users before calling the bulk facility endpoint', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'viewer@example.com', role: 'VIEWER', organizationId: 'org-1' }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(
+      bulkUpdateActivityFacility(['activity-1'], 'Calgary Office'),
     ).rejects.toThrow('You do not have permission to perform this action.');
     expect(fetchMock).not.toHaveBeenCalled();
   });

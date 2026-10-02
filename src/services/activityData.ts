@@ -6,6 +6,7 @@ import {
   canClearActivityRecords,
   canImportDraftRows,
   canManageActivityRecords,
+  canSetFacilityForActivityRecords,
   canSetProvinceForActivityRecords,
   requirePermission,
 } from '../utils/permissions';
@@ -14,6 +15,7 @@ import {
   getCurrentUser,
   getOrganizationId,
 } from './auth';
+import { getActivitySourceType } from '../utils/activitySourceType';
 
 export type ActivityDataInput = {
   activityType: string;
@@ -36,6 +38,8 @@ export type ActivityDataInput = {
   sourcePage?: string | number;
   sourceRow?: string | number;
   sourceTextSnippet?: string;
+  costCad?: number | string;
+  costCurrency?: string;
   importBatchId?: string;
   dateEstimated?: boolean;
   customTypeLabel?: string;
@@ -73,6 +77,8 @@ export type ActivityDataItem = {
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
   sourceTextSnippet?: string | null;
+  costCad?: number | string | null;
+  costCurrency?: string | null;
   importBatchId?: string | null;
   dateEstimated?: boolean | null;
   activityType: string;
@@ -124,6 +130,12 @@ export type DeleteActivityDataResponse = void | {
 };
 
 export type BulkProvinceUpdateResponse = {
+  updatedCount?: number;
+  count?: number;
+  updatedRecords?: ActivityDataItem[];
+};
+
+export type BulkFacilityUpdateResponse = {
   updatedCount?: number;
   count?: number;
   updatedRecords?: ActivityDataItem[];
@@ -184,7 +196,7 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     jurisdictionCountry: normalizeOptionalString(input.jurisdictionCountry),
     jurisdictionRegion: normalizeOptionalString(input.jurisdictionRegion),
     recordYear: input.recordYear,
-    sourceType: input.sourceType.trim(),
+    sourceType: getActivitySourceType(input.sourceType),
     sourceReference: normalizeOptionalString(input.sourceReference),
     notes: normalizeOptionalString(input.notes),
     facility,
@@ -196,6 +208,8 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     sourcePage: input.sourcePage,
     sourceRow: input.sourceRow,
     sourceTextSnippet: normalizeOptionalString(input.sourceTextSnippet),
+    costCad: normalizeOptionalCost(input.costCad),
+    costCurrency: normalizeOptionalString(input.costCurrency),
     importBatchId: normalizeOptionalString(input.importBatchId),
     dateEstimated: Boolean(input.dateEstimated),
     customTypeLabel: normalizeOptionalString(input.customTypeLabel),
@@ -219,6 +233,17 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     calculationStatus: normalizeOptionalString(input.calculationStatus),
     calculationMessage: normalizeOptionalString(input.calculationMessage),
   };
+}
+
+function normalizeOptionalCost(value?: number | string) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  const numericValue = Number(normalized.replace(/[$,\s]/g, ''));
+
+  return Number.isFinite(numericValue) ? numericValue : undefined;
 }
 
 // export async function createActivityData(
@@ -375,6 +400,35 @@ export async function bulkUpdateActivityProvince(ids: string[], province: string
   }
 
   track('ACTIVITY_RECORDS_PROVINCE_UPDATED', {
+    recordCount: Number(response.updatedCount ?? response.count ?? uniqueIds.length),
+  });
+
+  return response;
+}
+
+export async function bulkUpdateActivityFacility(ids: string[], facilityName: string) {
+  requirePermission(canSetFacilityForActivityRecords(getCurrentUser()));
+
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean)));
+  const normalizedFacility = normalizeOptionalString(facilityName);
+
+  if (!uniqueIds.length) {
+    throw new Error('No activity records selected.');
+  }
+
+  if (!normalizedFacility) {
+    throw new Error('Enter a site or facility before applying.');
+  }
+
+  const response = await apiFetch<BulkFacilityUpdateResponse>('/activity-data/bulk-facility', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ids: uniqueIds,
+      facilityName: normalizedFacility,
+    }),
+  });
+
+  track('ACTIVITY_RECORDS_FACILITY_UPDATED', {
     recordCount: Number(response.updatedCount ?? response.count ?? uniqueIds.length),
   });
 

@@ -164,4 +164,40 @@ describe('confirmDocumentImport', () => {
       ),
     ).rejects.toBeInstanceOf(DuplicateDocumentImportError);
   });
+
+  it('accepts a record-level no-op when no new ready records remain', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          count: 0,
+          createdIds: [],
+          alreadyImported: true,
+          skippedCount: 4,
+          message: 'No new Ready records to import.',
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      confirmDocumentImport(
+        'doc-1',
+        [
+          {
+            activityType: 'DIESEL',
+            recordDate: '2026-05-01',
+            quantity: 10,
+            unit: 'L',
+          },
+        ],
+        'document-doc-1',
+      ),
+    ).resolves.toEqual({
+      count: 0,
+      createdIds: [],
+      alreadyImported: true,
+      skippedCount: 4,
+      message: 'No new Ready records to import.',
+    });
+  });
 });

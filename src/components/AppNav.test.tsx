@@ -93,6 +93,7 @@ describe('AppNav logout flow', () => {
     ].forEach((label) => {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href');
     });
+    expect(screen.queryByRole('link', { name: 'Input Review' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /exit demo/i })).not.toBeInTheDocument();
   });
 
@@ -123,6 +124,28 @@ describe('AppNav logout flow', () => {
       });
     },
   );
+
+  it('keeps Input Data active for the embedded review section', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'user@example.com', organizationName: 'KACH CANADA LTD.' }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/input-data?section=review']}>
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Input Data' })).toHaveStyle({
+      background: '#111',
+      color: '#fff',
+    });
+    expect(screen.queryByRole('link', { name: 'Input Review' })).not.toBeInTheDocument();
+  });
 
   it('places Organization & Boundary under Settings instead of Admin user management', async () => {
     localStorage.setItem('accessToken', 'valid-token');
@@ -214,6 +237,7 @@ describe('AppNav logout flow', () => {
     expect(feedbackListener).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Input Data' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Input Review' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review Guide' })).toHaveAttribute(
       'href',
       '/pilot-review-instructions',

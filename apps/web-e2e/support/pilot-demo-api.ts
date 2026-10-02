@@ -8,12 +8,14 @@ const sourceFileName = 'pilot-golden-dataset.csv';
 
 type PilotDocument = {
   id: string;
+  organizationId?: string | null;
   fileName: string;
   fileUrl: string;
   mimeType: string;
   fileSize: number;
   type: string;
   status: string;
+  fileHash?: string | null;
   createdAt: string;
   updatedAt: string;
   importedAt?: string | null;
@@ -53,6 +55,7 @@ type PilotActivity = GoldenRecord & {
   importBatchId: string;
   sourceType: string;
   sourceReference: string;
+  sourceRow?: string | number | null;
   jurisdictionCountry: string;
   jurisdictionRegion: string;
   matchingStatus: string;
@@ -111,6 +114,7 @@ export type PilotDemoApiState = {
   importRequests: number;
   metricCalculationRequests: number;
   summaryRequests: number;
+  activityDeleteRequests: number;
   unexpectedRequests: string[];
 };
 
@@ -347,6 +351,7 @@ export function createPilotDemoApiState(): PilotDemoApiState {
     importRequests: 0,
     metricCalculationRequests: 0,
     summaryRequests: 0,
+    activityDeleteRequests: 0,
     unexpectedRequests: [],
   };
 }
@@ -429,20 +434,41 @@ export async function installPilotDemoApiMock(
 
     if (method === 'POST' && path === '/documents/upload') {
       state.uploadRequests += 1;
+      const formData = request.postData() ?? '';
+      const fileHash = getMultipartField(formData, 'fileHash');
+      const existingDocument = fileHash
+        ? state.documents.find((document) => document.fileHash === fileHash)
+        : undefined;
+      if (existingDocument) {
+        await fulfillJson(route, {
+          duplicate: true,
+          existingDocumentId: existingDocument.id,
+          existingDocument: {
+            id: existingDocument.id,
+            fileName: existingDocument.fileName,
+            createdAt: existingDocument.createdAt,
+            fileHash: existingDocument.fileHash,
+          },
+          message: 'This file has already been uploaded.',
+        }, 409);
+        return;
+      }
       const document: PilotDocument = {
-        id: documentId,
+        id: state.documents.length === 0 ? documentId : `${documentId}-${state.documents.length + 1}`,
+        organizationId,
         fileName: sourceFileName,
         fileUrl: `/storage/${sourceFileName}`,
         mimeType: 'text/csv',
         fileSize: 1454,
         type: 'SPREADSHEET',
         status: 'UPLOADED',
+        fileHash,
         createdAt: now,
         updatedAt: now,
         importedAt: null,
         importBatchId: null,
       };
-      state.documents = [document];
+      state.documents = [document, ...state.documents];
       await fulfillJson(route, document, 201);
       return;
     }
@@ -472,29 +498,49 @@ export async function installPilotDemoApiMock(
 
     if (method === 'POST' && path === '/document-extraction/confirm') {
       state.importRequests += 1;
-      if (state.activities.length > 0) {
-        await fulfillJson(route, {
-          count: 0,
-          createdIds: [],
-          importBatchId,
-          alreadyImported: true,
-        });
-        return;
-      }
+      const input = request.postDataJSON() as {
+        documentId?: string;
+        importBatchId?: string;
+        activities?: Array<Record<string, unknown>>;
+      };
+      const requestedImportBatchId = String(input.importBatchId ?? importBatchId);
+      const requestedDocumentId = String(input.documentId ?? documentId);
+      const activities = input.activities?.length ? input.activities : buildActivities();
+      const existingKeys = new Set(
+        state.activities.map((activity) =>
+          getActivityRecordImportKey(activity, state.documents),
+        ),
+      );
+      const created: PilotActivity[] = [];
 
-      state.activities = buildActivities();
+      activities.forEach((activity, index) => {
+        const normalized = normalizeImportedActivity(activity, {
+          id: `pilot-activity-${state.activities.length + created.length + 1}`,
+          documentId: requestedDocumentId,
+          importBatchId: requestedImportBatchId,
+          index,
+        });
+        const key = getActivityRecordImportKey(normalized, state.documents);
+        if (existingKeys.has(key)) return;
+        existingKeys.add(key);
+        created.push(normalized);
+      });
+
+      state.activities = [...state.activities, ...created];
       state.documents = state.documents.map((document) => ({
         ...document,
-        status: 'IMPORTED',
-        importedAt: now,
-        importBatchId,
+        status: created.length > 0 ? 'IMPORTED' : document.status,
+        importedAt: created.length > 0 ? now : document.importedAt,
+        importBatchId: created.length > 0 ? requestedImportBatchId : document.importBatchId,
         updatedAt: now,
       }));
       await fulfillJson(route, {
-        count: state.activities.length,
-        createdIds: state.activities.map((activity) => activity.id),
-        importBatchId,
-        alreadyImported: false,
+        count: created.length,
+        createdIds: created.map((activity) => activity.id),
+        importBatchId: requestedImportBatchId,
+        alreadyImported: created.length === 0,
+        skippedCount: activities.length - created.length,
+        message: created.length === 0 ? 'No new Ready records to import.' : undefined,
       });
       return;
     }
@@ -519,6 +565,29 @@ export async function installPilotDemoApiMock(
 
     if (method === 'GET' && path === '/activity-data') {
       await fulfillJson(route, paginated(state.activities));
+      return;
+    }
+
+    if (method === 'DELETE' && path.startsWith('/activity-data/')) {
+      state.activityDeleteRequests += 1;
+      const activityId = path.split('/').pop();
+      const beforeCount = state.activities.length;
+      state.activities = state.activities.filter((activity) => activity.id !== activityId);
+      await fulfillJson(route, {
+        deletedCount: beforeCount - state.activities.length,
+      });
+      return;
+    }
+
+    if (method === 'POST' && path === '/activity-data/bulk-delete') {
+      state.activityDeleteRequests += 1;
+      const input = request.postDataJSON() as { ids?: unknown[] };
+      const ids = new Set((input.ids ?? []).map((id) => String(id)));
+      const beforeCount = state.activities.length;
+      state.activities = state.activities.filter((activity) => !ids.has(activity.id));
+      await fulfillJson(route, {
+        deletedCount: beforeCount - state.activities.length,
+      });
       return;
     }
 
@@ -596,6 +665,7 @@ function buildActivities(): PilotActivity[] {
     importBatchId,
     sourceType: 'SPREADSHEET',
     sourceReference: sourceFileName,
+    sourceRow: index + 2,
     jurisdictionCountry: record.country,
     jurisdictionRegion: record.province,
     matchingStatus: record.scope === 'TRACKED_METRIC' ? 'TRACKED_ONLY' : 'MATCHED',
@@ -613,6 +683,73 @@ function buildActivities(): PilotActivity[] {
     createdAt: now,
     updatedAt: now,
   }));
+}
+
+function normalizeImportedActivity(
+  activity: Record<string, unknown>,
+  defaults: { id: string; documentId: string; importBatchId: string; index: number },
+): PilotActivity {
+  const sourceRow = activity.sourceRow as string | number | null | undefined;
+  const activityType = String(activity.activityType ?? 'ELECTRICITY');
+  const goldenRecord =
+    goldenRecords.find((record) => record.activityType === activityType) ?? goldenRecords[0];
+
+  return {
+    ...goldenRecord,
+    id: defaults.id,
+    organizationId,
+    documentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
+    sourceDocumentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
+    sourceFileName: String(activity.sourceFileName ?? sourceFileName),
+    importBatchId: String(activity.importBatchId ?? defaults.importBatchId),
+    sourceType: String(activity.sourceType ?? 'SPREADSHEET'),
+    sourceReference: String(activity.sourceReference ?? sourceFileName),
+    sourceRow: sourceRow ?? defaults.index + 2,
+    activityType,
+    recordDate: String(activity.recordDate ?? goldenRecord.recordDate),
+    quantity: Number(activity.quantity ?? goldenRecord.quantity),
+    unit: String(activity.unit ?? goldenRecord.unit),
+    jurisdictionCountry: String(activity.jurisdictionCountry ?? goldenRecord.country),
+    jurisdictionRegion: String(activity.jurisdictionRegion ?? goldenRecord.province),
+    matchingStatus: String(activity.matchingStatus ?? 'MATCHED'),
+    calculationStatus: String(activity.calculationStatus ?? 'CALCULATED'),
+    reportTreatment: String(activity.reportTreatment ?? 'INCLUDED'),
+    matchedFactorId: activity.matchedFactorId as string | null | undefined ?? goldenRecord.factorId,
+    matchedFactorName: activity.matchedFactorName as string | null | undefined ?? goldenRecord.factorName,
+    matchedFactorSourceYear: activity.matchedFactorSourceYear as number | null | undefined ?? 2025,
+    matchedFactorValue: activity.matchedFactorValue as number | null | undefined ?? goldenRecord.factorValue,
+    matchedFactorUnit: activity.matchedFactorUnit as string | null | undefined ?? goldenRecord.factorResultUnit,
+    matchedFactorSourceAuthority:
+      activity.matchedFactorSourceAuthority as string | null | undefined ?? goldenRecord.sourceAuthority,
+    matchedFactorSourceDocument:
+      activity.matchedFactorSourceDocument as string | null | undefined ?? goldenRecord.sourceDocument,
+    matchedFactorVerificationStatus:
+      activity.matchedFactorVerificationStatus as string | null | undefined ?? goldenRecord.verificationStatus,
+    matchedFactorConfidenceLevel:
+      activity.matchedFactorConfidenceLevel as string | null | undefined ?? goldenRecord.confidenceLevel,
+    calculatedEmissionsKgCO2e: Number(
+      activity.calculatedEmissionsKgCO2e ?? goldenRecord.calculatedEmissionsKgCO2e,
+    ),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function getActivityRecordImportKey(activity: PilotActivity, documents: PilotDocument[] = []) {
+  const sourceDocument = documents.find((document) => document.id === activity.sourceDocumentId);
+  const fileHash = String(sourceDocument?.fileHash ?? '').trim();
+  const sourceRow = String(activity.sourceRow ?? '').trim();
+  if (fileHash && sourceRow) return `${fileHash}::row:${sourceRow}`;
+  if (sourceRow) return `${activity.sourceDocumentId}::row:${sourceRow}`;
+
+  return [
+    activity.sourceDocumentId,
+    activity.sourceReference,
+    activity.activityType,
+    activity.recordDate,
+    activity.quantity,
+    activity.unit,
+  ].join('::');
 }
 
 function buildCalculationSummary(activities: PilotActivity[]) {
@@ -702,9 +839,9 @@ function buildCalculationSummary(activities: PilotActivity[]) {
       trackedOnlyCount: 1,
       sourceReferenceCoverage: 100,
       costDataCoverage: 0,
-      dataReadinessScore: 90,
+      dataReadinessScore: 100,
       readinessLevel: 'Good',
-      message: 'Pilot golden dataset is ready for calculation review.',
+      message: 'Pilot golden dataset is ready for emissions workflow review. Optional cost data is reported separately.',
       checklist: [],
     },
     skippedReasons: {
@@ -949,6 +1086,13 @@ function paginated<T>(items: T[]) {
     total: items.length,
     totalPages: 1,
   };
+}
+
+function getMultipartField(body: string, fieldName: string) {
+  const match = body.match(
+    new RegExp(`name="${fieldName}"\\r?\\n\\r?\\n([^\\r\\n-]+)`),
+  );
+  return match?.[1]?.trim() || null;
 }
 
 async function fulfillJson(route: Route, body: unknown, status = 200) {

@@ -2,7 +2,7 @@ import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
 import { trackEvent } from './ga4.service';
 import {
-  canDeleteActivityRecords,
+  canImportDraftRows,
   canUploadFiles,
   requirePermission,
 } from '../utils/permissions';
@@ -14,7 +14,6 @@ import {
 export type UploadDocumentInput = {
   file: File;
   type: string;
-  allowDuplicate?: boolean;
 };
 
 export type DocumentItem = {
@@ -31,25 +30,30 @@ export type DocumentItem = {
   fileHash?: string | null;
   importedAt?: string | null;
   importBatchId?: string | null;
+  sourceRowCount?: number | null;
+  extractedRowCount?: number | null;
+  importedRecordCount?: number | null;
 };
 
 export type DuplicateDocumentInfo = {
   id: string;
   fileName: string;
   createdAt: string;
+  fileHash?: string | null;
 };
 
 type UploadDocumentResponse =
   | DocumentItem
   | {
       duplicate: true;
+      existingDocumentId?: string;
       message?: string;
       existingDocument?: DuplicateDocumentInfo;
     };
 
 export class DuplicateDocumentError extends Error {
   constructor(public readonly existingDocument?: DuplicateDocumentInfo) {
-    super('This file appears to have already been uploaded.');
+    super('This file has already been uploaded.');
     this.name = 'DuplicateDocumentError';
   }
 }
@@ -73,13 +77,28 @@ export async function uploadDocument(input: UploadDocumentInput) {
   const formData = new FormData();
   formData.append('file', input.file);
   formData.append('type', input.type);
+  let fileHash: string | null = null;
   try {
-    formData.append('fileHash', await calculateFileSha256(input.file));
+    fileHash = await calculateFileSha256(input.file);
+    formData.append('fileHash', fileHash);
   } catch {
     // The backend always calculates the authoritative hash.
   }
-  if (input.allowDuplicate) {
-    formData.append('allowDuplicate', 'true');
+
+  const currentOrganizationId = getOrganizationId(getCurrentUser());
+  if (fileHash && currentOrganizationId) {
+    const duplicateDocument = await findExistingDocumentByHash(
+      fileHash,
+      currentOrganizationId,
+    );
+    if (duplicateDocument) {
+      throw new DuplicateDocumentError({
+        id: duplicateDocument.id,
+        fileName: duplicateDocument.fileName,
+        createdAt: duplicateDocument.createdAt,
+        fileHash: duplicateDocument.fileHash,
+      });
+    }
   }
 
   try {
@@ -89,7 +108,16 @@ export async function uploadDocument(input: UploadDocumentInput) {
     });
 
     if ('duplicate' in response && response.duplicate) {
-      throw new DuplicateDocumentError(response.existingDocument);
+      throw new DuplicateDocumentError(
+        response.existingDocument ??
+          (response.existingDocumentId
+            ? {
+                id: response.existingDocumentId,
+                fileName: 'existing upload',
+                createdAt: '',
+              }
+            : undefined),
+      );
     }
 
     track('DOCUMENT_UPLOADED', {
@@ -116,6 +144,25 @@ export async function uploadDocument(input: UploadDocumentInput) {
     }
 
     throw error;
+  }
+}
+
+async function findExistingDocumentByHash(
+  fileHash: string,
+  organizationId: string,
+) {
+  try {
+    const response = await apiFetch<DocumentListResponse>('/documents');
+    return (response.items ?? []).find((document) => {
+      if (document.fileHash !== fileHash) return false;
+      if ('organizationId' in document && document.organizationId) {
+        return document.organizationId === organizationId;
+      }
+
+      return true;
+    });
+  } catch {
+    return null;
   }
 }
 
@@ -164,7 +211,7 @@ export async function getDocuments() {
 }
 
 export async function deleteDocument(id: string) {
-  requirePermission(canDeleteActivityRecords(getCurrentUser()));
+  requirePermission(canImportDraftRows(getCurrentUser()));
 
   try {
     const response = await apiFetch<DeleteDocumentResponse | void>(`/documents/${id}`, {

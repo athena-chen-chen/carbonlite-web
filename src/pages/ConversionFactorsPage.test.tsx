@@ -314,7 +314,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'View' }));
 
-    expect(screen.getByText('kgCO2e/liter')).toBeInTheDocument();
+    expect(screen.getByText('kg CO₂e/liter')).toBeInTheDocument();
     expect(screen.getAllByText('Alberta').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2025').length).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: 'View methodology' })).toHaveAttribute(
@@ -365,7 +365,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByText('ECCC reference 2026')).toBeInTheDocument();
     expect(screen.getAllByText('Active').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('factor-value-eccc-electricity-ab-2026')).toHaveTextContent('0.438 kgCO2e/kWh');
+    expect(screen.getByTestId('factor-value-eccc-electricity-ab-2026')).toHaveTextContent('0.438 kg CO₂e/kWh');
 
     await userEvent.click(screen.getByRole('button', { name: 'View' }));
     const dialog = screen.getByRole('dialog', {
@@ -502,9 +502,9 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByText('Electricity - Alberta - 2026')).toBeInTheDocument();
     expect(screen.getByText('Electricity - British Columbia - 2026')).toBeInTheDocument();
     expect(screen.getByText('Electricity - Ontario - 2026')).toBeInTheDocument();
-    expect(screen.getByTestId('factor-value-pilot-electricity-ab-2026')).toHaveTextContent('0.53 kgCO2e/kWh');
-    expect(screen.getByTestId('factor-value-pilot-electricity-bc-2026')).toHaveTextContent('0.02 kgCO2e/kWh');
-    expect(screen.getByTestId('factor-value-pilot-electricity-on-2026')).toHaveTextContent('0.12 kgCO2e/kWh');
+    expect(screen.getByTestId('factor-value-pilot-electricity-ab-2026')).toHaveTextContent('0.53 kg CO₂e/kWh');
+    expect(screen.getByTestId('factor-value-pilot-electricity-bc-2026')).toHaveTextContent('0.02 kg CO₂e/kWh');
+    expect(screen.getByTestId('factor-value-pilot-electricity-on-2026')).toHaveTextContent('0.12 kg CO₂e/kWh');
 
     await userEvent.selectOptions(activityTypeFilter, 'ELECTRICITY');
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
@@ -816,17 +816,17 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
-      '2.68 kgCO2e/liter',
-      '0.53 kgCO2e/kWh',
-      '1.89 kgCO2e/m3',
+      '2.68 kg CO₂e/liter',
+      '0.53 kg CO₂e/kWh',
+      '1.89 kg CO₂e/m3',
     ]);
 
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
 
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
-      '0.53 kgCO2e/kWh',
-      '1.89 kgCO2e/m3',
-      '2.68 kgCO2e/liter',
+      '0.53 kg CO₂e/kWh',
+      '1.89 kg CO₂e/m3',
+      '2.68 kg CO₂e/liter',
     ]);
   });
 

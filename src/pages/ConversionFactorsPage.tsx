@@ -29,6 +29,7 @@ import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
 import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
+import { formatEmissionsUnit } from '../utils/numberFormatting';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -305,10 +306,11 @@ function formatFactorUnitDisplay(item: Pick<ConversionFactorItem, 'resultUnit' |
   if (resultUnit.includes('/')) {
     const [resultNumerator, resultDenominator] = resultUnit.split('/');
     const normalizedDenominator = singularUnit(resultDenominator);
-    return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
+    const displayNumerator = formatEmissionsUnit(resultNumerator);
+    return normalizedDenominator ? `${displayNumerator}/${normalizedDenominator}` : displayNumerator;
   }
 
-  return `${resultUnit}/${singularUnit(item.unit)}`;
+  return `${formatEmissionsUnit(resultUnit)}/${singularUnit(item.unit)}`;
 }
 
 function formatInputUnitDisplay(value?: string | null) {
@@ -1309,7 +1311,7 @@ export function ConversionFactorsPage() {
               value={form.resultUnit}
               onChange={(e) => updateField('resultUnit', e.target.value)}
               style={inputStyle}
-              placeholder="e.g. kgCO2e/liter"
+              placeholder="e.g. kg CO₂e/liter"
             />
           </Field>
 

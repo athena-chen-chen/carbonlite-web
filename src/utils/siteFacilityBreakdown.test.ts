@@ -4,6 +4,7 @@ import {
   buildFacilityThresholdReferenceRows,
   buildSiteFacilityBreakdown,
   buildSiteFacilityRollup,
+  ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E,
   FACILITY_REPORTING_THRESHOLD_TCO2E,
 } from './siteFacilityBreakdown';
 
@@ -52,6 +53,9 @@ describe('buildSiteFacilityBreakdown', () => {
     expect(rows).toEqual([
       {
         siteFacility: 'Calgary Shop',
+        jurisdictionCountry: null,
+        jurisdictionRegion: null,
+        jurisdictionSource: 'record',
         scope1KgCO2e: 1890,
         scope2KgCO2e: 6625,
         scope3KgCO2e: 0,
@@ -64,6 +68,9 @@ describe('buildSiteFacilityBreakdown', () => {
       },
       {
         siteFacility: 'Toronto Office',
+        jurisdictionCountry: null,
+        jurisdictionRegion: null,
+        jurisdictionSource: 'record',
         scope1KgCO2e: 0,
         scope2KgCO2e: 0,
         scope3KgCO2e: 575,
@@ -130,6 +137,9 @@ describe('buildSiteFacilityBreakdown', () => {
     expect(rows).toEqual([
       {
         siteFacility: 'Unassigned',
+        jurisdictionCountry: null,
+        jurisdictionRegion: null,
+        jurisdictionSource: 'record',
         scope1KgCO2e: 268,
         scope2KgCO2e: 0,
         scope3KgCO2e: 0,
@@ -146,6 +156,9 @@ describe('buildSiteFacilityBreakdown', () => {
     const rows = buildFacilityThresholdReferenceRows([
       {
         siteFacility: 'Small Facility',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        jurisdictionSource: 'record',
         scope1KgCO2e: 1000000,
         scope2KgCO2e: 0,
         scope3KgCO2e: 0,
@@ -155,44 +168,182 @@ describe('buildSiteFacilityBreakdown', () => {
       },
       {
         siteFacility: 'Approaching Facility',
-        scope1KgCO2e: 8500000,
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        jurisdictionSource: 'record',
+        scope1KgCO2e: 85000000,
         scope2KgCO2e: 0,
         scope3KgCO2e: 0,
-        totalKgCO2e: 8500000,
+        totalKgCO2e: 85000000,
         includedRecords: 1,
         activityBreakdown: [],
       },
       {
         siteFacility: 'Above Facility',
-        scope1KgCO2e: 12000000,
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        jurisdictionSource: 'record',
+        scope1KgCO2e: 120000000,
         scope2KgCO2e: 0,
         scope3KgCO2e: 0,
-        totalKgCO2e: 12000000,
+        totalKgCO2e: 120000000,
         includedRecords: 1,
         activityBreakdown: [],
       },
     ]);
 
     expect(FACILITY_REPORTING_THRESHOLD_TCO2E).toBe(10000);
+    expect(ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E).toBe(100000);
     expect(rows).toMatchObject([
       {
         siteFacility: 'Small Facility',
         totalTCO2e: 1000,
-        percentOfReportingThreshold: 10,
-        screeningNote: 'Below threshold reference',
+        jurisdictionLabel: 'Alberta, Canada',
+        regulatoryReference: 'Alberta TIER pilot screening reference',
+        thresholdTCO2e: 100000,
+        percentOfThreshold: 1,
+        status: 'Below threshold / informational only',
+        screeningNote: 'Below threshold / informational only',
       },
       {
         siteFacility: 'Approaching Facility',
-        totalTCO2e: 8500,
-        percentOfReportingThreshold: 85,
+        totalTCO2e: 85000,
+        percentOfThreshold: 85,
         screeningNote: 'Approaching threshold — review recommended',
       },
       {
         siteFacility: 'Above Facility',
-        totalTCO2e: 12000,
-        percentOfReportingThreshold: 120,
+        totalTCO2e: 120000,
+        percentOfThreshold: 120,
         screeningNote: 'Above threshold reference — professional review recommended',
       },
+    ]);
+  });
+
+  it('does not apply Alberta threshold screening to Ontario facilities', () => {
+    const rows = buildFacilityThresholdReferenceRows(
+      buildSiteFacilityBreakdown([
+        detail({
+          activityDataId: 'calgary-electricity',
+          activityType: 'ELECTRICITY',
+          facilityName: 'Calgary HQ',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
+          calculatedEmissionsKgCO2e: 519.4,
+        }),
+        detail({
+          activityDataId: 'toronto-hotel',
+          activityType: 'HOTEL',
+          facilityName: 'Toronto Client Visit',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          jurisdictionSource: 'record',
+          calculatedEmissionsKgCO2e: 60,
+        }),
+      ]),
+    );
+
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          siteFacility: 'Calgary HQ',
+          jurisdictionLabel: 'Alberta, Canada',
+          regulatoryReference: 'Alberta TIER pilot screening reference',
+          thresholdLabel: '100,000 t CO₂e/year',
+          status: 'Below threshold / informational only',
+        }),
+        expect.objectContaining({
+          siteFacility: 'Toronto Client Visit',
+          jurisdictionLabel: 'Ontario, Canada',
+          regulatoryReference: 'Not configured',
+          thresholdLabel: '—',
+          thresholdTCO2e: null,
+          percentOfThreshold: null,
+          status: 'Not evaluated',
+          screeningNote:
+            'Jurisdiction-specific threshold screening is not currently configured for Ontario.',
+        }),
+      ]),
+    );
+  });
+
+  it('distinguishes missing jurisdiction from known but unsupported jurisdiction', () => {
+    const rows = buildFacilityThresholdReferenceRows([
+      {
+        siteFacility: 'Missing Jurisdiction Site',
+        jurisdictionCountry: null,
+        jurisdictionRegion: null,
+        jurisdictionSource: 'record',
+        scope1KgCO2e: 0,
+        scope2KgCO2e: 0,
+        scope3KgCO2e: 60,
+        totalKgCO2e: 60,
+        includedRecords: 1,
+        activityBreakdown: [],
+      },
+      {
+        siteFacility: 'Toronto Client Visit',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Ontario',
+        jurisdictionSource: 'record',
+        scope1KgCO2e: 0,
+        scope2KgCO2e: 0,
+        scope3KgCO2e: 60,
+        totalKgCO2e: 60,
+        includedRecords: 1,
+        activityBreakdown: [],
+      },
+    ]);
+
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          siteFacility: 'Missing Jurisdiction Site',
+          jurisdictionLabel: 'Not provided',
+          thresholdLabel: '—',
+          screeningNote: 'Jurisdiction required for facility-level threshold screening.',
+        }),
+        expect.objectContaining({
+          siteFacility: 'Toronto Client Visit',
+          jurisdictionLabel: 'Ontario, Canada',
+          thresholdLabel: '—',
+          screeningNote:
+            'Jurisdiction-specific threshold screening is not currently configured for Ontario.',
+        }),
+      ]),
+    );
+  });
+
+  it('marks facilities with conflicting record jurisdictions as mixed instead of choosing one', () => {
+    const rows = buildFacilityThresholdReferenceRows(
+      buildSiteFacilityBreakdown([
+        detail({
+          activityDataId: 'warehouse-ab',
+          facilityName: 'Shared Project Site',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          calculatedEmissionsKgCO2e: 100,
+        }),
+        detail({
+          activityDataId: 'warehouse-on',
+          facilityName: 'Shared Project Site',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          calculatedEmissionsKgCO2e: 60,
+        }),
+      ]),
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        siteFacility: 'Shared Project Site',
+        jurisdictionLabel: 'Multiple jurisdictions',
+        thresholdLabel: '—',
+        status: 'Not evaluated',
+        screeningNote:
+          'Facility includes records from multiple jurisdictions; review jurisdiction before screening.',
+      }),
     ]);
   });
 });

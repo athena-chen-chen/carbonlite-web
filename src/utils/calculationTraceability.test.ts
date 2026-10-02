@@ -18,14 +18,27 @@ describe('calculation traceability formatting', () => {
     } as any;
 
     expect(formatFactorValue(0.115)).toBe('0.115');
-    expect(formatTraceableFactor(airTravelDetail)).toBe('0.115 kgCO2e/km');
-    expect(buildCalculatedFormula(airTravelDetail)).toBe('5,000 km × 0.115 kgCO2e/km = 575 kgCO2e');
+    expect(formatTraceableFactor(airTravelDetail)).toBe('0.115 kg CO₂e/km');
+    expect(buildCalculatedFormula(airTravelDetail)).toBe('5,000 km × 0.115 kg CO₂e/km = 575 kg CO₂e');
   });
 
   it('trims unnecessary trailing decimals for whole-number and two-decimal factors', () => {
     expect(formatFactorValue(15)).toBe('15');
     expect(formatFactorValue(2.31)).toBe('2.31');
     expect(formatFactorValue(0.12)).toBe('0.12');
+  });
+
+  it('formats tracked metrics as not applicable instead of missing factors', () => {
+    const waterDetail = {
+      status: 'TRACKED_ONLY',
+      activityType: 'WATER',
+      activityQuantity: 18,
+      activityUnit: 'm3',
+      factorValue: null,
+      calculatedEmissionsKgCO2e: null,
+    } as any;
+
+    expect(formatTraceableFactor(waterDetail)).toBe('N/A — Tracked Metric');
   });
 
   it('keeps quantity units plural while factor denominators are singular', () => {
@@ -51,13 +64,13 @@ describe('calculation traceability formatting', () => {
     } as any;
 
     expect(buildCalculatedFormula(gasolineDetail)).toBe(
-      '500 liters × 2.31 kgCO2e/liter = 1,155 kgCO2e',
+      '500 liters × 2.31 kg CO₂e/liter = 1,155 kg CO₂e',
     );
-    expect(formatTraceableFactor(gasolineDetail)).toBe('2.31 kgCO2e/liter');
+    expect(formatTraceableFactor(gasolineDetail)).toBe('2.31 kg CO₂e/liter');
     expect(buildCalculatedFormula(hotelDetail)).toBe(
-      '10 nights × 15 kgCO2e/night = 150 kgCO2e',
+      '10 nights × 15 kg CO₂e/night = 150 kg CO₂e',
     );
-    expect(formatTraceableFactor(hotelDetail)).toBe('15 kgCO2e/night');
+    expect(formatTraceableFactor(hotelDetail)).toBe('15 kg CO₂e/night');
   });
 
   it('normalizes preformatted plural factor result units', () => {
@@ -72,9 +85,9 @@ describe('calculation traceability formatting', () => {
       calculatedEmissionsKgCO2e: 268,
     } as any;
 
-    expect(formatTraceableFactor(dieselDetail)).toBe('2.68 kgCO2e/liter');
+    expect(formatTraceableFactor(dieselDetail)).toBe('2.68 kg CO₂e/liter');
     expect(buildCalculatedFormula(dieselDetail)).toBe(
-      '100 liters × 2.68 kgCO2e/liter = 268 kgCO2e',
+      '100 liters × 2.68 kg CO₂e/liter = 268 kg CO₂e',
     );
   });
 
@@ -91,7 +104,7 @@ describe('calculation traceability formatting', () => {
     } as any;
 
     expect(buildCalculatedFormula(mwhElectricityDetail)).toBe(
-      '50 MWh × 1,000 = 50,000 kWh; 50,000 kWh × 0.53 kgCO2e/kWh = 26,500 kgCO2e',
+      '50 MWh × 1,000 = 50,000 kWh; 50,000 kWh × 0.53 kg CO₂e/kWh = 26,500 kg CO₂e',
     );
   });
 });

@@ -8,6 +8,7 @@ import { normalizeUnitForDisplay } from './unitNormalization';
 export type MatchableConversionFactor = {
   id: string;
   organizationId?: string | null;
+  factorType?: string | null;
   name: string;
   type?: string | null;
   activityType?: string | null;
@@ -373,7 +374,14 @@ export function normalizeFactorActivityType(factor: MatchableConversionFactor) {
 }
 
 function isSystemFactor(factor: MatchableConversionFactor) {
-  return Boolean(factor.isSystemDefault ?? factor.isSystem ?? factor.factor?.isSystem);
+  return (
+    normalizeStatus(factor.factorType) === 'SYSTEM' ||
+    Boolean(factor.isSystemDefault ?? factor.isSystem ?? factor.factor?.isSystem)
+  );
+}
+
+function normalizeStatus(value?: string | null) {
+  return String(value ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
 }
 
 function isUsableFactor(factor: MatchableConversionFactor) {

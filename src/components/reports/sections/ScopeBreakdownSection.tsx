@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { CalculationAuditDetail } from '../../../services/metrics';
-import { formatDisplayNumber, formatEmissionsValue } from '../../../utils/numberFormatting';
+import { formatDisplayNumber, formatEmissionsWithUnit } from '../../../utils/numberFormatting';
 import { getActivityTypeLabel } from '../../../utils/activityType';
 
 type ScopeSummary = {
@@ -33,9 +33,9 @@ export function ScopeBreakdownSection({
         Scope totals include only successfully calculated records. Records requiring review are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
       </p>
       <div style={summaryGridStyle}>
-        <Fact label="Scope 1" value={`${formatEmissionsValue(scopeSummary.SCOPE_1)} kgCO2e`} />
-        <Fact label="Scope 2" value={`${formatEmissionsValue(scopeSummary.SCOPE_2)} kgCO2e`} />
-        <Fact label="Scope 3" value={`${formatEmissionsValue(scopeSummary.SCOPE_3)} kgCO2e`} />
+        <Fact label="Scope 1" value={formatEmissionsWithUnit(scopeSummary.SCOPE_1)} />
+        <Fact label="Scope 2" value={formatEmissionsWithUnit(scopeSummary.SCOPE_2)} />
+        <Fact label="Scope 3" value={formatEmissionsWithUnit(scopeSummary.SCOPE_3)} />
       </div>
       {electricityRecordCount > 0 && calculatedElectricityCount === 0 ? (
         <div style={qualityReasonStyle}>
@@ -44,7 +44,7 @@ export function ScopeBreakdownSection({
       ) : null}
       {scopeSummary.UNCLASSIFIED > 0 ? (
         <div style={qualityReasonStyle}>
-          {formatEmissionsValue(scopeSummary.UNCLASSIFIED)} kgCO2e is calculated but unclassified. Review these records before relying on the scope breakdown.
+          {formatEmissionsWithUnit(scopeSummary.UNCLASSIFIED)} is calculated but unclassified. Review these records before relying on the scope breakdown.
         </div>
       ) : null}
       {unclassifiedCalculatedRecords.length > 0 ? (
@@ -55,7 +55,7 @@ export function ScopeBreakdownSection({
             rows={unclassifiedCalculatedRecords.map((item) => [
               getActivityTypeLabel(item.activityType),
               `${formatDisplayNumber(item.activityQuantity)} ${formatRecordUnit(item.activityUnit, item)}`,
-              `${formatEmissionsValue(item.calculatedEmissionsKgCO2e ?? item.calculatedEmission ?? 0)} kgCO2e`,
+              formatEmissionsWithUnit(item.calculatedEmissionsKgCO2e ?? item.calculatedEmission ?? 0),
               formatScopeSourceLabel(item),
             ])}
           />

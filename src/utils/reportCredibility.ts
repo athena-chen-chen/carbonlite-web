@@ -1,4 +1,5 @@
 import type { CalculationAuditDetail } from '../services/metrics';
+import { formatEmissionsUnit } from './numberFormatting';
 import { getActivityTypeLabel, getFactorDisplayName, normalizeActivityType } from './activityType';
 import { formatCredibilityLabel } from './factorCredibility';
 
@@ -224,11 +225,12 @@ export function formatReportFactorUnit(resultUnit?: string | null, inputUnit?: s
   if (result.includes('/')) {
     const [resultNumerator, resultDenominator] = result.split('/');
     const normalizedDenominator = normalizeFactorDenominator(resultDenominator);
-    return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
+    const displayNumerator = formatEmissionsUnit(resultNumerator);
+    return normalizedDenominator ? `${displayNumerator}/${normalizedDenominator}` : displayNumerator;
   }
-  if (!input) return result;
+  if (!input) return formatEmissionsUnit(result);
 
-  return `${result}/${input}`;
+  return `${formatEmissionsUnit(result)}/${input}`;
 }
 
 export function formatReportFactorSummaryVerification(input: {
@@ -308,6 +310,20 @@ export function isRecordRequiringCorrection(detail: CalculationAuditDetail) {
   );
 }
 
+export function getCalculationCoverageCounts(calculationDetails: CalculationAuditDetail[] = []) {
+  const emissionBearingDetails = calculationDetails.filter(
+    (detail) => detail.status !== 'OUTSIDE_SCOPE' && !isTrackedMetricDetail(detail),
+  );
+  const calculatedRecords = emissionBearingDetails.filter(
+    (detail) => detail.status === 'CALCULATED',
+  ).length;
+
+  return {
+    calculatedRecords,
+    eligibleEmissionBearingRecords: emissionBearingDetails.length,
+  };
+}
+
 export function getTrackedMetricMessage(detail: CalculationAuditDetail) {
   if (normalizeActivityType(detail.activityType) === 'WATER') {
     return 'Water is tracked as an operational metric and excluded from GHG emissions totals unless a reviewed water emissions factor is provided.';
@@ -362,12 +378,12 @@ export function formatReportSourceReference(input: {
   const sourceFile = getSafeSourceFileName(input.sourceFileName);
   const extension = getFileExtension(sourceFile || reference);
 
-  if (sourceFile) {
-    return sourceFile;
-  }
-
   if (reference && !isGenericSourceReference(reference)) {
     return reference;
+  }
+
+  if (sourceFile) {
+    return 'Not provided';
   }
 
   if (
@@ -376,7 +392,7 @@ export function formatReportSourceReference(input: {
     sourceType === 'Uploaded PDF' ||
     sourceType === 'Uploaded Spreadsheet'
   ) {
-    return 'Source file unavailable';
+    return 'Not provided';
   }
 
   if (sourceLooksLikePdfExtraction(input.sourceReference) && (extension === 'xlsx' || extension === 'xls')) {
@@ -396,10 +412,10 @@ export function getDisplaySourceLabel(input: {
   const reference = formatReportSourceReference(input);
 
   if (sourceType === 'Manual Entry') return 'Manual Entry';
-  if (sourceFile) return `${sourceFile} · ${sourceType}`;
   if (reference && !/^source (file unavailable|review required)$/i.test(reference)) {
     return `${reference} · ${sourceType}`;
   }
+  if (sourceFile) return `${sourceFile} · ${sourceType}`;
   return sourceType;
 }
 

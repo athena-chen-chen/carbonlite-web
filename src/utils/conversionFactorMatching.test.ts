@@ -63,6 +63,62 @@ describe('findBestConversionFactorMatch', () => {
     expect(match?.sourceLabel).toBe('System Default Factor');
   });
 
+  it('treats factorType SYSTEM electricity factors as system factors for company users', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'electricity-ab-2026',
+          factorType: 'SYSTEM',
+          name: 'Electricity - Alberta - 2026',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          unit: 'kWh',
+          factorValue: 0.53,
+          resultUnit: 'kgCO2e',
+          sourceYear: 2026,
+          effectiveYear: 2026,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('electricity-ab-2026');
+    expect(match?.sourceLabel).toBe('System Default Factor');
+  });
+
+  it('does not match Diesel 240 kg to a liters factor and reports the compatible factor unit', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'DIESEL',
+      inputUnit: 'kg',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [systemDiesel],
+    });
+
+    const compatibleUnits = getCompatibleFactorUnitLabels({
+      activityType: 'DIESEL',
+      inputUnit: 'kg',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [systemDiesel],
+    });
+
+    expect(match).toBeUndefined();
+    expect(compatibleUnits).toEqual(['liters']);
+  });
+
   it('returns no match when activity type and input unit do not match', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'ELECTRICITY',

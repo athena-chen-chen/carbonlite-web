@@ -1,7 +1,7 @@
 import type { CalculationAuditDetail } from '../services/metrics';
 import { getDisplaySourceLabel } from './reportCredibility';
 import { formatActivityTypeLabel } from './activityAggregation';
-import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
+import { formatDisplayNumber, formatEmissionsUnit, formatEmissionsValue, formatEmissionsWithUnit } from './numberFormatting';
 import { normalizeUnitForDisplay } from './unitNormalization';
 
 function formatNumber(value?: string | number | null) {
@@ -49,11 +49,13 @@ function formatFactorUnitForFormula(detail: CalculationAuditDetail) {
   if (resultUnit.includes('/')) {
     const [resultNumerator, resultDenominator] = resultUnit.split('/');
     const normalizedDenominator = singularizeFactorDenominator(resultDenominator);
-    return normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator;
+    const displayNumerator = formatEmissionsUnit(resultNumerator);
+    return normalizedDenominator ? `${displayNumerator}/${normalizedDenominator}` : displayNumerator;
   }
 
   const inputUnit = singularizeFactorDenominator(detail.factorInputUnit || detail.normalizedUnit || detail.activityUnit);
-  return inputUnit ? `${resultUnit}/${inputUnit}` : resultUnit;
+  const displayResultUnit = formatEmissionsUnit(resultUnit);
+  return inputUnit ? `${displayResultUnit}/${inputUnit}` : displayResultUnit;
 }
 
 function getConvertedFormulaQuantity(detail: CalculationAuditDetail) {
@@ -127,7 +129,7 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
   const convertedQuantity = getConvertedFormulaQuantity(detail);
   const emissionsStepQuantity = convertedQuantity?.quantity ?? detail.activityQuantity;
   const emissionsStepUnit = convertedQuantity?.unit ?? activityUnit;
-  const emissionsStep = `${formatNumber(emissionsStepQuantity)} ${emissionsStepUnit} × ${formatFactorValue(detail.factorValue)} ${factorUnit} = ${formatEmissionsValue(detail.calculatedEmissionsKgCO2e)} kgCO2e`;
+  const emissionsStep = `${formatNumber(emissionsStepQuantity)} ${emissionsStepUnit} × ${formatFactorValue(detail.factorValue)} ${factorUnit} = ${formatEmissionsWithUnit(detail.calculatedEmissionsKgCO2e)}`;
 
   if (convertedQuantity) {
     return `${formatNumber(detail.activityQuantity)} ${activityUnit} × ${formatNumber(convertedQuantity.conversionFactor)} = ${formatNumber(convertedQuantity.quantity)} ${convertedQuantity.unit}; ${emissionsStep}`;
@@ -161,6 +163,10 @@ export function buildFormulaInputs(detail: CalculationAuditDetail) {
 }
 
 export function formatTraceableFactor(detail: CalculationAuditDetail) {
+  if (detail.status === 'TRACKED_ONLY') {
+    return 'N/A — Tracked Metric';
+  }
+
   if (detail.status === 'MISSING_JURISDICTION') {
     return 'Not selected';
   }
@@ -174,13 +180,14 @@ export function formatTraceableFactor(detail: CalculationAuditDetail) {
   if (resultUnit.includes('/')) {
     const [resultNumerator, resultDenominator] = resultUnit.split('/');
     const normalizedDenominator = singularizeFactorDenominator(resultDenominator);
+    const displayNumerator = formatEmissionsUnit(resultNumerator);
     const normalizedResultUnit = normalizedDenominator
-      ? `${resultNumerator}/${normalizedDenominator}`
-      : resultNumerator;
+      ? `${displayNumerator}/${normalizedDenominator}`
+      : displayNumerator;
     return `${formatFactorValue(detail.factorValue)} ${normalizedResultUnit}`;
   }
 
-  return `${formatFactorValue(detail.factorValue)} ${resultUnit}/${inputUnit}`;
+  return `${formatFactorValue(detail.factorValue)} ${formatEmissionsUnit(resultUnit)}/${inputUnit}`;
 }
 
 export function formatTraceabilitySource(detail: CalculationAuditDetail) {

@@ -11,6 +11,7 @@ import {
   getFactorVersionUsage,
 } from '../services/factorVersions';
 import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
+import { formatEmissionsUnit } from '../utils/numberFormatting';
 
 const statusLabels: Record<string, string> = {
   DRAFT: 'Draft',
@@ -251,13 +252,14 @@ function formatFactorValueDisplay(version: FactorVersion) {
   if (resultUnit.includes('/')) {
     const [resultNumerator, resultDenominator] = resultUnit.split('/');
     const normalizedDenominator = singularUnit(resultDenominator);
-    return `${value} ${normalizedDenominator ? `${resultNumerator}/${normalizedDenominator}` : resultNumerator}`;
+    const displayNumerator = formatEmissionsUnit(resultNumerator);
+    return `${value} ${normalizedDenominator ? `${displayNumerator}/${normalizedDenominator}` : displayNumerator}`;
   }
-  return `${value} ${resultUnit}/${singularUnit(version.inputUnit)}`;
+  return `${value} ${formatEmissionsUnit(resultUnit)}/${singularUnit(version.inputUnit)}`;
 }
 
 function formatResultUnitDisplay(version: FactorVersion) {
-  return isWaterTrackedVersion(version) ? 'Not applicable' : version.resultUnit;
+  return isWaterTrackedVersion(version) ? 'Not applicable' : formatEmissionsUnit(version.resultUnit);
 }
 
 function formatMethodology(version: FactorVersion) {

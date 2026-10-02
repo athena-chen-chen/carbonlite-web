@@ -35,7 +35,7 @@ export function SourceEvidenceSection({
           'Source File',
           'Source Type',
           'Import Method',
-          'Source Reference',
+          'Record-Level References',
           'Included GHG Records',
           'Tracked Metrics',
           'Review Records',

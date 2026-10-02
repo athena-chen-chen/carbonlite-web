@@ -84,12 +84,16 @@ export function canSetProvinceForActivityRecords(user: AuthUser | null) {
   return canContributeActivityData(user);
 }
 
+export function canSetFacilityForActivityRecords(user: AuthUser | null) {
+  return canContributeActivityData(user);
+}
+
 export function canEditActivityRecords(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
   if (isPilotReviewer(user)) return false;
 
-  const rawRole = String(user?.role ?? '').trim().toUpperCase();
-  return rawRole === 'OWNER' || rawRole === 'ADMIN' || rawRole === 'EDITOR' || rawRole === 'MEMBER';
+  const role = getUserRole(user);
+  return role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR' || role === 'MEMBER';
 }
 
 export function canDeleteActivityRecords(user: AuthUser | null) {
@@ -158,6 +162,7 @@ export const isAdminOrOwnerUser = isAdminOrOwner;
 export const canManageActivityRecords = canEditActivityRecords;
 export const canEditImportedDraftRows = canEditDraftRows;
 export const canSetProvince = canSetProvinceForActivityRecords;
+export const canSetFacility = canSetFacilityForActivityRecords;
 export const canImportDraftActivityRows = canImportDraftRows;
 export const canImportActivityRecords = canImportData;
 export const canUploadActivityFiles = canUploadFiles;

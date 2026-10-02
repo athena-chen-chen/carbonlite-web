@@ -1,15 +1,21 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ExcelInputTable } from './ExcelInputTable';
+import * as XLSX from 'xlsx';
+import { ExcelInputTable, normalizeSpreadsheetDate } from './ExcelInputTable';
 import { AppDialogProvider } from './AppDialog';
 import { ToastProvider } from './Toast';
 import { createActivityData, updateActivityData } from '../services/activityData';
 import { getAllConversionFactors } from '../services/conversionFactors';
 import { getFacilities } from '../services/facilities';
+import { saveSpreadsheetReviewRows } from '../services/spreadsheetReviewRows';
 
 vi.mock('../services/activityData', () => ({
   createActivityData: vi.fn(),
   updateActivityData: vi.fn(),
+}));
+
+vi.mock('../services/spreadsheetReviewRows', () => ({
+  saveSpreadsheetReviewRows: vi.fn(),
 }));
 
 vi.mock('../services/conversionFactors', () => ({
@@ -198,6 +204,12 @@ describe('ExcelInputTable empty activity row UX', () => {
     vi.mocked(getFacilities).mockResolvedValue([]);
     vi.mocked(createActivityData).mockResolvedValue({ id: 'activity-1' } as any);
     vi.mocked(updateActivityData).mockResolvedValue({ id: 'activity-1' } as any);
+    vi.mocked(saveSpreadsheetReviewRows).mockImplementation(async (input) => ({
+      savedCount: input.rows.length,
+      readyCount: input.rows.filter((row) => row.status === 'READY').length,
+      needsReviewCount: input.rows.filter((row) => row.status === 'NEEDS_REVIEW').length,
+      trackedOnlyCount: input.rows.filter((row) => row.status === 'TRACKED_ONLY').length,
+    }));
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
@@ -228,8 +240,8 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), quantity);
     await waitFor(() => {
       expect(within(row).getByText('Diesel factor')).toBeInTheDocument();
-      expect(within(row).getByText(/kgCO2e\/L/)).toBeInTheDocument();
-      expect(within(row).queryByText(/kgCO2e\/liters/)).not.toBeInTheDocument();
+      expect(within(row).getByText(/kg CO₂e\/L/)).toBeInTheDocument();
+      expect(within(row).queryByText(/kg CO₂e\/liters/)).not.toBeInTheDocument();
     });
     return row;
   }
@@ -251,11 +263,398 @@ describe('ExcelInputTable empty activity row UX', () => {
     renderTable('spreadsheet');
 
     expect(await screen.findByText('Spreadsheet rows')).toBeInTheDocument();
-    expect(screen.getByText('Upload a CSV/XLSX file using the CarbonLite template, or paste rows copied from Excel.')).toBeInTheDocument();
+    expect(screen.getByText('Import a CSV/XLSX file or paste rows from Excel.')).toBeInTheDocument();
+    expect(screen.getByText('File import')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Choose spreadsheet file' })).toBeInTheDocument();
+    expect(screen.getByText('Select a CSV or XLSX file from your computer.')).toBeInTheDocument();
+    expect(screen.getByText('To paste copied rows, use the paste area below.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Paste spreadsheet rows')).toBeInTheDocument();
+    expect(screen.getByText('Paste rows copied from Excel here.')).toBeInTheDocument();
     expect(screen.getByText('No spreadsheet rows yet.')).toBeInTheDocument();
-    expect(screen.getAllByText('Upload a CSV/XLSX file or paste rows from Excel to begin.').length).toBeGreaterThan(0);
+    expect(screen.getByText('Choose a spreadsheet file above or paste rows from Excel.')).toBeInTheDocument();
+    expect(screen.queryByText('Paste spreadsheet rows into this area.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Add activity record/i })).not.toBeInTheDocument();
+  });
+
+  it('normalizes spreadsheet dates from Date objects, Excel serials, and ISO strings without shifting days', () => {
+    expect(normalizeSpreadsheetDate(new Date('2026-03-01T00:00:00.000Z'))).toBe('2026-03-01');
+    expect(normalizeSpreadsheetDate(46082)).toBe('2026-03-01');
+    expect(normalizeSpreadsheetDate('2026-03-01')).toBe('2026-03-01');
+    expect(normalizeSpreadsheetDate('2026-03-01T00:00:00.000Z')).toBe('2026-03-01');
+    expect(normalizeSpreadsheetDate('TOTAL')).toBe('');
+    expect(normalizeSpreadsheetDate('unknown')).toBe('');
+  });
+
+  it('imports Excel date serials as activity dates and does not mark real rows as missing date', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province'],
+      [46082, 'Diesel', 100, 'L', 'Canada', 'Alberta'],
+      [46083, 'Water', 20, 'm3', 'Canada', 'British Columbia'],
+    ]);
+    worksheet.A2.z = 'yyyy-mm-dd';
+    worksheet.A3.z = 'yyyy-mm-dd';
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Import');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_needs_review_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByDisplayValue('2026-03-01')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-03-02')).toBeInTheDocument();
+    expect(screen.getByText('2 records found')).toBeInTheDocument();
+    expect(screen.getByText('0 records missing date')).toBeInTheDocument();
+    expect(screen.getByText('1 tracked metric')).toBeInTheDocument();
+  });
+
+  it('keeps Save All available for mixed-quality spreadsheet rows and preserves review issues', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province', 'Notes'],
+      [46082, 'Diesel', 100, 'L', 'Canada', 'Alberta', 'ready row'],
+      [46083, 'Electricity', 500, 'kWh', 'Canada', '', 'needs province'],
+      [46084, 'Water', 20, 'm3', 'Canada', 'British Columbia', 'tracked row'],
+      [46085, 'Natural Gas', 12.4, '', 'Canada', 'Alberta', 'missing unit'],
+      [46086, 'Gasoline', 'approx 500', 'L', 'Canada', 'Alberta', 'bad quantity'],
+      [46087, 'Air Travel', '', 'km', 'Canada', 'Alberta', 'missing quantity'],
+    ]);
+    ['A2', 'A3', 'A4', 'A5', 'A6', 'A7'].forEach((cell) => {
+      worksheet[cell].z = 'yyyy-mm-dd';
+    });
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Mixed Rows');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_needs_review_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText('6 records found')).toBeInTheDocument();
+    expect(screen.getByText('0 records missing date')).toBeInTheDocument();
+    expect(screen.getByText('2 records missing quantity')).toBeInTheDocument();
+    expect(screen.getByText('1 missing province')).toBeInTheDocument();
+    expect(screen.getByText('1 tracked metric')).toBeInTheDocument();
+
+    const saveAllButton = screen.getByRole('button', { name: 'Save All' });
+    expect(saveAllButton).toBeEnabled();
+
+    await userEvent.click(saveAllButton);
+
+    await waitFor(() => {
+      expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
+    });
+    expect(createActivityData).not.toHaveBeenCalled();
+    expect(saveSpreadsheetReviewRows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'EXCEL',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        rows: expect.arrayContaining([
+          expect.objectContaining({
+            activityType: 'DIESEL',
+            status: 'READY',
+            recordDate: '2026-03-01',
+            quantity: 100,
+            sourceFileName: 'carbonlite_needs_review_test.xlsx',
+            sourceSheetName: 'Mixed Rows',
+            sourceRow: 2,
+          }),
+          expect.objectContaining({
+            activityType: 'ELECTRICITY',
+            status: 'NEEDS_REVIEW',
+            calculationStatus: 'MISSING_PROVINCE',
+            reportTreatment: 'EXCLUDED',
+            sourceRow: 3,
+            issues: expect.arrayContaining([
+              expect.objectContaining({ code: 'MISSING_PROVINCE' }),
+            ]),
+          }),
+          expect.objectContaining({
+            activityType: 'WATER',
+            status: 'TRACKED_ONLY',
+            calculationStatus: 'TRACKED_ONLY',
+            reportTreatment: 'TRACKED_ONLY',
+            sourceRow: 4,
+          }),
+          expect.objectContaining({
+            activityType: 'NATURAL_GAS',
+            status: 'NEEDS_REVIEW',
+            quantity: 12.4,
+            unit: '',
+            sourceRow: 5,
+            issues: expect.arrayContaining([
+              expect.objectContaining({ code: 'MISSING_UNIT' }),
+            ]),
+          }),
+          expect.objectContaining({
+            activityType: 'GASOLINE',
+            status: 'NEEDS_REVIEW',
+            quantity: null,
+            rawQuantity: 'approx 500',
+            sourceRow: 6,
+            matchingStatus: 'MATCHED',
+            calculationStatus: 'INVALID_QUANTITY',
+            reportTreatment: 'EXCLUDED',
+            calculatedEmissionsKgCO2e: null,
+            issues: expect.arrayContaining([
+              expect.objectContaining({ code: 'INVALID_QUANTITY' }),
+            ]),
+          }),
+          expect.objectContaining({
+            activityType: 'AIR_TRAVEL',
+            status: 'NEEDS_REVIEW',
+            quantity: null,
+            rawQuantity: '',
+            sourceRow: 7,
+            matchingStatus: 'MATCHED',
+            calculationStatus: 'MISSING_QUANTITY',
+            reportTreatment: 'EXCLUDED',
+            calculatedEmissionsKgCO2e: null,
+            issues: expect.arrayContaining([
+              expect.objectContaining({ code: 'MISSING_QUANTITY' }),
+            ]),
+          }),
+        ]),
+      }),
+    );
+    expect(await screen.findByText(/6 spreadsheet rows saved for review/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Missing unit/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Quantity must be greater than 0/i).length).toBeGreaterThan(0);
+  });
+
+  it('preserves Cost CAD from spreadsheet rows into review-row payloads', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Type', 'Quantity', 'Unit', 'Province', 'Site', 'Source Reference', 'Cost CAD', 'Notes'],
+      [46082, 'Electricity', 980, 'kWh', 'Alberta', 'Calgary HQ', 'MARCH-ELEC-001', 214.55, 'Valid row'],
+      [46088, 'Water', 18, 'm3', 'Alberta', 'Calgary HQ', 'MARCH-WATER-007', 0, 'Tracked-only candidate'],
+    ]);
+    worksheet.A2.z = 'yyyy-mm-dd';
+    worksheet.A3.z = 'yyyy-mm-dd';
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Messy_Operations');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_needs_review_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    expect(await screen.findByText('2 records found')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+
+    await waitFor(() => {
+      expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
+    });
+    const payload = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0];
+    expect(payload.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceReference: 'MARCH-ELEC-001',
+          facilityName: 'Calgary HQ',
+          costCad: 214.55,
+          costCurrency: 'CAD',
+        }),
+        expect.objectContaining({
+          sourceReference: 'MARCH-WATER-007',
+          facilityName: 'Calgary HQ',
+          costCad: 0,
+          costCurrency: 'CAD',
+        }),
+      ]),
+    );
+  });
+
+  it('saves the needs-review workbook rows with Electricity ready, Water tracked, Accommodation ready, and Diesel blocked', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province', 'Source Reference'],
+      ['2026-03-01', 'Electricity', 980, 'kWh', 'Canada', 'Alberta', 'ELEC-001'],
+      ['2026-03-06', 'Diesel', 240, 'kg', 'Canada', 'Alberta', 'DIESEL-001'],
+      ['2026-03-07', 'Water', 18, 'm3', 'Canada', 'Alberta', 'WATER-001'],
+      ['2026-03-10', 'Business Travel - Accommodation', 4, 'nights', 'Canada', 'Ontario', 'HOTEL-001'],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Needs Review');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_needs_review_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    expect(await screen.findByText('4 records found')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+
+    await waitFor(() => {
+      expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0];
+    const rowsByType = new Map(payload.rows.map((row) => [row.activityType, row]));
+
+    expect(rowsByType.get('ELECTRICITY')).toEqual(
+      expect.objectContaining({
+        status: 'READY',
+        quantity: 980,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        matchingStatus: 'MATCHED',
+        reportTreatment: 'INCLUDED',
+        calculationStatus: 'CALCULATED',
+        matchedFactorName: 'Electricity - Alberta - 2025',
+        matchedFactorValue: 0.53,
+        matchedFactorUnit: 'kgCO2e/kWh/kWh',
+        calculatedEmissionsKgCO2e: 519.4,
+      }),
+    );
+    expect(rowsByType.get('DIESEL')).toEqual(
+      expect.objectContaining({
+        status: 'NEEDS_REVIEW',
+        quantity: 240,
+        unit: 'kg',
+        jurisdictionRegion: 'Alberta',
+        matchingStatus: 'UNIT_MISMATCH',
+        reportTreatment: 'EXCLUDED',
+        calculationStatus: 'UNIT_MISMATCH',
+      }),
+    );
+    expect(rowsByType.get('DIESEL')?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'UNIT_MISMATCH', field: 'unit' }),
+      ]),
+    );
+    expect(rowsByType.get('WATER')).toEqual(
+      expect.objectContaining({
+        status: 'TRACKED_ONLY',
+        quantity: 18,
+        unit: 'm3',
+        matchingStatus: 'TRACKED_ONLY',
+        reportTreatment: 'TRACKED_ONLY',
+        calculationStatus: 'TRACKED_ONLY',
+      }),
+    );
+    expect(rowsByType.get('HOTEL')).toEqual(
+      expect.objectContaining({
+        status: 'READY',
+        quantity: 4,
+        unit: 'nights',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Ontario',
+        matchingStatus: 'MATCHED',
+        reportTreatment: 'INCLUDED',
+        calculationStatus: 'CALCULATED',
+        matchedFactorName: 'Business Travel - Accommodation factor',
+        matchedFactorValue: 18,
+        matchedFactorUnit: 'kgCO2e/nights',
+        calculatedEmissionsKgCO2e: 72,
+      }),
+    );
+  }, 40000);
+
+  it('does not send obvious spreadsheet total rows as review rows', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province'],
+      [46082, 'Diesel', 100, 'L', 'Canada', 'Alberta'],
+      [46083, 'Electricity', 500, 'kWh', 'Canada', 'Alberta'],
+      ['TOTAL', '', 600, '', '', ''],
+    ]);
+    worksheet.A2.z = 'yyyy-mm-dd';
+    worksheet.A3.z = 'yyyy-mm-dd';
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Totals');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_totals_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    expect(await screen.findByText('2 records found')).toBeInTheDocument();
+    expect(screen.getByText('0 records missing date')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+
+    await waitFor(() => {
+      expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
+    });
+    expect(saveSpreadsheetReviewRows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: [
+          expect.objectContaining({
+            activityType: 'DIESEL',
+            recordDate: '2026-03-01',
+            sourceRow: 2,
+          }),
+          expect.objectContaining({
+            activityType: 'ELECTRICITY',
+            recordDate: '2026-03-02',
+            sourceRow: 3,
+          }),
+        ],
+      }),
+    );
+    const payload = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0];
+    expect(payload.rows).toHaveLength(2);
+    expect(payload.rows).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawRecordDate: 'TOTAL',
+        }),
+      ]),
+    );
+  });
+
+  it('shows the error modal for technical spreadsheet review-row save failures', async () => {
+    vi.mocked(saveSpreadsheetReviewRows).mockRejectedValueOnce(
+      Object.assign(new Error('Database unavailable'), {
+        status: 500,
+        technicalMessage: 'spreadsheet review rows insert failed',
+      }),
+    );
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province'],
+      [46082, 'Diesel', 100, 'L', 'Canada', 'Alberta'],
+    ]);
+    worksheet.A2.z = 'yyyy-mm-dd';
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Import');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'technical_failure.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+    await userEvent.click(await screen.findByRole('button', { name: 'Save All' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Unable to save records' });
+    expect(within(dialog).getByText('We could not save these records. Please review the information and try again.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Technical details')).toBeInTheDocument();
+    expect(within(dialog).getByText(/HTTP 500.*spreadsheet review rows insert failed/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-03-01')).toBeInTheDocument();
+    expect(screen.queryByText(/spreadsheet rows saved for review/i)).not.toBeInTheDocument();
   });
 
   it('adds an empty row without showing remove or missing factor warnings', async () => {
@@ -463,7 +862,7 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     expect(within(row).getByText('Scope')).toBeInTheDocument();
     expect(within(row).getByText(scopeLabel)).toBeInTheDocument();
-    expect(within(row).getByText('Matched')).toBeInTheDocument();
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
     expect(within(row).getByText('Included')).toBeInTheDocument();
     expect(within(row).getByText(factorName)).toBeInTheDocument();
   });
@@ -514,7 +913,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
 
     expect(await screen.findByText('Import Review Summary')).toBeInTheDocument();
-    expect(screen.getByText('1 records found')).toBeInTheDocument();
+    expect(screen.getByText('1 record found')).toBeInTheDocument();
     expect(screen.getByText('1 missing province')).toBeInTheDocument();
     expect(screen.getByText('Bulk set province for selected imported rows')).toBeInTheDocument();
     expect(
@@ -543,7 +942,7 @@ describe('ExcelInputTable empty activity row UX', () => {
       within(row).getByRole('combobox', { name: /Province required for electricity records/i }),
     ).toHaveDisplayValue('British Columbia');
     expect(within(row).queryByText('Missing Province')).not.toBeInTheDocument();
-    expect(within(row).getByText('Matched')).toBeInTheDocument();
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
     expect(
       within(row).getByText('British Columbia electricity factor matched. Using latest available factor year: 2025.'),
     ).toBeInTheDocument();
@@ -588,7 +987,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
 
     await waitFor(() => {
-      expect(within(row).getByText('Matched')).toBeInTheDocument();
+      expect(within(row).getByText('Ready')).toBeInTheDocument();
     });
     expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
     expect(within(row).getByText('Scope 2')).toBeInTheDocument();
@@ -597,9 +996,9 @@ describe('ExcelInputTable empty activity row UX', () => {
   });
 
   it.each([
-    ['Alberta', 'Electricity - Alberta - 2025', 'Estimated emissions: 6,625 kgCO2e'],
-    ['British Columbia', 'Electricity - British Columbia - 2025', 'Estimated emissions: 250 kgCO2e'],
-    ['Ontario', 'Electricity - Ontario - 2025', 'Estimated emissions: 1,500 kgCO2e'],
+    ['Alberta', 'Electricity - Alberta - 2025', 'Estimated emissions: 6,625 kg CO₂e'],
+    ['British Columbia', 'Electricity - British Columbia - 2025', 'Estimated emissions: 250 kg CO₂e'],
+    ['Ontario', 'Electricity - Ontario - 2025', 'Estimated emissions: 1,500 kg CO₂e'],
   ])('uses the 2025 %s electricity factor for a 2026 manual row', async (province, factorName, emissionsText) => {
     renderTable();
 
@@ -618,7 +1017,7 @@ describe('ExcelInputTable empty activity row UX', () => {
       province,
     );
 
-    expect(within(row).getByText('Matched')).toBeInTheDocument();
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
     expect(within(row).getByText(factorName)).toBeInTheDocument();
     expect(within(row).getAllByText(/Using latest available factor year: 2025/i).length).toBeGreaterThan(0);
     expect(within(row).getByText(emissionsText)).toBeInTheDocument();
@@ -636,7 +1035,7 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Matched')).toBeInTheDocument();
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta - 2025')).toBeInTheDocument();
     expect(within(row).getAllByText(/Using latest available factor year: 2025/i).length).toBeGreaterThan(0);
     expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
@@ -695,9 +1094,9 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Matched')).toBeInTheDocument();
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
-    expect(within(row).getByText('Estimated emissions: 53 kgCO2e')).toBeInTheDocument();
+    expect(within(row).getByText('Estimated emissions: 53 kg CO₂e')).toBeInTheDocument();
     expect(within(row).getByText('Included')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(row).queryByText('No factor found')).not.toBeInTheDocument();
@@ -739,7 +1138,7 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Matched')).toBeInTheDocument();
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta - 2025')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
     expect(within(row).getByText('Included')).toBeInTheDocument();
@@ -818,13 +1217,13 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '100');
 
     await waitFor(() => {
-      expect(within(row).getByText('Matched')).toBeInTheDocument();
+      expect(within(row).getByText('Ready')).toBeInTheDocument();
     });
     expect(within(row).queryByRole('combobox', { name: /Province required for electricity records/i })).not.toBeInTheDocument();
     expect(within(row).getByText('Ground Transport - Canada - 2025')).toBeInTheDocument();
     expect(within(row).getByText('Scope 3')).toBeInTheDocument();
     expect(within(row).getByText('Included')).toBeInTheDocument();
-    expect(within(row).getByText('Estimated emissions: 20 kgCO2e')).toBeInTheDocument();
+    expect(within(row).getByText('Estimated emissions: 20 kg CO₂e')).toBeInTheDocument();
   });
 
   it('shows Unit Mismatch for Ground Transport when the unit is not km', async () => {
@@ -955,6 +1354,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           activityType: 'DIESEL',
           quantity: 100,
           unit: 'L',
+          sourceType: 'MANUAL',
         }),
       );
     });
@@ -966,6 +1366,111 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(row).getByRole('button', { name: 'Add Another Record' })).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'View in Data Records' })).toBeInTheDocument();
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves a valid spreadsheet row as an import source while preserving spreadsheet metadata', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province', 'Source Reference'],
+      [46082, 'Electricity', 980, 'kWh', 'Canada', 'Alberta', 'MARCH-ELEC-001'],
+    ]);
+    worksheet.A2.z = 'yyyy-mm-dd';
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'March');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_needs_review_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+    const row = await screen.findByRole('group', { name: 'Activity row 1' });
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+
+    await waitFor(() => {
+      expect(createActivityData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activityType: 'ELECTRICITY',
+          quantity: 980,
+          unit: 'kWh',
+          jurisdictionRegion: 'Alberta',
+          sourceType: 'IMPORT',
+          sourceReference: 'MARCH-ELEC-001',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceRow: 2,
+        }),
+      );
+    });
+    expect(vi.mocked(createActivityData).mock.calls[0][0].sourceType).not.toBe('EXCEL');
+  });
+
+  it('keeps all imported workbook review rows visible before Save All and factor reloads', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['CarbonLite March electricity review'],
+      [],
+      ['Date', 'Type', 'Quantity', 'Unit', 'Province', 'Site', 'Source Reference'],
+      ['2026-03-01', 'Electricity', 980, 'kWh', 'Alberta', 'Calgary HQ', 'MARCH-ELEC-001'],
+      ['2026-03-02', 'Electricity', 760, 'kWh', '', 'Calgary Warehouse', 'MARCH-ELEC-002'],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'March');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_needs_review_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    });
+
+    const rowA = await screen.findByRole('group', { name: 'Activity row 1' });
+    const rowB = await screen.findByRole('group', { name: 'Activity row 2' });
+    expect(screen.getAllByRole('group', { name: /Activity row/i })).toHaveLength(2);
+
+    expect(within(rowA).getByDisplayValue('MARCH-ELEC-001')).toBeInTheDocument();
+    expect(within(rowB).getByDisplayValue('MARCH-ELEC-002')).toBeInTheDocument();
+    expect(within(rowA).getByRole('combobox', { name: /Activity type/i })).toHaveValue('ELECTRICITY');
+    expect(within(rowA).getByPlaceholderText('Quantity')).toHaveValue(980);
+    expect(within(rowA).getByRole('combobox', { name: /Province required for electricity records/i })).toHaveValue('Alberta');
+
+    await waitFor(() => {
+      expect(within(rowA).getByText('Ready')).toBeInTheDocument();
+    });
+    expect(within(rowB).getAllByText('Missing Province').length).toBeGreaterThan(0);
+    expect(within(rowA).queryByText('Missing Factor')).not.toBeInTheDocument();
+    expect(within(rowB).queryByText('Missing Factor')).not.toBeInTheDocument();
+    expect(saveSpreadsheetReviewRows).not.toHaveBeenCalled();
+  });
+
+  it('marks spreadsheet subtotal rows as ignored and prevents ActivityData creation', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province', 'Source Reference', 'Notes'],
+      ['TOTAL', '', 2277.4, '', 'Canada', '', 'MARCH-SUBTOTAL-009', 'Subtotal/header-like row - should not kill import'],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'March');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_subtotal_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+    const row = await screen.findByRole('group', { name: 'Activity row 1' });
+
+    expect(within(row).getByText('Ignored')).toBeInTheDocument();
+    expect(within(row).getAllByText('Non-activity row').length).toBeGreaterThan(0);
+    expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    expect(createActivityData).not.toHaveBeenCalled();
+    expect(saveSpreadsheetReviewRows).not.toHaveBeenCalled();
   });
 
   it('saves multiple rows individually', async () => {

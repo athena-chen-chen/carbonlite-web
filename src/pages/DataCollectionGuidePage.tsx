@@ -242,7 +242,7 @@ export default function DataCollectionGuidePage() {
         <p style={bodyTextStyle}>
           CarbonLite extracts supported activity information and presents it for review before it becomes an
           Activity Record. Utility bills, fuel invoices, travel records, PDFs, and spreadsheets should still be
-          checked in Input Review before import.
+          checked in Review Data before import.
         </p>
         <div style={workflowStyle} aria-label="CarbonLite data review workflow">
           {workflowSteps.map((step, index) => (

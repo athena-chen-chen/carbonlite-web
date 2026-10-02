@@ -489,6 +489,7 @@ function isSamePilotSystemFactor(
   const activityType = normalizeActivityType(item.activityType ?? item.name);
   const pilotActivityType = normalizeActivityType(pilotFactor.activityType ?? pilotFactor.name);
   if (activityType !== pilotActivityType) return false;
+  if (!isUsableSystemFactor(item)) return false;
 
   if (pilotActivityType === 'ELECTRICITY') {
     return (
@@ -502,6 +503,18 @@ function isSamePilotSystemFactor(
       String(pilotFactor.inputUnit ?? pilotFactor.unit ?? '').trim().toLowerCase() &&
     Number(item.sourceYear ?? 0) === Number(pilotFactor.sourceYear ?? 0)
   );
+}
+
+function isUsableSystemFactor(item: ConversionFactorItem) {
+  const status = String(item.factorStatus ?? '').trim().toUpperCase();
+  const unit = String(item.inputUnit ?? item.unit ?? '').trim();
+  const value = item.factorValue;
+
+  if (['ARCHIVED', 'DEPRECATED'].includes(status)) return false;
+  if (!unit) return false;
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return false;
+
+  return true;
 }
 
 export async function getAllConversionFactors(params?: {

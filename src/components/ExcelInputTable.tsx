@@ -1,5 +1,11 @@
 
 import { createActivityData, updateActivityData } from '../services/activityData';
+import {
+  saveSpreadsheetReviewRows,
+  type SpreadsheetReviewIssue,
+  type SpreadsheetReviewRowInput,
+  type SpreadsheetReviewRowStatus,
+} from '../services/spreadsheetReviewRows';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { getAllConversionFactors } from '../services/conversionFactors';
@@ -59,10 +65,13 @@ import { useToast } from './Toast';
 import { useAppDialog } from './AppDialog';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { formatReportFactorUnit } from '../utils/reportCredibility';
+import { getActivitySourceType } from '../utils/activitySourceType';
+import { formatCount, formatEmissionsUnit } from '../utils/numberFormatting';
 
 type Row = {
   id: string;
   origin?: 'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE';
+  importBatchId?: string;
   activityType: string;
   quantity: string;
   unit: string;
@@ -72,6 +81,15 @@ type Row = {
   facilityId?: string;
   facilityName?: string;
   sourceReference?: string;
+  sourceFileName?: string;
+  sourceSheetName?: string;
+  sourceRow?: string | number;
+  costCad?: string | number;
+  costCurrency?: string;
+  rawRecordDate?: unknown;
+  rawQuantity?: string;
+  rawActivityType?: string;
+  rawSourceRow?: Record<string, unknown>;
   notes?: string;
   factorId?: string;
   factorName?: string;
@@ -113,13 +131,188 @@ const SITE_FACILITY_ALIASES = [
   'Factory',
 ];
 
+export function normalizeSpreadsheetDate(value: unknown) {
+  if (value === undefined || value === null || value === '') return '';
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return '';
+
+    const year = Number(parsed.y);
+    const month = Number(parsed.m);
+    const day = Number(parsed.d);
+
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      return '';
+    }
+
+    return [
+      String(year).padStart(4, '0'),
+      String(month).padStart(2, '0'),
+      String(day).padStart(2, '0'),
+    ].join('-');
+  }
+
+  const text = String(value).trim();
+  const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/);
+  if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+
+  return '';
+}
+
+function normalizeSpreadsheetText(value: unknown) {
+  return String(value ?? '').trim();
+}
+
+function normalizeHeader(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function isSpreadsheetSummaryLabel(value: unknown) {
+  const text = normalizeSpreadsheetText(value)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+
+  return ['TOTAL', 'SUBTOTAL', 'SUB TOTAL', 'GRAND TOTAL', 'SUMMARY'].includes(text);
+}
+
+function hasSpreadsheetNonActivitySignal(row: Pick<Row, 'rawRecordDate' | 'sourceReference' | 'notes'>) {
+  return [row.rawRecordDate, row.sourceReference, row.notes].some((value) => {
+    const text = normalizeSpreadsheetText(value)
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
+
+    return (
+      isSpreadsheetSummaryLabel(value) ||
+      /\b(SUBTOTAL|SUB TOTAL|GRAND TOTAL|TOTAL|SUMMARY)\b/.test(text) ||
+      /\bHEADER[- ]?LIKE\b/.test(text)
+    );
+  });
+}
+
+function isNonActivitySpreadsheetRow(
+  row: Pick<Row, 'activityType' | 'rawActivityType' | 'recordDate' | 'rawRecordDate' | 'unit' | 'sourceReference' | 'notes'>,
+) {
+  if (row.activityType || normalizeSpreadsheetText(row.rawActivityType) || row.recordDate || normalizeSpreadsheetText(row.unit)) {
+    return false;
+  }
+
+  return hasSpreadsheetNonActivitySignal(row);
+}
+
+function createSpreadsheetImportBatchId(fileName: string) {
+  const randomId =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+  return `spreadsheet-${fileName}-${Date.now()}-${randomId}`;
+}
+
+const SPREADSHEET_HEADER_ALIASES = [
+  'activityType',
+  'Activity Type',
+  'type',
+  'activity',
+  'recordDate',
+  'Record Date',
+  'date',
+  'Date',
+  'quantity',
+  'Quantity',
+  'qty',
+  'amount',
+  'usage',
+  'unit',
+  'Unit',
+  'uom',
+  'measurement',
+  'province',
+  'Province',
+  'sourceReference',
+  'Source Reference',
+  'costCad',
+  'Cost CAD',
+  'cost',
+  'Cost',
+  'currency',
+  'Currency',
+  'site',
+  'Site',
+  'facility',
+  'Facility',
+];
+
+function getSpreadsheetHeaderScore(row: unknown[]) {
+  const normalizedKnownHeaders = new Set(SPREADSHEET_HEADER_ALIASES.map(normalizeHeader));
+  return row.reduce((score, cell) => {
+    const text = String(cell ?? '').trim();
+    return text && normalizedKnownHeaders.has(normalizeHeader(text)) ? score + 1 : score;
+  }, 0);
+}
+
+function getSpreadsheetHeaderRowIndex(rows: unknown[][]) {
+  const scoredRows = rows.map((row, index) => ({
+    index,
+    score: getSpreadsheetHeaderScore(row),
+  }));
+  const best = scoredRows.reduce(
+    (current, next) => (next.score > current.score ? next : current),
+    { index: 0, score: 0 },
+  );
+
+  return best.score >= 2 ? best.index : 0;
+}
+
+function buildSpreadsheetObjectsFromWorksheet(worksheet: XLSX.WorkSheet) {
+  const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    defval: '',
+    header: 1,
+    raw: true,
+  });
+  const headerRowIndex = getSpreadsheetHeaderRowIndex(sheetRows);
+  const headers = (sheetRows[headerRowIndex] ?? []).map((header) => String(header ?? '').trim());
+
+  return sheetRows
+    .slice(headerRowIndex + 1)
+    .map((values, index) => {
+      const row: Record<string, unknown> = {};
+      headers.forEach((header, cellIndex) => {
+        if (header) row[header] = values[cellIndex] ?? '';
+      });
+
+      return {
+        row,
+        sourceRow: headerRowIndex + index + 2,
+      };
+    })
+    .filter(({ row }) =>
+      Object.values(row).some((value) => String(value ?? '').trim()),
+    );
+}
+
 type ExcelInputTableMode = 'spreadsheet' | 'manual';
 
 export function ExcelInputTable({
   onSuccess,
   mode = 'manual',
 }: {
-  onSuccess: () => void;
+  onSuccess: (result?: {
+    source: 'manual' | 'spreadsheet';
+    sourceDocumentId?: string;
+  }) => void | Promise<void>;
   mode?: ExcelInputTableMode;
 }) {
   const canImportRows = canImportActivityRecords(getCurrentUser());
@@ -133,6 +326,7 @@ export function ExcelInputTable({
   const [bulkProvince, setBulkProvince] = useState('');
   const [bulkProvinceMessage, setBulkProvinceMessage] = useState('');
   const [facilities, setFacilities] = useState<FacilityItem[]>([]);
+  const [isSavingAll, setIsSavingAll] = useState(false);
   const isSpreadsheetMode = mode === 'spreadsheet';
   useEffect(() => {
   async function loadReferenceData() {
@@ -472,30 +666,57 @@ function applyFactorToRow(row: Row): Row {
   };
 }
 function importExcelFile(file: File) {
-  const reader = new FileReader();
+  const importBatchId = createSpreadsheetImportBatchId(file.name);
 
-  reader.onload = (e) => {
-    const data = new Uint8Array(e.target?.result as ArrayBuffer);
-    const workbook = XLSX.read(data, { type: 'array' });
+  function importWorkbookData(result: ArrayBuffer) {
+    const data = new Uint8Array(result);
+    const workbook = XLSX.read(data, { type: 'array', cellDates: false });
 
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
-    const jsonData = XLSX.utils.sheet_to_json<any>(worksheet);
+    const workbookRows = buildSpreadsheetObjectsFromWorksheet(worksheet);
 
-    const importedRows = jsonData.map((row) => {
+    const importedRows = workbookRows.map(({ row, sourceRow }) => {
       const activityType =
         normalizeActivityType(readAliasedField(row, ['activityType', 'Activity Type', 'type', 'activity'])) || '';
+      const rawActivityType = readAliasedField(row, ['activityType', 'Activity Type', 'type', 'activity']);
+      const rawRecordDate = readAliasedRawField(row, [
+        'recordDate',
+        'Record Date',
+        'date',
+        'Date',
+        'Service Date',
+        'Activity Date',
+        'Reporting Date',
+      ]);
+      const recordDate = normalizeSpreadsheetDate(rawRecordDate);
+      const rawQuantity = readAliasedField(row, ['quantity', 'Quantity', 'qty', 'amount', 'usage']);
+      const sourceReference = readAliasedField(row, ['Source Reference', 'sourceReference', 'reference']);
+      const costCad = readAliasedField(row, [
+        'Cost CAD',
+        'costCad',
+        'costCAD',
+        'amountCad',
+        'Amount CAD',
+        'cost',
+        'Cost',
+      ]);
+      const costCurrency =
+        readAliasedField(row, ['Currency', 'currency', 'Cost Currency', 'costCurrency']) ||
+        (costCad ? 'CAD' : '');
 
-      return {
+      const importedRow = {
         id: Math.random().toString(),
         origin: 'EXCEL' as const,
+        importBatchId,
         activityType,
-        recordDate:
-          readAliasedField(row, ['recordDate', 'Record Date', 'date', 'Date']) ||
-          getTodayDateOnly(),
-        quantity: readAliasedField(row, ['quantity', 'Quantity', 'qty', 'amount', 'usage']) || '',
-        unit: readAliasedField(row, ['unit', 'Unit', 'uom', 'measurement']) || getDefaultUnit(activityType),
+        rawActivityType,
+        recordDate,
+        rawRecordDate,
+        quantity: rawQuantity,
+        rawQuantity,
+        unit: readAliasedField(row, ['unit', 'Unit', 'uom', 'measurement']) || '',
         jurisdictionCountry: normalizeCountry(readAliasedField(row, [
           'jurisdictionCountry',
           'Jurisdiction Country',
@@ -516,9 +737,17 @@ function importExcelFile(file: File) {
           'facilityProvince',
         ])),
         facilityName: readAliasedField(row, SITE_FACILITY_ALIASES),
-        sourceReference: readAliasedField(row, ['Source Reference', 'sourceReference', 'reference']),
+        sourceReference,
+        sourceFileName: file.name,
+        sourceSheetName: sheetName,
+	        sourceRow,
+        costCad,
+        costCurrency,
+        rawSourceRow: row,
         notes: readAliasedField(row, ['Notes', 'notes']),
       };
+
+      return importedRow;
     });
 
    setRows(
@@ -526,9 +755,27 @@ function importExcelFile(file: File) {
     ? importedRows.map(applyFactorToRow)
     : [],
 );
-  };
+  }
 
-  reader.readAsArrayBuffer(file);
+  if (typeof file.arrayBuffer === 'function') {
+    file.arrayBuffer()
+      .then(importWorkbookData)
+      .catch((err) => {
+        if (import.meta.env.DEV) {
+          console.error('Spreadsheet import failed', err);
+        }
+        showError({
+          title: 'Unable to import spreadsheet',
+          message: 'We could not read this Excel file. Please check the file and try again.',
+        });
+      });
+  } else {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      importWorkbookData(e.target?.result as ArrayBuffer);
+    };
+    reader.readAsArrayBuffer(file);
+  }
   setEntrySourceType('EXCEL');
 }
 function parseCSVText(text: string) {
@@ -592,6 +839,15 @@ function parseCSVText(text: string) {
     'factory',
   ]);
   const sourceReferenceIndex = findColumnIndex(headers, ['sourceReference', 'source reference', 'reference']);
+  const costCadIndex = findColumnIndex(headers, [
+    'costCad',
+    'cost CAD',
+    'costCAD',
+    'amountCad',
+    'amount CAD',
+    'cost',
+  ]);
+  const costCurrencyIndex = findColumnIndex(headers, ['currency', 'costCurrency', 'cost currency']);
   const notesIndex = findColumnIndex(headers, ['notes', 'note']);
 
   if (activityTypeIndex === -1 || quantityIndex === -1) {
@@ -602,18 +858,20 @@ function parseCSVText(text: string) {
     return;
   }
 
+  const importBatchId = createSpreadsheetImportBatchId('csv-paste-import.csv');
   const importedRows = lines.slice(1).map((line) => {
     const cols = line.split(',').map((v) => v.trim());
     const activityType = normalizeActivityType(cols[activityTypeIndex] || '');
 
+    const rawRecordDate = recordDateIndex >= 0 ? cols[recordDateIndex] : '';
+
     return {
       id: Math.random().toString(),
       origin: 'CSV' as const,
+      importBatchId,
       activityType,
-      recordDate:
-        recordDateIndex >= 0
-          ? cols[recordDateIndex]
-          : getTodayDateOnly(),
+      recordDate: recordDateIndex >= 0 ? normalizeSpreadsheetDate(rawRecordDate) : getTodayDateOnly(),
+      rawRecordDate,
       quantity: cols[quantityIndex] || '',
       unit:
         unitIndex >= 0
@@ -623,6 +881,13 @@ function parseCSVText(text: string) {
       jurisdictionRegion: normalizeProvince(provinceIndex >= 0 ? cols[provinceIndex] : ''),
       facilityName: facilityIndex >= 0 ? cols[facilityIndex] : '',
       sourceReference: sourceReferenceIndex >= 0 ? cols[sourceReferenceIndex] : '',
+      costCad: costCadIndex >= 0 ? cols[costCadIndex] : '',
+      costCurrency:
+        costCurrencyIndex >= 0
+          ? cols[costCurrencyIndex]
+          : costCadIndex >= 0
+          ? 'CAD'
+          : '',
       notes: notesIndex >= 0 ? cols[notesIndex] : '',
     };
   });
@@ -650,18 +915,112 @@ function validateRow(row: Row) {
   return errors;
 }
 
+function getSpreadsheetReviewIssues(row: Row): SpreadsheetReviewIssue[] {
+  const issues = validateRow(row).map((message) => ({
+    code: getReviewIssueCode(message),
+    field: getReviewIssueField(message),
+    message,
+  }));
+
+  if (row.calculationStatus === 'missingJurisdiction') {
+    issues.push({
+      code: 'MISSING_PROVINCE',
+      field: 'jurisdictionRegion',
+      message: 'Missing Province',
+    });
+  }
+
+  if (row.calculationStatus === 'invalidUnit') {
+    issues.push({
+      code: 'UNIT_MISMATCH',
+      field: 'unit',
+      message: row.calculationMessage || 'Unit Mismatch',
+    });
+  }
+
+  if (row.calculationStatus === 'missingFactor') {
+    issues.push({
+      code: 'MISSING_FACTOR',
+      field: 'factor',
+      message: row.calculationMessage || 'Missing Factor',
+    });
+  }
+
+  if (!row.activityType && row.rawActivityType) {
+    issues.push({
+      code: 'UNSUPPORTED_ACTIVITY_TYPE',
+      field: 'activityType',
+      message: 'Unsupported activity type',
+    });
+  }
+
+  return dedupeReviewIssues(issues);
+}
+
+function getReviewIssueCode(message: string) {
+  if (/activity type/i.test(message)) return 'MISSING_ACTIVITY_TYPE';
+  if (/date/i.test(message)) return /invalid/i.test(message) ? 'INVALID_DATE' : 'MISSING_DATE';
+  if (/quantity|greater than 0/i.test(message)) return /missing/i.test(message) ? 'MISSING_QUANTITY' : 'INVALID_QUANTITY';
+  if (/unit/i.test(message)) return 'MISSING_UNIT';
+  return 'NEEDS_REVIEW';
+}
+
+function getReviewIssueField(message: string) {
+  if (/activity type/i.test(message)) return 'activityType';
+  if (/date/i.test(message)) return 'recordDate';
+  if (/quantity|greater than 0/i.test(message)) return 'quantity';
+  if (/unit/i.test(message)) return 'unit';
+  return 'row';
+}
+
+function dedupeReviewIssues(issues: SpreadsheetReviewIssue[]) {
+  const seen = new Set<string>();
+  return issues.filter((issue) => {
+    const key = `${issue.code}:${issue.field}:${issue.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getSpreadsheetReviewStatus(row: Row): SpreadsheetReviewRowStatus {
+  const issues = getSpreadsheetReviewIssues(row);
+  if (issues.length > 0) return 'NEEDS_REVIEW';
+  if (row.calculationStatus === 'trackedMetric') return 'TRACKED_ONLY';
+  return row.calculationStatus !== 'calculated'
+    ? 'NEEDS_REVIEW'
+    : 'READY';
+}
+
 function isRowReadyToSave(row: Row) {
-  return !isRowCompletelyEmpty(row) && validateRow(row).length === 0;
+  return !isRowCompletelyEmpty(row) && !isNonActivitySpreadsheetRow(row) && validateRow(row).length === 0;
+}
+
+function isRowPersistable(row: Row) {
+  return !isRowCompletelyEmpty(row) && !isNonActivitySpreadsheetRow(row) && row.status !== 'saved';
 }
 
 function isRowSaveDisabled(row: Row) {
-  return row.status === 'saved' || row.status === 'saving' || isRowCompletelyEmpty(row);
+  return row.status === 'saved' || row.status === 'saving' || isRowCompletelyEmpty(row) || isNonActivitySpreadsheetRow(row);
 }
 
 function getRowSaveLabel(row: Row) {
   if (row.status === 'saving') return 'Saving...';
   if (row.status === 'saved') return 'Saved';
   return 'Save';
+}
+
+function getSaveAllDisabledReason(input: {
+  canImportRows: boolean;
+  hasRowsToReview: boolean;
+  isSavingAll: boolean;
+  hasPersistableRows: boolean;
+}) {
+  if (!input.canImportRows) return 'You do not have permission to perform this action.';
+  if (input.isSavingAll) return 'Saving spreadsheet rows...';
+  if (!input.hasRowsToReview) return 'Add or import spreadsheet rows before saving.';
+  if (!input.hasPersistableRows) return 'Imported rows need required fields before any can be saved.';
+  return undefined;
 }
 
 function buildActivityPayload(row: Row) {
@@ -690,11 +1049,17 @@ function buildActivityPayload(row: Row) {
     facility: normalizeOptional(row.facilityName) ?? normalizeOptional(row.facilityId),
     facilityId: normalizeOptional(row.facilityId),
     recordYear: getDateOnlyYear(row.recordDate),
-    sourceType: row.origin ?? entrySourceType,
-    sourceReference: normalizeOptional(row.sourceReference) ?? String(row.origin ?? entrySourceType).toLowerCase(),
+    sourceType: getActivitySourceType(row.origin ?? entrySourceType),
+    sourceReference: normalizeOptional(row.sourceReference),
+    sourceFileName: normalizeOptional(row.sourceFileName),
+    sourceRow: row.sourceRow,
+    costCad: normalizeOptionalNumber(row.costCad),
+    costCurrency: normalizeOptional(row.costCurrency),
     notes: matchedNotes || [
       row.notes,
       row.facilityName ? `Site / Facility: ${row.facilityName}` : '',
+      row.sourceSheetName ? `Source sheet: ${row.sourceSheetName}` : '',
+      row.sourceRow ? `Source row: ${row.sourceRow}` : '',
       isMissingElectricityProvince
         ? 'Requires Review. Status: MISSING_PROVINCE. excludedFromTotals=true. Province is required before this electricity record can be calculated.'
         : '',
@@ -717,6 +1082,95 @@ function buildActivityPayload(row: Row) {
     calculatedEmissionsKgCO2e: canonicalCalculation.calculatedEmissionsKgCO2e,
     calculationStatus: canonicalCalculation.calculationStatus,
     calculationMessage: row.calculationMessage,
+  };
+}
+
+function buildSpreadsheetReviewRowPayload(row: Row): SpreadsheetReviewRowInput {
+  const estimatedEmission = getRowEstimatedEmission(row);
+  const canonicalCalculation = getCanonicalCalculationFields(row, estimatedEmission);
+  const issues = getSpreadsheetReviewIssues(row);
+  const reviewCalculation = getValidationBlockedCalculationFields(canonicalCalculation, issues);
+  const quantity = Number(row.quantity);
+  const factorSourceYear = typeof row.factorSourceYear === 'number'
+    ? row.factorSourceYear
+    : Number.isFinite(Number(row.factorSourceYear))
+    ? Number(row.factorSourceYear)
+    : undefined;
+
+  return {
+    rowId: row.id,
+    status: getSpreadsheetReviewStatus(row),
+    activityType: row.activityType,
+    rawActivityType: row.rawActivityType,
+    recordDate: row.recordDate || null,
+    rawRecordDate: row.rawRecordDate,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
+    rawQuantity: row.rawQuantity ?? row.quantity,
+    unit: row.unit,
+    jurisdictionCountry: normalizeOptional(row.jurisdictionCountry),
+    jurisdictionRegion: normalizeOptional(row.jurisdictionRegion),
+    facilityName: normalizeOptional(row.facilityName),
+    sourceReference: normalizeOptional(row.sourceReference),
+    sourceFileName: normalizeOptional(row.sourceFileName),
+    sourceSheetName: normalizeOptional(row.sourceSheetName),
+    sourceRow: row.sourceRow,
+    costCad: normalizeOptionalNumber(row.costCad),
+    costCurrency: normalizeOptional(row.costCurrency),
+    rawSourceRow: row.rawSourceRow,
+    notes: normalizeOptional(row.notes),
+    issues,
+    matchingStatus: reviewCalculation.matchingStatus,
+    reportTreatment: reviewCalculation.reportTreatment,
+    scope: inferDefaultScope(row.activityType),
+    calculationStatus: reviewCalculation.calculationStatus,
+    calculationMessage: reviewCalculation.calculationMessage ?? row.calculationMessage ?? reviewCalculation.calculationStatus,
+    matchedFactorId: canonicalCalculation.matchedFactorId,
+    matchedFactorName: canonicalCalculation.matchedFactorName,
+    matchedFactorSourceYear: canonicalCalculation.matchedFactorSourceYear ?? factorSourceYear,
+    matchedFactorValue: canonicalCalculation.matchedFactorValue,
+    matchedFactorUnit: canonicalCalculation.matchedFactorUnit,
+    matchedFactorVersion: canonicalCalculation.matchedFactorVersion,
+    matchedFactorSourceAuthority: canonicalCalculation.matchedFactorSourceAuthority,
+    matchedFactorSourceDocument: canonicalCalculation.matchedFactorSourceDocument,
+    matchedFactorVerificationStatus: canonicalCalculation.matchedFactorVerificationStatus,
+    matchedFactorConfidenceLevel: canonicalCalculation.matchedFactorConfidenceLevel,
+    matchedFactorAssumptions: canonicalCalculation.matchedFactorAssumptions,
+    calculatedEmissionsKgCO2e: reviewCalculation.calculatedEmissionsKgCO2e,
+  };
+}
+
+function getSpreadsheetSaveTechnicalDetails(err: unknown) {
+  if (err && typeof err === 'object' && 'status' in err) {
+    const error = err as { status?: number; message?: string; technicalMessage?: string };
+    return [
+      error.status ? `HTTP ${error.status}` : '',
+      error.technicalMessage ?? error.message ?? '',
+    ].filter(Boolean).join(' · ');
+  }
+
+  return err instanceof Error ? err.message : 'Failed to save spreadsheet review rows';
+}
+
+function buildSpreadsheetDebugRow(row: Row) {
+  return {
+    sourceRow: row.sourceRow,
+    rawRecordDate: row.rawRecordDate,
+    recordDate: row.recordDate || null,
+    activityType: row.activityType,
+    quantity: row.quantity,
+    sourceReference: row.sourceReference,
+    sourceFileName: row.sourceFileName,
+    sourceSheetName: row.sourceSheetName,
+    ignored: isNonActivitySpreadsheetRow(row),
+    issues: isNonActivitySpreadsheetRow(row)
+      ? [
+          {
+            code: 'NON_ACTIVITY_ROW',
+            field: 'row',
+            message: 'Ignored subtotal/summary row',
+          },
+        ]
+      : getSpreadsheetReviewIssues(row),
   };
 }
 
@@ -850,9 +1304,73 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
   };
 }
 
+function getValidationBlockedCalculationFields(
+  canonicalCalculation: ReturnType<typeof getCanonicalCalculationFields>,
+  issues: SpreadsheetReviewIssue[],
+) {
+  if (issues.length === 0) return canonicalCalculation;
+
+  const calculationStatus = getValidationCalculationStatus(issues);
+
+  return {
+    ...canonicalCalculation,
+    reportTreatment: 'EXCLUDED',
+    calculationStatus,
+    calculationMessage: getValidationCalculationMessage(calculationStatus),
+    calculatedEmissionsKgCO2e: null,
+  };
+}
+
+function getValidationCalculationStatus(issues: SpreadsheetReviewIssue[]) {
+  const codes = issues.map((issue) => String(issue.code ?? '').toUpperCase());
+
+  if (codes.includes('MISSING_ACTIVITY_TYPE') || codes.includes('UNSUPPORTED_ACTIVITY_TYPE')) {
+    return 'MISSING_ACTIVITY_TYPE';
+  }
+  if (codes.includes('MISSING_QUANTITY')) return 'MISSING_QUANTITY';
+  if (codes.includes('INVALID_QUANTITY')) return 'INVALID_QUANTITY';
+  if (codes.includes('MISSING_PROVINCE') || codes.includes('MISSING_JURISDICTION')) {
+    return 'MISSING_PROVINCE';
+  }
+  if (codes.includes('UNIT_MISMATCH') || codes.includes('INVALID_UNIT')) return 'UNIT_MISMATCH';
+  if (codes.includes('MISSING_FACTOR')) return 'MISSING_FACTOR';
+
+  return 'REQUIRES_REVIEW';
+}
+
+function getValidationCalculationMessage(status: string) {
+  switch (status) {
+    case 'MISSING_ACTIVITY_TYPE':
+      return 'Activity type is required before this row can be calculated.';
+    case 'MISSING_QUANTITY':
+      return 'Quantity is required before this row can be calculated.';
+    case 'INVALID_QUANTITY':
+      return 'Quantity must be a valid number greater than 0 before this row can be calculated.';
+    case 'MISSING_PROVINCE':
+      return 'Province is required before this row can be calculated.';
+    case 'UNIT_MISMATCH':
+      return 'Unit mismatch. This record is excluded from emissions totals.';
+    case 'MISSING_FACTOR':
+      return 'No matching conversion factor is available for this record.';
+    default:
+      return 'Required fields must be completed before calculation.';
+  }
+}
+
 function normalizeOptional(value?: string | null) {
   const normalized = String(value ?? '').trim();
   return normalized ? normalized : undefined;
+}
+
+function normalizeOptionalNumber(value?: string | number | null) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  const numericValue = Number(normalized.replace(/[$,\s]/g, ''));
+
+  return Number.isFinite(numericValue) ? numericValue : undefined;
 }
 
 function updateRowStatus(id: string, patch: Partial<Row>) {
@@ -887,7 +1405,7 @@ function isRowCompletelyEmpty(row: Row) {
 }
 
 function isImportedReviewRow(row: Row) {
-  return row.origin !== 'MANUAL' && !isRowCompletelyEmpty(row);
+  return row.origin !== 'MANUAL' && !isRowCompletelyEmpty(row) && !isNonActivitySpreadsheetRow(row);
 }
 
 function hasRowStarted(row: Row) {
@@ -901,9 +1419,15 @@ function canRemoveRow(row: Row) {
 }
 
 function getCalculationStatusLabel(row: Row) {
+  if (!row.activityType) return 'Missing Activity Type';
+  if (!String(row.quantity ?? '').trim()) return 'Invalid Amount';
+  if (row.activityType === 'ELECTRICITY' && !normalizeJurisdictionRegion(row.jurisdictionRegion)) {
+    return 'Missing Province';
+  }
+
   switch (row.calculationStatus) {
     case 'calculated':
-      return 'Matched';
+      return 'Ready';
     case 'trackedMetric':
       return 'Tracked Only';
     case 'invalidUnit':
@@ -963,6 +1487,15 @@ function renderStatusCell(row: Row) {
   const summary = getRowStatusSummary(row);
   const credibilityBadges = getRowCredibilityBadges(row);
 
+  if (isNonActivitySpreadsheetRow(row)) {
+    return (
+      <div style={{ display: 'grid', gap: 4 }}>
+        <StatusBadge status="IGNORED" label="Ignored" />
+        <span style={statusMessageStyle}>Non-activity row</span>
+      </div>
+    );
+  }
+
   if (row.status === 'saved') {
     return (
       <div style={{ display: 'grid', gap: 4 }}>
@@ -970,6 +1503,9 @@ function renderStatusCell(row: Row) {
           status={row.calculationStatus ?? row.status}
           label={getSavedReviewLabel(row)}
         />
+        {row.errors?.length ? (
+          <span style={statusMessageStyle}>{row.errors.join(', ')}</span>
+        ) : null}
         {row.calculationStatus !== 'calculated' ? (
           <span style={statusMessageStyle}>{summary.detail}</span>
         ) : null}
@@ -1011,6 +1547,16 @@ function renderStatusCell(row: Row) {
 }
 
 function renderFactorCell(row: Row) {
+  if (isNonActivitySpreadsheetRow(row)) {
+    return (
+      <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.45 }}>
+        <strong>Non-activity row</strong>
+        <br />
+        Ignored during Activity Record creation.
+      </div>
+    );
+  }
+
   if (isRowCompletelyEmpty(row) || !row.activityType) {
     return <span style={{ color: '#94a3b8', fontSize: 12 }}>-</span>;
   }
@@ -1137,7 +1683,7 @@ function formatEstimatedEmissions(row: Row) {
   if (!String(row.quantity ?? '').trim()) return 'Estimated emissions: Waiting for quantity';
   if (emissions === null) return 'Estimated emissions: Waiting for valid quantity';
 
-  return `Estimated emissions: ${formatEmissionNumber(emissions)} ${resultUnit}`;
+  return `Estimated emissions: ${formatEmissionNumber(emissions)} ${formatEmissionsUnit(resultUnit)}`;
 }
 
 function getRowEstimatedEmission(row: Row) {
@@ -1165,6 +1711,15 @@ function formatEmissionNumber(value: number) {
 }
 
 function getRowStatusSummary(row: Row): { badge: string; detail: string } {
+  if (!row.activityType) {
+    return { badge: 'Missing Activity Type', detail: 'Select an activity type.' };
+  }
+
+  const quantity = Number(row.quantity);
+  if (!String(row.quantity ?? '').trim() || !Number.isFinite(quantity) || quantity <= 0) {
+    return { badge: 'Invalid Amount', detail: 'Enter a quantity greater than 0.' };
+  }
+
   if (row.activityType === 'ELECTRICITY') {
     if (row.calculationStatus === 'missingJurisdiction') {
       return {
@@ -1185,7 +1740,7 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
     if (row.calculationStatus === 'calculated') {
       const province = normalizeProvince(row.jurisdictionRegion);
       return {
-        badge: 'Matched',
+        badge: 'Ready',
         detail: row.factorYearFallback && row.factorSourceYear
           ? `${province || 'Province'} electricity factor matched. Using latest available factor year: ${row.factorSourceYear}.`
           : `${province || 'Province'} electricity factor matched.`,
@@ -1195,7 +1750,7 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
 
   switch (row.calculationStatus) {
     case 'calculated':
-      return { badge: 'Matched', detail: 'Factor matched.' };
+      return { badge: 'Ready', detail: 'Factor matched.' };
     case 'trackedMetric':
       return { badge: 'Not Emissions Factor Required', detail: 'Tracked only, excluded from GHG totals.' };
     case 'invalidUnit':
@@ -1376,10 +1931,6 @@ function handleQuickEntryKeyDown(event: React.KeyboardEvent<HTMLTableElement>) {
   }
 }
 
-function normalizeHeader(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, '');
-}
-
 function findColumnIndex(headers: string[], candidates: string[]) {
   const normalized = headers.map(normalizeHeader);
 
@@ -1389,12 +1940,16 @@ function findColumnIndex(headers: string[], candidates: string[]) {
 }
 
 function readAliasedField(row: Record<string, unknown>, aliases: string[]) {
+  const value = readAliasedRawField(row, aliases);
+  return String(value ?? '').trim();
+}
+
+function readAliasedRawField(row: Record<string, unknown>, aliases: string[]) {
   const normalizedAliases = aliases.map(normalizeHeader);
   const key = Object.keys(row).find((candidate) =>
     normalizedAliases.includes(normalizeHeader(candidate)),
   );
-  const value = key ? row[key] : undefined;
-  return String(value ?? '').trim();
+  return key ? row[key] : undefined;
 }
 
 function normalizeProvince(value?: string | null) {
@@ -1527,6 +2082,14 @@ async function saveRow(row: Row) {
     return;
   }
 
+  if (isNonActivitySpreadsheetRow(row)) {
+    updateRowStatus(row.id, {
+      errors: ['Ignored non-activity row'],
+      status: 'error',
+    });
+    return;
+  }
+
   const errors = validateRow(row);
 
   if (errors.length > 0) {
@@ -1551,7 +2114,7 @@ async function saveRow(row: Row) {
       status: 'saved',
       savedActivityId: (saved as { id?: string })?.id,
     });
-    onSuccess();
+    void onSuccess({ source: 'manual' });
   } catch (err) {
     updateRowStatus(row.id, {
       errors: [getUserFriendlyErrorMessage(err, 'draftRecordReview')],
@@ -1569,33 +2132,76 @@ async function saveAll() {
     return;
   }
 
+  if (isSpreadsheetMode && import.meta.env.DEV && rows[8]) {
+    console.debug('spreadsheet review row 8', buildSpreadsheetDebugRow(rows[8]));
+  }
+
   const rowsToSave = rows.filter(
-    (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
+    (row) =>
+      !isRowCompletelyEmpty(row) &&
+      row.status !== 'saved' &&
+      (!isSpreadsheetMode || !isNonActivitySpreadsheetRow(row)),
   );
+
+  if (isSpreadsheetMode) {
+    await saveAllSpreadsheetRows(rowsToSave);
+    return;
+  }
+
   const validatedRows = rowsToSave.map((row) => ({
     ...row,
     errors: validateRow(row),
   }));
+  const persistableRows = validatedRows.filter((row) => !row.errors?.length);
+  const invalidRows = validatedRows.filter((row) => row.errors?.length);
 
-  const hasErrors = validatedRows.some((row) => row.errors?.length);
-
-  if (hasErrors) {
+  if (persistableRows.length === 0) {
     setRows((prev) =>
       prev.map((row) =>
-        validatedRows.find((validatedRow) => validatedRow.id === row.id) ?? row,
+        validatedRows.find((validatedRow) => validatedRow.id === row.id)
+          ? {
+              ...row,
+              errors: validateRow(row),
+              status: 'error',
+            }
+          : row,
       ),
     );
     showError({
       title: 'Unable to save records',
-      message: 'Some rows have errors. Please fix highlighted rows before saving.',
+      message: 'No rows can be saved yet. Please fix highlighted required fields before saving.',
     });
     return;
   }
 
+  setIsSavingAll(true);
+  setRows((prev) =>
+    prev.map((row) => {
+      if (persistableRows.some((item) => item.id === row.id)) {
+        return {
+          ...row,
+          errors: undefined,
+          status: 'saving',
+        };
+      }
+
+      const invalidRow = invalidRows.find((item) => item.id === row.id);
+      if (invalidRow) {
+        return {
+          ...row,
+          errors: invalidRow.errors,
+          status: 'error',
+        };
+      }
+
+      return row;
+    }),
+  );
+
   try {
     const savedRows: Array<{ rowId: string; savedActivityId?: string }> = [];
 
-    for (const row of validatedRows) {
+    for (const row of persistableRows) {
       const saved = row.savedActivityId
         ? await updateActivityData(row.savedActivityId, buildActivityPayload(row))
         : await createActivityData(buildActivityPayload(row));
@@ -1619,21 +2225,144 @@ async function saveAll() {
         };
       }),
     );
-    onSuccess();
-    toast.success('Saved.');
+    await onSuccess({ source: 'manual' });
+    toast.success(
+      invalidRows.length > 0
+        ? `Spreadsheet rows saved for review. ${invalidRows.length} row${invalidRows.length === 1 ? '' : 's'} still need required fields before saving.`
+        : 'Spreadsheet rows saved for review.',
+    );
   } catch (err) {
+    setRows((prev) =>
+      prev.map((row) =>
+        persistableRows.some((item) => item.id === row.id)
+          ? {
+              ...row,
+              status: 'error',
+              errors: [getUserFriendlyErrorMessage(err, 'draftRecordReview')],
+            }
+          : row,
+      ),
+    );
     showError({
       title: 'Unable to save records',
       message: 'We could not save these records. Please review the information and try again.',
       technicalDetails: err instanceof Error ? err.message : 'Failed to save',
     });
+  } finally {
+    setIsSavingAll(false);
+  }
+}
+
+async function saveAllSpreadsheetRows(rowsToSave: Row[]) {
+  if (rowsToSave.length === 0) return;
+
+  const reviewRows = rowsToSave.map(buildSpreadsheetReviewRowPayload);
+
+  setIsSavingAll(true);
+  setRows((prev) =>
+    prev.map((row) =>
+      rowsToSave.some((item) => item.id === row.id)
+        ? {
+            ...row,
+            errors: getSpreadsheetReviewIssues(row).map((issue) => issue.message),
+            status: 'saving',
+          }
+        : row,
+    ),
+  );
+
+  try {
+    const response = await saveSpreadsheetReviewRows({
+      sourceType: entrySourceType === 'CSV' || entrySourceType === 'EXCEL' || entrySourceType === 'PASTE'
+        ? entrySourceType
+        : 'EXCEL',
+      importBatchId: rowsToSave.find((row) => row.importBatchId)?.importBatchId,
+      sourceFileName: reviewRows.find((row) => row.sourceFileName)?.sourceFileName,
+      rows: reviewRows,
+    });
+    const failedRows = response.failedRows ?? [];
+    const failedKeys = new Set(
+      failedRows.map((row) => row.rowId ?? String(row.sourceRow ?? '')),
+    );
+
+    setRows((prev) =>
+      prev.map((row) => {
+        if (!rowsToSave.some((item) => item.id === row.id)) return row;
+
+        const failedRow = failedRows.find(
+          (item) => item.rowId === row.id || String(item.sourceRow ?? '') === String(row.sourceRow ?? ''),
+        );
+
+        if (failedRow) {
+          return {
+            ...row,
+            status: 'error',
+            errors: [failedRow.message],
+          };
+        }
+
+        return {
+          ...row,
+          status: 'saved',
+          errors: getSpreadsheetReviewIssues(row).map((issue) => issue.message),
+        };
+      }),
+    );
+
+    await onSuccess({
+      source: 'spreadsheet',
+      sourceDocumentId: response.sourceDocument?.id,
+    });
+    const savedCount = Number(response.savedCount ?? Math.max(0, reviewRows.length - failedKeys.size));
+    const readyCount = response.readyCount ?? reviewRows.filter((row) => row.status === 'READY').length;
+    const needsReviewCount = response.needsReviewCount ?? reviewRows.filter((row) => row.status === 'NEEDS_REVIEW').length;
+    const trackedOnlyCount = response.trackedOnlyCount ?? reviewRows.filter((row) => row.status === 'TRACKED_ONLY').length;
+    const failedCount = failedRows.length;
+
+    toast.success(
+      failedCount > 0
+        ? `${savedCount} spreadsheet row${savedCount === 1 ? '' : 's'} saved for review. ${failedCount} row${failedCount === 1 ? '' : 's'} could not be saved.`
+        : `${savedCount} spreadsheet row${savedCount === 1 ? '' : 's'} saved for review. ${readyCount} ready · ${needsReviewCount} need review · ${trackedOnlyCount} tracked.`,
+    );
+  } catch (err) {
+    setRows((prev) =>
+      prev.map((row) =>
+        rowsToSave.some((item) => item.id === row.id)
+          ? {
+              ...row,
+              status: 'error',
+              errors: [getUserFriendlyErrorMessage(err, 'draftRecordReview')],
+            }
+          : row,
+      ),
+    );
+    showError({
+      title: 'Unable to save records',
+      message: 'We could not save these records. Please review the information and try again.',
+      technicalDetails: getSpreadsheetSaveTechnicalDetails(err),
+    });
+  } finally {
+    setIsSavingAll(false);
   }
 }
 
 const rowsToSave = rows.filter(
-  (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
+  (row) =>
+    !isRowCompletelyEmpty(row) &&
+    row.status !== 'saved' &&
+    (!isSpreadsheetMode || !isNonActivitySpreadsheetRow(row)),
 );
-const hasValidRows = rowsToSave.some((row) => validateRow(row).length === 0);
+const hasPersistableRows = rowsToSave.some((row) =>
+  isSpreadsheetMode ? isRowPersistable(row) : validateRow(row).length === 0,
+);
+const hasRowsToReview = rowsToSave.length > 0;
+const saveAllDisabled = !hasRowsToReview || isSavingAll || !canImportRows || (!isSpreadsheetMode && !hasPersistableRows);
+const saveAllDisabledReason = getSaveAllDisabledReason({
+  canImportRows,
+  hasRowsToReview,
+  isSavingAll,
+  hasPersistableRows,
+});
 const hasSavedRows = rows.some((row) => row.status === 'saved');
 const importedReviewRows = rows.filter(isImportedReviewRow);
 const hasImportedReviewRows = importedReviewRows.length > 0;
@@ -1661,7 +2390,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
       <h3 style={{ margin: 0 }}>{isSpreadsheetMode ? 'Spreadsheet rows' : 'Manual activity rows'}</h3>
       <p style={{ margin: '6px 0 0', color: '#64748b' }}>
         {isSpreadsheetMode
-          ? 'Upload a CSV/XLSX file using the CarbonLite template, or paste rows copied from Excel.'
+          ? 'Import a CSV/XLSX file or paste rows from Excel.'
           : 'Enter one activity record manually when no file is available.'}
       </p>
       {!canImportRows ? (
@@ -1682,13 +2411,13 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
       {hasImportedReviewRows && importReviewSummary.total > 0 ? (
         <div style={importReviewSummaryStyle}>
           <strong>Import Review Summary</strong>
-          <span>{importReviewSummary.total} records found</span>
+          <span>{formatCount(importReviewSummary.total, 'record')} found</span>
           <span>{importReviewSummary.ready} ready for calculation</span>
-          <span>{importReviewSummary.tracked} tracked metric</span>
-          <span>{importReviewSummary.review} requires review</span>
-          <span>{importReviewSummary.missingDate} missing date</span>
-          <span>{importReviewSummary.missingQuantity} missing quantity</span>
-          <span>{importReviewSummary.invalidUnit} invalid unit</span>
+          <span>{formatCount(importReviewSummary.tracked, 'tracked metric')}</span>
+          <span>{importReviewSummary.review} {importReviewSummary.review === 1 ? 'requires' : 'require'} review</span>
+          <span>{formatCount(importReviewSummary.missingDate, 'record')} missing date</span>
+          <span>{formatCount(importReviewSummary.missingQuantity, 'record')} missing quantity</span>
+          <span>{formatCount(importReviewSummary.invalidUnit, 'record')} invalid unit</span>
           <span>{importReviewSummary.missingProvince} missing province</span>
         </div>
       ) : null}
@@ -1699,7 +2428,8 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
     <div style={manualEntryToolbarRowStyle}>
       <div style={manualEntryToolbarGroupStyle}>
         {isSpreadsheetMode ? (
-          <>
+          <div style={spreadsheetFileImportStyle}>
+            <strong style={spreadsheetFileImportTitleStyle}>File import</strong>
             <button
               type="button"
               onClick={() => spreadsheetFileInputRef.current?.click()}
@@ -1715,10 +2445,13 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
               onChange={handleImportSpreadsheet}
               style={{ display: 'none' }}
             />
-            <span style={{ color: '#64748b', fontSize: 13 }}>
-              Paste spreadsheet rows into this area.
+            <span style={spreadsheetFileImportHelperStyle}>
+              Select a CSV or XLSX file from your computer.
             </span>
-          </>
+            <span style={spreadsheetFileImportHintStyle}>
+              To paste copied rows, use the paste area below.
+            </span>
+          </div>
         ) : (
           <button
             type="button"
@@ -1769,10 +2502,11 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
         <button
           type="button"
           onClick={saveAll}
-          disabled={!hasValidRows || !canImportRows}
-          style={primaryButtonStyle(!hasValidRows || !canImportRows)}
+          disabled={saveAllDisabled}
+          title={saveAllDisabledReason}
+          style={primaryButtonStyle(saveAllDisabled)}
         >
-          Save All
+          {isSavingAll ? 'Saving...' : 'Save All'}
         </button>
         {hasSavedRows ? (
           <>
@@ -1810,6 +2544,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
 
   <div
     style={manualEntryFormListStyle}
+    aria-label={isSpreadsheetMode ? 'Paste spreadsheet rows' : undefined}
     onPaste={isSpreadsheetMode ? handlePasteRows : undefined}
     onKeyDown={handleQuickEntryKeyDown}
   >
@@ -1819,7 +2554,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
           <strong>{isSpreadsheetMode ? 'Paste spreadsheet rows' : 'Add activity record'}</strong>
           <span>
             {isSpreadsheetMode
-              ? 'Upload a CSV/XLSX file or paste rows from Excel to begin.'
+              ? 'Paste rows copied from Excel here.'
               : 'Enter one activity record manually. Electricity records require province before emissions can be calculated.'}
           </span>
         </div>
@@ -1827,7 +2562,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
           <strong>{isSpreadsheetMode ? 'No spreadsheet rows yet.' : 'No manual activity rows yet.'}</strong>
           <span>
             {isSpreadsheetMode
-              ? 'Upload a CSV/XLSX file or paste rows from Excel to begin.'
+              ? 'Choose a spreadsheet file above or paste rows from Excel.'
               : 'Click "Add activity record" to begin.'}
           </span>
         </div>
@@ -2095,6 +2830,27 @@ const manualEntryToolbarGroupStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
   flexWrap: 'wrap',
+};
+
+const spreadsheetFileImportStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  alignItems: 'start',
+};
+
+const spreadsheetFileImportTitleStyle: React.CSSProperties = {
+  color: '#334155',
+  fontSize: 13,
+};
+
+const spreadsheetFileImportHelperStyle: React.CSSProperties = {
+  color: '#475569',
+  fontSize: 13,
+};
+
+const spreadsheetFileImportHintStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 13,
 };
 
 const bulkProvinceSuccessStyle: React.CSSProperties = {

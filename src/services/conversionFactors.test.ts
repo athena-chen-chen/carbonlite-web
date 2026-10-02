@@ -171,6 +171,56 @@ describe('conversion factor traceability API payloads', () => {
     expect(unsupported.items).toHaveLength(0);
   });
 
+  it('keeps pilot electricity defaults when API returns an unusable same-province factor', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({
+        items: [
+          {
+            id: 'stale-electricity-ab',
+            name: 'Electricity - Alberta stale placeholder',
+            type: 'EMISSION',
+            activityType: 'ELECTRICITY',
+            jurisdiction: 'Alberta, Canada',
+            region: 'Alberta',
+            country: 'Canada',
+            inputUnit: 'kWh',
+            unit: 'kWh',
+            factorValue: null,
+            resultUnit: 'kgCO2e',
+            sourceYear: 2026,
+            factorStatus: 'ARCHIVED',
+            isDefault: false,
+            isSystemDefault: true,
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 1,
+        totalPages: 1,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ));
+
+    const response = await getConversionFactors({
+      activityType: 'ELECTRICITY',
+      jurisdiction: 'Alberta',
+      sourceYear: 2026,
+    });
+
+    expect(response.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Electricity - Alberta - 2026',
+          factorSet: 'PILOT_DEFAULT_V0_1',
+          inputUnit: 'kWh',
+          factorValue: 0.53,
+        }),
+      ]),
+    );
+  });
+
   it('adds the current pilot Ground Transport system factor when the API response omits it', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       new Response(JSON.stringify({

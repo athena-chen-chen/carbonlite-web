@@ -19,7 +19,13 @@ import {
   formatTraceableFactor,
 } from '../utils/calculationTraceability';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
-import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
+import {
+  formatCount,
+  formatDisplayNumber,
+  formatEmissionsUnit,
+  formatEmissionsValue,
+  formatEmissionsWithUnit,
+} from '../utils/numberFormatting';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
   formatScopeClassification,
@@ -131,6 +137,13 @@ export type DataReadinessSummary = {
   score: number;
   level: 'Good' | 'Needs Review' | 'Incomplete';
   message: string;
+  optionalDataCompleteness: {
+    score: number;
+    costDataCount: number;
+    totalRecords: number;
+    missingCostDataCount: number;
+    message: string;
+  };
   checks: Array<{
     key: string;
     label: string;
@@ -260,7 +273,7 @@ export function buildMetricsSummaryTableRows(input: {
 
   rows.push({
     metricType: 'Total Calculated Emissions',
-    unit: 'kgCO2e',
+    unit: formatEmissionsUnit('kgCO2e'),
     totalValue: formatEmissionsValue(totalEstimatedEmissionsKgCO2e),
     category: 'calculated',
   });
@@ -403,7 +416,7 @@ export function MetricsSummarySection({
 
         <MetricCard
           title="Total Calculated Emissions"
-          value={`${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kg CO2e`}
+          value={formatEmissionsWithUnit(totalEstimatedEmissionsKgCO2e)}
           icon="🌱"
           color="#10b981"
           highlight
@@ -464,13 +477,13 @@ export function MetricsSummarySection({
         </div>
         <div style={reconciliationGridStyle}>
           <div>
-            <strong>{countSummary.totalRecordsFound}</strong> total activity records found
+            <strong>{countSummary.totalRecordsFound}</strong> total activity {countSummary.totalRecordsFound === 1 ? 'record' : 'records'} found
           </div>
           <div>
-            <strong>{countSummary.processedRecords}</strong> records included in summary
+            <strong>{countSummary.processedRecords}</strong> {countSummary.processedRecords === 1 ? 'record' : 'records'} included in summary
           </div>
           <div>
-            <strong>{countSummary.skippedRecords}</strong> records skipped
+            <strong>{countSummary.skippedRecords}</strong> {countSummary.skippedRecords === 1 ? 'record' : 'records'} skipped
           </div>
         </div>
         {countSummary.skippedRecords > 0 ? (
@@ -570,7 +583,7 @@ export function MetricsSummarySection({
         </div>
       ) : countSummary.skippedRecords > 0 ? (
         <div style={warningStyle}>
-          {countSummary.skippedRecords} record(s) were skipped due to filters or validation.
+          {countSummary.skippedRecords} {countSummary.skippedRecords === 1 ? 'record was' : 'records were'} skipped due to filters or validation.
         </div>
       ) : null}
 
@@ -580,7 +593,7 @@ export function MetricsSummarySection({
         summary={
           isCalculationSummaryExpanded
             ? 'One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.'
-            : `Total: ${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e · Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`
+            : `Total: ${formatEmissionsWithUnit(totalEstimatedEmissionsKgCO2e)} · Scope 1: ${formatEmissionsWithUnit(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsWithUnit(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsWithUnit(scopeSummary.SCOPE_3)}`
         }
         expanded={isCalculationSummaryExpanded}
         onToggle={() => setIsCalculationSummaryExpanded((expanded) => !expanded)}
@@ -703,9 +716,7 @@ export function MetricsSummarySection({
                     <td style={tdStyle}>{formatDetailJurisdiction(detail)}</td>
                     <td style={tdStyle}>{formatCalculationStatus(detail.status)}</td>
                     <td style={tdStyle}>{formatCalculationScopeLabel(detail)}</td>
-                    <td style={tdStyle}>
-                      {detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'Not calculated'}
-                    </td>
+                    <td style={tdStyle}>{formatDetailFactorUsed(detail)}</td>
                     <td style={tdStyle}>
                       <button
                         type="button"
@@ -790,7 +801,7 @@ function CalculationDetailModal({
           <CalculationDetailField label="Scope" value={formatCalculationScopeLabel(detail)} />
           <CalculationDetailField
             label="Factor Used"
-            value={detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'Not calculated'}
+            value={formatDetailFactorUsed(detail)}
           />
           <CalculationDetailField label="Factor Source" value={formatTraceabilitySource(detail)} />
           <CalculationDetailField label="Factor Version" value={detail.factorVersion || detail.factorVersionId || 'Not specified'} />
@@ -907,7 +918,7 @@ function CalculationTrailModal({
               <CalculationDetailField label="Result" value={trail.resultName} />
               <CalculationDetailField
                 label="Total emissions"
-                value={`${formatEmissionsValue(trail.totalEmissions)} kgCO2e`}
+                value={formatEmissionsWithUnit(trail.totalEmissions)}
               />
               <CalculationDetailField label="Included records" value={trail.includedRecords.length} />
               <CalculationDetailField label="Tracked metrics" value={trail.trackedMetrics.length} />
@@ -1027,7 +1038,7 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
           </div>
         </div>
         <span style={calculationTrailEmissionBadgeStyle}>
-          {formatEmissionsValue(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0)} kgCO2e
+          {formatEmissionsWithUnit(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0)}
         </span>
       </div>
 
@@ -1042,7 +1053,9 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
         />
         <CalculationDetailField
           label="Matched factor"
-          value={detail.status === 'CALCULATED' ? formatTraceableFactor(detail) : 'No matched factor available. Review required.'}
+          value={detail.status === 'CALCULATED' || isTrackedMetricDetail(detail)
+            ? formatTraceableFactor(detail)
+            : 'No matched factor available. Review required.'}
         />
         <CalculationDetailField
           label="Activity year used for matching"
@@ -1492,16 +1505,12 @@ export function getRecordsRequiringReviewCount(input: HotspotExclusionSummary) {
   return Math.max(0, input.excludedRecordCount - getTrackedOperationalMetricCount(input));
 }
 
-function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
 export function formatHotspotExclusionNote(input: HotspotExclusionSummary) {
   const trackedMetrics = getTrackedOperationalMetricCount(input);
   const reviewRecords = getRecordsRequiringReviewCount(input);
 
   if (trackedMetrics > 0 && reviewRecords === 0) {
-    return `${pluralize(trackedMetrics, 'tracked operational metric')} ${trackedMetrics === 1 ? 'was' : 'were'} excluded from the calculated GHG emissions total. No records require review for this report scope.`;
+    return `${formatCount(trackedMetrics, 'tracked operational metric')} ${trackedMetrics === 1 ? 'was' : 'were'} excluded from the calculated GHG emissions total. No records require review for this report scope.`;
   }
 
   if (trackedMetrics > 0 && reviewRecords > 0) {
@@ -1550,18 +1559,32 @@ function roundDisplay(value: number) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
+function isEmissionBearingDetail(detail: CalculationAuditDetail) {
+  return !isTrackedMetricDetail(detail);
+}
+
+function formatDetailFactorUsed(detail: CalculationAuditDetail) {
+  if (detail.status === 'CALCULATED' || isTrackedMetricDetail(detail)) {
+    return formatTraceableFactor(detail);
+  }
+
+  return 'Not calculated';
+}
+
 export function buildDataReadinessSummary(calculationDetails: CalculationAuditDetail[]): DataReadinessSummary {
   const totalRecords = calculationDetails.length;
-  const recordsReadyForCalculation = calculationDetails.filter((detail) => detail.status === 'CALCULATED').length;
+  const emissionBearingDetails = calculationDetails.filter(isEmissionBearingDetail);
+  const emissionBearingTotal = emissionBearingDetails.length;
+  const recordsReadyForCalculation = emissionBearingDetails.filter((detail) => detail.status === 'CALCULATED').length;
   const trackedOnlyCount = calculationDetails.filter(isTrackedMetricDetail).length;
   const recordsRequiringReview = calculationDetails.filter(isRecordRequiringCorrection).length;
-  const missingFactorCount = calculationDetails.filter((detail) => detail.status === 'MISSING_FACTOR').length;
-  const invalidUnitCount = calculationDetails.filter((detail) => detail.status === 'INVALID_UNIT').length;
-  const missingJurisdictionCount = calculationDetails.filter((detail) => detail.status === 'MISSING_JURISDICTION').length;
-  const electricityMissingProvinceCount = calculationDetails.filter(
+  const missingFactorCount = emissionBearingDetails.filter((detail) => detail.status === 'MISSING_FACTOR').length;
+  const invalidUnitCount = emissionBearingDetails.filter((detail) => detail.status === 'INVALID_UNIT').length;
+  const missingJurisdictionCount = emissionBearingDetails.filter((detail) => detail.status === 'MISSING_JURISDICTION').length;
+  const electricityMissingProvinceCount = emissionBearingDetails.filter(
     (detail) => detail.activityType === 'ELECTRICITY' && !detail.jurisdictionRegion,
   ).length;
-  const requiredCompleteCount = calculationDetails.filter((detail) => {
+  const requiredCompleteCount = emissionBearingDetails.filter((detail) => {
     const quantity = Number(detail.activityQuantity);
     return Boolean(
       detail.activityType &&
@@ -1572,32 +1595,34 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
         detail.status !== 'INVALID_UNIT',
     );
   }).length;
-  const jurisdictionCompleteCount = calculationDetails.filter((detail) => {
+  const jurisdictionCompleteCount = emissionBearingDetails.filter((detail) => {
     if (detail.activityType === 'ELECTRICITY') {
       return Boolean(detail.jurisdictionRegion);
     }
 
     return Boolean(detail.jurisdictionCountry || detail.jurisdiction);
   }).length;
-  const sourceReferenceCount = calculationDetails.filter((detail) =>
+  const sourceReferenceCount = emissionBearingDetails.filter((detail) =>
     Boolean(detail.sourceReference || detail.sourceFileName || detail.sourceDocumentId),
   ).length;
-  const costDataCount = calculationDetails.filter((detail) =>
-    /(\bcost\b|\$|\bcad\b|\busd\b)/i.test(`${detail.notes ?? ''} ${detail.sourceTextSnippet ?? ''}`),
-  ).length;
-  const requiredFieldsScore = percentage(requiredCompleteCount, totalRecords);
-  const factorCoverageScore = percentage(recordsReadyForCalculation, totalRecords);
-  const jurisdictionScore = percentage(jurisdictionCompleteCount, totalRecords);
-  const sourceCoverageScore = percentage(sourceReferenceCount, totalRecords);
+  const costDataCount = calculationDetails.filter(hasOptionalCostData).length;
+  const requiredFieldsScore = percentage(requiredCompleteCount, emissionBearingTotal);
+  const factorCoverageScore = percentage(recordsReadyForCalculation, emissionBearingTotal);
+  const jurisdictionScore = percentage(jurisdictionCompleteCount, emissionBearingTotal);
+  const sourceCoverageScore = percentage(sourceReferenceCount, emissionBearingTotal);
   const costCoverageScore = percentage(costDataCount, totalRecords);
-  const score = roundDisplay(
-    requiredFieldsScore * 0.4 +
-      factorCoverageScore * 0.3 +
-      jurisdictionScore * 0.15 +
-      sourceCoverageScore * 0.1 +
-      costCoverageScore * 0.05,
-  );
-  const calculatedCoverage = totalRecords > 0 ? recordsReadyForCalculation / totalRecords : 0;
+  const score =
+    totalRecords <= 0
+      ? 0
+      : emissionBearingTotal <= 0
+      ? 100
+      : roundDisplay(
+          requiredFieldsScore * 0.4 +
+            factorCoverageScore * 0.3 +
+            jurisdictionScore * 0.15 +
+            sourceCoverageScore * 0.15,
+        );
+  const calculatedCoverage = emissionBearingTotal > 0 ? recordsReadyForCalculation / emissionBearingTotal : 1;
   const hasCriticalIssues =
     missingFactorCount > 0 || invalidUnitCount > 0 || missingJurisdictionCount > 0;
   const level: DataReadinessSummary['level'] =
@@ -1610,7 +1635,27 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
   return {
     score,
     level,
-    message: getDataReadinessMessage(level, score, totalRecords),
+    message: getDataReadinessMessage({
+      level,
+      score,
+      totalRecords,
+      trackedOnlyCount,
+      recordsRequiringReview,
+      missingFactorCount,
+      invalidUnitCount,
+      missingJurisdictionCount,
+    }),
+    optionalDataCompleteness: {
+      score: costCoverageScore,
+      costDataCount,
+      totalRecords,
+      missingCostDataCount: Math.max(0, totalRecords - costDataCount),
+      message: getOptionalDataCompletenessMessage({
+        costDataCount,
+        totalRecords,
+        score: costCoverageScore,
+      }),
+    },
     totalRecords,
     recordsReadyForCalculation,
     recordsRequiringReview,
@@ -1624,7 +1669,7 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
         label: 'Required fields completeness',
         passed: requiredFieldsScore >= 90,
         count: requiredCompleteCount,
-        total: totalRecords,
+        total: emissionBearingTotal,
         message: 'Activity type, quantity, unit, and date are needed before emissions can be calculated.',
       },
       {
@@ -1632,7 +1677,7 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
         label: 'Factor match coverage',
         passed: factorCoverageScore >= 80,
         count: recordsReadyForCalculation,
-        total: totalRecords,
+        total: emissionBearingTotal,
         message: 'Records need matching conversion factors to be included in emissions totals.',
       },
       {
@@ -1640,7 +1685,7 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
         label: 'Jurisdiction completeness',
         passed: electricityMissingProvinceCount === 0 && jurisdictionScore >= 90,
         count: jurisdictionCompleteCount,
-        total: totalRecords,
+        total: emissionBearingTotal,
         message:
           electricityMissingProvinceCount > 0
             ? `${electricityMissingProvinceCount} electricity ${electricityMissingProvinceCount === 1 ? 'record is' : 'records are'} missing province. Province is required because electricity factors vary by province.`
@@ -1651,19 +1696,37 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
         label: 'Source traceability',
         passed: sourceCoverageScore >= 80,
         count: sourceReferenceCount,
-        total: totalRecords,
+        total: emissionBearingTotal,
         message: 'Source references help trace emissions results back to bills, invoices, spreadsheets, or manual notes.',
-      },
-      {
-        key: 'cost-data',
-        label: 'Cost data completeness',
-        passed: costCoverageScore >= 50,
-        count: costDataCount,
-        total: totalRecords,
-        message: 'Cost is optional, but useful for later financial impact and prioritization analysis.',
       },
     ],
   };
+}
+
+function hasOptionalCostData(detail: CalculationAuditDetail) {
+  const candidate = detail as CalculationAuditDetail & Record<string, unknown>;
+  const explicitCostFields = [
+    candidate.cost,
+    candidate.costCad,
+    candidate.costCAD,
+    candidate.amountCad,
+    candidate.spend,
+    candidate.monetaryValue,
+    candidate.currencyAmount,
+  ];
+
+  if (
+    explicitCostFields.some((value) => {
+      const normalized = String(value ?? '').trim();
+      return normalized.length > 0 && /(\d|\$|\bcad\b|\busd\b)/i.test(normalized);
+    })
+  ) {
+    return true;
+  }
+
+  return /(\bcost\b|\$|\bcad\b|\busd\b)/i.test(
+    `${candidate.notes ?? ''} ${candidate.sourceTextSnippet ?? ''}`,
+  );
 }
 
 function percentage(count: number, total: number) {
@@ -1671,17 +1734,64 @@ function percentage(count: number, total: number) {
   return roundDisplay((count / total) * 100);
 }
 
-function getDataReadinessMessage(level: DataReadinessSummary['level'], score: number, totalRecords: number) {
+function getDataReadinessMessage(input: {
+  level: DataReadinessSummary['level'];
+  score: number;
+  totalRecords: number;
+  trackedOnlyCount: number;
+  recordsRequiringReview: number;
+  missingFactorCount: number;
+  invalidUnitCount: number;
+  missingJurisdictionCount: number;
+}) {
+  const {
+    level,
+    score,
+    totalRecords,
+    trackedOnlyCount,
+    recordsRequiringReview,
+    missingFactorCount,
+    invalidUnitCount,
+    missingJurisdictionCount,
+  } = input;
   if (totalRecords <= 0) {
     return 'Add activity records to calculate a data readiness score.';
   }
   if (level === 'Good') {
-    return `Data readiness is ${formatDisplayNumber(score)}%. Most records are ready for calculation and traceability review.`;
+    return `Emissions workflow readiness is ${formatDisplayNumber(score)}%. Most records are ready for calculation and traceability review.`;
+  }
+  if (
+    recordsRequiringReview === 0 &&
+    missingFactorCount === 0 &&
+    invalidUnitCount === 0 &&
+    missingJurisdictionCount === 0
+  ) {
+    const trackedText = trackedOnlyCount > 0
+      ? ` ${formatCount(trackedOnlyCount, 'tracked operational metric')} ${trackedOnlyCount === 1 ? 'is' : 'are'} reported separately and do not reduce GHG calculation coverage.`
+      : '';
+    return `Emissions workflow readiness is ${formatDisplayNumber(score)}%. No records currently require correction.${trackedText}`;
   }
   if (level === 'Needs Review') {
-    return `Data readiness is ${formatDisplayNumber(score)}%. Some records need missing fields, factors, jurisdiction, or source references before final reporting.`;
+    return `Emissions workflow readiness is ${formatDisplayNumber(score)}%. Some records need missing fields, factors, jurisdiction, or source references before final reporting.`;
   }
-  return 'Data readiness is incomplete. Add required fields, source references, and matching factors before relying on emissions results.';
+  return 'Emissions workflow readiness is incomplete. Add required fields, source references, and matching factors before relying on emissions results.';
+}
+
+function getOptionalDataCompletenessMessage(input: {
+  costDataCount: number;
+  totalRecords: number;
+  score: number;
+}) {
+  if (input.totalRecords <= 0) {
+    return 'Optional data completeness is not assessed until records are available.';
+  }
+
+  const missingCostDataCount = Math.max(0, input.totalRecords - input.costDataCount);
+  if (missingCostDataCount === 0) {
+    return `Optional data completeness is ${formatDisplayNumber(input.score)}%. Cost data is present for all records.`;
+  }
+
+  return `Optional data completeness is ${formatDisplayNumber(input.score)}%. Cost data is missing for ${formatCount(missingCostDataCount, 'record')}.`;
 }
 
 export function assessCarbonCreditReadiness(input: {
@@ -1971,7 +2081,7 @@ function ScopeSummaryCard({
         {rows.map((row) => (
           <div key={row.label} style={scopeSummaryItemStyle}>
             <span>{row.label}</span>
-            <strong>{formatEmissionsValue(row.value)} kg CO2e</strong>
+            <strong>{formatEmissionsWithUnit(row.value)}</strong>
             <small>{row.note}</small>
             <button
               type="button"
@@ -1985,7 +2095,7 @@ function ScopeSummaryCard({
       </div>
       {summary.UNCLASSIFIED > 0 ? (
         <div style={scopeWarningStyle}>
-          {formatEmissionsValue(summary.UNCLASSIFIED)} kg CO2e is calculated but unclassified and should be reviewed.
+          {formatEmissionsWithUnit(summary.UNCLASSIFIED)} is calculated but unclassified and should be reviewed.
         </div>
       ) : null}
       {summary.TRACKED_METRIC > 0 ? (
@@ -2003,10 +2113,10 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
       <div style={readinessHeaderStyle}>
         <div>
           <h2 id="data-readiness-title" style={{ margin: 0, fontSize: 18 }}>
-            Import Readiness
+            Emissions Workflow Readiness
           </h2>
           <p style={summaryHelperTextStyle}>
-            CarbonLite checks whether records are complete, traceable, and ready for calculation before reports or hotspot analysis are used.
+            CarbonLite checks whether records have the required fields, traceability, jurisdiction, factors, and reporting treatment needed for emissions review.
           </p>
         </div>
         <div style={readinessScoreStyle(summary.level)}>
@@ -2016,25 +2126,31 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
       </div>
       <p style={readinessMessageStyle}>{summary.message}</p>
       <div style={readinessStatsGridStyle}>
-        <div><strong>{summary.recordsReadyForCalculation}</strong> ready for calculation</div>
-        <div><strong>{summary.recordsRequiringReview}</strong> require review</div>
-        <div><strong>{summary.missingFactorCount}</strong> missing factor</div>
-        <div><strong>{summary.invalidUnitCount}</strong> invalid unit</div>
-        <div><strong>{summary.missingJurisdictionCount}</strong> missing province</div>
-        <div><strong>{summary.trackedOnlyCount}</strong> tracked metric</div>
+        <div><strong>{summary.recordsReadyForCalculation}</strong> {summary.recordsReadyForCalculation === 1 ? 'record' : 'records'} ready for calculation</div>
+        <div><strong>{summary.recordsRequiringReview}</strong> {summary.recordsRequiringReview === 1 ? 'record' : 'records'} require review</div>
+        <div><strong>{summary.missingFactorCount}</strong> missing {summary.missingFactorCount === 1 ? 'factor' : 'factors'}</div>
+        <div><strong>{summary.invalidUnitCount}</strong> invalid {summary.invalidUnitCount === 1 ? 'unit' : 'units'}</div>
+        <div><strong>{summary.missingJurisdictionCount}</strong> missing {summary.missingJurisdictionCount === 1 ? 'province' : 'provinces'}</div>
+        <div><strong>{summary.trackedOnlyCount}</strong> tracked {summary.trackedOnlyCount === 1 ? 'metric' : 'metrics'}</div>
+        <div>
+          <strong>{formatDisplayNumber(summary.optionalDataCompleteness.score)}%</strong> optional data completeness
+        </div>
       </div>
       <details style={readinessDetailsStyle}>
         <summary style={readinessDetailsSummaryStyle}>View readiness details</summary>
         <div style={readinessExplanationStyle}>
           <p>
-            Import Readiness estimates the percentage of draft or imported records that are
-            complete enough to proceed without manual review.
+            Emissions Workflow Readiness estimates whether draft or imported records are
+            complete enough to calculate, trace, and report without manual correction.
           </p>
           <p>
-            Calculation Coverage is the percentage of imported activity records that could
-            be matched to an emissions factor and included in the calculated GHG total.
-            Tracked-only operational metrics and records missing required data are excluded
-            from Calculation Coverage, so the two values may be different.
+            Calculation Coverage is calculated emission-bearing records divided by eligible
+            emission-bearing records. Tracked-only operational metrics are reported
+            separately and do not reduce GHG calculation coverage.
+          </p>
+          <p>
+            Optional metadata such as cost can help later financial analysis, but it does
+            not reduce emissions workflow readiness.
           </p>
         </div>
         <div style={readinessChecklistStyle}>
@@ -2054,6 +2170,15 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
               </div>
             </div>
           ))}
+          <div style={readinessCheckStyle}>
+            <span style={readinessCheckBadgeStyle(true)}>Optional</span>
+            <div>
+              <strong>Optional data completeness</strong>
+              <div style={missingFactorHintStyle}>
+                {summary.optionalDataCompleteness.costDataCount} of {summary.optionalDataCompleteness.totalRecords} imported records include optional cost data · {summary.optionalDataCompleteness.message}
+              </div>
+            </div>
+          </div>
         </div>
       </details>
     </section>
@@ -2094,7 +2219,7 @@ function CarbonCreditReadinessPanel({
 
       {assessment.reductionAmount !== null && assessment.reductionPercentage !== null ? (
         <div style={reductionSignalStyle}>
-          Reduction detected: {formatEmissionsValue(assessment.reductionAmount)} kgCO2e (
+          Reduction detected: {formatEmissionsWithUnit(assessment.reductionAmount)} (
           {formatDisplayNumber(assessment.reductionPercentage)}%). Further professional assessment may be required.
         </div>
       ) : (
@@ -2178,7 +2303,7 @@ function HotspotAnalysisSection({
         <>
           {analysis.excludedRecordCount > 0 ? (
             <div style={hotspotNoticeStyle}>
-              Some records were excluded from hotspot analysis because they require review.
+              {formatHotspotExclusionNote(analysis)}
             </div>
           ) : null}
 
@@ -2191,7 +2316,7 @@ function HotspotAnalysisSection({
               <div key={row.activityType} style={hotspotBarRowStyle}>
                 <div style={hotspotBarLabelStyle}>
                   <strong>#{row.rank} {row.displayName}</strong>
-                  <span>{formatEmissionsValue(row.emissions)} kgCO2e</span>
+                  <span>{formatEmissionsWithUnit(row.emissions)}</span>
                 </div>
                 <div style={hotspotBarTrackStyle}>
                   <div
@@ -2234,7 +2359,7 @@ function HotspotAnalysisSection({
                   <tr key={`hotspot-table-${row.activityType}`}>
                     <td style={tdStyle}>#{row.rank}</td>
                     <td style={tdStyle}>{row.displayName}</td>
-                    <td style={tdStyle}>{formatEmissionsValue(row.emissions)} kgCO2e</td>
+                    <td style={tdStyle}>{formatEmissionsWithUnit(row.emissions)}</td>
                     <td style={tdStyle}>{formatDisplayNumber(row.percentageOfTotal)}%</td>
                     <td style={tdStyle}>
                       {row.calculatedRecordCount} calculated

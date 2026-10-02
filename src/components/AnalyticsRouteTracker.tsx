@@ -8,6 +8,7 @@ const pageNames: Record<string, string> = {
   '/terms': 'Terms of Use',
   '/about': 'About CarbonLite',
   '/input-data': 'Input Data',
+  '/input-review': 'Input Data',
   '/upload': 'Input Data',
   '/data-records': 'Data Records',
   '/activity-data': 'Data Records',

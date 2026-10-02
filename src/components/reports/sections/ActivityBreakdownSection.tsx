@@ -1,8 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { FormalActivityEmission } from '../../FormalReportPreview';
-import { formatDisplayNumber, formatEmissionsValue } from '../../../utils/numberFormatting';
+import { formatDisplayNumber, formatEmissionsWithUnit } from '../../../utils/numberFormatting';
 import { getActivityTypeLabel } from '../../../utils/activityType';
 import { getDisplaySourceLabel } from '../../../utils/reportCredibility';
+import { formatReportJurisdiction } from '../../FormalReportPreview';
 
 type ActivityBreakdownSectionProps = {
   matchedActivityEmissions: FormalActivityEmission[];
@@ -17,6 +18,7 @@ export function ActivityBreakdownSection({
         'Activity Type',
         'Quantity',
         'Unit',
+        'Activity Jurisdiction',
         'Estimated Emissions',
         'Source Reference',
       ]}
@@ -25,7 +27,8 @@ export function ActivityBreakdownSection({
         getActivityTypeLabel(item.activityType),
         formatDisplayNumber(item.quantity),
         item.unit,
-        `${formatEmissionsValue(item.estimatedEmissionsKgCO2e)} kgCO2e`,
+        formatReportJurisdiction(item.jurisdictionRegion ?? item.jurisdiction, item.jurisdictionCountry),
+        formatEmissionsWithUnit(item.estimatedEmissionsKgCO2e),
         getDisplaySourceLabel(item),
       ])}
     />

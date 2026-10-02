@@ -167,6 +167,85 @@ describe('loadMetricsOverview', () => {
     expect(overview.calculationDetails[0].factorValue).toBe(2.68);
   });
 
+  it('fills missing calculation-detail jurisdiction from ActivityData for facility reporting', async () => {
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...backendSummary(),
+      totalEstimatedEmissionsKgCO2e: 60,
+      totalRecordsFound: 1,
+      recordsInScope: 1,
+      recordsCalculated: 1,
+      recordsIncluded: 1,
+      processedRecords: 1,
+      skippedRecords: 0,
+      missingFactorCount: 0,
+      missingFactorRecords: 0,
+      skippedReasons: {
+        missingFactor: 0,
+        invalidQuantity: 0,
+        invalidUnit: 0,
+        outsideScope: 0,
+        outsideDateRange: 0,
+        invalidData: 0,
+      },
+      activities: [
+        {
+          id: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          quantity: 4,
+          unit: 'nights',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          facilityName: 'Toronto Client Visit',
+          sourceType: 'IMPORT',
+          sourceReference: 'MARCH-HOTEL-010',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceRow: 11,
+          costCad: 720,
+          costCurrency: 'CAD',
+        },
+      ],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          dateEstimated: false,
+          reportingYear: 2026,
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          facilityName: 'Toronto Client Visit',
+          factorName: 'Business Travel - Accommodation - Ontario - 2026',
+          factorValue: 15,
+          factorInputUnit: 'nights',
+          factorResultUnit: 'kgCO2e',
+          calculatedEmissionsKgCO2e: 60,
+          status: 'CALCULATED',
+          sourceType: 'IMPORT',
+          sourceReference: 'MARCH-HOTEL-010',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceRow: 11,
+        },
+      ],
+      missingFactors: [],
+    } as any);
+
+    const overview = await loadMetricsOverview();
+    const hotelDetail = overview.calculationDetails.find(
+      (detail) => detail.activityDataId === 'activity-march-hotel-010',
+    );
+
+    expect(hotelDetail).toMatchObject({
+      jurisdiction: 'Ontario, Canada',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Ontario',
+      facilityName: 'Toronto Client Visit',
+      sourceReference: 'MARCH-HOTEL-010',
+      costCad: 720,
+      costCurrency: 'CAD',
+    });
+  });
+
   it('passes selected record scope to the same backend service', async () => {
     await loadMetricsOverview({
       selectedActivityRecordIds: ['activity-1', 'activity-2'],
@@ -197,6 +276,268 @@ describe('loadMetricsOverview', () => {
     );
     expect(reportsPage.processedRecords).toBe(metricsPage.processedRecords);
     expect(reportsPage.usageTotals).toEqual(metricsPage.usageTotals);
+  });
+
+  it('deduplicates repeated calculation audit rows by activity record id when the full audit is returned', async () => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      totalRecordsFound: 3,
+      recordsInScope: 3,
+      recordsCalculated: 3,
+      recordsIncluded: 3,
+      processedRecords: 3,
+      skippedRecords: 1,
+      missingFactorCount: 0,
+      missingFactorRecords: 0,
+      totalEstimatedEmissionsKgCO2e: 639.4,
+      dataQualityCoverage: 75,
+      missingFactors: [],
+      calculationDetails: [
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          jurisdiction: 'Alberta, Canada',
+          calculatedEmissionsKgCO2e: 519.4,
+          calculatedEmission: 519.4,
+          sourceReference: 'MARCH-ELEC-001',
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-march-water-007',
+          activityType: 'WATER',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          jurisdiction: 'Alberta, Canada',
+          calculatedEmissionsKgCO2e: 0,
+          calculatedEmission: 0,
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          status: 'TRACKED_ONLY',
+          sourceReference: 'MARCH-WATER-007',
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          jurisdiction: 'Ontario, Canada',
+          calculatedEmissionsKgCO2e: 60,
+          calculatedEmission: 60,
+          status: 'CALCULATED',
+          sourceReference: 'MARCH-HOTEL-010',
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          jurisdiction: 'Ontario, Canada',
+          calculatedEmissionsKgCO2e: 60,
+          calculatedEmission: 60,
+          status: 'CALCULATED',
+          sourceReference: 'MARCH-HOTEL-010',
+        },
+      ],
+      matchedActivityEmissions: [
+        {
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          quantity: 980,
+          unit: 'kWh',
+          estimatedEmissionsKgCO2e: 519.4,
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-ELEC-001',
+          factorId: 'factor-electricity-ab',
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          quantity: 4,
+          unit: 'nights',
+          estimatedEmissionsKgCO2e: 60,
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
+          factorId: 'factor-hotel-on',
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          quantity: 4,
+          unit: 'nights',
+          estimatedEmissionsKgCO2e: 60,
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
+          factorId: 'factor-hotel-on',
+        },
+      ],
+      activities: [
+        {
+          id: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          quantity: 980,
+          unit: 'kWh',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-ELEC-001',
+        },
+        {
+          id: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          quantity: 18,
+          unit: 'm3',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-WATER-007',
+        },
+        {
+          id: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          quantity: 4,
+          unit: 'nights',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
+        },
+      ],
+    });
+
+    const overview = await loadMetricsOverview({
+      dateFrom: '2026-03-01',
+      dateTo: '2026-03-31',
+    });
+
+    expect(overview.calculationDetails).toHaveLength(3);
+    expect(
+      overview.calculationDetails.filter(
+        (detail) => detail.activityDataId === 'activity-march-hotel-010',
+      ),
+    ).toHaveLength(1);
+    expect(overview.matchedActivityEmissions).toHaveLength(2);
+    expect(overview.processedRecords).toBe(2);
+    expect(overview.dataQualityCoverage).toBe(100);
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(579.4);
+  });
+
+  it('preserves optional cost metadata from calculation records when ActivityData fallback is stale', async () => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      totalRecordsFound: 3,
+      recordsInScope: 3,
+      recordsCalculated: 3,
+      recordsIncluded: 3,
+      processedRecords: 3,
+      skippedRecords: 0,
+      missingFactorCount: 0,
+      missingFactorRecords: 0,
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      calculationDetails: [],
+      matchedActivityEmissions: [],
+      records: [
+        {
+          activityRecordId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          quantity: 980,
+          unit: 'kWh',
+          normalizedQuantity: 980,
+          normalizedUnit: 'kWh',
+          recordDate: '2026-03-01',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          calculationStatus: 'CALCULATED',
+          calculatedEmissions: 519.4,
+          costCad: 214.55,
+          costCurrency: 'CAD',
+          matching: { matched: true, matchedBy: 'EXACT', message: 'Matched' },
+        },
+        {
+          activityRecordId: 'activity-march-water-007',
+          activityType: 'WATER',
+          quantity: 18,
+          unit: 'm3',
+          normalizedQuantity: 18,
+          normalizedUnit: 'm3',
+          recordDate: '2026-03-07',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          calculationStatus: 'TRACKED_ONLY',
+          calculatedEmissions: null,
+          costCad: 64,
+          costCurrency: 'CAD',
+          matching: { matched: false, matchedBy: 'TRACKED_ONLY', message: 'Tracked metric' },
+        },
+        {
+          activityRecordId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          quantity: 4,
+          unit: 'nights',
+          normalizedQuantity: 4,
+          normalizedUnit: 'nights',
+          recordDate: '2026-03-10',
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          calculationStatus: 'CALCULATED',
+          calculatedEmissions: 60,
+          costCad: 720,
+          costCurrency: 'CAD',
+          matching: { matched: true, matchedBy: 'EXACT', message: 'Matched' },
+        },
+      ],
+      activities: [
+        {
+          id: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          quantity: 980,
+          unit: 'kWh',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-ELEC-001',
+          costCad: null,
+        },
+        {
+          id: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          quantity: 18,
+          unit: 'm3',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-WATER-007',
+          costCad: null,
+        },
+        {
+          id: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          quantity: 4,
+          unit: 'nights',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
+          costCad: null,
+        },
+      ],
+    });
+
+    const overview = await loadMetricsOverview({
+      dateFrom: '2026-03-01',
+      dateTo: '2026-03-31',
+    });
+
+    expect(
+      overview.calculationDetails.map((detail) => [detail.sourceReference, detail.costCad]),
+    ).toEqual([
+      ['MARCH-ELEC-001', 214.55],
+      ['MARCH-WATER-007', 64],
+      ['MARCH-HOTEL-010', 720],
+    ]);
   });
 
   it('accepts refactored summary count fields when recordsCalculated is absent', async () => {

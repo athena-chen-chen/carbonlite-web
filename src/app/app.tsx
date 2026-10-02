@@ -1,5 +1,5 @@
 
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ActivityDataPage } from '../pages/ActivityDataPage';
 import { ConversionFactorsPage } from '../pages/ConversionFactorsPage';
 import { MetricsSummaryPage } from '../pages/MetricsSummaryPage';
@@ -35,6 +35,11 @@ import SetPasswordPage from '../pages/SetPasswordPage';
 import PilotReviewersPage from '../pages/PilotReviewersPage';
 import PilotReviewInstructionsPage from '../pages/PilotReviewInstructionsPage';
 import { OrganizationProfilePage } from '../pages/OrganizationProfilePage';
+import {
+  INPUT_DATA_ROUTE,
+  INPUT_REVIEW_ROUTE,
+  LEGACY_UPLOAD_ROUTE,
+} from '../constants/routes';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -155,7 +160,7 @@ export default function App() {
         />
 
         <Route
-          path="/input-data"
+          path={INPUT_DATA_ROUTE}
           element={
             <ProtectedRoute>
               <AppShell>
@@ -166,7 +171,12 @@ export default function App() {
         />
 
         <Route
-          path="/upload"
+          path={INPUT_REVIEW_ROUTE}
+          element={<Navigate to={`${INPUT_DATA_ROUTE}?section=review`} replace />}
+        />
+
+        <Route
+          path={LEGACY_UPLOAD_ROUTE}
           element={
             <ProtectedRoute>
               <AppShell>

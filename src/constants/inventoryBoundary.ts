@@ -33,6 +33,9 @@ export const DEFAULT_INVENTORY_BOUNDARY: InventoryBoundary = {
     'Current pilot supports selected units and activity types. Additional unit conversion support will be expanded later.',
 };
 
+export const CARBONLITE_CALCULATION_COVERAGE_LABEL =
+  'Scope 1, Scope 2, selected Scope 3';
+
 export function buildInventoryBoundary(
   organizationName?: string | null,
   reportingPeriod?: string | null,
@@ -57,15 +60,33 @@ export function summarizeInventoryBoundary(
   reportingPeriodSummary?: string | null,
 ) {
   const period = reportingPeriodSummary?.trim() || boundary.reportingPeriod;
-  const scopes = summarizeScopes(boundary.includedScopes);
+  const scopes = isInventoryBoundaryComplete(boundary)
+    ? summarizeScopes(boundary.includedScopes)
+    : 'Boundary not fully specified';
   const geography = summarizeGeographicBoundary(boundary.geographicBoundary);
 
-  return [period, scopes, geography].filter(Boolean).join(' · ');
+  return [period, scopes, isInventoryBoundaryComplete(boundary) ? geography : '']
+    .filter(Boolean)
+    .join(' · ');
+}
+
+export function getInventoryBoundaryStatus(boundary: InventoryBoundary) {
+  return isInventoryBoundaryComplete(boundary) ? 'Complete' : 'Not fully specified';
+}
+
+export function isInventoryBoundaryComplete(boundary: InventoryBoundary) {
+  return [
+    boundary.reportingPeriod,
+    boundary.geographicBoundary,
+    boundary.includedFacilitiesOrLocations,
+    boundary.includedScopes,
+    boundary.exclusionsLimitations,
+  ].every((value) => String(value ?? '').trim().length > 0);
 }
 
 function summarizeScopes(includedScopes?: string | null) {
   const normalized = String(includedScopes ?? '').trim();
-  if (!normalized) return 'Scope 1, Scope 2, selected Scope 3';
+  if (!normalized) return '';
 
   return normalized
     .replace(/\band selected Scope 3 pilot activity types\b/i, 'selected Scope 3')

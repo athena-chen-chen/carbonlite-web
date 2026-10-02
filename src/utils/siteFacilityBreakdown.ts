@@ -13,6 +13,9 @@ export type SiteFacilityActivityBreakdownRow = {
 
 export type SiteFacilityBreakdownRow = {
   siteFacility: string;
+  jurisdictionCountry: string | null;
+  jurisdictionRegion: string | null;
+  jurisdictionSource: string;
   scope1KgCO2e: number;
   scope2KgCO2e: number;
   scope3KgCO2e: number;
@@ -29,16 +32,32 @@ export type SiteFacilityRollup = {
 
 export type FacilityThresholdReferenceRow = {
   siteFacility: string;
+  jurisdictionCountry: string | null;
+  jurisdictionRegion: string | null;
+  jurisdictionLabel: string;
+  regulatoryReference: string;
+  thresholdLabel: string;
+  thresholdTCO2e: number | null;
   totalKgCO2e: number;
   totalTCO2e: number;
-  percentOfReportingThreshold: number;
+  percentOfThreshold: number | null;
+  status: FacilityThresholdScreeningStatus;
   screeningNote: FacilityThresholdScreeningNote;
 };
 
-export type FacilityThresholdScreeningNote =
-  | 'Below threshold reference'
+export type FacilityThresholdScreeningStatus =
+  | 'Below threshold / informational only'
   | 'Approaching threshold — review recommended'
-  | 'Above threshold reference — professional review recommended';
+  | 'Above threshold reference — professional review recommended'
+  | 'Not evaluated';
+
+export type FacilityThresholdScreeningNote =
+  | 'Below threshold / informational only'
+  | 'Approaching threshold — review recommended'
+  | 'Above threshold reference — professional review recommended'
+  | `Jurisdiction-specific threshold screening is not currently configured for ${string}.`
+  | 'Jurisdiction required for facility-level threshold screening.'
+  | 'Facility includes records from multiple jurisdictions; review jurisdiction before screening.';
 
 export const FACILITY_REPORTING_THRESHOLD_TCO2E = 10000;
 export const ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E = 100000;
@@ -56,6 +75,8 @@ export function buildSiteFacilityRollup(
 ): SiteFacilityRollup {
   const rowsBySite = new Map<string, SiteFacilityBreakdownRow>();
   const activityBreakdownsBySite = new Map<string, Map<string, SiteFacilityActivityBreakdownRow>>();
+  const jurisdictionBySite = new Map<string, Set<string>>();
+  const jurisdictionSourcesBySite = new Map<string, Set<string>>();
   let organizationTotalKgCO2e = 0;
   let includedRecords = 0;
 
@@ -82,6 +103,9 @@ export function buildSiteFacilityRollup(
       rowsBySite.get(siteFacility) ??
       {
         siteFacility,
+        jurisdictionCountry: null,
+        jurisdictionRegion: null,
+        jurisdictionSource: 'unknown',
         scope1KgCO2e: 0,
         scope2KgCO2e: 0,
         scope3KgCO2e: 0,
@@ -112,6 +136,13 @@ export function buildSiteFacilityRollup(
     activityRow.includedRecords += 1;
     activityBreakdown.set(activityType, activityRow);
     activityBreakdownsBySite.set(siteFacility, activityBreakdown);
+    const jurisdictionKey = getJurisdictionKey(detail);
+    const jurisdictionSet = jurisdictionBySite.get(siteFacility) ?? new Set<string>();
+    jurisdictionSet.add(jurisdictionKey);
+    jurisdictionBySite.set(siteFacility, jurisdictionSet);
+    const sourceSet = jurisdictionSourcesBySite.get(siteFacility) ?? new Set<string>();
+    sourceSet.add(String(detail.jurisdictionSource ?? 'record'));
+    jurisdictionSourcesBySite.set(siteFacility, sourceSet);
 
     organizationTotalKgCO2e += emissions;
     includedRecords += 1;
@@ -119,6 +150,10 @@ export function buildSiteFacilityRollup(
 
   const rows = Array.from(rowsBySite.values()).map((row) => ({
     ...row,
+    ...resolveFacilityJurisdiction(
+      jurisdictionBySite.get(row.siteFacility) ?? new Set<string>(),
+      jurisdictionSourcesBySite.get(row.siteFacility) ?? new Set<string>(),
+    ),
     activityBreakdown: Array.from(activityBreakdownsBySite.get(row.siteFacility)?.values() ?? [])
       .sort((a, b) => {
         if (b.totalKgCO2e !== a.totalKgCO2e) return b.totalKgCO2e - a.totalKgCO2e;
@@ -141,15 +176,77 @@ export function buildFacilityThresholdReferenceRows(
 ): FacilityThresholdReferenceRow[] {
   return siteFacilityRows.map((row) => {
     const totalTCO2e = row.totalKgCO2e / 1000;
-    const percentOfReportingThreshold =
-      (totalTCO2e / FACILITY_REPORTING_THRESHOLD_TCO2E) * 100;
+    const jurisdictionRegion = normalizeJurisdictionRegion(row.jurisdictionRegion);
+    const jurisdictionCountry = normalizeJurisdictionCountry(row.jurisdictionCountry);
+    const jurisdictionLabel = formatJurisdictionLabel(jurisdictionRegion, jurisdictionCountry);
+
+    if (!jurisdictionRegion) {
+      return {
+        siteFacility: row.siteFacility,
+        jurisdictionCountry,
+        jurisdictionRegion,
+        jurisdictionLabel,
+        regulatoryReference: 'Not configured',
+        thresholdLabel: '—',
+        thresholdTCO2e: null,
+        totalKgCO2e: row.totalKgCO2e,
+        totalTCO2e,
+        percentOfThreshold: null,
+        status: 'Not evaluated',
+        screeningNote: 'Jurisdiction required for facility-level threshold screening.',
+      };
+    }
+
+    if (jurisdictionRegion === 'Multiple jurisdictions') {
+      return {
+        siteFacility: row.siteFacility,
+        jurisdictionCountry,
+        jurisdictionRegion,
+        jurisdictionLabel,
+        regulatoryReference: 'Not configured',
+        thresholdLabel: '—',
+        thresholdTCO2e: null,
+        totalKgCO2e: row.totalKgCO2e,
+        totalTCO2e,
+        percentOfThreshold: null,
+        status: 'Not evaluated',
+        screeningNote: 'Facility includes records from multiple jurisdictions; review jurisdiction before screening.',
+      };
+    }
+
+    if (jurisdictionRegion !== 'Alberta') {
+      return {
+        siteFacility: row.siteFacility,
+        jurisdictionCountry,
+        jurisdictionRegion,
+        jurisdictionLabel,
+        regulatoryReference: 'Not configured',
+        thresholdLabel: '—',
+        thresholdTCO2e: null,
+        totalKgCO2e: row.totalKgCO2e,
+        totalTCO2e,
+        percentOfThreshold: null,
+        status: 'Not evaluated',
+        screeningNote: `Jurisdiction-specific threshold screening is not currently configured for ${jurisdictionRegion}.`,
+      };
+    }
+
+    const percentOfThreshold =
+      (totalTCO2e / ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E) * 100;
 
     return {
       siteFacility: row.siteFacility,
+      jurisdictionCountry,
+      jurisdictionRegion,
+      jurisdictionLabel,
+      regulatoryReference: 'Alberta TIER pilot screening reference',
+      thresholdLabel: `${ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E.toLocaleString()} t CO₂e/year`,
+      thresholdTCO2e: ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E,
       totalKgCO2e: row.totalKgCO2e,
       totalTCO2e,
-      percentOfReportingThreshold,
-      screeningNote: getFacilityThresholdScreeningNote(percentOfReportingThreshold),
+      percentOfThreshold,
+      status: getFacilityThresholdScreeningStatus(percentOfThreshold),
+      screeningNote: getFacilityThresholdScreeningNote(percentOfThreshold),
     };
   });
 }
@@ -159,16 +256,87 @@ function getSiteFacilityLabel(detail: CalculationAuditDetail) {
   return value || 'Unassigned';
 }
 
-function getFacilityThresholdScreeningNote(
-  percentOfReportingThreshold: number,
-): FacilityThresholdScreeningNote {
-  if (percentOfReportingThreshold >= 100) {
+function getJurisdictionKey(detail: CalculationAuditDetail) {
+  const region = normalizeJurisdictionRegion(detail.jurisdictionRegion);
+  const country = normalizeJurisdictionCountry(detail.jurisdictionCountry);
+  return `${region ?? ''}|${country ?? ''}`;
+}
+
+function resolveFacilityJurisdiction(
+  jurisdictionKeys: Set<string>,
+  jurisdictionSources: Set<string>,
+) {
+  const populatedKeys = Array.from(jurisdictionKeys).filter((key) => key !== '|');
+  if (populatedKeys.length === 1) {
+    const [jurisdictionRegion, jurisdictionCountry] = populatedKeys[0].split('|');
+    return {
+      jurisdictionCountry: jurisdictionCountry || null,
+      jurisdictionRegion: jurisdictionRegion || null,
+      jurisdictionSource: Array.from(jurisdictionSources).filter(Boolean).join(', ') || 'unknown',
+    };
+  }
+
+  if (populatedKeys.length > 1) {
+    return {
+      jurisdictionCountry: null,
+      jurisdictionRegion: 'Multiple jurisdictions',
+      jurisdictionSource: Array.from(jurisdictionSources).filter(Boolean).join(', ') || 'record',
+    };
+  }
+
+  return {
+    jurisdictionCountry: null,
+    jurisdictionRegion: null,
+    jurisdictionSource: Array.from(jurisdictionSources).filter(Boolean).join(', ') || 'unknown',
+  };
+}
+
+function normalizeJurisdictionCountry(value: string | null | undefined) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return null;
+  if (/^ca$|^canada$/i.test(normalized)) return 'Canada';
+  return normalized;
+}
+
+function normalizeJurisdictionRegion(value: string | null | undefined) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return null;
+  if (/^ab$|^alta\.?$/i.test(normalized)) return 'Alberta';
+  if (/^on$|^ont\.?$/i.test(normalized)) return 'Ontario';
+  return normalized;
+}
+
+function formatJurisdictionLabel(region: string | null, country: string | null) {
+  if (region && country) return `${region}, ${country}`;
+  if (region) return region;
+  if (country) return country;
+  return 'Not provided';
+}
+
+function getFacilityThresholdScreeningStatus(
+  percentOfThreshold: number,
+): FacilityThresholdScreeningStatus {
+  if (percentOfThreshold >= 100) {
     return 'Above threshold reference — professional review recommended';
   }
 
-  if (percentOfReportingThreshold >= 80) {
+  if (percentOfThreshold >= 80) {
     return 'Approaching threshold — review recommended';
   }
 
-  return 'Below threshold reference';
+  return 'Below threshold / informational only';
+}
+
+function getFacilityThresholdScreeningNote(
+  percentOfThreshold: number,
+): FacilityThresholdScreeningNote {
+  if (percentOfThreshold >= 100) {
+    return 'Above threshold reference — professional review recommended';
+  }
+
+  if (percentOfThreshold >= 80) {
+    return 'Approaching threshold — review recommended';
+  }
+
+  return 'Below threshold / informational only';
 }

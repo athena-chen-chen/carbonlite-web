@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import {
   bulkDeleteActivityData,
+  bulkUpdateActivityFacility,
   bulkUpdateActivityProvince,
   deleteActivityData,
   getAllActivityData,
@@ -12,6 +13,7 @@ import {
 } from '../services/activityData';
 import { getAllConversionFactors } from '../services/conversionFactors';
 import { AppDialogProvider } from '../components/AppDialog';
+import { ToastProvider } from '../components/Toast';
 import { ActivityDataPage } from './ActivityDataPage';
 
 vi.mock('../components/ExcelInputTable', () => ({
@@ -20,6 +22,7 @@ vi.mock('../components/ExcelInputTable', () => ({
 
 vi.mock('../services/activityData', () => ({
   bulkDeleteActivityData: vi.fn(),
+  bulkUpdateActivityFacility: vi.fn(),
   bulkUpdateActivityProvince: vi.fn(),
   createActivityData: vi.fn(),
   deleteActivityData: vi.fn(),
@@ -93,6 +96,25 @@ describe('ActivityDataPage delete flows', () => {
     vi.mocked(getAllActivityData).mockResolvedValue(records);
     vi.mocked(getAllConversionFactors).mockResolvedValue([
       {
+        id: 'factor-diesel-canada-2025',
+        organizationId: null,
+        name: 'Diesel - Canada - 2025',
+        type: 'EMISSION',
+        activityType: 'DIESEL',
+        inputUnit: 'liters',
+        unit: 'liters',
+        factorValue: 2.68,
+        resultUnit: 'kgCO2e/liter',
+        sourceAuthority: 'CarbonLite',
+        sourceYear: 2025,
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Canada',
+        isDefault: true,
+        isSystemDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
         id: 'factor-electricity-bc-2025',
         organizationId: null,
         name: 'Electricity - British Columbia - 2025',
@@ -152,9 +174,11 @@ describe('ActivityDataPage delete flows', () => {
   function renderPage(initialEntry: any = '/data-records') {
     return render(
       <MemoryRouter initialEntries={[initialEntry]}>
-        <AppDialogProvider>
-          <ActivityDataPage />
-        </AppDialogProvider>
+        <ToastProvider>
+          <AppDialogProvider>
+            <ActivityDataPage />
+          </AppDialogProvider>
+        </ToastProvider>
       </MemoryRouter>,
     );
   }
@@ -198,12 +222,14 @@ describe('ActivityDataPage delete flows', () => {
   it('navigates Add data to Input Data with manual entry focused', async () => {
     render(
       <MemoryRouter initialEntries={['/data-records']}>
-        <AppDialogProvider>
-          <Routes>
-            <Route path="/data-records" element={<ActivityDataPage />} />
-            <Route path="/input-data" element={<InputDataRouteProbe />} />
-          </Routes>
-        </AppDialogProvider>
+        <ToastProvider>
+          <AppDialogProvider>
+            <Routes>
+              <Route path="/data-records" element={<ActivityDataPage />} />
+              <Route path="/input-data" element={<InputDataRouteProbe />} />
+            </Routes>
+          </AppDialogProvider>
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -293,7 +319,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText(/Read-only access:/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Add data$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Delete Selected/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Delete selected/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
   });
@@ -301,7 +327,9 @@ describe('ActivityDataPage delete flows', () => {
   it('shows no selected rows in the Set Province panel before selection', async () => {
     renderPage();
 
-    expect(await screen.findByText('No records selected.')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText('No records selected.')).toHaveLength(2);
+    });
     expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
   });
 
@@ -361,30 +389,46 @@ describe('ActivityDataPage delete flows', () => {
     window.removeEventListener('carbonlite:demo-data-reset', resetEventListener);
   });
 
-  it('uses restrained danger styling for Delete Selected states', async () => {
+  it('shows restrained danger styling for Delete selected after selection', async () => {
     renderPage();
 
-    const deleteButton = await screen.findByRole('button', {
-      name: /^Delete Selected$/i,
-    });
-
-    expect(deleteButton).toBeDisabled();
-    expect(deleteButton).toHaveStyle({
-      background: '#f1f5f9',
-      color: '#94a3b8',
-    });
+    await screen.findByText('Diesel');
+    expect(screen.queryByRole('button', { name: /^Delete selected/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
 
     expect(
-      screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
+      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
     ).toBeEnabled();
     expect(
-      screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
+      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
     ).toHaveStyle({
       background: '#ffffff',
       color: '#b91c1c',
     });
+  });
+
+  it('shows Delete selected for legacy USER role selections', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({ email: 'user@example.com', role: 'USER', organizationId: 'org-1' }),
+    );
+
+    renderPage();
+
+    await screen.findByText('Diesel');
+    await userEvent.click(screen.getAllByRole('checkbox')[1]);
+
+    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeVisible();
+  });
+
+  it('updates Delete selected count when select-all selects visible rows', async () => {
+    renderPage();
+
+    await screen.findByText('Diesel');
+    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+
+    expect(screen.getByRole('button', { name: /Delete selected \(2\)/i })).toBeVisible();
   });
 
   it('sets province for selected electricity records and ignores non-electricity records', async () => {
@@ -467,6 +511,209 @@ describe('ActivityDataPage delete flows', () => {
     });
     expect(updateActivityData).not.toHaveBeenCalled();
     expect(await screen.findByText('Province updated for 3 electricity records.')).toBeInTheDocument();
+  });
+
+  it('sets site or facility for all selected mixed activity records and preserves selection', async () => {
+    vi.mocked(bulkUpdateActivityFacility).mockResolvedValue({ updatedCount: 5 } as any);
+    const mixedRecords = [
+      {
+        id: 'electricity-site',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'natural-gas-site',
+        activityType: 'NATURAL_GAS',
+        recordDate: '2026-05-16',
+        quantity: 10,
+        unit: 'm3',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'gasoline-site',
+        activityType: 'GASOLINE',
+        recordDate: '2026-05-17',
+        quantity: 20,
+        unit: 'L',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'hotel-site',
+        activityType: 'HOTEL',
+        recordDate: '2026-05-18',
+        quantity: 3,
+        unit: 'nights',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'air-travel-site',
+        activityType: 'AIR_TRAVEL',
+        recordDate: '2026-05-19',
+        quantity: 500,
+        unit: 'km',
+        sourceType: 'MANUAL',
+      },
+    ];
+    const refreshedRecords = mixedRecords.map((record) => ({
+      ...record,
+      facility: 'Calgary Office',
+    }));
+    vi.mocked(getAllActivityData)
+      .mockResolvedValueOnce(mixedRecords as any)
+      .mockResolvedValueOnce(refreshedRecords as any);
+    vi.mocked(getActivityDataList).mockResolvedValue({
+      items: mixedRecords as any,
+      page: 1,
+      pageSize: 20,
+      total: mixedRecords.length,
+      totalPages: 1,
+    });
+
+    renderPage();
+
+    await screen.findByTestId('activity-row-electricity-site');
+    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+
+    expect(screen.getByText('5 records selected.')).toBeInTheDocument();
+    expect(screen.getByText('5 records selected · 1 electricity record selected.')).toBeInTheDocument();
+
+    const facilityInput = screen.getByLabelText(/Site \/ Facility to apply to selected records/i);
+    await userEvent.type(facilityInput, 'Calgary Office');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityFacility).toHaveBeenCalledWith(
+        ['electricity-site', 'natural-gas-site', 'gasoline-site', 'hotel-site', 'air-travel-site'],
+        'Calgary Office',
+      );
+    });
+
+    expect(await screen.findByText('Site / Facility updated for 5 records.')).toBeInTheDocument();
+    expect(facilityInput).toHaveValue('');
+    expect(screen.getByText('5 records selected.')).toBeInTheDocument();
+
+    for (const record of refreshedRecords) {
+      const row = await screen.findByTestId(`activity-row-${record.id}`);
+      expect(within(row).getByRole('checkbox')).toBeChecked();
+      expect(within(row).getByText('Calgary Office')).toBeInTheDocument();
+    }
+  });
+
+  it('confirms before overwriting existing site or facility values', async () => {
+    vi.mocked(bulkUpdateActivityFacility).mockResolvedValue({ updatedCount: 3 } as any);
+    mockActivityRecords([
+      {
+        id: 'facility-calgary',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        facility: 'Calgary Office',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'facility-vancouver',
+        activityType: 'NATURAL_GAS',
+        recordDate: '2026-05-16',
+        quantity: 10,
+        unit: 'm3',
+        facilityName: 'Vancouver Office',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'facility-missing',
+        activityType: 'DIESEL',
+        recordDate: '2026-05-17',
+        quantity: 20,
+        unit: 'L',
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    await screen.findByTestId('activity-row-facility-calgary');
+    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    await userEvent.type(
+      screen.getByLabelText(/Site \/ Facility to apply to selected records/i),
+      'Edmonton Factory',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
+
+    expect(await screen.findByRole('dialog', { name: /Update site \/ facility/i })).toBeInTheDocument();
+    expect(screen.getByText(/2 selected records already have a site or facility/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Update Site \/ Facility$/i }));
+
+    await waitFor(() => {
+      expect(bulkUpdateActivityFacility).toHaveBeenCalledWith(
+        ['facility-calgary', 'facility-vancouver', 'facility-missing'],
+        'Edmonton Factory',
+      );
+    });
+  });
+
+  it('does not send a site or facility update when all selected records already match', async () => {
+    mockActivityRecords([
+      {
+        id: 'facility-same-1',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-15',
+        quantity: 200,
+        unit: 'kWh',
+        facility: 'Calgary Office',
+        sourceType: 'MANUAL',
+      },
+      {
+        id: 'facility-same-2',
+        activityType: 'DIESEL',
+        recordDate: '2026-05-16',
+        quantity: 20,
+        unit: 'L',
+        facilityName: 'Calgary Office',
+        sourceType: 'MANUAL',
+      },
+    ] as any);
+
+    renderPage();
+
+    await screen.findByTestId('activity-row-facility-same-1');
+    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    await userEvent.clear(screen.getByLabelText(/Site \/ Facility to apply to selected records/i));
+    await userEvent.type(
+      screen.getByLabelText(/Site \/ Facility to apply to selected records/i),
+      'Calgary Office',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
+
+    expect(bulkUpdateActivityFacility).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText('All selected records are already assigned to Calgary Office.'),
+    ).toBeInTheDocument();
+  });
+
+  it('hides Set Site / Facility for pilot reviewer accounts', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'reviewer@example.com',
+        role: 'VIEWER',
+        accountType: 'PILOT_REVIEWER',
+        organizationId: 'org-1',
+      }),
+    );
+
+    renderPage();
+
+    await screen.findByText('Diesel');
+    expect(screen.queryByRole('button', { name: /^Set Site \/ Facility$/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
   });
 
   it('enables Set Province for 15 selected records when 3 selected electricity records already have province', async () => {
@@ -599,10 +846,12 @@ describe('ActivityDataPage delete flows', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/activity-records']}>
-        <AppDialogProvider>
-          <DocumentFilterControl />
-          <ActivityDataPage />
-        </AppDialogProvider>
+        <ToastProvider>
+          <AppDialogProvider>
+            <DocumentFilterControl />
+            <ActivityDataPage />
+          </AppDialogProvider>
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -614,7 +863,7 @@ describe('ActivityDataPage delete flows', () => {
     await user.click(screen.getByRole('button', { name: /Apply document filter/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('No records selected.')).toBeInTheDocument();
+      expect(screen.getAllByText('No records selected.')).toHaveLength(2);
     });
     await waitFor(() => {
       expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
@@ -815,7 +1064,7 @@ describe('ActivityDataPage delete flows', () => {
     });
   });
 
-  it('allows customer users to set province without edit or delete controls', async () => {
+  it('allows legacy customer USER accounts to edit and delete activity records', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -842,11 +1091,11 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     const row = await screen.findByTestId('activity-row-electricity-user-missing-province');
-    expect(screen.queryByRole('button', { name: /^Add data$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Delete Selected/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Add data$/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/More actions for/i)).toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeVisible();
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
@@ -868,21 +1117,52 @@ describe('ActivityDataPage delete flows', () => {
   });
 
   it('deletes one selected record and removes it from the UI after backend refresh', async () => {
+    const metricsStaleListener = vi.fn();
+    const reportsStaleListener = vi.fn();
+    window.addEventListener('carbonlite:metrics-stale', metricsStaleListener);
+    window.addEventListener('carbonlite:reports-stale', reportsStaleListener);
     mockInitialAndRefreshedRecords([records[1]]);
     renderPage();
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
     await userEvent.click(
-      screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
+      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
     );
-    await confirmDangerDialog(/Delete selected records/i);
+    expect(
+      await screen.findByText(
+        'Are you sure you want to delete 1 selected data record?',
+      ),
+    ).toBeInTheDocument();
+    await confirmDangerDialog(/Delete data records\?/i);
 
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('1 record deleted.')).toBeInTheDocument();
+    expect(await screen.findByText('Data record deleted.')).toBeInTheDocument();
+    expect(metricsStaleListener).toHaveBeenCalledTimes(1);
+    expect(reportsStaleListener).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
     expect(screen.getByText('Electricity')).toBeInTheDocument();
+    window.removeEventListener('carbonlite:metrics-stale', metricsStaleListener);
+    window.removeEventListener('carbonlite:reports-stale', reportsStaleListener);
+  });
+
+  it('does not delete selected records when confirmation is cancelled', async () => {
+    renderPage();
+
+    await screen.findByText('Diesel');
+    await userEvent.click(screen.getAllByRole('checkbox')[1]);
+    await userEvent.click(
+      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
+    );
+
+    const dialog = await screen.findByRole('dialog', { name: /Delete data records\?/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Cancel$/i }));
+
+    expect(bulkDeleteActivityData).not.toHaveBeenCalled();
+    expect(screen.getByText('Diesel')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeEnabled();
   });
 
   it('shows a warning and refetches when backend reports zero deleted records', async () => {
@@ -893,13 +1173,13 @@ describe('ActivityDataPage delete flows', () => {
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
     await userEvent.click(
-      screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
+      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
     );
-    await confirmDangerDialog(/Delete selected records/i);
+    await confirmDangerDialog(/Delete data records\?/i);
 
     expect(await screen.findByText(/No records were deleted/i)).toBeInTheDocument();
     expect(screen.getByText('Diesel')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete Selected \(1\)/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeEnabled();
   });
 
   it('deletes one record from the row action and removes it from the UI after backend refresh', async () => {
@@ -908,11 +1188,12 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await clickFirstRowDeleteAction();
-    await confirmDangerDialog(/Delete activity record/i);
+    await confirmDangerDialog(/Delete data records\?/i);
 
     expect(deleteActivityData).toHaveBeenCalledWith('activity-1');
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('1 record deleted.')).toBeInTheDocument();
+    expect(await screen.findByText('Data record deleted.')).toBeInTheDocument();
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
     expect(screen.getByText('Electricity')).toBeInTheDocument();
   });
@@ -925,18 +1206,25 @@ describe('ActivityDataPage delete flows', () => {
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
     await userEvent.click(
-      screen.getByRole('button', { name: /Delete Selected \(2\)/i }),
+      screen.getByRole('button', { name: /Delete selected \(2\)/i }),
     );
-    await confirmDangerDialog(/Delete selected records/i);
+    expect(
+      await screen.findByText(
+        'Are you sure you want to delete 2 selected data records?',
+      ),
+    ).toBeInTheDocument();
+    await confirmDangerDialog(/Delete data records\?/i);
 
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1', 'activity-2']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('2 records deleted.')).toBeInTheDocument();
+    expect(await screen.findByText('2 data records deleted.')).toBeInTheDocument();
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
     expect(screen.queryByText('Electricity')).not.toBeInTheDocument();
   });
 
   it('keeps selected rows visible and selected when delete is unauthorized', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(bulkDeleteActivityData).mockRejectedValue(
       new Error('You do not have permission to perform this action.'),
     );
@@ -946,16 +1234,22 @@ describe('ActivityDataPage delete flows', () => {
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
     await userEvent.click(
-      screen.getByRole('button', { name: /Delete Selected \(1\)/i }),
+      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
     );
-    await confirmDangerDialog(/Delete selected records/i);
+    await confirmDangerDialog(/Delete data records\?/i);
 
     expect(await screen.findByText('You do not have permission to perform this action.')).toBeInTheDocument();
+    expect(await screen.findByText('Unable to delete data records.')).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to delete selected activity records',
+      expect.objectContaining({ ids: ['activity-1'] }),
+    );
     expect(screen.getByText('Diesel')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete Selected \(1\)/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeEnabled();
   });
 
   it('keeps row visible when single delete is unauthorized', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(deleteActivityData).mockRejectedValue(
       new Error('You do not have permission to perform this action.'),
     );
@@ -964,9 +1258,14 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await clickFirstRowDeleteAction();
-    await confirmDangerDialog(/Delete activity record/i);
+    await confirmDangerDialog(/Delete data records\?/i);
 
     expect(await screen.findByText('You do not have permission to perform this action.')).toBeInTheDocument();
+    expect(await screen.findByText('Unable to delete data records.')).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to delete activity record',
+      expect.objectContaining({ id: 'activity-1' }),
+    );
     expect(screen.getByText('Diesel')).toBeInTheDocument();
   });
 
@@ -1186,6 +1485,31 @@ describe('ActivityDataPage delete flows', () => {
     expect(await screen.findByText('Electricity')).toBeInTheDocument();
     expect(screen.getByText('Ready')).toBeInTheDocument();
     expect(screen.queryByText('Missing Factor')).not.toBeInTheDocument();
+  });
+
+  it('does not mark Diesel 240 kg as Ready when the available Diesel factor expects liters', async () => {
+    mockActivityRecords([
+      {
+        id: 'activity-diesel-kg',
+        activityType: 'DIESEL',
+        recordDate: '2026-03-06',
+        quantity: 240,
+        unit: 'kg',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        sourceType: 'SPREADSHEET',
+        sourceReference: 'carbonlite_needs_review_test.xlsx',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceRow: 4,
+      },
+    ] as any);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-diesel-kg');
+    expect(within(row).getByText('Diesel')).toBeInTheDocument();
+    expect(within(row).getByText('Unit Mismatch')).toBeInTheDocument();
+    expect(within(row).queryByText('Ready')).not.toBeInTheDocument();
   });
 
   it('uses canonical matched fields instead of stale missing factor notes', async () => {

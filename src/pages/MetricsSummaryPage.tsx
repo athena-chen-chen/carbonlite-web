@@ -38,13 +38,27 @@ import {
   buildSiteFacilityRollup,
   type SiteFacilityBreakdownRow,
 } from '../utils/siteFacilityBreakdown';
-import { formatDisplayNumber } from '../utils/numberFormatting';
+import { formatDisplayNumber, formatEmissionsWithUnit } from '../utils/numberFormatting';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
 
 
 export function MetricsSummaryPage() {
   const location = useLocation();
+  const routeState = location.state as {
+    selectedDocumentIds?: string[];
+    selectedRecordIds?: string[];
+    selectedActivityRecordIds?: string[];
+    metricsError?: string;
+  } | null;
+  const selectedDocumentIds = (routeState?.selectedDocumentIds ?? []).filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0,
+  );
+  const selectedRecordIds = (
+    routeState?.selectedActivityRecordIds ??
+    routeState?.selectedRecordIds ??
+    []
+  ).filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
   const currentUser = getCurrentUser();
   const currentWorkspaceId = getOrganizationId(currentUser);
   const showPilotReviewerWelcome = isPilotReviewer(currentUser);
@@ -69,7 +83,7 @@ export function MetricsSummaryPage() {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(
-    () => (location.state as { metricsError?: string } | null)?.metricsError ?? null,
+    () => routeState?.metricsError ?? null,
   );
   const [reloadKey, setReloadKey] = useState(0);
   const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
@@ -92,7 +106,14 @@ export function MetricsSummaryPage() {
   useEffect(() => {
     if (!dateRangeReady) return;
     loadSummary();
-  }, [dateRangeReady, reloadKey, periodStart, periodEnd]);
+  }, [
+    dateRangeReady,
+    reloadKey,
+    periodStart,
+    periodEnd,
+    selectedRecordIds.join('|'),
+    selectedDocumentIds.join('|'),
+  ]);
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -178,8 +199,11 @@ export function MetricsSummaryPage() {
   async function loadSummary() {
     const request = {
       recalculate: true,
-      dateFrom: periodStart,
-      dateTo: periodEnd,
+      ...(selectedRecordIds.length
+        ? { selectedActivityRecordIds: selectedRecordIds }
+        : selectedDocumentIds.length
+        ? { selectedDocumentIds }
+        : { dateFrom: periodStart, dateTo: periodEnd }),
     };
     const requestKey = JSON.stringify(request);
 
@@ -480,7 +504,7 @@ function handleDownloadPDF() {
         title="Site / Facility Breakdown"
         summary={
           siteFacilityBreakdownRows.length > 0
-            ? `Organization total: ${formatDisplayNumber(siteFacilityRollup.organizationTotalKgCO2e)} kgCO2e · ${siteFacilityBreakdownRows.length} site/facility ${siteFacilityBreakdownRows.length === 1 ? 'group' : 'groups'}`
+            ? `Organization total: ${formatEmissionsWithUnit(siteFacilityRollup.organizationTotalKgCO2e)} · ${siteFacilityBreakdownRows.length} site/facility ${siteFacilityBreakdownRows.length === 1 ? 'group' : 'groups'}`
             : 'No calculated site/facility totals'
         }
         expanded={isSiteFacilityBreakdownExpanded}
@@ -488,7 +512,7 @@ function handleDownloadPDF() {
         style={siteFacilityCardStyle}
       >
         <p style={siteFacilityHelpTextStyle}>
-          Organization total: <strong>{formatDisplayNumber(siteFacilityRollup.organizationTotalKgCO2e)} kgCO2e</strong>. Calculated emissions are grouped by the facility, site, or location assigned to each activity record. Records without a specified site are grouped under “Unassigned”.
+          Organization total: <strong>{formatEmissionsWithUnit(siteFacilityRollup.organizationTotalKgCO2e)}</strong>. Calculated emissions are grouped by the facility, site, or location assigned to each activity record. Records without a specified site are grouped under “Unassigned”.
         </p>
         <SiteFacilityBreakdownTable rows={siteFacilityBreakdownRows} />
       </CollapsibleSection>
@@ -647,10 +671,10 @@ function SiteFacilityBreakdownTable({ rows }: { rows: SiteFacilityBreakdownRow[]
           {rows.map((row) => (
             <tr key={row.siteFacility}>
               <td style={siteFacilityTdStyle}>{row.siteFacility}</td>
-              <td style={siteFacilityTdStyle}>{formatDisplayNumber(row.scope1KgCO2e)} kgCO2e</td>
-              <td style={siteFacilityTdStyle}>{formatDisplayNumber(row.scope2KgCO2e)} kgCO2e</td>
-              <td style={siteFacilityTdStyle}>{formatDisplayNumber(row.scope3KgCO2e)} kgCO2e</td>
-              <td style={siteFacilityTotalTdStyle}>{formatDisplayNumber(row.totalKgCO2e)} kgCO2e</td>
+              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope1KgCO2e)}</td>
+              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope2KgCO2e)}</td>
+              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope3KgCO2e)}</td>
+              <td style={siteFacilityTotalTdStyle}>{formatEmissionsWithUnit(row.totalKgCO2e)}</td>
               <td style={siteFacilityTdStyle}>{row.includedRecords}</td>
               <td style={siteFacilityTdStyle}>{formatSiteFacilityActivityBreakdown(row)}</td>
             </tr>
@@ -667,7 +691,7 @@ function formatSiteFacilityActivityBreakdown(row: SiteFacilityBreakdownRow) {
   return row.activityBreakdown
     .map(
       (item) =>
-        `${item.activityType}: ${formatDisplayNumber(item.totalKgCO2e)} kgCO2e (${item.includedRecords} ${item.includedRecords === 1 ? 'record' : 'records'})`,
+        `${item.activityType}: ${formatEmissionsWithUnit(item.totalKgCO2e)} (${item.includedRecords} ${item.includedRecords === 1 ? 'record' : 'records'})`,
     )
     .join('; ');
 }

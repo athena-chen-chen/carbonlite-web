@@ -11,6 +11,10 @@ import {
   type CalculationAuditDetail,
   type MetricsSummaryResponse,
 } from './metrics';
+import {
+  getSpreadsheetReviewRows,
+  type SpreadsheetReviewRowItem,
+} from './spreadsheetReviewRows';
 import { getCurrentUser, getOrganizationId } from './auth';
 import {
   type ActivityUsageTotals,
@@ -35,6 +39,7 @@ import {
   getFactorVerificationStatus,
   getFactorVersionLabel,
 } from '../utils/factorCredibility';
+import { getCalculationCoverageCounts } from '../utils/reportCredibility';
 
 export const EMPTY_ACTIVITY_USAGE_TOTALS: ActivityUsageTotals = {
   fuel: 0,
@@ -126,6 +131,7 @@ export type MetricsOverview = {
     matchingMessage?: string | null;
   }>;
   calculationDetails: CalculationAuditDetail[];
+  sourceReviewRows?: SpreadsheetReviewRowItem[];
   invalidRecordCount: number;
   dataQualityCoverage: number;
   totalRecords: number;
@@ -277,47 +283,194 @@ export async function loadMetricsOverview(options?: {
     mergedCalculationDetails,
     activities,
   );
-  const mergedCalculationIssues = mergeCalculationDetailsIntoIssueItems(
-    mergedMissingFactors,
+  const finalCalculationDetails = dedupeCalculationDetailsByActivityId(
     facilityEnrichedCalculationDetails,
   );
-  const mergedMatchedActivityEmissions = [
-    ...(summary.matchedActivityEmissions ?? []),
-    ...supplementalCalculations.map((item) =>
-      buildSupplementalMatchedEmission(item, activities),
-    ),
-  ];
+  const finalProcessedRecords = getOverviewProcessedRecords({
+    calculationDetails: finalCalculationDetails,
+    totalRecordsFound,
+    fallbackProcessedRecords: mergedProcessedRecords,
+  });
+  const mergedCalculationIssues = mergeCalculationDetailsIntoIssueItems(
+    mergedMissingFactors,
+    finalCalculationDetails,
+  );
+  const mergedMatchedActivityEmissions = enrichMatchedActivityEmissions(
+    dedupeMatchedActivityEmissionsByActivityId([
+      ...(summary.matchedActivityEmissions ?? []),
+      ...supplementalCalculations.map((item) =>
+        buildSupplementalMatchedEmission(item, activities),
+      ),
+    ]),
+    activities,
+    finalCalculationDetails,
+  );
   const mergedConversionFactorsUsed = mergeConversionFactorsUsed(
     summary.conversionFactorsUsed ?? [],
     supplementalCalculations,
   );
+  const sourceReviewRows = await loadSourceReviewRows({
+    activities,
+    calculationDetails: finalCalculationDetails,
+    selectedDocumentIds,
+  });
 
   return {
     activities,
     summary,
     usageTotals: aggregateActivityUsage(activities),
     carbonMetric,
-    totalEstimatedEmissionsKgCO2e:
-      (summary.totalEstimatedEmissionsKgCO2e ?? 0) + supplementalEmissions,
-    matchedFactorsCount: mergedProcessedRecords,
+    totalEstimatedEmissionsKgCO2e: getOverviewTotalEmissions({
+      calculationDetails: finalCalculationDetails,
+      totalRecordsFound,
+      fallbackTotal: (summary.totalEstimatedEmissionsKgCO2e ?? 0) + supplementalEmissions,
+    }),
+    matchedFactorsCount: finalProcessedRecords,
     missingFactors: mergedCalculationIssues,
     matchedActivityEmissions: mergedMatchedActivityEmissions,
     conversionFactorsUsed: mergedConversionFactorsUsed,
-    calculationDetails: facilityEnrichedCalculationDetails,
+    calculationDetails: finalCalculationDetails,
+    sourceReviewRows,
     invalidRecordCount: summary.invalidRecordCount ?? 0,
-    dataQualityCoverage:
-      totalRecordsFound > 0
-        ? Math.round((mergedProcessedRecords / totalRecordsFound) * 1000) / 10
-        : summary.dataQualityCoverage ?? 0,
+    dataQualityCoverage: getOverviewCalculationCoverage({
+      calculationDetails: finalCalculationDetails,
+      processedRecords: finalProcessedRecords,
+      totalRecordsFound,
+      fallbackCoverage: summary.dataQualityCoverage,
+    }),
     totalRecordsFound,
-    recordsIncluded: mergedProcessedRecords,
-    processedRecords: mergedProcessedRecords,
+    recordsIncluded: finalProcessedRecords,
+    processedRecords: finalProcessedRecords,
     skippedRecords: mergedSkippedRecords,
     skippedReasons: mergedSkippedReasons,
     missingFactorRecords: mergedMissingFactorRecords,
     totalRecords: recordsInScope,
     recordsInScope,
   };
+}
+
+async function loadSourceReviewRows(input: {
+  activities: ActivityDataItem[];
+  calculationDetails: CalculationAuditDetail[];
+  selectedDocumentIds: string[];
+}) {
+  const sourceDocumentIds = uniquePresentStrings([
+    ...input.selectedDocumentIds,
+    ...input.activities.map((activity) => activity.sourceDocumentId),
+    ...input.calculationDetails.map((detail) => detail.sourceDocumentId),
+  ]);
+
+  if (sourceDocumentIds.length === 0) return [];
+
+  try {
+    const response = await getSpreadsheetReviewRows({ sourceDocumentIds });
+    return response.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function uniquePresentStrings(values: unknown[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function dedupeCalculationDetailsByActivityId(
+  calculationDetails: CalculationAuditDetail[],
+) {
+  const seen = new Set<string>();
+  const deduped: CalculationAuditDetail[] = [];
+
+  calculationDetails.forEach((detail) => {
+    const key = String(detail.activityDataId ?? '').trim();
+    if (!key) {
+      deduped.push(detail);
+      return;
+    }
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(detail);
+  });
+
+  return deduped;
+}
+
+function getOverviewCalculationCoverage(input: {
+  calculationDetails: CalculationAuditDetail[];
+  processedRecords: number;
+  totalRecordsFound: number;
+  fallbackCoverage?: number;
+}) {
+  const coverageCounts = getCalculationCoverageCounts(input.calculationDetails);
+
+  if (
+    coverageCounts.eligibleEmissionBearingRecords > 0 &&
+    input.calculationDetails.length >= input.totalRecordsFound
+  ) {
+    return (
+      Math.round(
+        (coverageCounts.calculatedRecords / coverageCounts.eligibleEmissionBearingRecords) *
+          1000,
+      ) / 10
+    );
+  }
+
+  return input.totalRecordsFound > 0
+    ? Math.round((input.processedRecords / input.totalRecordsFound) * 1000) / 10
+    : input.fallbackCoverage ?? 0;
+}
+
+function getOverviewProcessedRecords(input: {
+  calculationDetails: CalculationAuditDetail[];
+  totalRecordsFound: number;
+  fallbackProcessedRecords: number;
+}) {
+  if (input.calculationDetails.length >= input.totalRecordsFound && input.totalRecordsFound > 0) {
+    return input.calculationDetails.filter((detail) => detail.status === 'CALCULATED').length;
+  }
+
+  return input.fallbackProcessedRecords;
+}
+
+function getOverviewTotalEmissions(input: {
+  calculationDetails: CalculationAuditDetail[];
+  totalRecordsFound: number;
+  fallbackTotal: number;
+}) {
+  if (input.calculationDetails.length >= input.totalRecordsFound && input.totalRecordsFound > 0) {
+    return input.calculationDetails.reduce((total, detail) => {
+      if (detail.status !== 'CALCULATED') return total;
+      const emissions = Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission);
+      return Number.isFinite(emissions) ? total + emissions : total;
+    }, 0);
+  }
+
+  return input.fallbackTotal;
+}
+
+function dedupeMatchedActivityEmissionsByActivityId(
+  emissions: NonNullable<MetricsSummaryResponse['matchedActivityEmissions']>,
+) {
+  const seen = new Set<string>();
+  const deduped: typeof emissions = [];
+
+  emissions.forEach((emission) => {
+    const key = String(emission.activityDataId ?? '').trim();
+    if (!key) {
+      deduped.push(emission);
+      return;
+    }
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(emission);
+  });
+
+  return deduped;
 }
 
 function mergeCalculationDetailsIntoIssueItems(
@@ -506,6 +659,8 @@ function mergeCalculationRecordsIntoDetails(
       sourceRow: activity?.sourceRow ?? null,
       sourceTextSnippet: activity?.sourceTextSnippet ?? null,
       sourceDocumentId: activity?.sourceDocumentId ?? null,
+      costCad: firstPresentCost(record.costCad, activity?.costCad),
+      costCurrency: firstPresentString(record.costCurrency, activity?.costCurrency),
       notes: activity?.notes ?? null,
     };
 
@@ -634,6 +789,8 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       sourceRow: emission.sourceRow ?? activity?.sourceRow ?? null,
       sourceTextSnippet: emission.sourceTextSnippet ?? activity?.sourceTextSnippet ?? null,
       sourceDocumentId: emission.sourceDocumentId ?? activity?.sourceDocumentId ?? null,
+      costCad: firstPresentCost(emission.costCad, activity?.costCad),
+      costCurrency: firstPresentString(emission.costCurrency, activity?.costCurrency),
       notes: emission.notes ?? activity?.notes ?? null,
     };
 
@@ -647,6 +804,57 @@ function mergeMatchedEmissionsIntoCalculationDetails(
   });
 
   return merged;
+}
+
+function enrichMatchedActivityEmissions(
+  emissions: MatchedActivityEmission[],
+  activities: ActivityDataItem[],
+  calculationDetails: CalculationAuditDetail[],
+) {
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+  const detailById = new Map(calculationDetails.map((detail) => [detail.activityDataId, detail]));
+
+  return emissions.map((emission) => {
+    const activity = activityById.get(emission.activityDataId);
+    const detail = detailById.get(emission.activityDataId);
+    const jurisdictionCountry = firstPresentString(
+      (emission as MatchedActivityEmission & { jurisdictionCountry?: string | null }).jurisdictionCountry,
+      detail?.jurisdictionCountry,
+      activity?.jurisdictionCountry,
+    );
+    const jurisdictionRegion = firstPresentString(
+      (emission as MatchedActivityEmission & { jurisdictionRegion?: string | null }).jurisdictionRegion,
+      detail?.jurisdictionRegion,
+      activity?.jurisdictionRegion,
+    );
+    const jurisdiction =
+      firstPresentString(
+        (emission as MatchedActivityEmission & { jurisdiction?: string | null }).jurisdiction,
+        detail?.jurisdiction,
+      ) ||
+      [jurisdictionRegion, jurisdictionCountry]
+        .map((part) => String(part ?? '').trim())
+        .filter(Boolean)
+        .join(', ');
+
+    return {
+      ...emission,
+      jurisdiction: jurisdiction || null,
+      jurisdictionCountry,
+      jurisdictionRegion,
+      jurisdictionSource:
+        firstPresentString(
+          (emission as MatchedActivityEmission & { jurisdictionSource?: string | null }).jurisdictionSource,
+          detail?.jurisdictionSource,
+          activity?.jurisdictionSource,
+        ) ?? null,
+      jurisdictionAssumed:
+        (emission as MatchedActivityEmission & { jurisdictionAssumed?: boolean | null }).jurisdictionAssumed ??
+        detail?.jurisdictionAssumed ??
+        activity?.jurisdictionAssumed ??
+        null,
+    };
+  });
 }
 
 function formatJurisdiction(activity?: ActivityDataItem) {
@@ -670,8 +878,32 @@ function enrichCalculationDetailsWithActivityFacilities(
 
     const facilityId = resolveActivityFacilityId(detail, activity);
     const facilityName = resolveActivityFacilityName(detail, activity);
+    const jurisdictionCountry = firstPresentString(
+      detail.jurisdictionCountry,
+      activity.jurisdictionCountry,
+    );
+    const jurisdictionRegion = firstPresentString(
+      detail.jurisdictionRegion,
+      activity.jurisdictionRegion,
+    );
+    const jurisdiction =
+      firstPresentString(detail.jurisdiction) ||
+      [jurisdictionRegion, jurisdictionCountry]
+        .map((part) => String(part ?? '').trim())
+        .filter(Boolean)
+        .join(', ');
+    const costCad = firstPresentCost(detail.costCad, activity.costCad);
+    const costCurrency = firstPresentString(detail.costCurrency, activity.costCurrency);
 
-    if (facilityId === detail.facilityId && facilityName === detail.facilityName) {
+    if (
+      facilityId === detail.facilityId &&
+      facilityName === detail.facilityName &&
+      jurisdictionCountry === detail.jurisdictionCountry &&
+      jurisdictionRegion === detail.jurisdictionRegion &&
+      jurisdiction === detail.jurisdiction &&
+      costCad === detail.costCad &&
+      costCurrency === detail.costCurrency
+    ) {
       return detail;
     }
 
@@ -679,6 +911,11 @@ function enrichCalculationDetailsWithActivityFacilities(
       ...detail,
       facilityId,
       facilityName,
+      jurisdiction: jurisdiction || detail.jurisdiction,
+      jurisdictionCountry: jurisdictionCountry ?? null,
+      jurisdictionRegion: jurisdictionRegion ?? null,
+      costCad,
+      costCurrency,
     };
   });
 }
@@ -747,6 +984,24 @@ function firstPresentString(...values: unknown[]) {
         : value;
     const normalized = String(candidate ?? '').trim();
     if (normalized) return normalized;
+  }
+
+  return null;
+}
+
+function firstPresentCost(...values: unknown[]) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === '') continue;
+    if (typeof value === 'number') {
+      if (Number.isFinite(value)) return value;
+      continue;
+    }
+
+    const normalized = String(value).trim();
+    if (!normalized) continue;
+    const numericValue = Number(normalized.replace(/[$,\s]/g, ''));
+
+    return Number.isFinite(numericValue) ? numericValue : normalized;
   }
 
   return null;
@@ -891,7 +1146,10 @@ function buildSupplementalCalculationDetail(
     dateEstimated: false,
     reportingYear: recordYear ?? null,
     recordYear,
-    jurisdiction: item.factor.jurisdiction ?? '',
+    jurisdiction: formatJurisdiction(activity) || item.factor.jurisdiction || '',
+    jurisdictionCountry: activity?.jurisdictionCountry ?? null,
+    jurisdictionRegion: activity?.jurisdictionRegion ?? null,
+    jurisdictionSource: activity ? 'record' : null,
     activityQuantity: item.quantity,
     activityUnit: item.unit,
     quantityUnit: item.unit,
@@ -937,6 +1195,8 @@ function buildSupplementalCalculationDetail(
     sourceRow: activity?.sourceRow ?? null,
     sourceTextSnippet: activity?.sourceTextSnippet ?? null,
     sourceDocumentId: activity?.sourceDocumentId ?? null,
+    costCad: firstPresentCost(activity?.costCad),
+    costCurrency: firstPresentString(activity?.costCurrency),
     notes: activity?.notes ?? null,
   };
 }
@@ -961,6 +1221,8 @@ function buildSupplementalMatchedEmission(
     sourcePage: activity?.sourcePage ?? null,
     sourceRow: activity?.sourceRow ?? null,
     sourceTextSnippet: activity?.sourceTextSnippet ?? null,
+    costCad: firstPresentCost(activity?.costCad),
+    costCurrency: firstPresentString(activity?.costCurrency),
     notes: activity?.notes ?? null,
     factorId: item.factor.id,
     factorVersionId: item.factor.currentActiveVersion?.id ?? item.factor.version?.id ?? null,

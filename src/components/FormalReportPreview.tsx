@@ -12,7 +12,7 @@ import {
 import type { CalculationAuditDetail } from '../services/metrics';
 import { formatCalculationStatus, formatFactorValue } from '../utils/calculationTraceability';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
-import { formatDisplayNumber, formatEmissionsValue } from '../utils/numberFormatting';
+import { formatCount, formatDisplayNumber, formatEmissionsUnit, formatEmissionsWithUnit } from '../utils/numberFormatting';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import {
   formatScopeClassification,
@@ -28,6 +28,7 @@ import {
   formatReportSourceReference,
   formatReportSourceType,
   formatReportVerification,
+  getCalculationCoverageCounts,
   isRecordRequiringCorrection,
   isTrackedMetricDetail,
 } from '../utils/reportCredibility';
@@ -43,6 +44,8 @@ import { ScopeBreakdownSection } from './reports/sections/ScopeBreakdownSection'
 import { SourceEvidenceSection } from './reports/sections/SourceEvidenceSection';
 import {
   buildInventoryBoundary,
+  CARBONLITE_CALCULATION_COVERAGE_LABEL,
+  getInventoryBoundaryStatus,
   summarizeInventoryBoundary,
   type InventoryBoundary,
 } from '../constants/inventoryBoundary';
@@ -93,6 +96,11 @@ export type FormalActivityEmission = {
   sourceType: string;
   sourceReference?: string | null;
   sourceFileName?: string | null;
+  jurisdiction?: string | null;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  jurisdictionSource?: string | null;
+  jurisdictionAssumed?: boolean | null;
   notes?: string | null;
   factorId: string;
 };
@@ -256,8 +264,11 @@ export function buildReportExecutiveSummary({
         .filter(Boolean),
     ),
   );
+  const coverageCounts = getCalculationCoverageCounts(calculationDetails);
   const coverage =
-    countSummary.totalRecordsFound > 0
+    coverageCounts.eligibleEmissionBearingRecords > 0
+      ? (coverageCounts.calculatedRecords / coverageCounts.eligibleEmissionBearingRecords) * 100
+      : countSummary.totalRecordsFound > 0
       ? (countSummary.processedRecords / countSummary.totalRecordsFound) * 100
       : 0;
   const trackedMetrics = calculationDetails.length > 0
@@ -268,7 +279,7 @@ export function buildReportExecutiveSummary({
     : countSummary.skippedRecords;
 
   return {
-    estimatedEmissions: `${formatEmissionsValue(totalEstimatedEmissionsKgCO2e)} kgCO2e`,
+    estimatedEmissions: formatEmissionsWithUnit(totalEstimatedEmissionsKgCO2e),
     recordsIncluded: countSummary.processedRecords,
     recordsSkipped: countSummary.skippedRecords,
     trackedMetrics,
@@ -316,7 +327,7 @@ export function buildConversionFactorTraceabilityRows(
     getActivityTypeLabel(factor.activityType),
     formatFactorValue(factor.factorValue),
     factor.inputUnit || 'Not specified',
-    factor.resultUnit || 'kgCO2e',
+    formatEmissionsUnit(factor.resultUnit || 'kgCO2e'),
     formatReportJurisdiction(factor.jurisdiction),
     factor.sourceAuthority || 'Source not specified',
     factor.sourceYear || 'Source not specified',
@@ -329,6 +340,146 @@ export function buildConversionFactorTraceabilityRows(
     factor.sourceUrl || 'Source not specified',
     factor.usedRecordsCount ?? 1,
   ]);
+}
+
+export function buildEmissionFactorsUsedInventory(
+  conversionFactorsUsed: FormalConversionFactorUsed[],
+  calculationDetails: CalculationAuditDetail[] = [],
+) {
+  const eligibleDetailKeys = new Map<string, number>();
+
+  calculationDetails.forEach((detail) => {
+    if (!isActualEmissionFactorDetail(detail)) return;
+
+    const key = getCalculationDetailFactorKey(detail);
+    if (!key) return;
+    eligibleDetailKeys.set(key, (eligibleDetailKeys.get(key) ?? 0) + 1);
+  });
+
+  const hasScopedCalculationDetails = calculationDetails.length > 0;
+  const inventory = new Map<string, FormalConversionFactorUsed>();
+
+  conversionFactorsUsed.forEach((factor) => {
+    if (!isActualEmissionFactor(factor)) return;
+
+    const key = getConversionFactorUsedKey(factor);
+    if (!key) return;
+    if (hasScopedCalculationDetails && !eligibleDetailKeys.has(key)) return;
+
+    const existing = inventory.get(key);
+    const usedRecordsCount = hasScopedCalculationDetails
+      ? eligibleDetailKeys.get(key)
+      : factor.usedRecordsCount;
+
+    if (existing) {
+      existing.usedRecordsCount =
+        usedRecordsCount ?? (existing.usedRecordsCount ?? 0) + (factor.usedRecordsCount ?? 1);
+      return;
+    }
+
+    inventory.set(key, {
+      ...factor,
+      usedRecordsCount: usedRecordsCount ?? factor.usedRecordsCount,
+    });
+  });
+
+  return Array.from(inventory.values());
+}
+
+function isActualEmissionFactorDetail(detail: CalculationAuditDetail) {
+  if (detail.status !== 'CALCULATED') return false;
+  if (String(detail.calculationStatus ?? '').toUpperCase() === 'TRACKED_ONLY') return false;
+  if (String(detail.scopeOverride ?? detail.scopeClassification ?? '').toUpperCase() === 'TRACKED_METRIC') {
+    return false;
+  }
+  if (firstNonEmpty(detail.factorId, detail.factorVersionId)) return true;
+
+  return Boolean(
+    firstNonEmpty(detail.factorName, detail.factorDisplayName) &&
+      hasFiniteFactorValue(detail.factorValue) &&
+      firstNonEmpty(detail.factorInputUnit, detail.factorResultUnit),
+  );
+}
+
+function isActualEmissionFactor(factor: FormalConversionFactorUsed) {
+  if (firstNonEmpty(factor.factorId, factor.factorVersionId)) return true;
+
+  const factorName = firstNonEmpty(factor.factorName);
+  if (!factorName) return false;
+  if (/^(n\/?a|not applicable|no factor required|tracked metric)/i.test(factorName)) return false;
+
+  return (
+    hasFiniteFactorValue(factor.factorValue) &&
+    Boolean(firstNonEmpty(factor.inputUnit, factor.resultUnit))
+  );
+}
+
+function hasFiniteFactorValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') return false;
+  return Number.isFinite(Number(value));
+}
+
+function getCalculationDetailFactorKey(detail: CalculationAuditDetail) {
+  return (
+    firstNonEmpty(detail.factorVersionId, detail.factorId) ??
+    buildFallbackFactorKey({
+      factorName: firstNonEmpty(detail.factorName, detail.factorDisplayName),
+      factorValue: detail.factorValue,
+      inputUnit: detail.factorInputUnit,
+      resultUnit: detail.factorResultUnit,
+      sourceYear: detail.sourceYear ?? detail.factorYear,
+      sourceAuthority: detail.sourceAuthority ?? detail.factorSource,
+    })
+  );
+}
+
+function getConversionFactorUsedKey(factor: FormalConversionFactorUsed) {
+  return (
+    firstNonEmpty(factor.factorVersionId, factor.factorId) ??
+    buildFallbackFactorKey({
+      factorName: factor.factorName,
+      factorValue: factor.factorValue,
+      inputUnit: factor.inputUnit,
+      resultUnit: factor.resultUnit,
+      sourceYear: factor.sourceYear ?? factor.factorYear,
+      sourceAuthority: factor.sourceAuthority,
+    })
+  );
+}
+
+function buildFallbackFactorKey(input: {
+  factorName?: string | null;
+  factorValue?: string | number | null;
+  inputUnit?: string | null;
+  resultUnit?: string | null;
+  sourceYear?: string | number | null;
+  sourceAuthority?: string | null;
+}) {
+  const factorName = firstNonEmpty(input.factorName);
+  const inputUnit = firstNonEmpty(input.inputUnit);
+  const resultUnit = firstNonEmpty(input.resultUnit);
+
+  if (!factorName || !inputUnit || !resultUnit) return null;
+
+  return [
+    factorName,
+    input.factorValue ?? '',
+    inputUnit,
+    resultUnit,
+    input.sourceYear ?? '',
+    firstNonEmpty(input.sourceAuthority) ?? '',
+  ]
+    .map((part) => String(part).trim().toUpperCase())
+    .join('::');
+}
+
+function firstNonEmpty(...values: Array<string | number | null | undefined>) {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+
+  return null;
 }
 
 export type SourceEvidenceRow = {
@@ -350,6 +501,8 @@ export type SourceEvidenceSummaryRow = {
   sourceType: string;
   importMethod: string;
   sourceReference: string;
+  sourceReferences: string[];
+  recordLevelReferenceCount: number;
   includedRecords: number;
   trackedMetrics: number;
   recordsRequiringReview: number;
@@ -364,10 +517,6 @@ export function buildSourceEvidenceSummaryRows(
     const sourceFile = row.sourceFile || 'Source Review Required';
     const sourceType = row.sourceType || 'Source Review Required';
     const importMethod = row.importMethod || sourceType;
-    const sourceReference =
-      sourceFile && !/^source (file unavailable|review required)$/i.test(sourceFile)
-        ? sourceFile
-        : row.sourceReference || sourceFile;
     const key = [sourceFile, sourceType, importMethod].join('::');
 
     if (!summaryBySource.has(key)) {
@@ -375,7 +524,9 @@ export function buildSourceEvidenceSummaryRows(
         sourceFile,
         sourceType,
         importMethod,
-        sourceReference,
+        sourceReference: 'Not provided',
+        sourceReferences: [],
+        recordLevelReferenceCount: 0,
         includedRecords: 0,
         trackedMetrics: 0,
         recordsRequiringReview: 0,
@@ -383,6 +534,21 @@ export function buildSourceEvidenceSummaryRows(
     }
 
     const summary = summaryBySource.get(key)!;
+    const sourceReference = row.sourceReference.trim();
+    if (
+      sourceReference &&
+      sourceReference !== 'Not provided' &&
+      sourceReference !== sourceFile &&
+      !summary.sourceReferences.includes(sourceReference)
+    ) {
+      summary.sourceReferences.push(sourceReference);
+      summary.recordLevelReferenceCount = summary.sourceReferences.length;
+      summary.sourceReference =
+        summary.recordLevelReferenceCount === 1
+          ? '1 record-level reference'
+          : `${summary.recordLevelReferenceCount} record-level references`;
+    }
+
     if (row.reportTreatment === 'Included') summary.includedRecords += 1;
     else if (row.reportTreatment === 'Tracked Only') summary.trackedMetrics += 1;
     else if (row.reportTreatment === 'Requires Review') summary.recordsRequiringReview += 1;
@@ -438,7 +604,7 @@ export function buildSourceEvidenceRows(
       sourceFile:
         activity.sourceFileName?.trim() ||
         (isManual ? 'Manual Entry' : 'Source file unavailable'),
-      sourceReference: formatReportSourceReference({
+      sourceReference: formatSourceEvidenceReference({
         sourceReference: rawSourceReference || activity.sourceReference,
         sourceType: activity.sourceType,
         sourceFileName: activity.sourceFileName,
@@ -450,6 +616,41 @@ export function buildSourceEvidenceRows(
       notes: buildSourceEvidenceNote({ activity, detail }),
     };
   });
+}
+
+function formatSourceEvidenceReference(input: {
+  sourceReference?: string | null;
+  sourceType?: string | null;
+  sourceFileName?: string | null;
+}) {
+  const formattedReference = formatReportSourceReference(input);
+  const rawReference = String(input.sourceReference ?? '').trim();
+  const sourceFile = String(input.sourceFileName ?? '').trim();
+
+  if (!sourceFile || !rawReference) return formattedReference;
+  if (formattedReference === 'Manual Entry') return formattedReference;
+  if (/^source (file unavailable|review required)$/i.test(formattedReference)) return formattedReference;
+
+  const normalizedRaw = rawReference.toLowerCase();
+  const normalizedFormatted = formattedReference.toLowerCase();
+  const referenceParts = rawReference
+    .split(/\s+·\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !isGenericSourceEvidenceReference(part))
+    .filter((part) => part.toLowerCase() !== normalizedFormatted);
+
+  if (referenceParts.length === 0 || normalizedRaw === normalizedFormatted) {
+    return formattedReference;
+  }
+
+  return `${formattedReference} · ${referenceParts.join(' · ')}`;
+}
+
+function isGenericSourceEvidenceReference(value: string) {
+  return /^(spreadsheet import|uploaded spreadsheet|uploaded csv import|csv import|pdf extraction|ai extraction|ai assisted pdf extraction|document import)$/i.test(
+    value.trim(),
+  );
 }
 
 function formatSourceEvidenceImportMethod(sourceType: string) {
@@ -562,6 +763,10 @@ export function FormalReportPreview({
   const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
   const reviewRecordCount = calculationDetails.filter(isRecordRequiringCorrection).length;
   const trackedMetricCount = calculationDetails.filter(isTrackedMetricDetail).length;
+  const emissionFactorsUsed = buildEmissionFactorsUsedInventory(
+    conversionFactorsUsed,
+    calculationDetails,
+  );
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
@@ -576,9 +781,10 @@ export function FormalReportPreview({
   const dataReadinessSummary = buildDataReadinessSummary(calculationDetails);
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildFormalScopeSummary(calculationDetails);
-  const scopeSummaryLine = `Scope 1: ${formatEmissionsValue(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsValue(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsValue(scopeSummary.SCOPE_3)}`;
+  const scopeSummaryLine = `Scope 1: ${formatEmissionsWithUnit(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsWithUnit(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsWithUnit(scopeSummary.SCOPE_3)}`;
   const inventoryBoundary =
     providedInventoryBoundary ?? buildInventoryBoundary(organizationName, reportPeriod);
+  const inventoryBoundaryStatus = getInventoryBoundaryStatus(inventoryBoundary);
   const inventoryBoundarySummary = summarizeInventoryBoundary(
     inventoryBoundary,
     `${getDateOnlyYear(reportPeriod) ?? 2026} reporting period`,
@@ -659,6 +865,7 @@ export function FormalReportPreview({
         summary={inventoryBoundarySummary}
       >
         <div style={factsGridStyle}>
+          <Fact label="Configured reporting boundary" value={inventoryBoundaryStatus} />
           <Fact label="Organization / Workspace" value={formatBoundaryValue(inventoryBoundary.organizationWorkspace)} />
           {inventoryBoundary.industry ? (
             <Fact label="Industry" value={inventoryBoundary.industry} />
@@ -686,6 +893,11 @@ export function FormalReportPreview({
           <Fact label="Scope 3 coverage note" value={formatBoundaryValue(inventoryBoundary.scope3CoverageNote)} />
           <Fact label="Exclusions / limitations" value={formatBoundaryValue(inventoryBoundary.exclusionsLimitations)} />
           <Fact label="Boundary notes" value={formatBoundaryValue(inventoryBoundary.boundaryNotes)} />
+          <Fact label="CarbonLite calculation coverage" value={CARBONLITE_CALCULATION_COVERAGE_LABEL} />
+          <Fact
+            label="Coverage note"
+            value="This describes the activity categories CarbonLite currently calculates. It does not replace the organization's configured reporting boundary."
+          />
         </div>
       </ReportSection>
 
@@ -751,7 +963,7 @@ export function FormalReportPreview({
         sectionId="calculation-quality"
         expanded={expandedSections['calculation-quality']}
         onToggle={toggleSection}
-        summary={`${reportCountSummary.processedRecords} calculated · ${primarySkippedReasons.trackedOnly} tracked operational metrics · ${executiveSummary.recordsRequiringReview} requiring review`}
+        summary={`${reportCountSummary.processedRecords} calculated · ${formatCount(primarySkippedReasons.trackedOnly, 'tracked operational metric')} · ${executiveSummary.recordsRequiringReview} requiring review`}
       >
         <CalculationQualitySection
           reportCountSummary={reportCountSummary}
@@ -767,7 +979,7 @@ export function FormalReportPreview({
         sectionId="emissions-breakdown"
         expanded={expandedSections['emissions-breakdown']}
         onToggle={toggleSection}
-        summary={`${totalsByMetric.length} metric rows`}
+        summary={formatCount(totalsByMetric.length, 'metric row')}
       >
         <SimpleTable
           headers={['Category', 'Metric Type', 'Unit', 'Total']}
@@ -786,7 +998,7 @@ export function FormalReportPreview({
         sectionId="activity-breakdown"
         expanded={expandedSections['activity-breakdown']}
         onToggle={toggleSection}
-        summary={`${matchedActivityEmissions.length} calculated activity records`}
+        summary={`${formatCount(matchedActivityEmissions.length, 'calculated activity record')}`}
       >
         <ActivityBreakdownSection matchedActivityEmissions={matchedActivityEmissions} />
       </ReportSection>
@@ -796,10 +1008,10 @@ export function FormalReportPreview({
         sectionId="emission-factors"
         expanded={expandedSections['emission-factors']}
         onToggle={toggleSection}
-        summary={`${conversionFactorsUsed.length} factors used`}
+        summary={`${formatCount(emissionFactorsUsed.length, 'factor')} used`}
       >
         <EmissionFactorsUsedSection
-          conversionFactorsUsed={conversionFactorsUsed}
+          conversionFactorsUsed={emissionFactorsUsed}
           formatJurisdiction={formatReportJurisdiction}
         />
       </ReportSection>
@@ -809,7 +1021,7 @@ export function FormalReportPreview({
         sectionId="calculation-traceability"
         expanded={expandedSections['calculation-traceability']}
         onToggle={toggleSection}
-        summary={`${calculationDetails.length} audit records`}
+        summary={formatCount(calculationDetails.length, 'audit record')}
       >
         <CalculationTraceabilitySection
           calculationDetails={calculationDetails}
@@ -823,7 +1035,7 @@ export function FormalReportPreview({
         sectionId="source-evidence"
         expanded={expandedSections['source-evidence']}
         onToggle={toggleSection}
-        summary={`${buildSourceEvidenceSummaryRows(sourceEvidenceRows).length} source files`}
+        summary={formatCount(buildSourceEvidenceSummaryRows(sourceEvidenceRows).length, 'source file')}
       >
         <SourceEvidenceSection sourceEvidenceRows={sourceEvidenceRows} />
       </ReportSection>
@@ -833,7 +1045,7 @@ export function FormalReportPreview({
         sectionId="records-review"
         expanded={expandedSections['records-review']}
         onToggle={toggleSection}
-        summary={`${reviewRecordCount} records require review${trackedMetricCount ? ` · ${trackedMetricCount} tracked metrics` : ''}`}
+        summary={`${formatCount(reviewRecordCount, 'record')} ${reviewRecordCount === 1 ? 'requires' : 'require'} review${trackedMetricCount ? ` · ${formatCount(trackedMetricCount, 'tracked metric')}` : ''}`}
       >
         <RecordsRequiringReviewSection
           calculationDetails={calculationDetails}

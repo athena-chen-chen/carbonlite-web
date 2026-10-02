@@ -3,7 +3,7 @@ import {
   formatHotspotExclusionNote,
   type HotspotAnalysis,
 } from '../../MetricsSummarySection';
-import { formatDisplayNumber, formatEmissionsValue } from '../../../utils/numberFormatting';
+import { formatDisplayNumber, formatEmissionsWithUnit } from '../../../utils/numberFormatting';
 
 type EmissionsHotspotsSectionProps = {
   analysis: HotspotAnalysis;
@@ -53,7 +53,7 @@ export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionP
         rows={analysis.categoryHotspots.map((row) => [
           row.rank,
           row.displayName,
-          `${formatEmissionsValue(row.emissions)} kgCO2e`,
+          formatEmissionsWithUnit(row.emissions),
           `${formatDisplayNumber(row.percentageOfTotal)}%`,
           row.calculatedRecordCount,
           formatHotspotLevel(row.hotspotLevel),

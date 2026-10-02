@@ -169,6 +169,7 @@ describe('ReportingPage audit trail', () => {
       includedEmissionsRecords: 9,
       trackedOnlyRecords: 1,
       rowsNotImported: 0,
+      totalRowsConsidered: 10,
     },
   };
 
@@ -265,7 +266,7 @@ describe('ReportingPage audit trail', () => {
     const auditToggle = screen.getByRole('button', { name: /Audit Trail/i });
     expect(auditToggle).toHaveAttribute('aria-expanded', 'false');
     expect(auditToggle).toHaveTextContent('Expand');
-    expect(screen.queryByText(/Records imported from Golden Test Data/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Records processed from Golden Test Data/i)).not.toBeInTheDocument();
 
     expect(trackActivityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventName: 'REPORT_VIEWED' }),
@@ -279,7 +280,353 @@ describe('ReportingPage audit trail', () => {
     expect(auditToggle).toHaveAttribute('aria-expanded', 'true');
     expect(auditToggle).toHaveTextContent('Collapse');
     expect(await screen.findByText('Records imported')).toBeInTheDocument();
-    expect(screen.getByText(/Records imported from Golden Test Data/i)).toBeInTheDocument();
+    expect(screen.getByText(/Records processed from Golden Test Data/i)).toBeInTheDocument();
+    expect(screen.getByText(/10 rows processed in total/i)).toBeInTheDocument();
+  });
+
+  it('shows reconciled import audit categories for previously imported skipped rows', async () => {
+    vi.mocked(getActivityEvents).mockResolvedValueOnce({
+      items: [
+        {
+          ...workflowEvent,
+          metadata: {
+            sourceFileName: 'carbonlite_needs_review_test.xlsx',
+            totalRowsConsidered: 9,
+            includedEmissionsCreated: 1,
+            trackedMetricsCreated: 1,
+            alreadyImportedSkipped: 1,
+            needsReviewSkipped: 6,
+            duplicateSkipped: 0,
+            otherSkipped: 0,
+            rowsNotImported: 7,
+          },
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: /Audit Trail/i }));
+
+    expect(
+      screen.getByText(
+        /Records processed from carbonlite_needs_review_test\.xlsx: 1 emissions record imported, 1 tracked metric imported, 1 previously imported record skipped, 6 records still require review\. 9 rows processed in total\./i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows optional cost completeness numerator and denominator in Data Quality Notes', async () => {
+    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+      summary: {},
+      activities: [],
+      usageTotals: {
+        fuel: 0,
+        electricity: 0,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      totalRecordsFound: 3,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 2,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 519.4,
+          status: 'CALCULATED',
+          sourceType: 'IMPORT',
+          sourceReference: 'MARCH-ELEC-001',
+          costCad: 214.55,
+        },
+        {
+          activityDataId: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          factorSource: 'Tracked metric',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: null,
+          status: 'TRACKED_ONLY',
+          sourceType: 'IMPORT',
+          sourceReference: 'MARCH-WATER-007',
+          costCad: 64,
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 60,
+          status: 'CALCULATED',
+          sourceType: 'IMPORT',
+          sourceReference: 'MARCH-HOTEL-010',
+          costCad: 720,
+        },
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 3,
+      recordsInScope: 3,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    const section = await screen.findByRole('region', { name: /Data Quality Notes/i });
+    expect(section).toHaveTextContent('Optional Data Completeness');
+    expect(section).toHaveTextContent('100%');
+    expect(section).toHaveTextContent('3 of 3 imported records include optional cost data');
+
+    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    const dataQualityNotesCall = vi.mocked(autoTable).mock.calls.find(([, options]) =>
+      JSON.stringify((options as { body?: unknown[][] }).body).includes('Optional Data Completeness'),
+    );
+    const dataQualityNotesBody = JSON.stringify(
+      (dataQualityNotesCall?.[1] as { body?: unknown[][] } | undefined)?.body,
+    );
+    expect(dataQualityNotesBody).toContain(
+      '100% · 3 of 3 imported records include optional cost data',
+    );
+  });
+
+  it('shows unresolved source spreadsheet review rows separately from imported report records and PDF totals', async () => {
+    const sourceReviewRows = [
+      {
+        id: 'review-march-elec-001',
+        sourceDocumentId: 'doc-march',
+        rowId: 'march-elec-001',
+        status: 'READY',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-03-01',
+        quantity: 980,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceSheetName: 'March',
+        sourceRow: 2,
+        sourceReference: 'MARCH-ELEC-001',
+        issues: [],
+      },
+      {
+        id: 'review-march-hotel-010',
+        sourceDocumentId: 'doc-march',
+        rowId: 'march-hotel-010',
+        status: 'READY',
+        activityType: 'HOTEL',
+        recordDate: '2026-03-10',
+        quantity: 4,
+        unit: 'nights',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Ontario',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceSheetName: 'March',
+        sourceRow: 11,
+        sourceReference: 'MARCH-HOTEL-010',
+        issues: [],
+      },
+      {
+        id: 'review-march-water-007',
+        sourceDocumentId: 'doc-march',
+        rowId: 'march-water-007',
+        status: 'TRACKED_ONLY',
+        activityType: 'WATER',
+        recordDate: '2026-03-07',
+        quantity: 18,
+        unit: 'm3',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceSheetName: 'March',
+        sourceRow: 8,
+        sourceReference: 'MARCH-WATER-007',
+        issues: [],
+      },
+      ...[
+        ['MARCH-ELEC-002', 'ELECTRICITY', 'MISSING_PROVINCE', 'Province is required for electricity rows.', 3, 760, 'kWh'],
+        ['MARCH-GAS-003', 'NATURAL_GAS', 'MISSING_UNIT', 'Unit is required.', 4, 100, ''],
+        ['MARCH-FUEL-004', 'GASOLINE', 'INVALID_QUANTITY', 'Quantity must be a number greater than 0.', 5, null, 'L'],
+        ['MARCH-OTHER-005', '', 'MISSING_ACTIVITY_TYPE', 'Activity type is required.', 6, 1, 'each'],
+        ['MARCH-DIESEL-006', 'DIESEL', 'UNIT_MISMATCH', 'Diesel requires liters.', 7, 240, 'kg'],
+        ['MARCH-AIR-008', 'AIR_TRAVEL', 'MISSING_QUANTITY', 'Quantity is required.', 9, null, 'km'],
+      ].map(([sourceReference, activityType, code, message, sourceRow, quantity, unit]) => ({
+        id: `review-${sourceReference}`,
+        sourceDocumentId: 'doc-march',
+        rowId: String(sourceReference).toLowerCase(),
+        status: 'NEEDS_REVIEW' as const,
+        activityType: String(activityType),
+        recordDate: '2026-03-01',
+        quantity: quantity as number | null,
+        unit: String(unit),
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: code === 'MISSING_PROVINCE' ? null : 'Alberta',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceSheetName: 'March',
+        sourceRow: sourceRow as number,
+        sourceReference: String(sourceReference),
+        issues: [
+          {
+            code: String(code),
+            field: 'source',
+            message: String(message),
+          },
+        ],
+        calculationStatus: String(code),
+        reportTreatment: 'EXCLUDED',
+      })),
+    ];
+
+    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+      summary: {},
+      activities: [],
+      usageTotals: {
+        fuel: 0,
+        electricity: 0,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      totalRecordsFound: 3,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 2,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-march-elec-001',
+          sourceDocumentId: 'doc-march',
+          activityType: 'ELECTRICITY',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 519.4,
+          sourceReference: 'MARCH-ELEC-001',
+        },
+        {
+          activityDataId: 'activity-march-water-007',
+          sourceDocumentId: 'doc-march',
+          activityType: 'WATER',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          status: 'TRACKED_ONLY',
+          calculatedEmissionsKgCO2e: null,
+          sourceReference: 'MARCH-WATER-007',
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          sourceDocumentId: 'doc-march',
+          activityType: 'HOTEL',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 60,
+          sourceReference: 'MARCH-HOTEL-010',
+        },
+      ],
+      sourceReviewRows,
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 3,
+      recordsInScope: 3,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    const dataQualitySection = screen.getByRole('region', { name: /Data Quality Notes/i });
+    expect(dataQualitySection).toHaveTextContent('Imported Records Requiring Review');
+    expect(dataQualitySection).toHaveTextContent('Source Rows Still Requiring Review');
+    expect(dataQualitySection).toHaveTextContent('6');
+
+    const sourceReviewSection = screen.getByRole('region', { name: /Source Dataset Review Status/i });
+    expect(sourceReviewSection).toHaveTextContent('3 of 9 source rows resolved/imported · 6 require review');
+    expect(sourceReviewSection).toHaveTextContent('Reviewable Source Rows');
+    expect(sourceReviewSection).toHaveTextContent('Rows Resolved / Imported');
+    expect(sourceReviewSection).toHaveTextContent('3 of 9');
+    expect(sourceReviewSection).toHaveTextContent('MARCH-ELEC-002');
+    expect(sourceReviewSection).toHaveTextContent('MARCH-AIR-008');
+    expect(sourceReviewSection).toHaveTextContent('Quantity is required.');
+
+    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    const pdfBodies = vi.mocked(autoTable).mock.calls.map(([, options]) =>
+      JSON.stringify((options as { body?: unknown[][] } | undefined)?.body ?? []),
+    );
+    expect(pdfBodies.some((body) => body.includes('Source Rows Still Requiring Review') && body.includes('6'))).toBe(true);
+    const sourceRowsPdfBody = pdfBodies.find((body) => body.includes('MARCH-ELEC-002')) ?? '';
+    expect(sourceRowsPdfBody).toContain('MARCH-GAS-003');
+    expect(sourceRowsPdfBody).toContain('MARCH-FUEL-004');
+    expect(sourceRowsPdfBody).toContain('MARCH-OTHER-005');
+    expect(sourceRowsPdfBody).toContain('MARCH-DIESEL-006');
+    expect(sourceRowsPdfBody).toContain('MARCH-AIR-008');
   });
 
   it('shows one global expand/collapse control pair that controls report sections', async () => {
@@ -363,7 +710,9 @@ describe('ReportingPage audit trail', () => {
     await userEvent.click(boundaryToggle);
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
     expect(boundaryToggle).toHaveTextContent('Collapse');
-    expect(boundarySection).toHaveTextContent('Pilot review account · Sample boundary information · Read-only');
+    expect(boundarySection).toHaveTextContent(
+      'This reporting boundary is read-only for your account.',
+    );
     expect(within(boundarySection).queryByRole('button', { name: /Edit in Organization & Boundary/i })).not.toBeInTheDocument();
     expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
@@ -411,7 +760,7 @@ describe('ReportingPage audit trail', () => {
     window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
     expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save Report Scope/i })).not.toBeInTheDocument();
-    expect(screen.getAllByText(/37,285 kgCO2e|37,285 kg CO2e/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/37,285 kg CO₂e/i).length).toBeGreaterThan(0);
   });
 
   it('shows Regulatory Reporting Reference for regular customer users', async () => {
@@ -488,7 +837,7 @@ describe('ReportingPage audit trail', () => {
     expect(regulatoryPdfCall).toBeDefined();
     const regulatoryBody = (regulatoryPdfCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [];
     expect(String(regulatoryBody.flat().join('\n'))).toContain('Federal GHGRP Single Window reporting');
-    expect(String(regulatoryBody.flat().join('\n'))).toContain('Alberta TIER compliance reporting');
+    expect(String(regulatoryBody.flat().join('\n'))).not.toContain('Alberta TIER compliance reporting');
   });
 
   it('opens Export Review Package menu and downloads calculation traceability CSV', async () => {
@@ -598,12 +947,16 @@ describe('ReportingPage audit trail', () => {
     expect(
       within(boundarySection).getByText('Saved Calgary and Ontario reporting boundary'),
     ).toBeInTheDocument();
+    expect(within(boundarySection).getByText('Boundary status')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('Complete')).toBeInTheDocument();
     expect(
       within(boundarySection).getByText('Supplier locations outside the pilot boundary'),
     ).toBeInTheDocument();
     expect(
       within(boundarySection).getByText('Scope 3 includes selected business travel records only.'),
     ).toBeInTheDocument();
+    expect(within(boundarySection).getByText('CarbonLite calculation coverage')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('Scope 1, Scope 2, selected Scope 3')).toBeInTheDocument();
     expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
@@ -620,7 +973,7 @@ describe('ReportingPage audit trail', () => {
     expect(await screen.findByText('Current path: /organization-profile')).toBeInTheDocument();
   });
 
-  it('shows Not specified instead of sample boundary wording for empty customer boundary fields', async () => {
+  it('shows incomplete configured boundary while keeping pilot calculation coverage independent of imported scopes', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -665,11 +1018,28 @@ describe('ReportingPage audit trail', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
+    expect(boundarySection).toHaveTextContent(
+      '2026 reporting period · Boundary not fully specified',
+    );
+    expect(boundarySection).not.toHaveTextContent(
+      '2026 reporting period · Scope 1, Scope 2, selected Scope 3',
+    );
     await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' }));
 
+    expect(boundarySection).toHaveTextContent('Configured reporting boundary');
+    expect(boundarySection).toHaveTextContent('Boundary status');
+    expect(boundarySection).toHaveTextContent('Not fully specified');
+    expect(boundarySection).toHaveTextContent(
+      'Reporting boundary information is incomplete. Calculation results may still be reviewed, but boundary assumptions should be confirmed before formal reporting.',
+    );
     expect(boundarySection).not.toHaveTextContent(/Sample Canadian operations/i);
     expect(boundarySection).not.toHaveTextContent(/Sample facilities/i);
     expect(within(boundarySection).getAllByText('Not specified').length).toBeGreaterThanOrEqual(5);
+    expect(boundarySection).toHaveTextContent('CarbonLite calculation coverage');
+    expect(boundarySection).toHaveTextContent('Scope 1, Scope 2, selected Scope 3');
+    expect(boundarySection).toHaveTextContent(
+      "This describes the activity categories CarbonLite currently calculates. It does not replace the organization's configured reporting boundary.",
+    );
     expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
   });
 
@@ -700,7 +1070,21 @@ describe('ReportingPage audit trail', () => {
       missingFactorRecords: 1,
       matchedFactorsCount: 3,
       missingFactors: [],
-      matchedActivityEmissions: [],
+      matchedActivityEmissions: [
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          quantity: 4,
+          unit: 'nights',
+          estimatedEmissionsKgCO2e: 575,
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          factorId: 'hotel-canada-generic',
+        },
+      ],
       conversionFactorsUsed: [],
       calculationDetails: [
         {
@@ -709,7 +1093,10 @@ describe('ReportingPage audit trail', () => {
           recordDate: '2026-01-01',
           dateEstimated: false,
           reportingYear: 2026,
-          jurisdiction: 'Canada',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
           facilityName: 'Calgary Shop',
           activityQuantity: 1000,
           activityUnit: 'm3',
@@ -725,7 +1112,10 @@ describe('ReportingPage audit trail', () => {
           recordDate: '2026-01-01',
           dateEstimated: false,
           reportingYear: 2026,
-          jurisdiction: 'Canada',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
           facilityName: 'Calgary Shop',
           activityQuantity: 12500,
           activityUnit: 'kWh',
@@ -741,7 +1131,10 @@ describe('ReportingPage audit trail', () => {
           recordDate: '2026-01-01',
           dateEstimated: false,
           reportingYear: 2026,
-          jurisdiction: 'Canada',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
           facilityName: 'Calgary Shop',
           activityQuantity: 10,
           activityUnit: 'nights',
@@ -752,19 +1145,25 @@ describe('ReportingPage audit trail', () => {
           sourceType: 'SPREADSHEET',
         },
         {
-          activityDataId: 'air-unassigned',
-          activityType: 'AIR_TRAVEL',
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
           recordDate: '2026-01-01',
           dateEstimated: false,
           reportingYear: 2026,
-          jurisdiction: 'Canada',
-          activityQuantity: 5000,
-          activityUnit: 'km',
-          factorSource: 'System factor',
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          jurisdictionSource: 'record',
+          facilityName: 'Toronto Client Visit',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          factorSource: 'Canada (Generic) hotel factor',
+          factorJurisdictionRegion: 'Canada (Generic)',
           factorVerified: true,
           calculatedEmissionsKgCO2e: 575,
           status: 'CALCULATED',
           sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
         },
         {
           activityDataId: 'water-calgary',
@@ -772,7 +1171,10 @@ describe('ReportingPage audit trail', () => {
           recordDate: '2026-01-01',
           dateEstimated: false,
           reportingYear: 2026,
-          jurisdiction: 'Canada',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
           facilityName: 'Calgary Shop',
           activityQuantity: 100,
           activityUnit: 'm3',
@@ -788,7 +1190,10 @@ describe('ReportingPage audit trail', () => {
           recordDate: '2026-01-01',
           dateEstimated: false,
           reportingYear: 2026,
-          jurisdiction: 'Canada',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
           facilityName: 'Calgary Shop',
           activityQuantity: 100,
           activityUnit: 'kWh',
@@ -813,7 +1218,7 @@ describe('ReportingPage audit trail', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     const siteSection = screen.getByRole('region', { name: 'Emissions by Site / Facility' });
-    expect(siteSection).toHaveTextContent('Organization total: 9,240 kgCO2e');
+    expect(siteSection).toHaveTextContent('Organization total: 9,240 kg CO₂e');
     expect(siteSection).toHaveTextContent('2 site/facility groups');
 
     await userEvent.click(
@@ -821,20 +1226,20 @@ describe('ReportingPage audit trail', () => {
     );
 
     expect(within(siteSection).getByText('Calgary Shop')).toBeInTheDocument();
-    expect(within(siteSection).getByText('Unassigned')).toBeInTheDocument();
-    expect(within(siteSection).getByText('1,890 kgCO2e')).toBeInTheDocument();
-    expect(within(siteSection).getByText('6,625 kgCO2e')).toBeInTheDocument();
-    expect(within(siteSection).getByText('8,665 kgCO2e')).toBeInTheDocument();
-    expect(within(siteSection).getAllByText('575 kgCO2e').length).toBeGreaterThan(0);
-    expect(siteSection).toHaveTextContent('Electricity: 6,625 kgCO2e');
-    expect(siteSection).toHaveTextContent('Natural Gas: 1,890 kgCO2e');
-    expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 150 kgCO2e');
+    expect(within(siteSection).getByText('Toronto Client Visit')).toBeInTheDocument();
+    expect(within(siteSection).getByText('1,890 kg CO₂e')).toBeInTheDocument();
+    expect(within(siteSection).getByText('6,625 kg CO₂e')).toBeInTheDocument();
+    expect(within(siteSection).getByText('8,665 kg CO₂e')).toBeInTheDocument();
+    expect(within(siteSection).getAllByText('575 kg CO₂e').length).toBeGreaterThan(0);
+    expect(siteSection).toHaveTextContent('Electricity: 6,625 kg CO₂e');
+    expect(siteSection).toHaveTextContent('Natural Gas: 1,890 kg CO₂e');
+    expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 575 kg CO₂e');
 
     const thresholdSection = screen.getByRole('region', {
       name: 'Facility-Level Reporting Threshold Reference',
     });
-    expect(thresholdSection).toHaveTextContent('10,000 tCO2e/year screening reference');
-    expect(thresholdSection).toHaveTextContent('100,000 tCO2e/year Alberta TIER large-emitter screening reference');
+    expect(thresholdSection).toHaveTextContent('10,000 t CO₂e/year Canada / federal context');
+    expect(thresholdSection).toHaveTextContent('Alberta rows only use 100,000 t CO₂e/year Alberta TIER reference');
 
     await userEvent.click(
       within(thresholdSection).getByRole('button', {
@@ -846,25 +1251,72 @@ describe('ReportingPage audit trail', () => {
       'Threshold screening only. This does not constitute regulatory compliance advice.',
     );
     expect(within(thresholdSection).getByText('Calgary Shop')).toBeInTheDocument();
-    expect(within(thresholdSection).getByText('8,665 kgCO2e (8.7 tCO2e)')).toBeInTheDocument();
-    expect(thresholdSection).toHaveTextContent('0.09%');
-    expect(thresholdSection).toHaveTextContent('Below threshold reference');
+    expect(within(thresholdSection).getByText('8,665 kg CO₂e (8.7 t CO₂e)')).toBeInTheDocument();
+    expect(thresholdSection).toHaveTextContent('Alberta, Canada');
+    expect(thresholdSection).toHaveTextContent('Alberta TIER pilot screening reference');
+    expect(thresholdSection).toHaveTextContent('Below threshold / informational only');
+    const torontoThresholdRow = within(thresholdSection)
+      .getByText('Toronto Client Visit')
+      .closest('tr');
+    expect(torontoThresholdRow).toBeTruthy();
+    expect(torontoThresholdRow).toHaveTextContent('Ontario, Canada');
+    expect(torontoThresholdRow).toHaveTextContent('Not configured');
+    expect(torontoThresholdRow).toHaveTextContent('—');
+    expect(torontoThresholdRow).toHaveTextContent('Not evaluated');
+    expect(torontoThresholdRow).toHaveTextContent(
+      'Jurisdiction-specific threshold screening is not currently configured for Ontario.',
+    );
+    expect(torontoThresholdRow).not.toHaveTextContent('Jurisdiction required');
+    expect(torontoThresholdRow).not.toHaveTextContent('Alberta TIER');
+    expect(torontoThresholdRow).not.toHaveTextContent('100,000');
     expect(thresholdSection).not.toHaveTextContent(/\bcompliant\b|\bnon-compliant\b/i);
 
     await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
     const sitePdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return body.some((row) => row.includes('Calgary Shop') && row.includes('8,665 kgCO2e'));
+      return body.some((row) => row.includes('Calgary Shop') && row.includes('8,665 kg CO2e'));
     });
 
     expect(sitePdfCall).toBeDefined();
+    const pdfText = JSON.stringify(
+      vi.mocked(autoTable).mock.calls.map(([, options]) => (options as { body?: unknown[][] }).body ?? []),
+    );
+    expect(pdfText).toContain('8,665 kg CO2e');
+    expect(pdfText).toContain('100,000 t CO2e/year');
+    expect(pdfText).not.toContain('CO ‚e');
+    expect(pdfText).not.toContain('CO,e');
+    expect(pdfText).not.toContain('�');
 
     const thresholdPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return body.some((row) => row.includes('Calgary Shop') && row.includes('Below threshold reference'));
+      return body.some((row) => row.includes('Calgary Shop') && row.includes('Alberta TIER pilot screening reference'));
     });
 
     expect(thresholdPdfCall).toBeDefined();
+    const thresholdPdfBody = (thresholdPdfCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [];
+    const torontoPdfRow = thresholdPdfBody.find((row) => row.includes('Toronto Client Visit')) ?? [];
+    expect(String(torontoPdfRow.join('\n'))).toContain('Ontario, Canada');
+    expect(String(torontoPdfRow.join('\n'))).toContain('Not configured');
+    expect(String(torontoPdfRow.join('\n'))).toContain('—');
+    expect(String(torontoPdfRow.join('\n'))).toContain('Not evaluated');
+    expect(String(torontoPdfRow.join('\n'))).toContain(
+      'Jurisdiction-specific threshold screening is not currently configured for Ontario.',
+    );
+    expect(String(torontoPdfRow.join('\n'))).not.toContain('Jurisdiction required');
+    expect(String(torontoPdfRow.join('\n'))).not.toContain('Alberta TIER');
+    expect(String(torontoPdfRow.join('\n'))).not.toContain('100,000');
+
+    const activityPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) =>
+      JSON.stringify((options as { head?: unknown[][] } | undefined)?.head ?? []).includes(
+        'Activity Jurisdiction',
+      ),
+    );
+    expect(activityPdfCall).toBeDefined();
+    const activityPdfBody = JSON.stringify(
+      (activityPdfCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [],
+    );
+    expect(activityPdfBody).toContain('Ontario, Canada');
+    expect(activityPdfBody).toContain('MARCH-HOTEL-010');
   });
 
   it('keeps Calculation Traceability PDF rows together and repeats headers across pages', async () => {
@@ -902,7 +1354,7 @@ describe('ReportingPage audit trail', () => {
     const dataQualityNotesCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return headers.includes('Readiness Signal') && body.some((row) => row[0] === 'Import Readiness');
+      return headers.includes('Readiness Signal') && body.some((row) => row[0] === 'Emissions Workflow Readiness');
     });
     const carbonCreditReadinessCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
@@ -913,6 +1365,12 @@ describe('ReportingPage audit trail', () => {
       rowPageBreak: 'avoid',
       showHead: 'everyPage',
     });
+    const traceabilityBody = JSON.stringify(
+      (traceabilityCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [],
+    );
+    expect(traceabilityBody).not.toContain('CO₂e');
+    expect(traceabilityBody).not.toContain('CO ‚e');
+    expect(traceabilityBody).not.toContain('CO,e');
     expect(sourceEvidenceCall?.[1]).toMatchObject({
       rowPageBreak: 'avoid',
       showHead: 'everyPage',
@@ -931,7 +1389,7 @@ describe('ReportingPage audit trail', () => {
       'Source File',
       'Source Type',
       'Import Method',
-      'Source Reference',
+      'Record-Level References',
       'Included GHG Records',
       'Tracked Metrics',
       'Review Records',
@@ -953,9 +1411,10 @@ describe('ReportingPage audit trail', () => {
       (dataQualityNotesCall?.[1] as { body?: unknown[][] } | undefined)?.body,
     );
     expect(dataQualityNotesBody).toContain('Calculation Coverage Meaning');
-    expect(dataQualityNotesBody).toContain('matched to an emissions factor and included in the calculated GHG total');
-    expect(dataQualityNotesBody).toContain('Import Readiness Meaning');
-    expect(dataQualityNotesBody).toContain('complete enough to proceed without manual review');
+    expect(dataQualityNotesBody).toContain('eligible emission-bearing records were calculated as GHG emissions records');
+    expect(dataQualityNotesBody).toContain('Emissions Workflow Readiness Meaning');
+    expect(dataQualityNotesBody).toContain('complete enough to calculate, trace, and report without manual correction');
+    expect(dataQualityNotesBody).toContain('Optional Data Completeness');
     expect(dataQualityNotesBody).toContain('Coverage vs Readiness');
     expect(dataQualityNotesBody).toContain('may differ');
     expect(dataQualityNotesCall?.[1]).toMatchObject({

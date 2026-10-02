@@ -14,8 +14,14 @@ import {
   getDocumentExtraction,
   type ParsedActivity,
 } from '../services/documentExtraction';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { calculateMetrics } from '../services/metrics';
+import {
+  createActivityData,
+  getAllActivityData,
+  type ActivityDataInput,
+  type ActivityDataItem,
+} from '../services/activityData';
 import {
   getAllConversionFactors,
   type ConversionFactorItem,
@@ -47,7 +53,6 @@ import {
   canImportDraftRows,
   canSetProvinceForActivityRecords,
   canUploadFiles,
-  canDeleteActivityRecords,
   isPilotReviewer,
 } from '../utils/permissions';
 import {
@@ -72,6 +77,12 @@ import {
   normalizeProvince,
 } from '../utils/province';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import { getActivitySourceType } from '../utils/activitySourceType';
+import {
+  CALCULATION_REVIEW_ROUTE,
+  DATA_RECORDS_ROUTE,
+  REPORTS_ROUTE,
+} from '../constants/routes';
 
 
 type DocumentItem = {
@@ -96,9 +107,11 @@ type EditableConfidenceField<T> = {
 };
 
 type EditableParsedActivity = {
+  rowId?: string | null;
   selected: boolean;
   documentId: string;
   documentFileName: string;
+  status?: string | null;
   dateEstimated: boolean;
   periodEndDate?: string | null;
   activityType: EditableConfidenceField<string>;
@@ -117,6 +130,11 @@ type EditableParsedActivity = {
   scope?: string | null;
   calculationStatus?: string | null;
   calculationMessage?: string | null;
+  matchedFactorId?: string | null;
+  matchedFactorName?: string | null;
+  matchedFactorSourceYear?: number | null;
+  matchedFactorValue?: number | null;
+  calculatedEmissionsKgCO2e?: number | null;
   notes: EditableConfidenceField<string>;
 };
 
@@ -139,11 +157,59 @@ type ImportValidationIssue = {
   message: string;
 };
 
+function getParsedActivityRowKey(item: EditableParsedActivity, index: number) {
+  const identityParts = [
+    item.documentId,
+    item.sourceRow,
+    item.sourceReference.value,
+    item.recordDate.value,
+    item.activityType.value,
+    item.quantity.value,
+    item.unit.value,
+  ]
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean);
+
+  return identityParts.length > 0 ? `parsed-${identityParts.join('::')}` : `parsed-${index}`;
+}
+
+export function buildDocumentImportRecordKey(input: {
+  sourceDocumentId?: unknown;
+  documentId?: unknown;
+  sourceRow?: unknown;
+  sourceReference?: unknown;
+  activityType?: unknown;
+  recordDate?: unknown;
+  quantity?: unknown;
+  unit?: unknown;
+}) {
+  const sourceDocumentId = String(input.sourceDocumentId ?? input.documentId ?? '').trim();
+  if (!sourceDocumentId) return '';
+
+  const sourceRow = String(input.sourceRow ?? '').trim();
+  if (sourceRow) return `${sourceDocumentId}::row:${sourceRow}`;
+
+  return [
+    sourceDocumentId,
+    String(input.sourceReference ?? '').trim(),
+    String(input.activityType ?? '').trim().toUpperCase(),
+    String(input.recordDate ?? '').trim(),
+    String(input.quantity ?? '').trim(),
+    String(input.unit ?? '').trim().toUpperCase(),
+  ].join('::');
+}
+
 type RawExtractionField = string | number | null | undefined | Record<string, any>;
 type InputMethod = 'documents' | 'spreadsheet' | 'manual';
 type UploadRouteState = {
   focusInputMethod?: InputMethod;
   loadSampleWorkspace?: boolean;
+  flashMessage?: string;
+};
+
+type ImportReviewRouteState = {
+  selectedDocumentIds?: string[];
+  reportScope?: 'selectedDocuments';
 };
 
 const INPUT_TEMPLATE_HEADERS = [
@@ -192,7 +258,26 @@ const SOURCE_REFERENCE_ALIASES = [
 ] as const;
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const DOCUMENT_UPLOAD_ACCEPT =
+  '.pdf,.jpg,.jpeg,.png,.heic,application/pdf,image/jpeg,image/png,image/heic';
+const SPREADSHEET_UPLOAD_ACCEPT =
+  '.csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+const DOCUMENT_UPLOAD_FORMAT_LABEL = 'PDF, JPG, PNG, or HEIC';
+const DOCUMENT_UPLOAD_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'heic'] as const;
+const SPREADSHEET_UPLOAD_EXTENSIONS = ['csv', 'xlsx', 'xls'] as const;
+const UPLOAD_DOCUMENT_TYPE_OPTIONS = [
+  { value: 'UTILITY_BILL', label: 'Utility Bill' },
+  { value: 'FUEL_INVOICE', label: 'Fuel Invoice' },
+  { value: 'WATER_BILL', label: 'Water Bill' },
+  { value: 'TRAVEL_DOCUMENT', label: 'Travel Document' },
+  { value: 'HOTEL_INVOICE', label: 'Hotel Invoice' },
+  { value: 'PDF', label: 'PDF Document' },
+  { value: 'IMAGE', label: 'Image Document' },
+  { value: 'OTHER', label: 'Other Document' },
+] as const;
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
+const ACTIVITY_DATA_SAVED_SUCCESS_MESSAGE =
+  'Activity data saved. Review saved records in Data Records, Calculation Review, or Reports.';
 export const FILE_MISSING_EXPLANATION =
   'This file is no longer available on the server. This may happen after system updates or temporary storage cleanup. Please upload the file again if you need to extract or review it.';
 export const FILE_MISSING_TOOLTIP =
@@ -236,6 +321,7 @@ type DocumentActionConfig = {
   disabled?: boolean;
   title?: string;
   danger?: boolean;
+  separatorBefore?: boolean;
 };
 
 type DocumentActionModel = {
@@ -262,10 +348,11 @@ function normalizeClassificationSignal(value: unknown) {
 
 function hasTrackedMetricSignal(row: Pick<
   EditableParsedActivity,
-  'activityType' | 'matchingStatus' | 'reportTreatment' | 'scope' | 'calculationStatus' | 'calculationMessage'
+  'activityType' | 'status' | 'matchingStatus' | 'reportTreatment' | 'scope' | 'calculationStatus' | 'calculationMessage'
 >) {
   const activityType = normalizeCanonicalActivityType(row.activityType.value);
   const signals = [
+    row.status,
     row.matchingStatus,
     row.reportTreatment,
     row.scope,
@@ -283,18 +370,132 @@ function hasTrackedMetricSignal(row: Pick<
   );
 }
 
+function getExplicitReviewStatus(row: Pick<EditableParsedActivity, 'status'>) {
+  return normalizeClassificationSignal(row.status);
+}
+
+function hasReviewBlockingCalculationSignal(row: Pick<
+  EditableParsedActivity,
+  'status' | 'matchingStatus' | 'reportTreatment' | 'calculationStatus' | 'calculationMessage'
+>) {
+  if (isCanonicalReadyReviewRow(row)) return false;
+
+  const signals = [
+    row.status,
+    row.matchingStatus,
+    row.reportTreatment,
+    row.calculationStatus,
+  ].map(normalizeClassificationSignal);
+  const message = String(row.calculationMessage ?? '').toLowerCase();
+
+  return (
+    signals.some((signal) =>
+      [
+        'UNIT_MISMATCH',
+        'INVALID_UNIT',
+        'MISSING_FACTOR',
+        'MISSING_PROVINCE',
+        'MISSING_JURISDICTION',
+        'REQUIRES_REVIEW',
+        'NEEDS_REVIEW',
+        'EXCLUDED',
+      ].includes(signal),
+    ) ||
+    message.includes('unit mismatch') ||
+    message.includes('missing factor') ||
+    message.includes('requires review') ||
+    message.includes('excluded from emissions totals')
+  );
+}
+
+function isCanonicalReadyReviewRow(row: Pick<
+  EditableParsedActivity,
+  'status' | 'matchingStatus' | 'reportTreatment' | 'calculationStatus'
+>) {
+  const status = getExplicitReviewStatus(row);
+  if (status) return status === 'READY';
+
+  return (
+    normalizeClassificationSignal(row.matchingStatus) === 'MATCHED' &&
+    normalizeClassificationSignal(row.calculationStatus) === 'CALCULATED' &&
+    normalizeClassificationSignal(row.reportTreatment) === 'INCLUDED'
+  );
+}
+
 export function classifyDraftRow(
   row: EditableParsedActivity,
   issues: ImportValidationIssue[] = getImportValidationIssues([row]),
 ): DraftRowClassification {
   if (issues.length > 0) return 'REQUIRES_REVIEW';
+  const explicitStatus = getExplicitReviewStatus(row);
+  if (explicitStatus === 'READY') return 'READY';
+  if (explicitStatus === 'TRACKED_ONLY') return 'TRACKED_METRIC';
+  if (explicitStatus === 'NEEDS_REVIEW') return 'REQUIRES_REVIEW';
   if (hasTrackedMetricSignal(row)) return 'TRACKED_METRIC';
+  if (hasReviewBlockingCalculationSignal(row)) return 'REQUIRES_REVIEW';
   if (normalizeCanonicalActivityType(row.activityType.value)) return 'READY';
   return 'NOT_IMPORTABLE';
 }
 
 function isImportableDraftRowClassification(classification: DraftRowClassification) {
   return classification === 'READY' || classification === 'TRACKED_METRIC';
+}
+
+function hasBlockingImportStatus(activity: Partial<ActivityDataInput | EditableParsedActivity>) {
+  const matchingStatus = normalizeClassificationSignal(activity.matchingStatus);
+  const calculationStatus = normalizeClassificationSignal(activity.calculationStatus);
+  const reportTreatment = normalizeClassificationSignal(activity.reportTreatment);
+
+  return [matchingStatus, calculationStatus, reportTreatment].some((status) =>
+    [
+      'UNIT_MISMATCH',
+      'INVALID_UNIT',
+      'MISSING_FACTOR',
+      'MISSING_PROVINCE',
+      'MISSING_JURISDICTION',
+      'REQUIRES_REVIEW',
+      'NEEDS_REVIEW',
+      'EXCLUDED',
+    ].includes(status),
+  );
+}
+
+function hasTrackedMetricImportStatus(activity: Partial<ActivityDataInput | EditableParsedActivity>) {
+  const matchingStatus = normalizeClassificationSignal(activity.matchingStatus);
+  const calculationStatus = normalizeClassificationSignal(activity.calculationStatus);
+  const reportTreatment = normalizeClassificationSignal(activity.reportTreatment);
+  const scope = normalizeClassificationSignal(activity.scope);
+
+  return (
+    matchingStatus === 'TRACKED_ONLY' ||
+    calculationStatus === 'TRACKED_ONLY' ||
+    reportTreatment === 'TRACKED_ONLY' ||
+    scope === 'TRACKED_METRIC'
+  );
+}
+
+function hasBlockingImportValueIssue(activity: Partial<ActivityDataInput>) {
+  const activityType = String(activity.activityType ?? '').trim();
+  const quantity = Number(activity.quantity);
+  const unit = String(activity.unit ?? '').trim();
+
+  return !activityType || !Number.isFinite(quantity) || quantity <= 0 || !unit;
+}
+
+export function isDocumentImportPayloadImportable(activity: Partial<ActivityDataInput>) {
+  const matchingStatus = normalizeClassificationSignal(activity.matchingStatus);
+  const calculationStatus = normalizeClassificationSignal(activity.calculationStatus);
+  const reportTreatment = normalizeClassificationSignal(activity.reportTreatment);
+
+  if (hasBlockingImportValueIssue(activity)) return false;
+  if (hasBlockingImportStatus(activity)) return false;
+  if (hasTrackedMetricImportStatus(activity)) return true;
+
+  return (
+    matchingStatus === 'MATCHED' &&
+    calculationStatus === 'CALCULATED' &&
+    reportTreatment === 'INCLUDED'
+  );
 }
 
 export function buildDraftRowAuditSummary(rows: EditableParsedActivity[]) {
@@ -311,6 +512,94 @@ export function buildDraftRowAuditSummary(rows: EditableParsedActivity[]) {
     requiresReviewCount,
     importableCount,
   };
+}
+
+function buildConfirmImportAuditSummary(input: {
+  rowsForConfirm: EditableParsedActivity[];
+  importedRows: EditableParsedActivity[];
+  remainingRows: EditableParsedActivity[];
+}) {
+  const importedKeys = new Set(
+    input.importedRows.map(getEditableParsedActivityRecordKeyForAudit).filter(Boolean),
+  );
+  const remainingKeys = new Set(
+    input.remainingRows.map(getEditableParsedActivityRecordKeyForAudit).filter(Boolean),
+  );
+  const summary = {
+    totalRowsConsidered: input.rowsForConfirm.length,
+    includedEmissionsCreated: 0,
+    trackedMetricsCreated: 0,
+    alreadyImportedSkipped: 0,
+    needsReviewSkipped: 0,
+    duplicateSkipped: 0,
+    otherSkipped: 0,
+  };
+
+  input.rowsForConfirm.forEach((row) => {
+    const key = getEditableParsedActivityRecordKeyForAudit(row);
+    const classification = classifyDraftRow(row, getImportValidationIssues([row]));
+
+    if (key && importedKeys.has(key)) {
+      if (classification === 'TRACKED_METRIC') {
+        summary.trackedMetricsCreated += 1;
+      } else {
+        summary.includedEmissionsCreated += 1;
+      }
+      return;
+    }
+
+    if (classification === 'READY' || classification === 'TRACKED_METRIC') {
+      if (key && !remainingKeys.has(key)) {
+        summary.alreadyImportedSkipped += 1;
+      } else {
+        summary.duplicateSkipped += 1;
+      }
+      return;
+    }
+
+    if (classification === 'REQUIRES_REVIEW') {
+      summary.needsReviewSkipped += 1;
+      return;
+    }
+
+    summary.otherSkipped += 1;
+  });
+
+  const reconciledTotal =
+    summary.includedEmissionsCreated +
+    summary.trackedMetricsCreated +
+    summary.alreadyImportedSkipped +
+    summary.needsReviewSkipped +
+    summary.duplicateSkipped +
+    summary.otherSkipped;
+
+  if (reconciledTotal !== summary.totalRowsConsidered && import.meta.env.DEV) {
+    console.warn('Import audit counts do not reconcile.', {
+      ...summary,
+      reconciledTotal,
+    });
+  }
+
+  return {
+    ...summary,
+    rowsNotImported:
+      summary.alreadyImportedSkipped +
+      summary.needsReviewSkipped +
+      summary.duplicateSkipped +
+      summary.otherSkipped,
+  };
+}
+
+function getEditableParsedActivityRecordKeyForAudit(activity: EditableParsedActivity) {
+  return buildDocumentImportRecordKey({
+    documentId: activity.documentId,
+    sourceRow: activity.sourceRow,
+    sourceReference: activity.sourceReference.value,
+    activityType: activity.activityType.value,
+    recordDate: activity.recordDate.value,
+    quantity: activity.quantity.value,
+    unit: activity.unit.value,
+  });
 }
 
 function getAuditSourceType(fileName?: string | null, sourceType?: string | null) {
@@ -519,8 +808,15 @@ function getSourceFileExtension(value?: string | null) {
   return match?.[1] ?? '';
 }
 
+function hasSupportedFileExtension(
+  fileName: string,
+  extensions: readonly string[],
+) {
+  return extensions.includes(getSourceFileExtension(fileName));
+}
+
 function isSpreadsheetFileName(value?: string | null) {
-  return ['xlsx', 'xls', 'csv'].includes(getSourceFileExtension(value));
+  return hasSupportedFileExtension(value ?? '', SPREADSHEET_UPLOAD_EXTENSIONS);
 }
 
 function isPdfExtractionLabel(value?: string | null) {
@@ -783,8 +1079,8 @@ export function buildDocumentImportActivityPayload(input: {
     jurisdictionCountry: country,
     jurisdictionRegion: province,
     facility: facilityName || undefined,
-    sourceType: 'AI_EXTRACTION',
-    sourceReference: item.sourceReference.value || sourceFileName,
+    sourceType: getActivitySourceType('DOCUMENT_AI'),
+    sourceReference: item.sourceReference.value || undefined,
     documentId,
     sourceDocumentId: documentId,
     sourceFileName,
@@ -1013,12 +1309,35 @@ function getDocumentExtractedRowCount(doc: DocumentItem) {
   return doc.extractedRowCount ?? '-';
 }
 
+function formatInputReviewRowCount(doc: DocumentItem) {
+  const extracted = doc.extractedRowCount;
+  const source = doc.sourceRowCount;
+
+  if (typeof extracted === 'number' && typeof source === 'number' && source !== extracted) {
+    return `${extracted}/${source}`;
+  }
+
+  if (typeof extracted === 'number') return String(extracted);
+  if (typeof source === 'number') return String(source);
+  return '-';
+}
+
 function getDocumentImportedRecordCount(doc: DocumentItem) {
   return doc.importedRecordCount ?? '-';
 }
 
+function isImportedDocument(doc: Pick<DocumentItem, 'status' | 'importedAt' | 'importBatchId' | 'importedRecordCount'>) {
+  return (
+    normalizeDocumentStatus(doc.status) === 'IMPORTED' ||
+    Boolean(doc.importedAt) ||
+    Boolean(doc.importBatchId) ||
+    Number(doc.importedRecordCount ?? 0) > 0
+  );
+}
+
 export function getDocumentActionModel(input: {
   status: string;
+  sourceType?: string | null;
   canImport?: boolean;
   hasPreview?: boolean;
   isExtracting?: boolean;
@@ -1028,6 +1347,8 @@ export function getDocumentActionModel(input: {
   isDeleting?: boolean;
 }): DocumentActionModel {
   const status = normalizeDocumentStatus(input.status);
+  const sourceType = String(input.sourceType ?? '').trim().toUpperCase();
+  const isSpreadsheetSource = sourceType === 'SPREADSHEET';
   const viewDetailsAction: DocumentActionConfig = {
     kind: 'viewDetails',
     label: 'View Details',
@@ -1039,9 +1360,10 @@ export function getDocumentActionModel(input: {
   };
   const deleteAction: DocumentActionConfig = {
     kind: 'delete',
-    label: input.isDeleting ? 'Deleting...' : 'Delete',
+    label: input.isDeleting ? 'Deleting...' : 'Delete Source Document',
     disabled: input.isDeleting,
     danger: true,
+    separatorBefore: true,
   };
 
   if (input.isExtracting) {
@@ -1101,7 +1423,9 @@ export function getDocumentActionModel(input: {
 
   if (['PROCESSED', 'EXTRACTED', 'REVIEW_REQUIRED'].includes(status)) {
     return {
-      statusLabel: 'Ready for Review',
+      statusLabel: isSpreadsheetSource && status === 'REVIEW_REQUIRED'
+        ? 'Needs Review'
+        : 'Ready for Review',
       primaryAction: {
         kind: 'preview',
         label: 'Review Rows',
@@ -1143,7 +1467,7 @@ export function UploadPage() {
     () => getRouteInputMethod(location.state) ?? 'documents',
   );
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [documentType, setDocumentType] = useState('OTHER');
+  const [documentType, setDocumentType] = useState('');
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -1160,10 +1484,14 @@ export function UploadPage() {
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
   const [bulkProvince, setBulkProvince] = useState('');
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
+  const [lastSavedSpreadsheetDocumentId, setLastSavedSpreadsheetDocumentId] = useState<string | null>(null);
+  const [lastConfirmDocumentId, setLastConfirmDocumentId] = useState<string | null>(null);
+  const [lastImportedDocumentIds, setLastImportedDocumentIds] = useState<string[]>([]);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
   const [sampleWorkspaceLoaded, setSampleWorkspaceLoaded] = useState(false);
   const [documentDetails, setDocumentDetails] = useState<DocumentItem | null>(null);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(null);
+  const [replacementSourceDocument, setReplacementSourceDocument] = useState<DocumentItem | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [viewingDocumentId, setViewingDocumentId] = useState<string | null>(null);
   const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
@@ -1175,11 +1503,14 @@ export function UploadPage() {
   const currentUser = getCurrentUser();
   const canUploadData = canUploadFiles(currentUser);
   const canImportData = canImportDraftRows(currentUser);
-  const canDeleteDocuments = canDeleteActivityRecords(currentUser);
+  const canDeleteDocuments = canImportDraftRows(currentUser);
   const canSetProvinceOnDraftRows = canSetProvinceForActivityRecords(currentUser);
   const pilotReviewerReadOnly = isPilotReviewer(currentUser);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const reviewSectionRef = useRef<HTMLDivElement | null>(null);
+  const reviewHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const manualEntryRef = useRef<HTMLDivElement | null>(null);
   const validationSummaryRef = useRef<HTMLDivElement | null>(null);
   const uploadDragDepthRef = useRef(0);
@@ -1187,6 +1518,16 @@ export function UploadPage() {
   const documentMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const importRedirectTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
+  const isSpreadsheetReplacement = Boolean(
+    replacementSourceDocument &&
+      (isSpreadsheetFileName(replacementSourceDocument.fileName) ||
+        ['SPREADSHEET', 'CSV', 'EXCEL'].includes(
+          String(replacementSourceDocument.type ?? '').trim().toUpperCase(),
+        )),
+  );
+  const uploadAccept = isSpreadsheetReplacement
+    ? SPREADSHEET_UPLOAD_ACCEPT
+    : DOCUMENT_UPLOAD_ACCEPT;
   const hasMissingFiles = documents.some((doc) => isMissingFileStatus(doc.status));
   const selectedDocuments = documents.filter((document) =>
     selectedDocumentIds.includes(document.id),
@@ -1323,9 +1664,28 @@ export function UploadPage() {
     }
   }
 
+  function focusReviewSection() {
+    reviewSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    reviewHeadingRef.current?.focus({ preventScroll: true });
+  }
+
   useEffect(() => {
     loadDocuments();
-  }, []);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const routeState = location.state as UploadRouteState | null;
+    if (!routeState?.flashMessage) return;
+
+    setSuccessMessage(routeState.flashMessage);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('section') !== 'review') return;
+
+    focusReviewSection();
+  }, [location.search]);
 
   useEffect(() => () => {
     if (importRedirectTimerRef.current) {
@@ -1341,6 +1701,9 @@ export function UploadPage() {
       setParsedActivities([]);
       setBulkProvince('');
       setLatestDocumentId(null);
+      setLastSavedSpreadsheetDocumentId(null);
+      setLastConfirmDocumentId(null);
+      setLastImportedDocumentIds([]);
       setSelectedDocumentIds([]);
       setDocumentDetails(null);
       setDocumentToDelete(null);
@@ -1435,11 +1798,21 @@ export function UploadPage() {
   }, [activeInputMethod, location.state]);
 
   useEffect(() => {
-    if (!successMessage?.startsWith('Document deleted.')) return;
+    if (
+      !successMessage?.startsWith('Document deleted.') &&
+      !successMessage?.startsWith('Source document deleted.') &&
+      !successMessage?.startsWith('Source document removed')
+    ) {
+      return;
+    }
 
     const timeoutId = window.setTimeout(() => {
       setSuccessMessage((current) =>
-        current?.startsWith('Document deleted.') ? null : current,
+        current?.startsWith('Document deleted.') ||
+        current?.startsWith('Source document deleted.') ||
+        current?.startsWith('Source document removed')
+          ? null
+          : current,
       );
     }, 5000);
 
@@ -1461,6 +1834,130 @@ export function UploadPage() {
       ...item,
       documentId: sampleDocuments[index]?.id ?? sampleDocuments[0].id,
       documentFileName: sampleDocuments[index]?.fileName ?? sampleDocuments[0].fileName,
+    }));
+  }
+
+  async function enrichDraftRowsWithCalculationStatus(
+    rows: EditableParsedActivity[],
+    options: { preserveSelection?: boolean } = {},
+  ) {
+    if (rows.length === 0) return rows;
+
+    const conversionFactors = await getAllConversionFactors({ type: 'EMISSION' }).catch(
+      () => [] as ConversionFactorItem[],
+    );
+    if (conversionFactors.length === 0) return rows;
+
+    const organizationId = getOrganizationId(getCurrentUser());
+
+    return rows.map((item) => {
+      if (isCanonicalReadyReviewRow(item)) {
+        return {
+          ...item,
+          selected: options.preserveSelection ? item.selected : true,
+        };
+      }
+
+      const sourceFileName =
+        item.documentFileName ||
+        documents.find((document) => document.id === item.documentId)?.fileName ||
+        item.documentId;
+      const payload = buildDocumentImportActivityPayload({
+        item,
+        documentId: item.documentId,
+        sourceFileName,
+        importBatchId: `document-${item.documentId}`,
+        conversionFactors,
+        organizationId,
+      });
+      const enrichedItem = applyConfirmReviewPayload(item, payload);
+      const classification = classifyDraftRow(
+        enrichedItem,
+        getImportValidationIssues([enrichedItem]),
+      );
+
+      return {
+        ...enrichedItem,
+        selected: options.preserveSelection
+          ? item.selected && isImportableDraftRowClassification(classification)
+          : isImportableDraftRowClassification(classification),
+      };
+    });
+  }
+
+  async function reloadRemainingDraftRowsAfterConfirm(input: {
+    documentIds: string[];
+    importedRows: EditableParsedActivity[];
+    fallbackRows: EditableParsedActivity[];
+  }) {
+    if (input.documentIds.length === 0) {
+      return clearDraftRowSelection(input.fallbackRows);
+    }
+
+    try {
+      const importedKeys = new Set(
+        [
+          ...input.importedRows.map(getEditableParsedActivityRecordKey),
+          ...(await getImportedActivityRecordKeysForDocuments(input.documentIds)),
+        ].filter(Boolean),
+      );
+      const reloadedRows: EditableParsedActivity[] = [];
+
+      for (const documentId of input.documentIds) {
+        const document = documents.find((item) => item.id === documentId);
+        const result = await getDocumentExtraction(documentId);
+        const sourceRows = buildEditableParsedActivities(result.parsedActivities ?? [], {
+          id: documentId,
+          fileName: document?.fileName ?? documentId,
+          createdAt: document?.createdAt,
+        });
+
+        reloadedRows.push(
+          ...filterUnimportedDraftRows(sourceRows, importedKeys),
+        );
+      }
+
+      if (reloadedRows.length === 0 && input.fallbackRows.length > 0) {
+        return clearDraftRowSelection(filterUnimportedDraftRows(input.fallbackRows, importedKeys));
+      }
+
+      const enrichedRows = await enrichDraftRowsWithCalculationStatus(reloadedRows, {
+        preserveSelection: false,
+      });
+      return clearDraftRowSelection(enrichedRows);
+    } catch {
+      const importedKeys = new Set(input.importedRows.map(getEditableParsedActivityRecordKey).filter(Boolean));
+      return clearDraftRowSelection(filterUnimportedDraftRows(input.fallbackRows, importedKeys));
+    }
+  }
+
+  async function getImportedActivityRecordKeysForDocuments(documentIds: string[]) {
+    try {
+      const documentIdSet = new Set(documentIds);
+      const existingActivities = await getAllActivityData();
+      return existingActivities
+        .filter((activity) => documentIdSet.has(getActivitySourceDocumentId(activity)))
+        .map(getImportedActivityRecordKey)
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  function filterUnimportedDraftRows(
+    rows: EditableParsedActivity[],
+    importedKeys: Set<string>,
+  ) {
+    return rows.filter((row) => {
+      const key = getEditableParsedActivityRecordKey(row);
+      return !key || !importedKeys.has(key);
+    });
+  }
+
+  function clearDraftRowSelection(rows: EditableParsedActivity[]) {
+    return rows.map((row) => ({
+      ...row,
+      selected: false,
     }));
   }
 
@@ -1544,9 +2041,11 @@ export function UploadPage() {
       );
       const periodEndDate = formatDateValue(endDateField) || null;
       const draftRow: EditableParsedActivity = {
+        rowId: item.rowId ?? null,
         selected: true,
         documentId: document.id,
         documentFileName: document.fileName,
+        status: item.status ?? null,
         dateEstimated: resolvedDate.dateEstimated || Boolean(item.dateEstimated),
         periodEndDate,
         activityType: {
@@ -1593,6 +2092,17 @@ export function UploadPage() {
         scope: item.scope ?? null,
         calculationStatus: item.calculationStatus ?? null,
         calculationMessage: item.calculationMessage ?? null,
+        matchedFactorId: item.matchedFactorId ?? null,
+        matchedFactorName: item.matchedFactorName ?? null,
+        matchedFactorSourceYear: Number.isFinite(Number(item.matchedFactorSourceYear))
+          ? Number(item.matchedFactorSourceYear)
+          : null,
+        matchedFactorValue: Number.isFinite(Number(item.matchedFactorValue))
+          ? Number(item.matchedFactorValue)
+          : null,
+        calculatedEmissionsKgCO2e: Number.isFinite(Number(item.calculatedEmissionsKgCO2e))
+          ? Number(item.calculatedEmissionsKgCO2e)
+          : null,
         notes: {
           value: formatOptionalExtractionField(item.notes),
           confidence: 'high',
@@ -1601,7 +2111,9 @@ export function UploadPage() {
 
       return {
         ...draftRow,
-        selected: getImportValidationIssues([draftRow]).length === 0,
+        selected: isImportableDraftRowClassification(
+          classifyDraftRow(draftRow, getImportValidationIssues([draftRow])),
+        ),
       };
     });
   }
@@ -1630,6 +2142,10 @@ export function UploadPage() {
   function getDocumentTypeFromFile(file: File) {
     const fileName = file.name.toLowerCase();
 
+    if (hasSupportedFileExtension(fileName, SPREADSHEET_UPLOAD_EXTENSIONS)) {
+      return 'SPREADSHEET';
+    }
+
     if (file.type.startsWith('image/') || /\.(png|jpe?g|heic)$/i.test(fileName)) {
       return 'IMAGE';
     }
@@ -1642,7 +2158,11 @@ export function UploadPage() {
   }
 
   function isSupportedUploadFile(file: File) {
-    return /\.(pdf|png|jpe?g|heic)$/i.test(file.name);
+    return hasSupportedFileExtension(file.name, DOCUMENT_UPLOAD_EXTENSIONS);
+  }
+
+  function isSupportedSpreadsheetUploadFile(file: File) {
+    return hasSupportedFileExtension(file.name, SPREADSHEET_UPLOAD_EXTENSIONS);
   }
 
   function clearUploadInput() {
@@ -1651,14 +2171,31 @@ export function UploadPage() {
     }
   }
 
-  function selectUploadFiles(files: File[]) {
-    const unsupportedFile = files.find((file) => !isSupportedUploadFile(file));
+  function isSpreadsheetSourceDocument(doc?: DocumentItem | null) {
+    return Boolean(
+      doc &&
+        (isSpreadsheetFileName(doc.fileName) ||
+          ['SPREADSHEET', 'CSV', 'EXCEL'].includes(
+            String(doc.type ?? '').trim().toUpperCase(),
+          )),
+    );
+  }
+
+  function selectUploadFiles(files: File[], replacementDocument?: DocumentItem | null) {
+    const expectsSpreadsheet = isSpreadsheetSourceDocument(replacementDocument);
+    const unsupportedFile = files.find((file) =>
+      expectsSpreadsheet
+        ? !isSupportedSpreadsheetUploadFile(file)
+        : !isSupportedUploadFile(file),
+    );
 
     if (unsupportedFile) {
       setSelectedFiles([]);
       setSuccessMessage(null);
       setError(
-        `${unsupportedFile.name} is not supported. Please choose PDF, JPG, PNG, or HEIC files.`,
+        expectsSpreadsheet
+          ? `${unsupportedFile.name} is not supported. Please select a supported spreadsheet file (.csv, .xlsx, or .xls).`
+          : `${unsupportedFile.name} is not supported. Please choose ${DOCUMENT_UPLOAD_FORMAT_LABEL} files.`,
       );
       clearUploadInput();
       return;
@@ -1681,7 +2218,7 @@ export function UploadPage() {
     setError(null);
 
     if (files[0]) {
-      setDocumentType(getDocumentTypeFromFile(files[0]));
+      setDocumentType(expectsSpreadsheet ? 'SPREADSHEET' : getDocumentTypeFromFile(files[0]));
     }
   }
 
@@ -1694,7 +2231,7 @@ export function UploadPage() {
     }
 
     const files = Array.from(event.target.files ?? []);
-    selectUploadFiles(files);
+    selectUploadFiles(files, replacementSourceDocument);
   }
 
   function handleUploadDragEnter(event: DragEvent<HTMLDivElement>) {
@@ -1745,6 +2282,7 @@ export function UploadPage() {
     }
 
     const files = Array.from(event.dataTransfer.files ?? []);
+    setReplacementSourceDocument(null);
     selectUploadFiles(files);
   }
 
@@ -1775,6 +2313,7 @@ ${sampleRows.join('\n')}`,
 
     setSelectedFiles([file]);
     setDocumentType('SPREADSHEET');
+    setReplacementSourceDocument(null);
     setError(null);
     setSuccessMessage('Sample CSV loaded. Click Extract Data.');
   }
@@ -1823,6 +2362,7 @@ ${sampleRows.join('\n')}`,
 
     setSelectedFiles([file]);
     setDocumentType('SPREADSHEET');
+    setReplacementSourceDocument(null);
     setError(null);
     setSuccessMessage('Sample JSON loaded. Click Extract Data.');
   }
@@ -1854,10 +2394,36 @@ ${sampleRows.join('\n')}`,
     URL.revokeObjectURL(url);
   }
 
-  function handleManualOrSpreadsheetSave() {
+  async function handleManualOrSpreadsheetSave(result?: {
+    source: 'manual' | 'spreadsheet';
+    sourceDocumentId?: string;
+  }) {
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
-    setSuccessMessage('Activity data saved. Review saved records in Data Records, Calculation Review, or Reports.');
+
+    if (result?.source === 'spreadsheet') {
+      try {
+        const data = await getDocuments();
+        setDocuments(data.items ?? []);
+        if (result.sourceDocumentId) {
+          setLatestDocumentId(result.sourceDocumentId);
+          setLastSavedSpreadsheetDocumentId(result.sourceDocumentId);
+          setLastImportedDocumentIds([result.sourceDocumentId]);
+          setSelectedDocumentIds([result.sourceDocumentId]);
+          setPreviewDocumentId(null);
+          setPreviewDocumentIds([]);
+          setParsedActivities([]);
+        }
+        setSuccessMessage('Spreadsheet rows saved for review.');
+        setError(null);
+        focusReviewSection();
+      } catch {
+        setError('Spreadsheet rows were saved, but Review Data could not be refreshed.');
+      }
+      return;
+    }
+
+    setSuccessMessage(ACTIVITY_DATA_SAVED_SUCCESS_MESSAGE);
   }
 
   async function uploadSelectedFile(options?: { extractAfterUpload?: boolean }) {
@@ -1869,6 +2435,12 @@ ${sampleRows.join('\n')}`,
 
     if (selectedFiles.length === 0) {
       setError('Please select at least one file first.');
+      return;
+    }
+
+    if (!documentType) {
+      setError('Please select a document type before extracting data.');
+      setSuccessMessage(null);
       return;
     }
 
@@ -1915,42 +2487,7 @@ ${sampleRows.join('\n')}`,
                 uploadError.existingDocument?.fileName || file.name,
               createdAt: uploadError.existingDocument?.createdAt,
             });
-            const keepSeparateCopy = await confirm({
-              title: 'Duplicate document detected',
-              message: `${duplicateMessage} This file appears to have already been uploaded. Keep it as a separate copy?`,
-              confirmLabel: 'Keep separate copy',
-              cancelLabel: 'Cancel upload',
-            });
-
-            if (!keepSeparateCopy) {
-              setError(`${duplicateMessage} Duplicate upload cancelled.`);
-              continue;
-            }
-
-            const duplicateCopy = await uploadDocument({
-              file,
-              type:
-                selectedFiles.length > 1
-                  ? getDocumentTypeFromFile(file)
-                  : documentType,
-              allowDuplicate: true,
-            });
-            uploadedDocuments.push(duplicateCopy);
-            trackWorkflowEvent({
-              eventName: 'FILE_UPLOADED',
-              entityType: 'DOCUMENT',
-              entityDisplayName: duplicateCopy.fileName || file.name,
-              description: 'File uploaded',
-              metadata: {
-                fileName: duplicateCopy.fileName || file.name,
-                fileType: duplicateCopy.type || getDocumentTypeFromFile(file),
-                fileSize: duplicateCopy.fileSize ?? file.size,
-                sourceType: getAuditSourceType(duplicateCopy.fileName || file.name, duplicateCopy.type),
-                statusAfterUpload: duplicateCopy.status,
-                uploadedAt: new Date().toISOString(),
-                duplicateUploadKept: true,
-              },
-            });
+            setError(`${duplicateMessage} Duplicate upload blocked.`);
             continue;
           }
 
@@ -1964,6 +2501,7 @@ ${sampleRows.join('\n')}`,
       }
 
       setSelectedFiles([]);
+      setReplacementSourceDocument(null);
 
       const input = document.getElementById(
         'document-upload-input',
@@ -2019,6 +2557,7 @@ ${sampleRows.join('\n')}`,
       return;
     }
 
+    setReplacementSourceDocument(null);
     fileInputRef.current?.click();
   }
   async function handleUploadAndExtract() {
@@ -2066,6 +2605,7 @@ ${sampleRows.join('\n')}`,
   function getDocumentActionModelForDoc(doc: DocumentItem) {
     const actionModel = getDocumentActionModel({
       status: doc.status,
+      sourceType: doc.type,
       canImport: canImportData && canImportDocument(doc),
       hasPreview: hasPreviewForDocument(doc),
       isExtracting: extractingId === doc.id || extractingId === 'multiple',
@@ -2104,10 +2644,14 @@ ${sampleRows.join('\n')}`,
     return true;
   }
 
+  function shouldRefreshReviewRowsFromBackend(doc: DocumentItem) {
+    return doc.id === lastSavedSpreadsheetDocumentId || doc.type === 'SPREADSHEET';
+  }
+
   function getDocumentMenuPosition(button: HTMLButtonElement, actionCount: number) {
     const rect = button.getBoundingClientRect();
-    const menuWidth = 172;
-    const menuHeight = Math.max(48, actionCount * 40 + 12);
+    const menuWidth = 224;
+    const menuHeight = Math.max(48, actionCount * 42 + 20);
     const margin = 8;
     const sideOffset = 6;
     const top =
@@ -2168,21 +2712,23 @@ ${sampleRows.join('\n')}`,
         }}
       >
         {actionModel.menuActions.map((action) => (
-          <button
-            key={action.kind}
-            type="button"
-            role="menuitem"
-            onClick={() => handleDocumentAction(activeDocument, action)}
-            disabled={action.disabled}
-            title={action.title ?? action.label}
-            style={
-              action.danger
-                ? documentMenuDangerItemStyle(Boolean(action.disabled))
-                : documentMenuItemStyle(Boolean(action.disabled))
-            }
-          >
-            {action.label}
-          </button>
+          <div key={action.kind}>
+            {action.separatorBefore ? <div role="separator" style={documentMenuSeparatorStyle} /> : null}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => handleDocumentAction(activeDocument, action)}
+              disabled={action.disabled}
+              title={action.title ?? action.label}
+              style={
+                action.danger
+                  ? documentMenuDangerItemStyle(Boolean(action.disabled))
+                  : documentMenuItemStyle(Boolean(action.disabled))
+              }
+            >
+              {action.label}
+            </button>
+          </div>
         ))}
       </div>,
       globalThis.document.body,
@@ -2210,6 +2756,8 @@ ${sampleRows.join('\n')}`,
         return;
       case 'uploadAgain':
         setActiveInputMethod('documents');
+        setReplacementSourceDocument(doc);
+        setDocumentType(isSpreadsheetSourceDocument(doc) ? 'SPREADSHEET' : doc.type);
         setSuccessMessage(`Select a replacement file for ${doc.fileName}, then click Extract Data.`);
         setError(null);
         window.setTimeout(() => fileInputRef.current?.click(), 0);
@@ -2243,7 +2791,7 @@ ${sampleRows.join('\n')}`,
   async function handlePreviewDocument(doc: DocumentItem) {
     const localRows = parsedActivities.filter((item) => item.documentId === doc.id);
 
-    if (localRows.length > 0) {
+    if (localRows.length > 0 && !shouldRefreshReviewRowsFromBackend(doc)) {
       setPreviewDocumentId(doc.id);
       setPreviewDocumentIds([doc.id]);
       setParsedActivities(localRows);
@@ -2268,14 +2816,14 @@ ${sampleRows.join('\n')}`,
 
     try {
       const result = await getDocumentExtraction(doc.id);
-      const extractedRows = buildEditableParsedActivities(
+      const extractedRows = await enrichDraftRowsWithCalculationStatus(buildEditableParsedActivities(
         result.parsedActivities ?? [],
         {
           id: doc.id,
           fileName: doc.fileName,
           createdAt: doc.createdAt,
         },
-      );
+      ));
 
       if (extractedRows.length === 0) {
         setError('No emissions data detected. You can view the file or retry extraction.');
@@ -2398,6 +2946,8 @@ ${sampleRows.join('\n')}`,
     });
 
     setLatestDocumentId((prev) => (prev === documentId ? null : prev));
+    setLastSavedSpreadsheetDocumentId((prev) => (prev === documentId ? null : prev));
+    setLastConfirmDocumentId((prev) => (prev === documentId ? null : prev));
   }
 
   async function handleDeleteDocument() {
@@ -2416,7 +2966,7 @@ ${sampleRows.join('\n')}`,
     setSuccessMessage(null);
 
     try {
-      const result = await deleteDocument(documentId);
+      await deleteDocument(documentId);
       setDocuments((prev) => prev.filter((doc) => doc.id !== documentId));
       clearDeletedDocumentPreview(documentId);
       setDocumentToDelete(null);
@@ -2424,12 +2974,12 @@ ${sampleRows.join('\n')}`,
       window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
       window.dispatchEvent(new Event('carbonlite:metrics-stale'));
       setSuccessMessage(
-        result.deletedActivityRecords > 0
-          ? `Document deleted. ${result.deletedActivityRecords} related activity record${result.deletedActivityRecords === 1 ? '' : 's'} removed.`
-          : 'Document deleted.',
+        isImportedDocument(documentToDelete)
+          ? 'Source document removed from Review Data. Imported records were kept.'
+          : 'Source document deleted.',
       );
     } catch (err) {
-      setError(getUserFriendlyErrorMessage(err, 'draftRecordReview'));
+      setError('Unable to delete source document. Please try again.');
     } finally {
       setDeletingDocumentId(null);
     }
@@ -2488,7 +3038,11 @@ ${sampleRows.join('\n')}`,
     try {
       const selectedIds = selectedReadyDocuments.map((document) => document.id);
       const localRows = parsedActivities.filter((item) =>
-        selectedIds.includes(item.documentId),
+        selectedIds.includes(item.documentId) &&
+        !selectedReadyDocuments.some(
+          (document) =>
+            document.id === item.documentId && shouldRefreshReviewRowsFromBackend(document),
+        ),
       );
       const localDocumentIds = new Set(localRows.map((item) => item.documentId));
       const rowsToReview: EditableParsedActivity[] = [...localRows];
@@ -2505,11 +3059,13 @@ ${sampleRows.join('\n')}`,
 
         const result = await getDocumentExtraction(document.id);
         rowsToReview.push(
-          ...buildEditableParsedActivities(result.parsedActivities ?? [], {
-            id: document.id,
-            fileName: document.fileName,
-            createdAt: document.createdAt,
-          }),
+          ...(await enrichDraftRowsWithCalculationStatus(
+            buildEditableParsedActivities(result.parsedActivities ?? [], {
+              id: document.id,
+              fileName: document.fileName,
+              createdAt: document.createdAt,
+            }),
+          )),
         );
       }
 
@@ -2606,9 +3162,7 @@ ${sampleRows.join('\n')}`,
           reviewRequiredDocumentIds.push(document.id);
         }
 
-        extractedRows.push(
-          ...buildEditableParsedActivities(extractedActivities, document),
-        );
+        extractedRows.push(...buildEditableParsedActivities(extractedActivities, document));
 
         if (result.possibleMissingRows) {
           warnings.push(result.warning ?? `${document.fileName}: possible missing rows detected.`);
@@ -2634,12 +3188,14 @@ ${sampleRows.join('\n')}`,
         return;
       }
 
+      const enrichedExtractedRows = await enrichDraftRowsWithCalculationStatus(extractedRows);
+
       setPreviewDocumentId(
         documentsToExtract.length === 1 ? documentsToExtract[0].id : 'MULTIPLE',
       );
       setPreviewDocumentIds(documentsToExtract.map((document) => document.id));
-      setParsedActivities(extractedRows);
-      const extractionSummary = buildDraftRowAuditSummary(extractedRows);
+      setParsedActivities(enrichedExtractedRows);
+      const extractionSummary = buildDraftRowAuditSummary(enrichedExtractedRows);
       trackWorkflowEvent({
         eventName: 'DATA_EXTRACTED',
         entityType: 'IMPORT_BATCH',
@@ -2694,26 +3250,25 @@ ${sampleRows.join('\n')}`,
         ? [documentId]
         : [];
 
-    const alreadyImportedDocument = documents.find(
-      (document) =>
-        activeDocumentIds.includes(document.id) &&
-        normalizeDocumentStatus(document.status) === 'IMPORTED',
-    );
-
-    if (alreadyImportedDocument) {
-      setError('This document has already been imported.');
-      setSuccessMessage(null);
-      return;
-    }
-
     if (!parsedActivities.length || activeDocumentIds.length === 0) {
       setError('No extracted activities to confirm.');
       return;
     }
+    setLastConfirmDocumentId(activeDocumentIds.join(', '));
+    setLastImportedDocumentIds(activeDocumentIds);
 
-    const selectedRows = parsedActivities.filter((item) => item.selected);
-    const selectedActivities = parsedActivities.filter(
-      (item, index) => item.selected && isParsedActivityImportable(index, item),
+    const rowsForConfirm = await enrichDraftRowsWithCalculationStatus(parsedActivities, {
+      preserveSelection: true,
+    });
+    setParsedActivities(rowsForConfirm);
+
+    const isRowImportableForConfirm = (item: EditableParsedActivity) =>
+      isImportableDraftRowClassification(
+        classifyDraftRow(item, getImportValidationIssues([item])),
+      );
+    const selectedRows = rowsForConfirm.filter((item) => item.selected);
+    const selectedActivities = rowsForConfirm.filter(
+      (item) => item.selected && isRowImportableForConfirm(item),
     );
 
     if (selectedRows.length === 0) {
@@ -2723,8 +3278,8 @@ ${sampleRows.join('\n')}`,
     }
 
     if (selectedActivities.length === 0) {
-      const firstSelectedIssue = getImportValidationIssues(parsedActivities).find(
-        (issue) => parsedActivities[issue.rowIndex]?.selected,
+      const firstSelectedIssue = getImportValidationIssues(rowsForConfirm).find(
+        (issue) => rowsForConfirm[issue.rowIndex]?.selected,
       );
       setError('Selected rows contain blocking errors. Select Ready rows or fix errors.');
       setSuccessMessage(null);
@@ -2762,8 +3317,8 @@ ${sampleRows.join('\n')}`,
       if (activeDocumentIds.every((documentId) => isSampleDocumentId(documentId))) {
         const importedCount = selectedActivities.length;
         const selectedImportSummary = buildDraftRowAuditSummary(selectedActivities);
-        const remainingRows = parsedActivities.filter(
-          (item) => !selectedActivities.includes(item),
+        const remainingRows = clearDraftRowSelection(
+          rowsForConfirm.filter((item) => !selectedActivities.includes(item)),
         );
         const rowsLeftForReview = remainingRows.length;
         if (remainingRows.length === 0) {
@@ -2797,8 +3352,13 @@ ${sampleRows.join('\n')}`,
             : getImportCompletedMessage(importedCount, selectedImportSummary.trackedMetricCount),
         );
         if (rowsLeftForReview === 0) {
-          scheduleCalculationReviewRedirect();
+          scheduleCalculationReviewRedirect(activeDocumentIds);
         }
+        const auditSummary = buildConfirmImportAuditSummary({
+          rowsForConfirm,
+          importedRows: selectedActivities,
+          remainingRows,
+        });
         trackWorkflowEvent({
           eventName: 'RECORDS_IMPORTED',
           entityType: 'IMPORT_BATCH',
@@ -2809,12 +3369,21 @@ ${sampleRows.join('\n')}`,
             sourceType: getAuditSourceType(selectedActivities[0]?.documentFileName),
             importedAt: new Date().toISOString(),
             selectedRows: selectedRows.length,
+            totalRowsConsidered: auditSummary.totalRowsConsidered,
+            documentReviewRowCount: auditSummary.totalRowsConsidered,
+            confirmCandidateCount: selectedRows.length,
             importedRecords: importedCount,
-            includedEmissionsRecords: selectedImportSummary.readyCount,
-            trackedOnlyRecords: selectedImportSummary.trackedMetricCount,
-            excludedRecords: rowsLeftForReview,
-            rowsNotImported: rowsLeftForReview,
-            recordsRequiringReview: rowsLeftForReview,
+            includedEmissionsRecords: auditSummary.includedEmissionsCreated,
+            includedEmissionsCreated: auditSummary.includedEmissionsCreated,
+            trackedOnlyRecords: auditSummary.trackedMetricsCreated,
+            trackedMetricsCreated: auditSummary.trackedMetricsCreated,
+            alreadyImportedSkipped: auditSummary.alreadyImportedSkipped,
+            needsReviewSkipped: auditSummary.needsReviewSkipped,
+            duplicateSkipped: auditSummary.duplicateSkipped,
+            otherSkipped: auditSummary.otherSkipped,
+            excludedRecords: auditSummary.rowsNotImported,
+            rowsNotImported: auditSummary.rowsNotImported,
+            recordsRequiringReview: auditSummary.needsReviewSkipped,
             importStatus: 'IMPORTED',
           },
         });
@@ -2833,6 +3402,8 @@ ${sampleRows.join('\n')}`,
 
       let importedCount = 0;
       const createdActivityIds: string[] = [];
+      const importedSourceActivities: EditableParsedActivity[] = [];
+      const reviewPayloadByActivity = new Map<EditableParsedActivity, ActivityDataInput>();
       const conversionFactors = await getAllConversionFactors({ type: 'EMISSION' }).catch(
         () => [] as ConversionFactorItem[],
       );
@@ -2844,39 +3415,87 @@ ${sampleRows.join('\n')}`,
           activities[0]?.documentFileName ??
           documents.find((d) => d.id === activityDocumentId)?.fileName ??
           activityDocumentId;
-        const normalizedActivities = activities.map((item) =>
-          buildDocumentImportActivityPayload({
-            item,
-            documentId: activityDocumentId,
-            sourceFileName,
-            importBatchId,
-            conversionFactors,
-            organizationId,
+        const payloadPairs = activities.map((item) => ({
+          item,
+          payload: buildDocumentImportActivityPayload({
+              item,
+              documentId: activityDocumentId,
+              sourceFileName,
+              importBatchId,
+              conversionFactors,
+              organizationId,
           }),
-        );
+        }));
+        const importablePairs = payloadPairs.filter(({ item, payload }) => {
+          const importable = isDocumentImportPayloadImportable(payload);
+          if (!importable) {
+            reviewPayloadByActivity.set(item, payload);
+          }
+          return importable;
+        });
+        const normalizedActivities = importablePairs.map(({ payload }) => payload);
 
         if (normalizedActivities.length === 0) continue;
 
-        const result = await confirmDocumentImport(
+        const result = await confirmDocumentImportWithRecordFallback(
           activityDocumentId,
           normalizedActivities,
           importBatchId,
         );
         importedCount += result.count;
         createdActivityIds.push(...(result.createdIds ?? []));
+        const createdRecordKeys = new Set(result.createdRecordKeys ?? []);
+        if (createdRecordKeys.size > 0) {
+          importedSourceActivities.push(
+            ...importablePairs
+              .filter(({ payload }) => {
+                const key = getImportActivityRecordKey(payload);
+                return key && createdRecordKeys.has(key);
+              })
+              .map(({ item }) => item),
+          );
+        } else {
+          importedSourceActivities.push(
+            ...importablePairs.slice(0, result.count).map(({ item }) => item),
+          );
+        }
       }
 
       if (importedCount === 0) {
-        setError('Please select at least one activity to import.');
+        setError(null);
+        if (reviewPayloadByActivity.size > 0) {
+          setParsedActivities((prev) =>
+            prev.map((item) =>
+              reviewPayloadByActivity.has(item)
+                ? applyConfirmReviewPayload(item, reviewPayloadByActivity.get(item)!)
+                : item,
+            ),
+          );
+        }
+        setSuccessMessage('No new Ready records to import.');
         setConfirmingId(null);
         return;
       }
 
-      const remainingRows = parsedActivities.filter(
-        (item) => !selectedActivities.includes(item),
-      );
+      const fallbackRemainingRows = rowsForConfirm
+        .filter((item) => !importedSourceActivities.includes(item))
+        .map((item) =>
+          reviewPayloadByActivity.has(item)
+            ? applyConfirmReviewPayload(item, reviewPayloadByActivity.get(item)!)
+            : item,
+        );
+      const remainingRows = await reloadRemainingDraftRowsAfterConfirm({
+        documentIds: activeDocumentIds,
+        importedRows: importedSourceActivities,
+        fallbackRows: fallbackRemainingRows,
+      });
       const rowsLeftForReview = remainingRows.length;
-      const selectedImportSummary = buildDraftRowAuditSummary(selectedActivities);
+      const selectedImportSummary = buildDraftRowAuditSummary(importedSourceActivities);
+      const auditSummary = buildConfirmImportAuditSummary({
+        rowsForConfirm,
+        importedRows: importedSourceActivities,
+        remainingRows,
+      });
       const remainingDocumentIds = Array.from(
         new Set(remainingRows.map((item) => item.documentId).filter(Boolean)),
       );
@@ -2886,19 +3505,28 @@ ${sampleRows.join('\n')}`,
       trackWorkflowEvent({
         eventName: 'RECORDS_IMPORTED',
         entityType: 'IMPORT_BATCH',
-        entityDisplayName: selectedActivities[0]?.documentFileName || 'Imported records',
+        entityDisplayName: importedSourceActivities[0]?.documentFileName || 'Imported records',
         description: 'Records imported',
         metadata: {
-          sourceFileName: Array.from(new Set(selectedActivities.map((item) => item.documentFileName))).join(', '),
-          sourceType: getAuditSourceType(selectedActivities[0]?.documentFileName),
+          sourceFileName: Array.from(new Set(importedSourceActivities.map((item) => item.documentFileName))).join(', '),
+          sourceType: getAuditSourceType(importedSourceActivities[0]?.documentFileName),
           importedAt: new Date().toISOString(),
           selectedRows: selectedRows.length,
+          totalRowsConsidered: auditSummary.totalRowsConsidered,
+          documentReviewRowCount: auditSummary.totalRowsConsidered,
+          confirmCandidateCount: selectedRows.length,
           importedRecords: importedCount,
-          includedEmissionsRecords: selectedImportSummary.readyCount,
-          trackedOnlyRecords: selectedImportSummary.trackedMetricCount,
-          excludedRecords: rowsLeftForReview,
-          rowsNotImported: rowsLeftForReview,
-          recordsRequiringReview: rowsLeftForReview,
+          includedEmissionsRecords: auditSummary.includedEmissionsCreated,
+          includedEmissionsCreated: auditSummary.includedEmissionsCreated,
+          trackedOnlyRecords: auditSummary.trackedMetricsCreated,
+          trackedMetricsCreated: auditSummary.trackedMetricsCreated,
+          alreadyImportedSkipped: auditSummary.alreadyImportedSkipped,
+          needsReviewSkipped: auditSummary.needsReviewSkipped,
+          duplicateSkipped: auditSummary.duplicateSkipped,
+          otherSkipped: auditSummary.otherSkipped,
+          excludedRecords: auditSummary.rowsNotImported,
+          rowsNotImported: auditSummary.rowsNotImported,
+          recordsRequiringReview: auditSummary.needsReviewSkipped,
           importStatus: 'IMPORTED',
         },
       });
@@ -2913,7 +3541,7 @@ ${sampleRows.join('\n')}`,
           setPreviewDocumentIds([]);
           setParsedActivities([]);
           setSuccessMessage(getImportCompletedMessage(importedCount, selectedImportSummary.trackedMetricCount));
-          scheduleCalculationReviewRedirect();
+          scheduleCalculationReviewRedirect(activeDocumentIds);
         } else {
           setParsedActivities(remainingRows);
           setPreviewDocumentIds(remainingDocumentIds);
@@ -2952,6 +3580,7 @@ ${sampleRows.join('\n')}`,
           );
           navigate('/metrics-summary', {
             state: {
+              ...buildImportReviewRouteState(activeDocumentIds),
               metricsError:
                 'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
             },
@@ -2984,6 +3613,135 @@ ${sampleRows.join('\n')}`,
     } finally {
       setConfirmingId(null);
     }
+  }
+
+  function applyConfirmReviewPayload(
+    item: EditableParsedActivity,
+    payload: Partial<ActivityDataInput>,
+  ): EditableParsedActivity {
+    return {
+      ...item,
+      status: payload.matchingStatus === 'MATCHED' && payload.calculationStatus === 'CALCULATED'
+        ? 'READY'
+        : item.status,
+      matchingStatus: payload.matchingStatus ?? item.matchingStatus,
+      reportTreatment: payload.reportTreatment ?? item.reportTreatment,
+      scope: payload.scope ?? item.scope,
+      calculationStatus: payload.calculationStatus ?? item.calculationStatus,
+      calculationMessage: payload.calculationMessage ?? item.calculationMessage,
+      matchedFactorId: payload.matchedFactorId ?? item.matchedFactorId,
+      matchedFactorName: payload.matchedFactorName ?? item.matchedFactorName,
+      matchedFactorSourceYear: payload.matchedFactorSourceYear ?? item.matchedFactorSourceYear,
+      matchedFactorValue: payload.matchedFactorValue ?? item.matchedFactorValue,
+      calculatedEmissionsKgCO2e: payload.calculatedEmissionsKgCO2e ?? item.calculatedEmissionsKgCO2e,
+    };
+  }
+
+  async function confirmDocumentImportWithRecordFallback(
+    documentId: string,
+    activities: ActivityDataInput[],
+    importBatchId: string,
+  ) {
+    try {
+      return await confirmDocumentImport(documentId, activities, importBatchId);
+    } catch (error) {
+      if (!(error instanceof DuplicateDocumentImportError)) {
+        throw error;
+      }
+
+      return importMissingDocumentRecordsIndividually(documentId, activities);
+    }
+  }
+
+  async function importMissingDocumentRecordsIndividually(
+    documentId: string,
+    activities: ActivityDataInput[],
+  ) {
+    const existingActivities = await getAllActivityData();
+    const importedKeys = new Set(
+      existingActivities
+        .filter((activity) => getActivitySourceDocumentId(activity) === documentId)
+        .map(getImportedActivityRecordKey)
+        .filter(Boolean),
+    );
+
+    const createdIds: string[] = [];
+    const createdRecordKeys: string[] = [];
+    const skippedIds = new Set<string>();
+
+    for (const activity of activities) {
+      const key = getImportActivityRecordKey(activity);
+      if (key && importedKeys.has(key)) {
+        skippedIds.add(key);
+        continue;
+      }
+
+      const created = await createActivityData(activity);
+      if (created?.id) {
+        createdIds.push(created.id);
+      }
+      if (key) {
+        createdRecordKeys.push(key);
+        importedKeys.add(key);
+      }
+    }
+
+    return {
+      count: createdIds.length,
+      createdIds,
+      createdRecordKeys,
+      importBatchId: activities[0]?.importBatchId,
+      alreadyImported: createdIds.length === 0,
+      skippedCount: skippedIds.size,
+      message:
+        createdIds.length === 0
+          ? 'No new Ready records to import.'
+          : undefined,
+    };
+  }
+
+  function getActivitySourceDocumentId(activity: Partial<ActivityDataItem | ActivityDataInput>) {
+    return String(
+      activity.sourceDocumentId ??
+        (activity as { documentId?: unknown }).documentId ??
+        '',
+    ).trim();
+  }
+
+  function getImportedActivityRecordKey(activity: Partial<ActivityDataItem>) {
+    return buildDocumentImportRecordKey({
+      sourceDocumentId: getActivitySourceDocumentId(activity),
+      sourceRow: activity.sourceRow,
+      sourceReference: activity.sourceReference,
+      activityType: activity.activityType,
+      recordDate: activity.recordDate,
+      quantity: activity.quantity,
+      unit: activity.unit,
+    });
+  }
+
+  function getImportActivityRecordKey(activity: Partial<ActivityDataInput>) {
+    return buildDocumentImportRecordKey({
+      sourceDocumentId: getActivitySourceDocumentId(activity),
+      sourceRow: activity.sourceRow,
+      sourceReference: activity.sourceReference,
+      activityType: activity.activityType,
+      recordDate: activity.recordDate,
+      quantity: activity.quantity,
+      unit: activity.unit,
+    });
+  }
+
+  function getEditableParsedActivityRecordKey(activity: EditableParsedActivity) {
+    return buildDocumentImportRecordKey({
+      documentId: activity.documentId,
+      sourceRow: activity.sourceRow,
+      sourceReference: activity.sourceReference.value,
+      activityType: activity.activityType.value,
+      recordDate: activity.recordDate.value,
+      quantity: activity.quantity.value,
+      unit: activity.unit.value,
+    });
   }
 
   function getRowValidationIssues(rowIndex: number) {
@@ -3048,10 +3806,29 @@ ${sampleRows.join('\n')}`,
     return issue.message;
   }
 
+  function isUntouchedDefaultParsedActivity(item: EditableParsedActivity) {
+    return (
+      !String(item.activityType.value ?? '').trim() &&
+      !String(item.recordDate.value ?? '').trim() &&
+      !String(item.unit.value ?? '').trim() &&
+      !String(item.facilityName.value ?? '').trim() &&
+      !String(item.sourceReference.value ?? '').trim() &&
+      !String(item.notes.value ?? '').trim() &&
+      (item.quantity.value === null ||
+        item.quantity.value === undefined ||
+        Number(item.quantity.value) === 0)
+    );
+  }
+
   function getRowStatusLabel(rowIndex: number, item: EditableParsedActivity) {
     const issues = getRowValidationIssues(rowIndex);
     const classification = classifyDraftRow(item, issues);
+    const storedReviewLabel = getStoredReviewLabel(item);
+    const explicitStatus = getExplicitReviewStatus(item);
 
+    if (isUntouchedDefaultParsedActivity(item)) return 'Draft';
+    if (explicitStatus === 'READY') return 'Ready';
+    if (explicitStatus === 'TRACKED_ONLY') return 'Tracked Metric';
     if (classification === 'TRACKED_METRIC') return 'Tracked Metric';
     if (
       issues.some(
@@ -3062,6 +3839,8 @@ ${sampleRows.join('\n')}`,
     ) {
       return 'Unsupported Activity';
     }
+    if (issues.some((issue) => issue.field === 'activityType')) return 'Missing Activity Type';
+    if (issues.some((issue) => issue.field === 'quantity')) return 'Invalid Amount';
     if (
       issues.some(
         (issue) =>
@@ -3073,28 +3852,74 @@ ${sampleRows.join('\n')}`,
     }
     if (issues.some((issue) => issue.field === 'jurisdictionRegion')) return 'Missing Province';
     if (issues.some((issue) => issue.field === 'unit')) return 'Unit Mismatch';
+    if (isCanonicalReadyReviewRow(item)) return 'Ready';
+    if (storedReviewLabel) return storedReviewLabel;
     return issues.length > 0 ? 'Needs Review' : 'Ready';
   }
 
   function getRowIssueText(rowIndex: number) {
     const issues = getRowValidationIssues(rowIndex);
+    const item = parsedActivities[rowIndex];
+    if (item && isUntouchedDefaultParsedActivity(item)) return '-';
+    const storedReviewLabel = item ? getStoredReviewLabel(item) : null;
     return issues.length
       ? Array.from(new Set(issues.map(getImportValidationIssueLabel))).join(', ')
+      : storedReviewLabel
+      ? storedReviewLabel
       : '-';
   }
 
   function getRowIssueTitle(rowIndex: number) {
     const issues = getRowValidationIssues(rowIndex);
+    const item = parsedActivities[rowIndex];
+    const storedReviewDetail = item ? getStoredReviewDetail(item) : null;
     return issues.length
       ? issues.map(getImportValidationIssueDetail).join(' ')
-      : undefined;
+      : storedReviewDetail ?? undefined;
   }
 
   function getRowReportTreatment(rowIndex: number, item: EditableParsedActivity) {
+    if (isUntouchedDefaultParsedActivity(item)) return '-';
     const classification = classifyDraftRow(item, getRowValidationIssues(rowIndex));
     if (classification === 'TRACKED_METRIC') return 'Tracked Only';
     if (classification === 'READY') return 'Included';
     return 'Excluded';
+  }
+
+  function getStoredReviewLabel(item: EditableParsedActivity) {
+    if (isCanonicalReadyReviewRow(item)) return null;
+
+    const signals = [
+      item.status,
+      item.matchingStatus,
+      item.calculationStatus,
+      item.reportTreatment,
+    ].map(normalizeClassificationSignal);
+
+    if (signals.some((signal) => ['UNIT_MISMATCH', 'INVALID_UNIT'].includes(signal))) {
+      return 'Unit Mismatch';
+    }
+    if (signals.some((signal) => ['MISSING_PROVINCE', 'MISSING_JURISDICTION'].includes(signal))) {
+      return 'Missing Province';
+    }
+    if (signals.some((signal) => signal === 'MISSING_FACTOR')) return 'Missing Factor';
+    if (signals.some((signal) => ['REQUIRES_REVIEW', 'NEEDS_REVIEW', 'EXCLUDED'].includes(signal))) {
+      return 'Needs Review';
+    }
+
+    return null;
+  }
+
+  function getStoredReviewDetail(item: EditableParsedActivity) {
+    if (item.calculationMessage) return item.calculationMessage;
+
+    const label = getStoredReviewLabel(item);
+    if (label === 'Unit Mismatch') return 'A matching activity factor exists, but it uses a different unit.';
+    if (label === 'Missing Factor') return 'No matching conversion factor is available for this record.';
+    if (label === 'Missing Province') return 'Electricity records require province before factor matching.';
+    if (label === 'Needs Review') return 'This row must be reviewed before import.';
+
+    return null;
   }
 
   function isParsedActivityImportable(
@@ -3164,7 +3989,7 @@ ${sampleRows.join('\n')}`,
     return undefined;
   }
 
-  function applyBulkProvinceToMissingRows() {
+  async function applyBulkProvinceToMissingRows() {
     if (!canSetProvinceOnDraftRows) {
       setError(getSetProvincePermissionDeniedReason(currentUser));
       setSuccessMessage(null);
@@ -3184,12 +4009,16 @@ ${sampleRows.join('\n')}`,
     }
 
     const rowsToUpdate = new Set(missingProvinceRowIndexes);
-    setParsedActivities((prev) =>
-      prev.map((item, index) => {
+    const updatedRows = parsedActivities.map((item, index) => {
         if (!rowsToUpdate.has(index)) return item;
 
         const updatedItem = {
           ...item,
+          matchingStatus: null,
+          reportTreatment: null,
+          scope: null,
+          calculationStatus: null,
+          calculationMessage: null,
           jurisdictionRegion: {
             ...item.jurisdictionRegion,
             value: normalizedBulkProvince,
@@ -3199,10 +4028,13 @@ ${sampleRows.join('\n')}`,
 
         return {
           ...updatedItem,
-          selected: getImportValidationIssues([updatedItem]).length === 0,
+          selected: isImportableDraftRowClassification(
+            classifyDraftRow(updatedItem, getImportValidationIssues([updatedItem])),
+          ),
         };
-      }),
-    );
+      });
+    const enrichedRows = await enrichDraftRowsWithCalculationStatus(updatedRows);
+    setParsedActivities(enrichedRows);
     setError(null);
     setSuccessMessage(
       `Province set to ${normalizedBulkProvince} for ${missingProvinceRowIndexes.length} row${
@@ -3231,13 +4063,50 @@ ${sampleRows.join('\n')}`,
     )}. Redirecting to Calculation Review...`;
   }
 
-  function scheduleCalculationReviewRedirect() {
+  function renderSuccessMessage(message: string) {
+    if (message !== ACTIVITY_DATA_SAVED_SUCCESS_MESSAGE) return message;
+
+    return (
+      <>
+        Activity data saved. Review saved records in{' '}
+        <Link className="input-data-success-link" style={successLinkStyle} to={DATA_RECORDS_ROUTE}>
+          Data Records
+        </Link>
+        ,{' '}
+        <Link className="input-data-success-link" style={successLinkStyle} to={CALCULATION_REVIEW_ROUTE}>
+          Calculation Review
+        </Link>
+        , or{' '}
+        <Link className="input-data-success-link" style={successLinkStyle} to={REPORTS_ROUTE}>
+          Reports
+        </Link>
+        .
+      </>
+    );
+  }
+
+  function buildImportReviewRouteState(documentIds = lastImportedDocumentIds): ImportReviewRouteState | undefined {
+    const scopedDocumentIds = Array.from(
+      new Set(documentIds.map((id) => id.trim()).filter(Boolean)),
+    );
+
+    return scopedDocumentIds.length > 0
+      ? {
+          selectedDocumentIds: scopedDocumentIds,
+          reportScope: 'selectedDocuments',
+        }
+      : undefined;
+  }
+
+  function scheduleCalculationReviewRedirect(documentIds = lastImportedDocumentIds) {
     if (importRedirectTimerRef.current) {
       window.clearTimeout(importRedirectTimerRef.current);
     }
 
     importRedirectTimerRef.current = window.setTimeout(() => {
-      navigate('/calculation-review');
+      navigate('/calculation-review', {
+        state: buildImportReviewRouteState(documentIds),
+      });
     }, 1200);
   }
 
@@ -3332,10 +4201,28 @@ ${sampleRows.join('\n')}`,
             confidence: 'medium',
           },
         };
+        const calculationFieldChanged = [
+          'activityType',
+          'recordDate',
+          'quantity',
+          'unit',
+          'jurisdictionCountry',
+          'jurisdictionRegion',
+        ].includes(field);
+        const nextItem = calculationFieldChanged
+          ? {
+              ...updatedItem,
+              matchingStatus: null,
+              reportTreatment: null,
+              scope: null,
+              calculationStatus: null,
+              calculationMessage: null,
+            }
+          : updatedItem;
 
         return {
-          ...updatedItem,
-          selected: parsedActivityHasValidationIssues(updatedItem) ? false : item.selected,
+          ...nextItem,
+          selected: parsedActivityHasValidationIssues(nextItem) ? false : item.selected,
         };
       }),
     );
@@ -3395,7 +4282,11 @@ ${sampleRows.join('\n')}`,
         i === index
           ? {
               ...item,
-              selected: checked && getImportValidationIssues([item]).length === 0,
+              selected:
+                checked &&
+                isImportableDraftRowClassification(
+                  classifyDraftRow(item, getImportValidationIssues([item])),
+                ),
             }
           : item,
       ),
@@ -3408,7 +4299,9 @@ ${sampleRows.join('\n')}`,
     setParsedActivities((prev) =>
       prev.map((item) => ({
         ...item,
-        selected: getImportValidationIssues([item]).length === 0,
+        selected: isImportableDraftRowClassification(
+          classifyDraftRow(item, getImportValidationIssues([item])),
+        ),
       })),
     );
   }
@@ -3424,12 +4317,23 @@ ${sampleRows.join('\n')}`,
     );
   }
 
+  const hasReviewSources = documents.length > 0;
+  const isSourceDeleteSuccessMessage = Boolean(
+    successMessage?.startsWith('Source document deleted.') ||
+      successMessage?.startsWith('Source document removed'),
+  );
+  const showPersistentSuccessPanel =
+    Boolean(successMessage) && (!isSourceDeleteSuccessMessage || hasReviewSources);
   const showPostImportLinks =
-    Boolean(successMessage) && /import|metric/i.test(successMessage ?? '');
+    showPersistentSuccessPanel &&
+    !isSourceDeleteSuccessMessage &&
+    /import|metric/i.test(successMessage ?? '');
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 8 }}>Input Data</h1>
+      <h1 ref={pageHeadingRef} tabIndex={-1} style={{ marginBottom: 8 }}>
+        Input Data
+      </h1>
 
       <p style={{ color: '#666', marginBottom: 16 }}>
         Add emissions-related activity data from documents, spreadsheets, or manual entry. New records can be reviewed before they are included in emissions calculations.
@@ -3437,7 +4341,7 @@ ${sampleRows.join('\n')}`,
 
       <section
         style={workflowCardStyle}
-        aria-label="CarbonLite input workflow: Input Data to Input Review to Save Records to Data Records to Calculation Review to Reports"
+        aria-label="CarbonLite input workflow: Input Data to Review Data to Save Records to Data Records to Calculation Review to Reports"
       >
         <div style={workflowHeaderStyle}>
           <h2 style={workflowTitleStyle}>How activity data moves through CarbonLite</h2>
@@ -3504,7 +4408,7 @@ ${sampleRows.join('\n')}`,
           {
             key: 'spreadsheet' as const,
             title: 'Import Spreadsheet',
-            text: 'Import CSV or Excel activity data using the CarbonLite data template.',
+            text: 'Import CSV or Excel activity data from a CarbonLite template or your existing spreadsheet.',
           },
           {
             key: 'manual' as const,
@@ -3588,14 +4492,15 @@ ${sampleRows.join('\n')}`,
               <select
                 value={documentType}
                 onChange={(e) => setDocumentType(e.target.value)}
+                aria-label="Document Type"
                 style={documentTypeSelectStyle}
               >
-                <option value="UTILITY_BILL">UTILITY_BILL</option>
-                <option value="FUEL_INVOICE">FUEL_INVOICE</option>
-                <option value="SPREADSHEET">SPREADSHEET</option>
-                <option value="PDF">PDF</option>
-                <option value="IMAGE">IMAGE</option>
-                <option value="OTHER">OTHER</option>
+                <option value="">Select document type</option>
+                {UPLOAD_DOCUMENT_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               <span aria-hidden="true" style={documentTypeSelectArrowStyle} />
             </div>
@@ -3606,7 +4511,7 @@ ${sampleRows.join('\n')}`,
             id="document-upload-input"
             type="file"
             onChange={handleFileChange}
-            accept=".pdf,.jpg,.jpeg,.png,.heic,application/pdf,image/jpeg,image/png,image/heic"
+            accept={uploadAccept}
             style={{ display: 'none' }}
             multiple
           />
@@ -3639,11 +4544,13 @@ ${sampleRows.join('\n')}`,
             <button
               type="button"
               onClick={handleUploadAndExtract}
-              disabled={isProcessing || selectedFiles.length === 0 || !canUploadData}
-              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0 || !canUploadData)}
+              disabled={isProcessing || selectedFiles.length === 0 || !documentType || !canUploadData}
+              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0 || !documentType || !canUploadData)}
               title={
                 !canUploadData
                   ? getUploadPermissionDeniedReason(currentUser)
+                  : !documentType
+                  ? 'Select a document type before extracting data.'
                   : selectedFiles.length === 0
                   ? 'Select a document before extracting data.'
                   : 'Upload the selected document and extract activity data.'
@@ -3660,7 +4567,7 @@ ${sampleRows.join('\n')}`,
         <div style={uploadCardStyle}>
           <h2 style={{ marginTop: 0 }}>Import Spreadsheet</h2>
           <p style={{ color: '#666' }}>
-            Import CSV or Excel activity data using the CarbonLite data template.
+            Import CSV or Excel activity data from a CarbonLite template or your existing spreadsheet.
           </p>
           <div style={templateActionRowStyle}>
             <button type="button" onClick={downloadCsvTemplate} style={secondaryButtonStyle}>
@@ -3686,9 +4593,21 @@ ${sampleRows.join('\n')}`,
 
       {error ? <div style={errorStyle}>{error}</div> : null}
 
-      <div style={sectionCardStyle}>
+      <div id="review" ref={reviewSectionRef} style={sectionCardStyle}>
         <div style={uploadedDocumentsHeaderStyle}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Input Review</h2>
+          <div>
+            <h2 ref={reviewHeadingRef} tabIndex={-1} style={{ margin: 0, fontSize: 18 }}>
+              Review Data
+            </h2>
+            <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 14 }}>
+              Review uploaded and imported data before it becomes part of your activity records.
+            </p>
+            {lastSavedSpreadsheetDocumentId || lastConfirmDocumentId ? (
+              <p style={{ margin: '6px 0 0', color: '#334155', fontSize: 12 }}>
+                Save All documentId: {lastSavedSpreadsheetDocumentId ?? '-'} · Confirm documentId: {lastConfirmDocumentId ?? '-'}
+              </p>
+            ) : null}
+          </div>
           <div style={selectedDocumentsActionWrapStyle}>
             <button
               type="button"
@@ -3712,16 +4631,16 @@ ${sampleRows.join('\n')}`,
 
         {loading ? (
           <div style={{ padding: 16 }}>
-            <strong>Loading documents...</strong>
+            <strong>Loading input sources...</strong>
             <div style={{ marginTop: 8, color: '#64748b' }}>
-              Preparing uploaded files and extraction status.
+              Preparing uploaded files, spreadsheet imports, and review status.
             </div>
           </div>
         ) : documents.length === 0 ? (
           <div style={emptyStateStyle}>
-            <strong>No documents uploaded yet.</strong>
+            <strong>No data sources to review yet.</strong>
             <p style={{ margin: '8px 0 0', color: '#64748b' }}>
-              Upload bills, receipts, invoices, PDFs, or images to extract activity data.
+              Upload documents or import a spreadsheet to create reviewable activity data.
             </p>
           </div>
         ) : (
@@ -3760,7 +4679,7 @@ ${sampleRows.join('\n')}`,
                 <th style={thStyle}>File Name</th>
                 <th style={thStyle}>Type</th>
                 <th style={thStyle}>Status</th>
-                <th style={thStyle}>Size</th>
+                <th style={thStyle}>Rows</th>
                 <th style={thStyle}>Created At</th>
                 <th style={thStyle}>Actions</th>
               </tr>
@@ -3789,13 +4708,18 @@ ${sampleRows.join('\n')}`,
                       />
                     </td>
                     <td style={inputReviewFileNameTdStyle}>{doc.fileName}</td>
-                    <td style={inputReviewTypeTdStyle}>{doc.type}</td>
+                    <td style={inputReviewTypeTdStyle}>
+                      {formatDocumentSourceTypeLabel({
+                        fileName: doc.fileName,
+                        type: doc.type,
+                      })}
+                    </td>
                     <td style={inputReviewStatusTdStyle}>
                       <span style={documentStatusBadgeStyle(doc.status)}>
                         {actionModel.statusLabel}
                       </span>
                     </td>
-                    <td style={tdStyle}>{doc.fileSize ?? '-'}</td>
+                    <td style={tdStyle}>{formatInputReviewRowCount(doc)}</td>
                     <td style={inputReviewCreatedAtTdStyle}>{formatDocumentCreatedAt(doc.createdAt)}</td>
                     <td style={documentActionTdStyle}>
                       <div style={documentActionRowCompactStyle}>
@@ -3879,17 +4803,33 @@ ${sampleRows.join('\n')}`,
         </div>
       ) : null}
 
-      {successMessage ? (
+      {showPersistentSuccessPanel ? (
         <div style={successStyle}>
-          {successMessage}
+          {renderSuccessMessage(successMessage)}
 
           {showPostImportLinks ? (
             <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
-              <button type="button" onClick={() => navigate('/metrics-summary')}>
+              <button
+                type="button"
+                className="input-data-post-import-action cursor-pointer"
+                onClick={() =>
+                  navigate('/metrics-summary', {
+                    state: buildImportReviewRouteState(),
+                  })
+                }
+              >
                 View Calculation Review
               </button>
 
-              <button type="button" onClick={() => navigate('/reports')}>
+              <button
+                type="button"
+                className="input-data-post-import-action cursor-pointer"
+                onClick={() =>
+                  navigate('/reports', {
+                    state: buildImportReviewRouteState(),
+                  })
+                }
+              >
                 View Reports
               </button>
             </div>
@@ -4138,7 +5078,7 @@ ${sampleRows.join('\n')}`,
 
                   return (
                   <tr
-                    key={`parsed-${index}`}
+                    key={getParsedActivityRowKey(item, index)}
                     style={item.selected && !rowHasValidationIssues ? selectedPreviewRowStyle : undefined}
                   >
                     <td style={tdStyle}>
@@ -4475,14 +5415,27 @@ ${sampleRows.join('\n')}`,
             style={modalStyle}
           >
             <h2 id="delete-document-title" style={{ marginTop: 0 }}>
-              Delete this document and its imported activity records?
+              Delete source document?
             </h2>
-            <p style={{ color: '#475569', lineHeight: 1.6 }}>
-              This will remove <strong>{documentToDelete.fileName}</strong> from Input Review and clear any extraction preview rows for this file.
-            </p>
-            <p style={warningTextStyle}>
-              This will remove the uploaded document and all activity records created from this document.
-            </p>
+            {isImportedDocument(documentToDelete) ? (
+              <>
+                <p style={{ color: '#475569', lineHeight: 1.6 }}>
+                  This source document has already been imported.
+                </p>
+                <p style={warningTextStyle}>
+                  Deleting/removing the source document from Review Data will NOT delete the imported Activity Records.
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{ color: '#475569', lineHeight: 1.6 }}>
+                  This will remove the uploaded file and its extracted review rows.
+                </p>
+                <p style={warningTextStyle}>
+                  This action cannot be undone.
+                </p>
+              </>
+            )}
             <div style={modalActionRowStyle}>
               <button
                 type="button"
@@ -4498,7 +5451,11 @@ ${sampleRows.join('\n')}`,
                 disabled={deletingDocumentId !== null}
                 style={dangerButtonStyle(deletingDocumentId !== null)}
               >
-                {deletingDocumentId ? 'Deleting...' : 'Delete'}
+                {deletingDocumentId
+                  ? 'Deleting...'
+                  : isImportedDocument(documentToDelete)
+                    ? 'Delete Source Document'
+                    : 'Delete'}
               </button>
             </div>
           </div>
@@ -4902,6 +5859,12 @@ const successStyle: React.CSSProperties = {
   border: '1px solid #BBF7D0',
   background: inputReviewPalette.successBackground,
   color: inputReviewPalette.primaryGreen,
+};
+
+const successLinkStyle: React.CSSProperties = {
+  color: '#047857',
+  fontWeight: 600,
+  cursor: 'pointer',
 };
 
 const errorStyle: React.CSSProperties = {
@@ -5395,13 +6358,19 @@ const documentMenuStyle: React.CSSProperties = {
   right: 0,
   top: 40,
   zIndex: 20,
-  width: 172,
-  minWidth: 150,
+  width: 224,
+  minWidth: 180,
   padding: 6,
   borderRadius: 10,
   border: `1px solid ${inputReviewPalette.border}`,
   background: inputReviewPalette.white,
   boxShadow: '0 14px 30px rgba(15, 23, 42, 0.12)',
+};
+
+const documentMenuSeparatorStyle: React.CSSProperties = {
+  height: 1,
+  margin: '6px 4px',
+  background: inputReviewPalette.border,
 };
 
 function documentMenuItemStyle(disabled: boolean): React.CSSProperties {

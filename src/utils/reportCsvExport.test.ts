@@ -271,11 +271,35 @@ describe('pilot CSV export', () => {
       expect(row['Source File']).toBe('Golden Test Data.xlsx');
       expect(row['Source Type']).toBe('Spreadsheet Import');
       expect(row['Import Method']).toBe('Spreadsheet Import');
-      expect(row['Source Reference']).toBe('Golden Test Data.xlsx');
+      expect(row['Source Reference']).toBe('Not provided');
     });
     expect(buildPilotCsv(goldenDetails)).not.toContain('Source Reference: Spreadsheet import');
     expect(buildPilotCsv(goldenDetails)).not.toContain(',Spreadsheet import,');
     expect(buildPilotCsv(goldenDetails)).not.toMatch(/\bDraft\b/);
+  });
+
+  it('keeps spreadsheet source file and row-level source reference separate', () => {
+    const rows = buildPilotCsvRows([
+      calculatedDetail({
+        activityDataId: 'activity-march-elec-001',
+        activityType: 'ELECTRICITY',
+        activityQuantity: 980,
+        activityUnit: 'kWh',
+        jurisdictionRegion: 'Alberta',
+        factorJurisdictionRegion: 'Alberta',
+        factorName: 'Electricity - Alberta',
+        factorValue: 0.53,
+        calculatedEmissionsKgCO2e: 519.4,
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceReference: 'MARCH-ELEC-001',
+        sourceRow: 2,
+      }),
+    ]);
+
+    expect(rows[0]['Source File']).toBe('carbonlite_needs_review_test.xlsx');
+    expect(rows[0]['Source Type']).toBe('Spreadsheet Import');
+    expect(rows[0]['Source Reference']).toBe('MARCH-ELEC-001');
   });
 
   it('uses accommodation wording for raw hotel activity and factor names', () => {

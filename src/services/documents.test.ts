@@ -13,7 +13,12 @@ describe('deleteDocument', () => {
     vi.restoreAllMocks();
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'member@example.com', role: 'MEMBER', organizationId: 'org-1' }),
+      JSON.stringify({
+        email: 'user@example.com',
+        role: 'USER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
     );
   });
 
@@ -87,6 +92,45 @@ describe('deleteDocument', () => {
 });
 
 describe('uploadDocument duplicate protection', () => {
+  function mockUploadApi(documents: any[] = []) {
+    return vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const path = String(url);
+      if (path.endsWith('/documents') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            items: documents,
+            page: 1,
+            pageSize: documents.length,
+            total: documents.length,
+            totalPages: 1,
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (path.endsWith('/documents/upload') && init?.method === 'POST') {
+        const formData = init.body as FormData;
+        const file = formData.get('file') as File;
+        const fileHash = String(formData.get('fileHash') ?? '');
+        const document = {
+          id: `doc-${documents.length + 1}`,
+          organizationId: 'org-1',
+          fileName: file.name,
+          fileUrl: '',
+          type: String(formData.get('type') ?? 'SPREADSHEET'),
+          status: 'UPLOADED',
+          fileHash,
+          createdAt: '2026-06-10T00:00:00.000Z',
+          updatedAt: '2026-06-10T00:00:00.000Z',
+        };
+        documents.unshift(document);
+        return new Response(JSON.stringify(document), { status: 201 });
+      }
+
+      return new Response('not found', { status: 404 });
+    });
+  }
+
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
@@ -119,10 +163,19 @@ describe('uploadDocument duplicate protection', () => {
   });
 
   it('converts a backend duplicate response into a friendly structured error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const path = String(url);
+      if (path.endsWith('/documents') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({ items: [], page: 1, pageSize: 0, total: 0, totalPages: 1 }),
+          { status: 200 },
+        );
+      }
+
+      return new Response(
         JSON.stringify({
-          message: 'This file appears to have already been uploaded.',
+          message: 'This file has already been uploaded.',
+          existingDocumentId: 'existing-doc',
           existingDocument: {
             id: 'existing-doc',
             fileName: 'utility.xlsx',
@@ -130,8 +183,8 @@ describe('uploadDocument duplicate protection', () => {
           },
         }),
         { status: 409 },
-      ),
-    );
+      );
+    });
 
     await expect(
       uploadDocument({
@@ -140,7 +193,7 @@ describe('uploadDocument duplicate protection', () => {
       }),
     ).rejects.toMatchObject({
       name: 'DuplicateDocumentError',
-      message: 'This file appears to have already been uploaded.',
+      message: 'This file has already been uploaded.',
       existingDocument: {
         id: 'existing-doc',
         fileName: 'utility.xlsx',
@@ -149,30 +202,150 @@ describe('uploadDocument duplicate protection', () => {
     } satisfies Partial<DuplicateDocumentError>);
   });
 
-  it('sends an explicit override only when keeping a separate copy', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
+  it('blocks exact same bytes uploaded again with the same filename', async () => {
+    const documents: any[] = [];
+    const fetchMock = mockUploadApi(documents);
+    const file = new File(['utility data'], 'utility.xlsx');
+
+    await expect(uploadDocument({ file, type: 'SPREADSHEET' })).resolves.toMatchObject({
+      fileName: 'utility.xlsx',
+      fileHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+
+    await expect(
+      uploadDocument({ file: new File(['utility data'], 'utility.xlsx'), type: 'SPREADSHEET' }),
+    ).rejects.toMatchObject({
+      name: 'DuplicateDocumentError',
+      existingDocument: expect.objectContaining({
+        id: 'doc-1',
+        fileName: 'utility.xlsx',
+      }),
+    });
+    expect(documents).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/documents/upload')),
+    ).toHaveLength(1);
+  });
+
+  it('blocks exact same bytes uploaded with a different filename', async () => {
+    const documents: any[] = [];
+    mockUploadApi(documents);
+
+    await uploadDocument({
+      file: new File(['utility data'], 'utility.xlsx'),
+      type: 'SPREADSHEET',
+    });
+
+    await expect(
+      uploadDocument({
+        file: new File(['utility data'], 'renamed-utility.xlsx'),
+        type: 'SPREADSHEET',
+      }),
+    ).rejects.toMatchObject({
+      name: 'DuplicateDocumentError',
+      existingDocument: expect.objectContaining({
+        fileName: 'utility.xlsx',
+      }),
+    });
+    expect(documents).toHaveLength(1);
+  });
+
+  it('allows the same filename when file content changed', async () => {
+    const documents: any[] = [];
+    mockUploadApi(documents);
+
+    await uploadDocument({
+      file: new File(['utility data version 1'], 'utility.xlsx'),
+      type: 'SPREADSHEET',
+    });
+    await expect(
+      uploadDocument({
+        file: new File(['utility data version 2'], 'utility.xlsx'),
+        type: 'SPREADSHEET',
+      }),
+    ).resolves.toMatchObject({
+      fileName: 'utility.xlsx',
+    });
+    expect(documents).toHaveLength(2);
+    expect(documents[0].fileHash).not.toBe(documents[1].fileHash);
+  });
+
+  it('allows another organization to upload identical file content independently', async () => {
+    const existingHash = await calculateFileSha256(new File(['utility data'], 'utility.xlsx'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const path = String(url);
+      if (path.endsWith('/documents') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: 'org-2-doc',
+                organizationId: 'org-2',
+                fileName: 'utility.xlsx',
+                fileUrl: '',
+                type: 'SPREADSHEET',
+                status: 'UPLOADED',
+                fileHash: existingHash,
+                createdAt: '2026-06-10T00:00:00.000Z',
+                updatedAt: '2026-06-10T00:00:00.000Z',
+              },
+            ],
+            page: 1,
+            pageSize: 1,
+            total: 1,
+            totalPages: 1,
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response(
         JSON.stringify({
-          id: 'new-doc',
+          id: 'org-1-doc',
+          organizationId: 'org-1',
           fileName: 'utility-copy.xlsx',
           fileUrl: '',
           type: 'SPREADSHEET',
           status: 'UPLOADED',
+          fileHash: String((init?.body as FormData).get('fileHash')),
           createdAt: '2026-06-10T00:00:00.000Z',
           updatedAt: '2026-06-10T00:00:00.000Z',
         }),
-        { status: 200 },
-      ),
-    );
-
-    await uploadDocument({
-      file: new File(['utility data'], 'utility-copy.xlsx'),
-      type: 'SPREADSHEET',
-      allowDuplicate: true,
+        { status: 201 },
+      );
     });
 
-    const formData = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData;
-    expect(formData.get('allowDuplicate')).toBe('true');
+    await expect(
+      uploadDocument({
+        file: new File(['utility data'], 'utility-copy.xlsx'),
+        type: 'SPREADSHEET',
+      }),
+    ).resolves.toMatchObject({
+      id: 'org-1-doc',
+      organizationId: 'org-1',
+    });
+
+    const uploadBody = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/documents/upload'),
+    )?.[1]?.body as FormData;
+    expect(uploadBody.get('fileHash')).toBe(existingHash);
+  });
+
+  it('posts the content hash with a new upload and never sends a duplicate override', async () => {
+    const fetchMock = mockUploadApi([]);
+
+    await uploadDocument(
+      {
+        file: new File(['utility data'], 'utility-copy.xlsx'),
+        type: 'SPREADSHEET',
+      },
+    );
+
+    const uploadCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/documents/upload'),
+    );
+    const formData = uploadCall?.[1]?.body as FormData;
+    expect(formData.get('allowDuplicate')).toBeNull();
     expect(String(formData.get('fileHash'))).toMatch(/^[a-f0-9]{64}$/);
   });
 });
