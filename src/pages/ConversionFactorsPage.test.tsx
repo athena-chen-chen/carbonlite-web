@@ -124,7 +124,7 @@ describe('ConversionFactorsPage traceability', () => {
     vi.mocked(isPilotReviewer).mockReturnValue(false);
   });
 
-  it('shows a loading indication while conversion factors are loading', async () => {
+  it('shows a loading indication while emission factors are loading', async () => {
     let resolveFactors!: (value: Awaited<ReturnType<typeof getConversionFactors>>) => void;
     vi.mocked(getConversionFactors).mockReturnValue(
       new Promise((resolve) => {
@@ -138,14 +138,17 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Loading conversion factors...')).toBeInTheDocument();
-    expect(screen.getByLabelText('Loading conversion factors')).toBeInTheDocument();
-    ['Total Factors', 'Emission Factors', 'Default Factors', 'Activity Types'].forEach((title) => {
+    expect(await screen.findByText('Loading emission factors...')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading emission factors')).toBeInTheDocument();
+    ['Total Factors', 'Default Factors', 'Activity Types'].forEach((title) => {
       const card = getSummaryCard(title);
       expect(card.getByText('—')).toBeInTheDocument();
       expect(card.queryByText('0')).not.toBeInTheDocument();
     });
-    expect(screen.queryByText('No conversion factors yet.')).not.toBeInTheDocument();
+    const emissionFactorCard = screen.getAllByText('Emission Factors')[1]?.parentElement;
+    expect(emissionFactorCard).toBeTruthy();
+    expect(within(emissionFactorCard as HTMLElement).getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('No emission factors yet.')).not.toBeInTheDocument();
     expect(screen.queryByText('No factors match the selected filters.')).not.toBeInTheDocument();
 
     resolveFactors({
@@ -157,9 +160,11 @@ describe('ConversionFactorsPage traceability', () => {
     });
 
     expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Loading conversion factors')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Loading emission factors')).not.toBeInTheDocument();
     expect(getSummaryCard('Total Factors').getByText('1')).toBeInTheDocument();
-    expect(getSummaryCard('Emission Factors').getByText('1')).toBeInTheDocument();
+    const loadedEmissionFactorCard = screen.getAllByText('Emission Factors')[1]?.parentElement;
+    expect(loadedEmissionFactorCard).toBeTruthy();
+    expect(within(loadedEmissionFactorCard as HTMLElement).getByText('1')).toBeInTheDocument();
     expect(getSummaryCard('Default Factors').getByText('1')).toBeInTheDocument();
     expect(getSummaryCard('Activity Types').getByText('1')).toBeInTheDocument();
   });
@@ -264,7 +269,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     await userEvent.click(viewButtons[1]);
 
-    expect(screen.getAllByText('Verified').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Reviewed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Environment and Climate Change Canada').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alberta').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Canada National Inventory Report').length).toBeGreaterThan(0);
@@ -303,7 +308,7 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByText('Scroll horizontally to view all columns →')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Result Unit' })).not.toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Jurisdiction' })).toBeInTheDocument();
-    expect(screen.queryByRole('columnheader', { name: 'Verified' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Reviewed' })).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-value-factor-1')).toHaveTextContent('2.68');
     expect(container.querySelectorAll('col')).toHaveLength(17);
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveStyle({
@@ -670,7 +675,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('No conversion factors yet.');
+    await screen.findByText('No emission factors yet.');
     await userEvent.selectOptions(screen.getByLabelText('Jurisdiction'), 'NATIONAL');
     await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
 
@@ -772,13 +777,13 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByRole('button', { name: '+ Add Company Factor' })).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
-    expect(screen.getByText('System Factor')).toBeInTheDocument();
+    expect(screen.getByText('Provided by CarbonLite')).toBeInTheDocument();
     expect(screen.queryByLabelText('More actions for Diesel default')).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
   });
 
-  it('sorts conversion factors by factor value', async () => {
+  it('sorts emission factors by factor value', async () => {
     vi.mocked(getConversionFactors).mockResolvedValue({
       items: [
         baseFactor,
@@ -830,7 +835,7 @@ describe('ConversionFactorsPage traceability', () => {
     ]);
   });
 
-  it('filters conversion factors by factor value range', async () => {
+  it('filters emission factors by factor value range', async () => {
     vi.mocked(getConversionFactors).mockResolvedValue({
       items: [
         baseFactor,
@@ -887,7 +892,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
 
-    expect(screen.getByLabelText('Verified source and methodology')).not.toBeChecked();
+    expect(screen.getByLabelText('Reviewed source and methodology')).not.toBeChecked();
   });
 
   it('lets an admin create a company custom factor with canonical activity type', async () => {
@@ -1187,7 +1192,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('No conversion factors yet.');
+    await screen.findByText('No emission factors yet.');
     await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'ELECTRICITY');
     await userEvent.selectOptions(screen.getByLabelText('Jurisdiction'), 'AB');
     await userEvent.type(getFirstLabeledControl('Source Year'), '2025');
@@ -1230,7 +1235,7 @@ describe('ConversionFactorsPage traceability', () => {
     );
 
     expect(
-      await screen.findByText(/Add a conversion factor for Water \/ m3/i),
+      await screen.findByText(/Add an emission factor for Water \/ m3/i),
     ).toBeInTheDocument();
     expect(screen.getByDisplayValue('Water')).toBeInTheDocument();
     expect(screen.getByDisplayValue('m3')).toBeInTheDocument();

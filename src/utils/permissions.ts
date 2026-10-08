@@ -32,6 +32,38 @@ export function getUserRole(user: AuthUser | null) {
   return 'MEMBER';
 }
 
+export type OrganizationRole = 'OWNER' | 'ADMIN' | 'CONTRIBUTOR' | 'REVIEWER' | 'VIEWER';
+
+export function getOrganizationRole(user: AuthUser | null): OrganizationRole {
+  if (!user) return 'VIEWER';
+  if (isPilotReviewer(user)) return 'VIEWER';
+
+  const rawRole = String(user.role ?? user.membershipRole ?? '').trim().toUpperCase();
+  const membershipRole = String(user.membershipRole ?? '').trim().toUpperCase();
+  const role = rawRole || membershipRole;
+
+  if (role === 'OWNER') return 'OWNER';
+  if (role === 'ADMIN') return 'ADMIN';
+  if (role === 'REVIEWER') return 'REVIEWER';
+  if (role === 'VIEWER') return 'VIEWER';
+  if (role === 'EDITOR' || role === 'MEMBER' || role === 'USER' || role === 'CONTRIBUTOR') {
+    return 'CONTRIBUTOR';
+  }
+
+  return 'CONTRIBUTOR';
+}
+
+export function formatOrganizationRole(role: OrganizationRole) {
+  const labels: Record<OrganizationRole, string> = {
+    OWNER: 'Owner',
+    ADMIN: 'Admin',
+    CONTRIBUTOR: 'Contributor',
+    REVIEWER: 'Reviewer',
+    VIEWER: 'Viewer',
+  };
+  return labels[role];
+}
+
 export function isAdmin(user: AuthUser | null) {
   if (isPilotReviewer(user)) return false;
   return getUserRole(user) === 'ADMIN';
@@ -141,6 +173,26 @@ export function canManageUsers(user: AuthUser | null) {
   if (isPilotReviewer(user)) return false;
 
   return isAdminOrOwner(user);
+}
+
+export function canReviewBoundary(user: AuthUser | null) {
+  if (!hasCompanyContext(user)) return false;
+  if (isPilotReviewer(user)) return false;
+
+  const role = getOrganizationRole(user);
+  return role === 'OWNER' || role === 'ADMIN' || role === 'REVIEWER';
+}
+
+export function canReviewReports(user: AuthUser | null) {
+  return canReviewBoundary(user);
+}
+
+export function canOverrideFactors(user: AuthUser | null) {
+  if (!hasCompanyContext(user)) return false;
+  if (isPilotReviewer(user)) return false;
+
+  const role = getOrganizationRole(user);
+  return role === 'OWNER' || role === 'ADMIN' || role === 'REVIEWER';
 }
 
 export function canViewAdmin(user: AuthUser | null) {

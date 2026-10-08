@@ -31,12 +31,12 @@ export type IssueBadgeProps = {
 };
 
 export const STATUS_DISPLAY_MAP: Record<string, BadgeDisplay> = {
-  READY: { label: 'Ready', tone: 'success' },
-  MATCHED: { label: 'Matched', tone: 'success' },
+  READY: { label: 'Ready for Calculation', tone: 'success' },
+  MATCHED: { label: 'Factor Matched', tone: 'success' },
   CALCULATED: { label: 'Calculated', tone: 'success' },
-  INCLUDED: { label: 'Included', tone: 'success' },
-  REQUIRES_REVIEW: { label: 'Requires Review', tone: 'warning' },
-  NEEDS_REVIEW: { label: 'Requires Review', tone: 'warning' },
+  INCLUDED: { label: 'Included in GHG Total', tone: 'success' },
+  REQUIRES_REVIEW: { label: 'Needs Review', tone: 'warning' },
+  NEEDS_REVIEW: { label: 'Needs Review', tone: 'warning' },
   MISSING_PROVINCE: { label: 'Missing Province', tone: 'warning' },
   MISSING_JURISDICTION: { label: 'Missing Province', tone: 'warning' },
   MISSING_FACTOR: { label: 'Missing Factor', tone: 'warning' },
@@ -44,7 +44,7 @@ export const STATUS_DISPLAY_MAP: Record<string, BadgeDisplay> = {
   UNIT_MISMATCH: { label: 'Unit Mismatch', tone: 'danger' },
   MISSING_UNIT: { label: 'Missing Unit', tone: 'danger' },
   NOT_EMISSIONS_FACTOR_REQUIRED: { label: 'Not Emissions Factor Required', tone: 'info' },
-  TRACKED_ONLY: { label: 'Tracked Only', tone: 'info' },
+  TRACKED_ONLY: { label: 'Tracked Metric', tone: 'info' },
   TRACKED_METRIC: { label: 'Tracked Metric', tone: 'info' },
   EXCLUDED: { label: 'Excluded', tone: 'warning' },
   SKIPPED: { label: 'Skipped', tone: 'neutral' },
@@ -68,7 +68,7 @@ export const ISSUE_DISPLAY_MAP: Record<string, BadgeDisplay> = {
   MISSING_FACTOR: {
     label: 'Missing Factor',
     tone: 'warning',
-    description: 'No matching conversion factor was found.',
+    description: 'No matching emission factor was found.',
   },
   INVALID_UNIT: {
     label: 'Invalid Unit',

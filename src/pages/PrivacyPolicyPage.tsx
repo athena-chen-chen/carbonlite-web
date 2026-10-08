@@ -32,7 +32,7 @@ const sections = [
         <ul>
           <li>Account details such as your name, email address, organization, and user role.</li>
           <li>Uploaded documents, including invoices, utility bills, spreadsheets, images, and PDFs.</li>
-          <li>Extracted or manually entered activity data, conversion factors, report settings, and generated summaries.</li>
+          <li>Extracted or manually entered activity data, emission factors, report settings, and generated summaries.</li>
           <li>Feedback, support requests, and optional contact information you submit.</li>
           <li>Technical data such as browser type, page visited, IP address, error details, and product usage events.</li>
         </ul>

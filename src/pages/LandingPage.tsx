@@ -2,6 +2,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { trackEvent } from '../services/ga4.service';
+import { CARBONLITE_WORKFLOW } from '../constants/carbonliteWorkflow';
 
 const demoVideoUrl = import.meta.env.VITE_DEMO_VIDEO_URL || 'https://www.youtube.com/embed/7sXJJN1GMyE';
 const demoVideoEmbedUrl = getYouTubeEmbedUrl(demoVideoUrl);
@@ -28,28 +29,7 @@ function getYouTubeEmbedUrl(urlOrId: string) {
 export default function CarbonLiteLandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const reportSteps = [
-    {
-      title: 'Collect source data',
-      text: 'Gather utility bills, fuel records, invoices, spreadsheets, and other operational data.',
-    },
-    {
-      title: 'Upload documents or spreadsheets',
-      text: 'Import PDFs, images, CSV files, or Excel data into one workspace.',
-    },
-    {
-      title: 'Review activity records',
-      text: 'Check extracted quantities, units, dates, province, site, and source references. Fix records that need attention.',
-    },
-    {
-      title: 'Match traceable factors',
-      text: 'Apply jurisdiction- and unit-aware emission factors with visible source and year information.',
-    },
-    {
-      title: 'Export a review-ready package',
-      text: 'Prepare emissions summaries, activity records, site breakdowns, factor sources, calculation traceability, and records requiring review.',
-    },
-  ];
+  const reportSteps = CARBONLITE_WORKFLOW;
   const audienceCards = [
     {
       title: 'Canadian SMEs',
@@ -267,7 +247,7 @@ export default function CarbonLiteLandingPage() {
                     {[
                       ['Source files', '4 documents', 'ENMAX_March.pdf · Fuel_receipts.xlsx'],
                       ['Activity records', '18 extracted', 'Structured quantities, dates, units, and sites'],
-                      ['Ready', '14 records', 'Ready for factor matching and calculation review'],
+                      ['Calculated', '14 records', 'Emission factors selected and calculations complete'],
                       ['Needs review', '4 records', 'Missing province · unit mismatch · missing site'],
                       ['Traceability', 'Source → Factor', 'Record, jurisdiction, year, and calculation shown together'],
                     ].map(([label, value, detail]) => (
@@ -348,17 +328,17 @@ export default function CarbonLiteLandingPage() {
           <div className="mx-auto max-w-6xl px-6 py-16">
             <div className="max-w-3xl">
               <p className="text-sm font-bold uppercase tracking-wider text-emerald-700">How it works</p>
-              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Collect → Upload → Review → Match → Export</h2>
+              <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight md:text-3xl">Define Boundary → Upload Data → Resolve Issues → Validate Calculations → Review Results → Generate Report</h2>
             </div>
 
-            <div className="mt-9 grid gap-5 md:grid-cols-2 lg:grid-cols-5">
-              {reportSteps.map((step, index) => (
+            <div className="mt-9 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {reportSteps.map((step) => (
                 <div key={step.title} className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm transition hover:-translate-y-1 hover:bg-white hover:shadow-xl hover:shadow-slate-200/70">
                   <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-base font-black text-emerald-700">
-                    {index + 1}
+                    {step.step}
                   </div>
-                  <h3 className="text-lg font-bold">{step.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{step.text}</p>
+                  <h3 className="text-lg font-bold">{step.shortTitle}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{step.description}</p>
                 </div>
               ))}
             </div>

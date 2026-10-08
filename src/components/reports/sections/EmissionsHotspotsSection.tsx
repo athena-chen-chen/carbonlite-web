@@ -3,13 +3,15 @@ import {
   formatHotspotExclusionNote,
   type HotspotAnalysis,
 } from '../../MetricsSummarySection';
+import type { SourceReviewReadinessSummary } from '../../../utils/reportingReadiness';
 import { formatDisplayNumber, formatEmissionsWithUnit } from '../../../utils/numberFormatting';
 
 type EmissionsHotspotsSectionProps = {
   analysis: HotspotAnalysis;
+  sourceReviewSummary?: SourceReviewReadinessSummary | null;
 };
 
-export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionProps) {
+export function EmissionsHotspotsSection({ analysis, sourceReviewSummary }: EmissionsHotspotsSectionProps) {
   if (analysis.totalRecordCount <= 0) {
     return (
       <p style={sectionHelperStyle}>
@@ -26,7 +28,7 @@ export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionP
         </p>
         {analysis.excludedRecordCount > 0 ? (
           <div style={qualityReasonStyle}>
-            {formatHotspotExclusionNote(analysis)}
+            {formatHotspotExclusionNote({ ...analysis, sourceReviewSummary })}
           </div>
         ) : null}
       </div>
@@ -38,17 +40,17 @@ export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionP
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <p style={sectionHelperStyle}>
-        This section highlights the activity categories contributing the largest share of calculated emissions. Hotspot analysis only includes successfully calculated records.
+        This section highlights the activity categories contributing the largest share of current estimated emissions. Hotspot analysis only includes successfully calculated records.
       </p>
       <div style={hotspotHighlightStyle}>
         <div style={{ fontSize: 12, fontWeight: 800, color: '#047857' }}>Top emissions hotspot</div>
         <div style={{ marginTop: 4, fontSize: 20, fontWeight: 900, color: '#064e3b' }}>{top.displayName}</div>
         <div style={{ marginTop: 4, color: '#475569' }}>
-          {top.displayName} contributes {formatDisplayNumber(top.percentageOfTotal)}% of calculated emissions.
+          {top.displayName} represents {formatDisplayNumber(top.percentageOfTotal)}% of the current estimated emissions total.
         </div>
       </div>
       <SimpleTable
-        headers={['Rank', 'Category', 'Calculated Emissions', 'Share of Total', 'Records', 'Hotspot Level', 'Focus Message']}
+        headers={['Rank', 'Category', 'Calculated Emissions', 'Share of Total', 'Records', 'Hotspot Level', 'Estimate Confidence', 'Decision Readiness', 'Focus Message']}
         emptyMessage="No hotspot categories available."
         rows={analysis.categoryHotspots.map((row) => [
           row.rank,
@@ -57,6 +59,8 @@ export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionP
           `${formatDisplayNumber(row.percentageOfTotal)}%`,
           row.calculatedRecordCount,
           formatHotspotLevel(row.hotspotLevel),
+          row.estimateConfidence,
+          row.decisionReadiness,
           row.focusMessage,
         ])}
       />
@@ -72,7 +76,7 @@ export function EmissionsHotspotsSection({ analysis }: EmissionsHotspotsSectionP
       ) : null}
       {analysis.excludedRecordCount > 0 ? (
         <div style={qualityReasonStyle}>
-          {formatHotspotExclusionNote(analysis)}
+          {formatHotspotExclusionNote({ ...analysis, sourceReviewSummary })}
         </div>
       ) : null}
     </div>

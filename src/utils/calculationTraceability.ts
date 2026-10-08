@@ -2,6 +2,7 @@ import type { CalculationAuditDetail } from '../services/metrics';
 import { getDisplaySourceLabel } from './reportCredibility';
 import { formatActivityTypeLabel } from './activityAggregation';
 import { formatDisplayNumber, formatEmissionsUnit, formatEmissionsValue, formatEmissionsWithUnit } from './numberFormatting';
+import { formatCalculationStatusLabel } from './terminology';
 import { normalizeUnitForDisplay } from './unitNormalization';
 
 function formatNumber(value?: string | number | null) {
@@ -95,7 +96,7 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
   }
 
   if (detail.status === 'MISSING_FACTOR') {
-    return 'No matching conversion factor was found.';
+    return 'No matching emission factor was found.';
   }
 
   if (detail.status === 'INVALID_UNIT') {
@@ -103,7 +104,7 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
   }
 
   if (detail.status === 'TRACKED_ONLY') {
-    return 'Tracked only. Not included in emissions total.';
+    return 'Tracked Metric. Not included in the GHG emissions total.';
   }
 
   if (detail.status === 'INVALID_QUANTITY') {
@@ -148,7 +149,7 @@ export function buildFormulaInputs(detail: CalculationAuditDetail) {
   }
 
   if (detail.status === 'TRACKED_ONLY') {
-    return 'Tracked only. Not included in emissions total.';
+    return 'Tracked Metric. Not included in the GHG emissions total.';
   }
 
   if (
@@ -206,7 +207,7 @@ export function buildCalculatedFromLine(detail?: CalculationAuditDetail) {
 }
 
 export function formatCalculationStatus(status?: string | null) {
-  if (!status) return 'Needs review';
+  if (!status) return 'Needs Review';
   const labels: Record<string, string> = {
     CALCULATED: 'Calculated',
     MISSING_FACTOR: 'Missing Factor',
@@ -215,19 +216,19 @@ export function formatCalculationStatus(status?: string | null) {
     MISSING_DATA: 'Missing data',
     TRACKED_ONLY: 'Tracked Metric',
     OUTSIDE_SCOPE: 'Outside report scope',
-    MATCHED: 'Matched',
-    MATCHED_PRIOR_YEAR: 'Using nearest prior year factor',
+    MATCHED: 'Factor Matched',
+    MATCHED_PRIOR_YEAR: 'Factor Matched - Prior Year',
     NO_MATCH: 'Missing Factor',
     SKIPPED_MISSING_FACTOR: 'Missing Factor',
     SKIPPED_INVALID_UNIT: 'Invalid Unit',
     SKIPPED_MISSING_QUANTITY: 'Missing Quantity',
     SKIPPED_MISSING_JURISDICTION: 'Missing Jurisdiction',
     SKIPPED_TRACKED_ONLY: 'Tracked Metric',
-    SKIPPED_NEEDS_REVIEW: 'Requires Review',
+    SKIPPED_NEEDS_REVIEW: 'Needs Review',
     SYSTEM_DEFAULT: 'CarbonLite system default factor',
     PLACEHOLDER: 'Placeholder factor',
   };
-  return labels[status] || status.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
+  return labels[status] || formatCalculationStatusLabel(status);
 }
 
 export function formatMatchingMethod(detail: CalculationAuditDetail) {

@@ -3,6 +3,7 @@ import { getActivityTypeLabel, getFactorDisplayName } from './activityType';
 import { formatCredibilityLabel } from './factorCredibility';
 import {
   formatReportFactorVersion,
+  formatReportImportMethod,
   formatReportJurisdiction,
   formatReportSourceReference,
   formatReportSourceType,
@@ -26,6 +27,8 @@ export const PILOT_CSV_HEADERS = [
   'Quantity',
   'Quantity Display',
   'Unit',
+  'Cost CAD',
+  'Site / Facility',
   'Country',
   'Province / Jurisdiction',
   'Scope',
@@ -40,6 +43,9 @@ export const PILOT_CSV_HEADERS = [
   'Factor Version',
   'Factor Source Authority',
   'Factor Source Document',
+  'Factor Source URL',
+  'Factor Selection Reason',
+  'Factor Selection Explanation',
   'Verification Status',
   'Confidence Level',
   'Consultant Review Recommended',
@@ -47,6 +53,8 @@ export const PILOT_CSV_HEADERS = [
   'Calculated Emissions kgCO2e',
   'Calculated Emissions Display',
   'Source File',
+  'Source Sheet',
+  'Source Row',
   'Source Type',
   'Import Method',
   'Source Reference',
@@ -77,8 +85,8 @@ function displayNumber(value?: string | number | null) {
 
 const CSV_STATUS_LABELS: Record<string, string> = {
   CALCULATED: 'Calculated',
-  MATCHED: 'Matched',
-  TRACKED_ONLY: 'Tracked Only',
+  MATCHED: 'Factor Matched',
+  TRACKED_ONLY: 'Tracked Metric',
   REQUIRES_REVIEW: 'Requires Review',
   MISSING_FACTOR: 'Missing Factor',
   MISSING_PROVINCE: 'Missing Province',
@@ -88,7 +96,7 @@ const CSV_STATUS_LABELS: Record<string, string> = {
   UNSUPPORTED_ACTIVITY: 'Unsupported Activity',
   NOT_IMPORTABLE: 'Not Importable',
   EXCLUDED: 'Excluded',
-  INCLUDED: 'Included',
+  INCLUDED: 'Included in GHG Total',
 };
 
 function formatCsvDisplayLabel(value?: string | null) {
@@ -111,20 +119,26 @@ function getScopeLabel(detail: CalculationAuditDetail) {
 }
 
 function getReportTreatment(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Tracked Only';
-  if (detail.status === 'CALCULATED') return 'Included';
-  return 'Excluded';
+  if (isTrackedMetricDetail(detail)) return 'TRACKED_ONLY';
+  if (detail.status === 'CALCULATED') return 'INCLUDED';
+  return 'EXCLUDED';
 }
 
 function getCalculationStatus(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Tracked Only';
-  return formatCsvDisplayLabel(detail.calculationStatus || detail.status) || 'Not specified';
+  if (isTrackedMetricDetail(detail)) return 'TRACKED_ONLY';
+  return normalizeStatus(detail.calculationStatus || detail.status) || 'NOT_SPECIFIED';
 }
 
 function getMatchingStatus(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Tracked Only';
-  if (detail.status === 'CALCULATED') return 'Matched';
-  return formatCsvDisplayLabel(detail.matchingStatus || detail.status) || 'Not specified';
+  if (isTrackedMetricDetail(detail)) return 'NOT_APPLICABLE';
+  if (detail.status === 'CALCULATED') {
+    const matchingStatus = normalizeStatus(detail.matchingStatus);
+    if (['MATCHED_PRIOR_YEAR', 'MATCHED_NEAREST_YEAR', 'MATCHED_GENERIC', 'MATCHED_FALLBACK'].includes(matchingStatus)) {
+      return 'MATCHED';
+    }
+    return matchingStatus || 'MATCHED';
+  }
+  return normalizeStatus(detail.matchingStatus || detail.status) || 'NOT_SPECIFIED';
 }
 
 function singularizeFactorDenominator(unit?: string | null) {
@@ -141,7 +155,7 @@ function singularizeFactorDenominator(unit?: string | null) {
 }
 
 export function formatCsvFactorUnit(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'No emissions factor applied';
+  if (isTrackedMetricDetail(detail)) return '';
   const resultUnit = detail.factorResultUnit || 'kgCO2e';
   if (resultUnit.includes('/')) {
     const [resultNumerator, resultDenominator] = resultUnit.split('/');
@@ -158,7 +172,7 @@ function isNationalFactorValue(value?: string | null) {
 }
 
 export function formatCsvFactorJurisdiction(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'No emissions factor applied';
+  if (isTrackedMetricDetail(detail)) return '';
   const region = String(detail.factorJurisdictionRegion ?? '').trim();
   const country = String(detail.factorJurisdictionCountry ?? '').trim();
 
@@ -173,12 +187,12 @@ export function formatCsvFactorJurisdiction(detail: CalculationAuditDetail) {
 }
 
 function getMatchedFactorName(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'No emissions factor applied';
+  if (isTrackedMetricDetail(detail)) return '';
   return getFactorDisplayName(detail.factorDisplayName || detail.factorName) || 'Not specified';
 }
 
 function buildRawCalculationFormula(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Tracked only. Not included in emissions total.';
+  if (isTrackedMetricDetail(detail)) return 'Tracked metric. Not included in emissions total.';
   if (detail.status !== 'CALCULATED') return formatTraceabilityReviewNote(detail);
   return buildCalculatedFormula(detail);
 }
@@ -189,9 +203,24 @@ function usesPriorYearFactor(detail: CalculationAuditDetail) {
   return Number.isFinite(recordYear) && Number.isFinite(factorYear) && factorYear > 0 && factorYear < recordYear;
 }
 
+function usesGenericJurisdictionFallback(detail: CalculationAuditDetail) {
+  const reason = normalizeStatus(detail.factorSelectionReason);
+  if (reason.includes('GENERIC_JURISDICTION')) return true;
+  return formatCsvFactorJurisdiction(detail) === 'Canada (Generic)' &&
+    !isNationalFactorValue(detail.jurisdictionRegion);
+}
+
 function getConsultantReviewRecommended(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Not applicable';
-  if (isScope3PilotActivity(detail.activityType)) return 'Yes - Scope 3 review recommended';
+  if (isTrackedMetricDetail(detail)) return 'No';
+  if (detail.status !== 'CALCULATED') return 'Yes';
+  if (
+    isScope3PilotActivity(detail.activityType) ||
+    usesPriorYearFactor(detail) ||
+    usesGenericJurisdictionFallback(detail)
+  ) {
+    return 'Yes';
+  }
+
   const verification = formatReportVerification({
     activityType: detail.activityType,
     verified: detail.factorVerified,
@@ -199,28 +228,82 @@ function getConsultantReviewRecommended(detail: CalculationAuditDetail) {
     verificationStatus: detail.factorVerificationStatus,
   });
   return /review|pilot|unverified|draft/i.test(verification)
-    ? 'Review before formal reporting'
+    ? 'Yes'
     : 'No';
 }
 
 function buildCsvReviewNote(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Tracked only. Not included in emissions total.';
+  if (isTrackedMetricDetail(detail)) return 'Tracked metric. Not included in the GHG emissions total.';
   if (detail.status !== 'CALCULATED') return formatTraceabilityReviewNote(detail);
 
-  const factorType = String(detail.factorType ?? '').toUpperCase() === 'CUSTOM'
-    ? 'Custom Factor'
-    : 'CarbonLite System Factor';
-  const notes = [`Matched to ${factorType}.`];
+  const usedPriorYear = usesPriorYearFactor(detail);
+  const usedGenericJurisdiction = usesGenericJurisdictionFallback(detail);
+  const notes = [buildMatchedFactorReviewIntro(detail, usedGenericJurisdiction)];
 
-  if (usesPriorYearFactor(detail)) {
-    notes.push('Using latest available prior-year factor because no factor was found for the record year.');
+  if (usedGenericJurisdiction && usedPriorYear) {
+    notes.push('A Canada-generic and prior-year fallback was used; consultant review is recommended before formal reporting.');
+  } else if (usedGenericJurisdiction) {
+    notes.push(buildGenericJurisdictionReviewNote(detail));
+  } else if (usedPriorYear) {
+    notes.push('A prior-year factor was used because no exact factor was available for the record year. Review before formal reporting.');
+  } else if (getConsultantReviewRecommended(detail) === 'Yes') {
+    notes.push('Review before formal reporting.');
   }
 
-  if (isScope3PilotActivity(detail.activityType)) {
-    notes.push('Pilot-stage Scope 3 estimate. Consultant review recommended before formal reporting.');
+  return notes.filter(Boolean).join(' ');
+}
+
+function buildMatchedFactorReviewIntro(
+  detail: CalculationAuditDetail,
+  usedGenericJurisdiction: boolean,
+) {
+  if (isCarbonLiteDefaultFactor(detail)) {
+    return 'Matched to a CarbonLite system-default factor.';
   }
 
-  return notes.join(' ');
+  if (String(detail.factorType ?? '').toUpperCase() === 'CUSTOM') {
+    return 'Matched to a custom factor.';
+  }
+
+  if (usedGenericJurisdiction) return '';
+
+  const authority = formatReviewSourceAuthority(detail);
+  return authority
+    ? `Matched to a factor from ${authority}.`
+    : 'Matched to a source-backed emission factor.';
+}
+
+function buildGenericJurisdictionReviewNote(detail: CalculationAuditDetail) {
+  const authority = formatReviewSourceAuthority(detail);
+  const authorityLabel = authority === 'Environment and Climate Change Canada' ? 'ECCC' : authority;
+  const region = String(detail.jurisdictionRegion ?? '').trim();
+  const unit = String(detail.activityUnit ?? detail.factorInputUnit ?? '').trim();
+  const sourcePhrase = authorityLabel
+    ? `Canada-generic ${authorityLabel} factor`
+    : 'Canada-generic emission factor';
+  const noSpecificPhrase = region && !isNationalFactorValue(region)
+    ? ` because no ${region}-specific direct${unit ? ` ${unit}` : ''} factor was available`
+    : '';
+
+  return `${sourcePhrase} used${noSpecificPhrase}. Review before formal reporting.`;
+}
+
+function isCarbonLiteDefaultFactor(detail: CalculationAuditDetail) {
+  const authority = normalizeStatus(detail.sourceAuthority || detail.factorSource);
+  const reason = normalizeStatus(detail.factorSelectionReason);
+  const factorType = normalizeStatus(detail.factorType);
+
+  return (
+    reason === 'PILOT_DEFAULT_FALLBACK' ||
+    authority.includes('CARBONLITE') ||
+    (factorType === 'SYSTEM' && !detail.sourceAuthority && !detail.sourceDocument)
+  );
+}
+
+function formatReviewSourceAuthority(detail: CalculationAuditDetail) {
+  const authority = String(detail.sourceAuthority || detail.factorSource || '').trim();
+  if (!authority || /^source not specified$/i.test(authority)) return '';
+  return authority;
 }
 
 function getSourceFile(detail: CalculationAuditDetail) {
@@ -228,10 +311,23 @@ function getSourceFile(detail: CalculationAuditDetail) {
   return String(detail.sourceFileName ?? '').trim() || 'Not specified';
 }
 
+function getSiteFacility(detail: CalculationAuditDetail) {
+  return String(detail.facilityName ?? detail.facilityId ?? '').trim();
+}
+
+function getActivityJurisdictionCountry(detail: CalculationAuditDetail) {
+  return String(detail.jurisdictionCountry ?? '').trim();
+}
+
+function getActivityJurisdictionRegion(detail: CalculationAuditDetail) {
+  return String(detail.jurisdictionRegion ?? '').trim();
+}
+
 export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]): PilotCsvRow[] {
   return calculationDetails.map((detail, index) => {
     const sourceType = formatReportSourceType(detail.sourceType, detail.sourceFileName, detail.sourceReference);
-    const sourceReference = formatReportSourceReference({
+    const importMethod = formatReportImportMethod(detail.sourceType, detail.sourceFileName, detail.sourceReference);
+    const sourceReference = String(detail.sourceReference ?? '').trim() || formatReportSourceReference({
       sourceFileName: detail.sourceFileName,
       sourceReference: detail.sourceReference,
       sourceType: detail.sourceType,
@@ -245,8 +341,10 @@ export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]):
       Quantity: csvNumber(detail.activityQuantity),
       'Quantity Display': `${displayNumber(detail.activityQuantity)} ${detail.activityUnit || ''}`.trim(),
       Unit: detail.activityUnit || 'Not specified',
-      Country: detail.jurisdictionCountry || 'Canada',
-      'Province / Jurisdiction': detail.jurisdictionRegion || detail.jurisdiction || 'Not specified',
+      'Cost CAD': csvNumber(detail.costCad),
+      'Site / Facility': getSiteFacility(detail),
+      Country: getActivityJurisdictionCountry(detail),
+      'Province / Jurisdiction': getActivityJurisdictionRegion(detail),
       Scope: getScopeLabel(detail),
       'Report Treatment': getReportTreatment(detail),
       'Calculation Status': getCalculationStatus(detail),
@@ -255,16 +353,19 @@ export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]):
       'Matched Factor Value': isTrackedMetricDetail(detail) ? '' : csvNumber(detail.factorValue),
       'Matched Factor Unit': formatCsvFactorUnit(detail),
       'Factor Jurisdiction': formatCsvFactorJurisdiction(detail),
-      'Factor Source Year': isTrackedMetricDetail(detail) ? 'Not applicable' : detail.factorYear || detail.sourceYear || 'Not specified',
-      'Factor Version': isTrackedMetricDetail(detail) ? 'Not applicable' : formatReportFactorVersion({
+      'Factor Source Year': isTrackedMetricDetail(detail) ? '' : detail.factorYear || detail.sourceYear || 'Not specified',
+      'Factor Version': isTrackedMetricDetail(detail) ? '' : formatReportFactorVersion({
         factorVersion: detail.factorVersion,
         sourceDocument: detail.sourceDocument,
         sourceAuthority: detail.sourceAuthority,
       }),
-      'Factor Source Authority': isTrackedMetricDetail(detail) ? 'Not applicable' : detail.sourceAuthority || detail.factorSource || 'Not specified',
-      'Factor Source Document': isTrackedMetricDetail(detail) ? 'Not applicable' : detail.sourceDocument || 'Not specified',
+      'Factor Source Authority': isTrackedMetricDetail(detail) ? '' : detail.sourceAuthority || detail.factorSource || 'Not specified',
+      'Factor Source Document': isTrackedMetricDetail(detail) ? '' : detail.sourceDocument || 'Not specified',
+      'Factor Source URL': isTrackedMetricDetail(detail) ? '' : detail.sourceUrl || '',
+      'Factor Selection Reason': isTrackedMetricDetail(detail) ? '' : detail.factorSelectionReason || '',
+      'Factor Selection Explanation': isTrackedMetricDetail(detail) ? '' : detail.factorSelectionExplanation || '',
       'Verification Status': isTrackedMetricDetail(detail)
-        ? 'Tracked Only'
+        ? ''
         : formatReportVerification({
             activityType: detail.activityType,
             verified: detail.factorVerified,
@@ -272,17 +373,19 @@ export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]):
             verificationStatus: detail.factorVerificationStatus,
           }),
       'Confidence Level': isTrackedMetricDetail(detail)
-        ? 'Not applicable'
+        ? ''
         : formatCredibilityLabel(detail.factorConfidenceLevel) || 'Not specified',
       'Consultant Review Recommended': getConsultantReviewRecommended(detail),
       Formula: buildRawCalculationFormula(detail),
-      'Calculated Emissions kgCO2e': isTrackedMetricDetail(detail) ? 0 : csvNumber(calculatedEmissions),
+      'Calculated Emissions kgCO2e': isTrackedMetricDetail(detail) ? '' : csvNumber(calculatedEmissions),
       'Calculated Emissions Display': isTrackedMetricDetail(detail)
-        ? 'Tracked only'
+        ? 'Tracked Metric'
         : `${displayNumber(calculatedEmissions)} kgCO2e`,
       'Source File': getSourceFile(detail),
+      'Source Sheet': String(detail.sourceSheetName ?? '').trim(),
+      'Source Row': csvNumber(detail.sourceRow),
       'Source Type': sourceType,
-      'Import Method': sourceType,
+      'Import Method': importMethod,
       'Source Reference': sourceReference,
       'Review Note': buildCsvReviewNote(detail),
     };

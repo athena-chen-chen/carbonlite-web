@@ -6,8 +6,15 @@ import { getCurrentUser } from './auth';
 export type ParsedActivity = {
   activityType: string;
   recordDate: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
   quantity: number;
   unit: string;
+  periodRole?: 'CURRENT' | 'PREVIOUS_PERIOD' | 'PRIOR_YEAR' | 'HISTORICAL_COMPARISON' | 'UNKNOWN' | string | null;
+  comparisonType?: string | null;
+  usageType?: string | null;
   jurisdictionCountry?: string | null;
   jurisdictionRegion?: string | null;
   facility?: string | null;
@@ -22,9 +29,12 @@ export type ParsedActivity = {
   sourceReference?: string | null;
   sourceDocumentId?: string | null;
   sourceFileName?: string | null;
+  sourceSheetName?: string | null;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
   sourceTextSnippet?: string | null;
+  costCad?: number | string | null;
+  costCurrency?: string | null;
   importBatchId?: string | null;
   dateEstimated?: boolean;
   notes?: string | null;
@@ -34,6 +44,9 @@ export type ParsedActivity = {
   matchedFactorId?: string | null;
   matchedFactorName?: string | null;
   matchedFactorSourceYear?: number | null;
+  matchedFactorSourceUrl?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
   calculatedEmissionsKgCO2e?: number | null;
   calculationStatus?: string | null;
   calculationMessage?: string | null;
@@ -118,7 +131,7 @@ export async function confirmDocumentImport(
       body: JSON.stringify({
         documentId,
         importBatchId,
-        activities,
+        activities: activities.map(stripDerivedFactorSelectionFields),
       }),
     });
 
@@ -149,4 +162,13 @@ export async function confirmDocumentImport(
 
     throw error;
   }
+}
+
+function stripDerivedFactorSelectionFields(activity: ParsedActivity): ParsedActivity {
+  const {
+    matchedFactorSourceUrl: _matchedFactorSourceUrl,
+    ...editableActivity
+  } = activity;
+
+  return editableActivity;
 }

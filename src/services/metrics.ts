@@ -100,6 +100,8 @@ export type MetricsSummaryResponse = {
       excludedRecordCount: number;
       rank: number;
       hotspotLevel: 'HIGH' | 'MEDIUM' | 'LOW';
+      estimateConfidence?: string;
+      decisionReadiness?: string;
       focusMessage: string;
     }>;
     excludedCategories: Array<{
@@ -179,6 +181,7 @@ export type MetricsSummaryResponse = {
     sourceType: string;
     sourceReference?: string | null;
     sourceFileName?: string | null;
+    sourceSheetName?: string | null;
     sourcePage?: string | number | null;
     sourceRow?: string | number | null;
     sourceTextSnippet?: string | null;
@@ -193,6 +196,8 @@ export type MetricsSummaryResponse = {
     notes?: string | null;
     factorId: string;
     factorVersionId?: string | null;
+    factorSelectionReason?: string | null;
+    factorSelectionExplanation?: string | null;
   }>;
   conversionFactorsUsed?: Array<{
     factorId: string;
@@ -207,6 +212,8 @@ export type MetricsSummaryResponse = {
     sourceAuthority: string;
     sourceDocument?: string | null;
     sourceUrl?: string | null;
+    factorSelectionReason?: string | null;
+    factorSelectionExplanation?: string | null;
     factorVersion?: string | null;
     sourceYear?: number | null;
     effectiveYear?: number | null;
@@ -237,6 +244,7 @@ export type MetricsSummaryResponse = {
     facilityName?: string | null;
     sourceDocumentId?: string | null;
     sourceFileName?: string | null;
+    sourceSheetName?: string | null;
     sourcePage?: string | number | null;
     sourceRow?: string | number | null;
     sourceTextSnippet?: string | null;
@@ -283,6 +291,8 @@ export type CalculationAuditDetail = {
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
   sourceUrl?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
   boundary?: string | null;
   factorNotes?: string | null;
   factorAssumptions?: string | null;
@@ -322,6 +332,7 @@ export type CalculationAuditDetail = {
   sourceType: string;
   sourceReference?: string | null;
   sourceFileName?: string | null;
+  sourceSheetName?: string | null;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
   sourceTextSnippet?: string | null;

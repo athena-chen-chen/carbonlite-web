@@ -83,35 +83,38 @@ import {
 import { buildPilotCsv } from '../utils/reportCsvExport';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import {
-  ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E,
   buildFacilityThresholdReferenceRows,
   buildSiteFacilityRollup,
-  FACILITY_REPORTING_THRESHOLD_TCO2E,
   FACILITY_THRESHOLD_REFERENCE_DISCLAIMER,
+  type FacilityRegulatoryThresholdReference,
   type FacilityThresholdReferenceRow,
   type SiteFacilityBreakdownRow,
 } from '../utils/siteFacilityBreakdown';
 import {
-  buildReviewPackageCalculationTraceabilityCsv,
-  buildReviewPackageDataRecordsCsv,
-  buildReviewPackageFactorSourceSummaryCsv,
-  buildReviewPackageRecordsRequiringReviewCsv,
-  buildReviewPackageSiteFacilityBreakdownCsv,
-  getReviewPackageCsvFileName,
-  type ReviewPackageCsvKind,
-} from '../utils/reportReviewPackageCsvExport';
+  buildEvidenceChainFromCalculationDetail,
+  buildEvidenceChainSummaryRows,
+} from '../utils/businessAuditTrail';
 import {
   CARBONLITE_CALCULATION_COVERAGE_LABEL,
   getInventoryBoundaryStatus,
   summarizeInventoryBoundary,
   type InventoryBoundary,
 } from '../constants/inventoryBoundary';
+import { formatCalculationStatusLabel } from '../utils/terminology';
+import {
+  buildReportingReadinessAssessment,
+  formatReadinessStatus,
+  type ReportingReadinessAssessment,
+  type ReportingReadinessItem,
+  type SourceReviewReadinessSummary,
+} from '../utils/reportingReadiness';
+import { getWorkflowStage } from '../constants/carbonliteWorkflow';
 import {
   fetchOrganizationProfile,
   hasBackendOrganizationProfileSession,
   loadOrganizationProfile,
   ORGANIZATION_PROFILE_UPDATED_EVENT,
-  profileToInventoryBoundary,
+  profileToReportContextInventoryBoundary,
 } from '../services/organizationProfile';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
@@ -175,6 +178,7 @@ const REPORT_SECTION_DEFAULTS = {
   emissionFactorsUsed: false,
   calculationTraceability: false,
   sourceEvidence: false,
+  auditEvidenceChain: false,
   recordsRequiringReview: false,
   dataQualityNotes: true,
   carbonCreditReadiness: false,
@@ -186,6 +190,19 @@ const REPORT_SECTION_DEFAULTS = {
 type ReportOptions = {
   includeCarbonCreditReadinessNotes?: boolean;
 };
+
+const PDF_MARGIN_MM = 14;
+const LANDSCAPE_A4_WIDTH_MM = 297;
+const PDF_APPENDIX_USABLE_WIDTH_MM = LANDSCAPE_A4_WIDTH_MM - PDF_MARGIN_MM * 2;
+const PDF_APPENDIX_INNER_BUFFER_MM = 4;
+const PDF_APPENDIX_TABLE_WIDTH_MM = PDF_APPENDIX_USABLE_WIDTH_MM - PDF_APPENDIX_INNER_BUFFER_MM;
+const PDF_FOOTER_RESERVE_MM = 21;
+const PDF_TOP_MARGIN_MM = 18;
+const EXECUTIVE_SECTION_GAP_MM = 4;
+const EXECUTIVE_SECTION_TITLE_TO_TABLE_MM = 5;
+const FACTOR_DETAIL_TEXT_WIDTH_MM = 178;
+const FACTOR_DETAIL_LINE_HEIGHT_MM = 4.1;
+const FACTOR_DETAIL_BLOCK_SPACING_MM = 5;
 
 const DEFAULT_REPORT_OPTIONS: ReportOptions = {
   includeCarbonCreditReadinessNotes: false,
@@ -209,19 +226,79 @@ const REGULATORY_REPORTING_REFERENCE_SUMMARY =
   'Reference only · Not an official filing or compliance determination';
 const REGULATORY_REPORTING_REFERENCE_TEXT =
   'This report is for emissions data readiness and internal workflow review only. It is not a CRA fuel charge return, official GHGRP submission, TIER compliance report, third-party verification, or regulatory compliance advice.';
+const CARBONLITE_TEMPLATE_VERSION = 'CarbonLite Pilot Demo v0.1';
+const REPORT_DOCUMENT_VERSION = '0.1';
+const REPORT_STATUS_PILOT_DRAFT = 'Pilot Draft';
+const REPORT_REVIEWER_NOT_ASSIGNED = 'Not yet assigned';
+const REPORT_REVIEW_STATUS_NOT_REVIEWED = 'Not reviewed';
 const BASE_REGULATORY_REPORTING_SYSTEMS = [
   'Federal GHGRP Single Window reporting',
-  'CRA fuel charge forms, where applicable',
 ] as const;
 const ALBERTA_REGULATORY_REPORTING_SYSTEMS = [
   'Alberta SGRR / SWIM reporting',
   'Alberta TIER compliance reporting',
 ] as const;
+const FEDERAL_FUEL_CHARGE_REMOVAL_DATE = '2025-04-01';
+const FEDERAL_FUEL_CHARGE_CEASED_AFTER_DATE = '2025-03-31';
+const FEDERAL_FUEL_CHARGE_REMOVAL_DATE_LABEL = 'April 1, 2025';
+const FEDERAL_FUEL_CHARGE_CEASED_AFTER_DATE_LABEL = 'March 31, 2025';
+const HISTORICAL_FEDERAL_FUEL_CHARGE_REFERENCE =
+  `Historical federal fuel-charge requirements may be relevant for reporting periods before ${FEDERAL_FUEL_CHARGE_REMOVAL_DATE_LABEL}.`;
+const TRANSITIONAL_FEDERAL_FUEL_CHARGE_REFERENCE =
+  `Historical federal fuel-charge requirements may apply to activities before ${FEDERAL_FUEL_CHARGE_REMOVAL_DATE_LABEL}. The federal fuel charge ceased for activities after ${FEDERAL_FUEL_CHARGE_CEASED_AFTER_DATE_LABEL}.`;
+const REVIEWED_REGULATORY_THRESHOLD_REFERENCES: FacilityRegulatoryThresholdReference[] = [];
+
+type RegulatoryReportingReference = {
+  currentSystems: string[];
+  historicalNotes: string[];
+  thresholdReferences: FacilityRegulatoryThresholdReference[];
+};
+
+type PdfDocumentControlMetadata = {
+  reportId: string;
+  reportVersion: string;
+  reportStatus: string;
+  generatedWith: string;
+  generatedBy: string;
+  reviewer: string;
+  reviewStatus: string;
+};
+
+type ReportOutputProfile = 'EXECUTIVE_SUMMARY' | 'TECHNICAL_REVIEW';
+
+type CanonicalReportData = {
+  outputGeneratedDate: string;
+  organizationName: string;
+  reportPeriod: string;
+  reportScopeLabel: string;
+  documentControl: PdfDocumentControlMetadata;
+  executiveSummary: ReturnType<typeof buildReportExecutiveSummary>;
+  reportCountSummary: ReturnType<typeof buildReportCountSummary>;
+  primarySkippedReasons: ReturnType<typeof buildPrimarySkippedReasonSummary>;
+  hotspotAnalysis: HotspotAnalysis;
+  calculationCoverage: string;
+  coverageCounts: ReturnType<typeof getCalculationCoverageCounts>;
+  scopeSummary: Record<'Scope 1' | 'Scope 2' | 'Scope 3' | 'Unclassified', number>;
+  sourceReviewSummary: ReturnType<typeof buildSourceReviewSummary>;
+  reportingReadinessAssessment: ReportingReadinessAssessment;
+  dataReadinessSummary: ReturnType<typeof buildDataReadinessSummary>;
+  totalsByMetric: ReturnType<typeof buildMetricsSummaryTableRows>;
+  inventoryBoundary: InventoryBoundary;
+  regulatoryReportingReference: RegulatoryReportingReference;
+  totalEstimatedEmissionsKgCO2e: number;
+  calculationDetails: CalculationAuditDetail[];
+};
+
+const REPORT_OUTPUT_PROFILE_LABELS: Record<ReportOutputProfile, string> = {
+  EXECUTIVE_SUMMARY: 'Executive Summary',
+  TECHNICAL_REVIEW: 'Technical Review Package',
+};
 
 export default function ReportingPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const currentUser = getCurrentUser();
+  const currentUserRef = useRef<ReturnType<typeof getCurrentUser>>(getCurrentUser());
+  const currentUser = currentUserRef.current;
   const currentWorkspaceId = getOrganizationId(currentUser);
   const isPilotReviewerAccount = isPilotReviewer(currentUser);
   const canEditOrganizationBoundary = canEditWorkspace(currentUser);
@@ -265,7 +342,7 @@ export default function ReportingPage() {
   const [workflowEventsLoading, setWorkflowEventsLoading] = useState(false);
   const [isWorkflowAuditOpen, setIsWorkflowAuditOpen] = useState(false);
   const [isInventoryBoundaryExpanded, setIsInventoryBoundaryExpanded] = useState(false);
-  const [isReviewPackageMenuOpen, setIsReviewPackageMenuOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
   const [periodEnd, setPeriodEnd] = useState('2026-12-31');
@@ -297,7 +374,8 @@ export default function ReportingPage() {
   const isSlowPreparingReport = useSlowLoading(!dateRangeReady || loading);
   const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const inFlightRequestKeyRef = useRef<string | null>(null);
-  const reviewPackageMenuRef = useRef<HTMLDivElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const exportMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const trackedReportViewRef = useRef(false);
   async function loadWorkflowEvents() {
     if (!canViewWorkflowHistory) {
@@ -459,17 +537,18 @@ export default function ReportingPage() {
   }, [currentUser?.id, currentWorkspaceId, currentUser?.email]);
 
   useEffect(() => {
-    if (!isReviewPackageMenuOpen) return;
+    if (!isExportMenuOpen) return;
 
     function handleDocumentClick(event: MouseEvent) {
       const target = event.target as Node | null;
-      if (target && reviewPackageMenuRef.current?.contains(target)) return;
-      setIsReviewPackageMenuOpen(false);
+      if (target && exportMenuRef.current?.contains(target)) return;
+      setIsExportMenuOpen(false);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        setIsReviewPackageMenuOpen(false);
+        setIsExportMenuOpen(false);
+        exportMenuTriggerRef.current?.focus();
       }
     }
 
@@ -479,7 +558,7 @@ export default function ReportingPage() {
       document.removeEventListener('click', handleDocumentClick);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isReviewPackageMenuOpen]);
+  }, [isExportMenuOpen]);
 
 async function initializeDateRange() {
   try {
@@ -548,18 +627,9 @@ function getCalculationScopeResolution(item: CalculationAuditDetail) {
 }
 
 function hasAlbertaReportingContext(input: {
-  inventoryBoundary: InventoryBoundary;
   calculationDetails: CalculationAuditDetail[];
   activities: ActivityItem[];
 }) {
-  const boundaryText = [
-    input.inventoryBoundary.provinceOrTerritory,
-    input.inventoryBoundary.geographicBoundary,
-    input.inventoryBoundary.includedFacilitiesOrLocations,
-  ].join(' ');
-
-  if (/\balberta\b|\bab\b/i.test(boundaryText)) return true;
-
   return (
     input.calculationDetails.some((item) =>
       /\balberta\b|\bab\b/i.test(
@@ -624,7 +694,10 @@ const siteFacilityRollup = useMemo(
 );
 const siteFacilityBreakdownRows = siteFacilityRollup.rows;
 const facilityThresholdReferenceRows = useMemo(
-  () => buildFacilityThresholdReferenceRows(siteFacilityBreakdownRows),
+  () => buildFacilityThresholdReferenceRows(
+    siteFacilityBreakdownRows,
+    REVIEWED_REGULATORY_THRESHOLD_REFERENCES,
+  ),
   [siteFacilityBreakdownRows],
 );
 
@@ -641,65 +714,6 @@ function downloadCsvFile(csv: string, filename: string) {
   document.body.removeChild(link);
 
   URL.revokeObjectURL(url);
-}
-
-function getReviewPackageCsv(kind: ReviewPackageCsvKind) {
-  switch (kind) {
-    case 'data-records':
-      return buildReviewPackageDataRecordsCsv(calculationDetails);
-    case 'site-facility-breakdown':
-      return buildReviewPackageSiteFacilityBreakdownCsv(
-        siteFacilityBreakdownRows,
-        calculationDetails,
-      );
-    case 'factor-source-summary':
-      return buildReviewPackageFactorSourceSummaryCsv(conversionFactorsUsed);
-    case 'calculation-traceability':
-      return buildReviewPackageCalculationTraceabilityCsv(calculationDetails);
-    case 'records-requiring-review':
-      return buildReviewPackageRecordsRequiringReviewCsv(calculationDetails);
-  }
-}
-
-function hasReviewPackageData(kind: ReviewPackageCsvKind) {
-  if (kind === 'site-facility-breakdown') return siteFacilityBreakdownRows.length > 0;
-  if (kind === 'factor-source-summary') return conversionFactorsUsed.length > 0;
-  if (kind === 'records-requiring-review') {
-    return calculationDetails.some(isRecordRequiringCorrection);
-  }
-  return calculationDetails.length > 0;
-}
-
-function handleExportReviewPackageCsv(kind: ReviewPackageCsvKind) {
-  setIsReviewPackageMenuOpen(false);
-  setError(null);
-
-  if (!hasReviewPackageData(kind)) {
-    setError(
-      kind === 'records-requiring-review'
-        ? 'No records currently require review.'
-        : 'No records available to export.',
-    );
-    return;
-  }
-
-  const csv = getReviewPackageCsv(kind);
-  downloadCsvFile(csv, getReviewPackageCsvFileName(kind));
-
-  void trackActivityEvent({
-    eventName: 'CSV_EXPORTED',
-    page: location.pathname,
-    url: window.location.href,
-    entityType: 'REPORT',
-    metadata: {
-      exportKind: kind,
-      exportedAt: new Date().toISOString(),
-      exportStatus: 'EXPORTED',
-      reportScope,
-    },
-  }).catch(() => {
-    // Review package export should not be blocked by usage tracking.
-  });
 }
 
 function handleDownloadCSV() {
@@ -793,10 +807,64 @@ function buildScopeNarrative(scopeSummary: Record<string, number>) {
   return lines;
 }
 
+function getPdfPageWidth(doc: jsPDF) {
+  return doc.internal.pageSize.getWidth();
+}
+
+function getPdfPageHeight(doc: jsPDF) {
+  return doc.internal.pageSize.getHeight();
+}
+
+function getPdfUsableWidth(doc: jsPDF, leftMargin = PDF_MARGIN_MM, rightMargin = PDF_MARGIN_MM) {
+  return getPdfPageWidth(doc) - leftMargin - rightMargin;
+}
+
+function getPdfTextWidthFromX(doc: jsPDF, x: number, rightMargin = PDF_MARGIN_MM) {
+  return Math.max(10, getPdfPageWidth(doc) - x - rightMargin);
+}
+
+function getPdfAppendixUsableWidth(doc: jsPDF) {
+  return PDF_APPENDIX_TABLE_WIDTH_MM;
+}
+
+function getPdfBottomY(doc: jsPDF) {
+  return getPdfPageHeight(doc) - PDF_FOOTER_RESERVE_MM;
+}
+
 function ensurePdfSpace(doc: jsPDF, y: number, requiredHeight = 50) {
-  if (y + requiredHeight <= 276) return y;
+  if (y + requiredHeight <= getPdfBottomY(doc)) return y;
   doc.addPage();
-  return 18;
+  return PDF_TOP_MARGIN_MM;
+}
+
+function ensurePdfSectionFits(doc: jsPDF, y: number, requiredHeight = 50) {
+  return ensurePdfSpace(doc, y, requiredHeight);
+}
+
+function ensurePdfSpaceWithContinuation(
+  doc: jsPDF,
+  y: number,
+  requiredHeight: number,
+  continuationTitle?: string,
+) {
+  if (y + requiredHeight <= getPdfBottomY(doc)) return y;
+  doc.addPage();
+  if (!continuationTitle) return PDF_TOP_MARGIN_MM;
+
+  drawPdfSectionTitle(doc, continuationTitle, PDF_TOP_MARGIN_MM);
+  return PDF_TOP_MARGIN_MM + 8;
+}
+
+function estimatePdfTextBlockHeight(
+  doc: jsPDF,
+  text: string | string[],
+  maxWidth: number,
+  lineHeight = 4.5,
+) {
+  const lines = Array.isArray(text)
+    ? text.flatMap((line) => doc.splitTextToSize(formatPdfText(line), maxWidth))
+    : doc.splitTextToSize(formatPdfText(text), maxWidth);
+  return lines.length * lineHeight;
 }
 
 function drawPdfTextBlock(
@@ -810,6 +878,12 @@ function drawPdfTextBlock(
   const lines = doc.splitTextToSize(formatPdfText(text), maxWidth);
   doc.text(lines, x, y);
   return y + lines.length * lineHeight;
+}
+
+function estimatePdfTableSectionHeight(rowCount: number, rowHeight: number, titleGap = EXECUTIVE_SECTION_TITLE_TO_TABLE_MM) {
+  const headingHeight = 7;
+  const tableHeaderHeight = rowHeight;
+  return headingHeight + titleGap + tableHeaderHeight + rowCount * rowHeight;
 }
 
 function formatPdfTableValue(value: unknown): unknown {
@@ -827,10 +901,17 @@ function formatPdfTableValue(value: unknown): unknown {
 function autoTablePdf(doc: jsPDF, options: Parameters<typeof autoTable>[1]) {
   autoTable(doc, {
     ...options,
+    margin: { left: PDF_MARGIN_MM, right: PDF_MARGIN_MM, ...options.margin },
     head: formatPdfTableValue(options.head) as typeof options.head,
     body: formatPdfTableValue(options.body) as typeof options.body,
     foot: formatPdfTableValue(options.foot) as typeof options.foot,
   });
+}
+
+function handleExportMenuItem(callback: () => void) {
+  setIsExportMenuOpen(false);
+  callback();
+  exportMenuTriggerRef.current?.focus();
 }
 
 function drawInventoryBoundaryPdfSection(
@@ -845,6 +926,10 @@ function drawInventoryBoundaryPdfSection(
     head: [['Boundary Field', 'Description']],
     body: [
       ['Configured reporting boundary', boundaryStatus],
+      ['Boundary review status', formatBoundaryReviewStatus(boundary)],
+      ['Boundary version', `v${boundary.boundaryVersion ?? 1}`],
+      ['Boundary reviewed by', boundary.boundaryReviewedBy || 'Not assigned'],
+      ['Boundary reviewed at', formatBoundaryReviewedAt(boundary.boundaryReviewedAt)],
       ['Organization / Workspace', formatBoundaryValue(boundary.organizationWorkspace)],
       ...(boundary.industry ? [['Industry', boundary.industry]] : []),
       ...(boundary.country ? [['Country', boundary.country]] : []),
@@ -878,21 +963,40 @@ function drawInventoryBoundaryPdfSection(
 function drawRegulatoryReportingReferencePdfSection(
   doc: jsPDF,
   startY: number,
-  regulatoryReportingSystems: string[],
+  regulatoryReportingReference: RegulatoryReportingReference,
 ) {
   const y = ensurePdfSpace(doc, startY, 58);
+  const body = [
+    ['Purpose', REGULATORY_REPORTING_REFERENCE_TEXT],
+    [
+      'Current regulatory/reporting references',
+      regulatoryReportingReference.currentSystems.join('\n'),
+    ],
+    ...(regulatoryReportingReference.historicalNotes.length
+      ? [[
+          'Historical / period-specific reference',
+          regulatoryReportingReference.historicalNotes.join('\n'),
+        ]]
+      : []),
+    [
+      'Regulatory threshold provenance',
+      regulatoryReportingReference.thresholdReferences.length
+        ? regulatoryReportingReference.thresholdReferences
+            .map(formatRegulatoryThresholdReference)
+            .join('\n')
+        : 'Regulatory threshold screening is not yet configured with reviewed source provenance for this jurisdiction.',
+    ],
+    [
+      'Important note',
+      'Reference only. CarbonLite does not determine regulatory obligations. Consult a qualified professional before making regulatory filing or compliance decisions.',
+    ],
+  ];
+
   drawPdfSectionTitle(doc, REGULATORY_REPORTING_REFERENCE_TITLE, y);
   autoTablePdf(doc, {
     startY: y + 6,
     head: [['Reference Note', 'Details']],
-    body: [
-      ['Purpose', REGULATORY_REPORTING_REFERENCE_TEXT],
-      ['Relevant reporting systems may include', regulatoryReportingSystems.join('\n')],
-      [
-        'Important note',
-        'Reference only. CarbonLite does not determine regulatory obligations. Consult a qualified professional before making regulatory filing or compliance decisions.',
-      ],
-    ],
+    body,
     styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
     headStyles: { fillColor: [71, 85, 105] },
     columnStyles: {
@@ -930,6 +1034,7 @@ function drawEmissionsHotspotsPdfSection(
   doc: jsPDF,
   analysis: HotspotAnalysis,
   startY: number,
+  sourceReviewSummary?: SourceReviewSummary | null,
 ) {
   let y = ensurePdfSpace(doc, startY, 92);
   drawPdfSectionTitle(doc, 'Emissions Hotspots', y);
@@ -939,7 +1044,7 @@ function drawEmissionsHotspotsPdfSection(
   doc.setTextColor(71, 85, 105);
   y = drawPdfTextBlock(
     doc,
-    'This section highlights the activity categories contributing the largest share of calculated emissions. Hotspot analysis helps identify where the organization may want to focus first for review, data quality improvement, or reduction planning.',
+    'This section highlights the activity categories contributing the largest share of current estimated emissions. Hotspot analysis helps identify where the organization may want to focus first for factor validation, data quality improvement, and, where estimates are confirmed, reduction planning.',
     14,
     y + 7,
   ) + 2;
@@ -975,23 +1080,24 @@ function drawEmissionsHotspotsPdfSection(
     const top = analysis.categoryHotspots[0];
     const second = analysis.categoryHotspots[1];
 
-    y = ensurePdfSpace(doc, y, 30);
+    y = ensurePdfSpace(doc, y, 38);
     doc.setFillColor(236, 253, 245);
     doc.setDrawColor(187, 247, 208);
-    doc.roundedRect(14, y, 182, 25, 2, 2, 'FD');
+    doc.roundedRect(14, y, 182, 32, 2, 2, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(6, 95, 70);
     doc.text(`Top Emissions Hotspot: ${top.displayName}`, 18, y + 8);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(
-      `${top.displayName} contributes ${formatDisplayNumber(top.percentageOfTotal)}% of calculated emissions. Focus first on this category because it represents the largest share of calculated emissions.`,
+    y = drawPdfTextBlock(
+      doc,
+      top.focusMessage,
       18,
       y + 15,
-      { maxWidth: 170 },
-    );
-    y += 32;
+      170,
+      4.2,
+    ) + 10;
 
     if (second) {
       y = ensurePdfSpace(doc, y, 12);
@@ -1032,7 +1138,7 @@ function drawEmissionsHotspotsPdfSection(
     y = ensurePdfSpace(doc, y, 42);
     autoTablePdf(doc, {
       startY: y,
-      head: [['Rank', 'Category', 'Calculated Emissions', 'Share', 'Records', 'Hotspot Level', 'Focus Message']],
+      head: [['#', 'Category', 'Calculated Emissions', 'Share', 'Records', 'Hotspot Level', 'Confidence / Readiness', 'Focus Message']],
       body: analysis.categoryHotspots.map((row) => [
         row.rank,
         row.displayName,
@@ -1040,18 +1146,20 @@ function drawEmissionsHotspotsPdfSection(
         `${formatDisplayNumber(row.percentageOfTotal)}%`,
         row.calculatedRecordCount,
         formatHotspotLevelForPdf(row.hotspotLevel),
+        `${row.estimateConfidence}\n${row.decisionReadiness}`,
         row.focusMessage,
       ]),
       styles: { fontSize: 6.5, cellPadding: 1.5 },
       headStyles: { fillColor: [15, 23, 42] },
       columnStyles: {
-        0: { cellWidth: 10 },
-        1: { cellWidth: 24 },
-        2: { cellWidth: 27 },
-        3: { cellWidth: 16 },
-        4: { cellWidth: 14 },
-        5: { cellWidth: 20 },
-        6: { cellWidth: 70 },
+        0: { cellWidth: 8 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 13 },
+        4: { cellWidth: 12 },
+        5: { cellWidth: 16 },
+        6: { cellWidth: 36 },
+        7: { cellWidth: 50 },
       },
     });
     y = ((doc as any).lastAutoTable?.finalY ?? y) + 10;
@@ -1083,7 +1191,7 @@ function drawEmissionsHotspotsPdfSection(
     doc.setTextColor(146, 64, 14);
     y = drawPdfTextBlock(
       doc,
-      formatHotspotExclusionNote(analysis),
+      formatHotspotExclusionNote({ ...analysis, sourceReviewSummary }),
       14,
       y,
     ) + 3;
@@ -1113,11 +1221,8 @@ const scopeNarrative = useMemo(() => {
   return buildScopeNarrative(scopeSummary);
 }, [scopeSummary]);
 
-function handleDownloadPDF() {
-  if (!hasReportOutput) return;
-
-  const doc = new jsPDF();
-  const today = new Date().toISOString().slice(0, 10);
+function buildCanonicalReportData(): CanonicalReportData {
+  const outputGeneratedDate = new Date().toISOString().slice(0, 10);
   const totalsByMetric = buildMetricsSummaryTableRows({
     usageTotals,
     totalEstimatedEmissionsKgCO2e,
@@ -1136,14 +1241,70 @@ function handleDownloadPDF() {
           (coverageCounts.calculatedRecords / coverageCounts.eligibleEmissionBearingRecords) *
             1000,
         ) / 10}%`
-      : '0%';
-  const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
-  const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
+      : 'Not applicable';
+
+  return {
+    outputGeneratedDate,
+    organizationName,
+    reportPeriod,
+    reportScopeLabel,
+    documentControl: currentReportDocumentControl,
+    executiveSummary,
+    reportCountSummary,
+    primarySkippedReasons: buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary),
+    hotspotAnalysis: buildHotspotAnalysis(calculationDetails),
+    calculationCoverage,
+    coverageCounts,
+    scopeSummary,
+    sourceReviewSummary,
+    reportingReadinessAssessment,
+    dataReadinessSummary,
+    totalsByMetric,
+    inventoryBoundary,
+    regulatoryReportingReference,
+    totalEstimatedEmissionsKgCO2e,
+    calculationDetails,
+  };
+}
+
+function handleDownloadPDF(profile: ReportOutputProfile = 'TECHNICAL_REVIEW') {
+  if (!hasReportOutput) return;
+
+  const canonicalData = buildCanonicalReportData();
+  if (profile === 'EXECUTIVE_SUMMARY') {
+    downloadExecutiveSummaryPdf(canonicalData);
+    return;
+  }
+
+  downloadTechnicalReviewPackagePdf(canonicalData);
+}
+
+function downloadTechnicalReviewPackagePdf(canonicalData: CanonicalReportData) {
+  const doc = new jsPDF();
+  const today = canonicalData.outputGeneratedDate;
+  const {
+    calculationCoverage,
+    coverageCounts,
+    documentControl,
+    executiveSummary,
+    hotspotAnalysis,
+    primarySkippedReasons,
+    totalsByMetric,
+  } = canonicalData;
+  doc.setProperties({
+    title: `CarbonLite Technical Review Package - ${documentControl.reportId}`,
+    subject: `Report ID ${documentControl.reportId}; ${documentControl.reportVersion}; ${documentControl.reviewStatus}`,
+    author: 'CarbonLite',
+    creator: documentControl.generatedWith,
+    keywords: `CarbonLite, technical review package, ${documentControl.reportId}, ${documentControl.reviewStatus}`,
+  });
   drawReportPdfCover(doc, {
     organizationName,
     reportPeriod,
     reportScopeLabel,
     generatedDate: today,
+    documentControl,
+    outputProfile: 'TECHNICAL_REVIEW',
   });
 
   doc.addPage();
@@ -1156,9 +1317,11 @@ function handleDownloadPDF() {
     head: [['Executive Summary', 'Value']],
     body: [
       ['Estimated Emissions', executiveSummary.estimatedEmissions],
+      ['Imported Activity Records', reportCountSummary.totalRecordsFound],
       ['Records Included in GHG Total', executiveSummary.recordsIncluded],
-      ['Tracked Operational Metrics', executiveSummary.trackedMetrics],
-      ['Imported Records Requiring Review', executiveSummary.recordsRequiringReview],
+      ['Tracked Metrics', executiveSummary.trackedMetrics],
+      ['Imported Activity Records Requiring Review', executiveSummary.recordsRequiringReview],
+      ['Unresolved Source Rows Remaining in Input Review', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)],
       ['Primary Activity Types', executiveSummary.primaryActivityTypes],
       ['Missing Factor Count', primarySkippedReasons.missingFactor],
       ['Calculation Coverage', executiveSummary.dataQualityCoverage],
@@ -1166,7 +1329,7 @@ function handleDownloadPDF() {
   });
 
   nextY = (doc as any).lastAutoTable.finalY + 12;
-  nextY = drawEmissionsHotspotsPdfSection(doc, hotspotAnalysis, nextY);
+  nextY = drawEmissionsHotspotsPdfSection(doc, hotspotAnalysis, nextY, sourceReviewSummary);
 
   nextY = ensurePdfSpace(doc, nextY, 52);
   drawPdfSectionTitle(doc, 'Calculation Quality Summary', nextY);
@@ -1174,14 +1337,15 @@ function handleDownloadPDF() {
     startY: nextY + 6,
     head: [['Quality Measure', 'Value']],
     body: [
-      ['Imported Report Records', reportCountSummary.totalRecordsFound],
-      ['Records Calculated', reportCountSummary.processedRecords],
-      ['Tracked Operational Metrics', primarySkippedReasons.trackedOnly],
-      ['Imported Records Requiring Review', executiveSummary.recordsRequiringReview],
+      ['Imported Activity Records', reportCountSummary.totalRecordsFound],
+      ['Records Included in GHG Total', reportCountSummary.processedRecords],
+      ['Tracked Metrics', primarySkippedReasons.trackedOnly],
+      ['Imported Activity Records Requiring Review', executiveSummary.recordsRequiringReview],
+      ['Unresolved Source Rows Remaining in Input Review', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)],
       ['Missing Factors', primarySkippedReasons.missingFactor],
       ['Missing Jurisdiction', primarySkippedReasons.missingJurisdiction],
       ['Invalid Unit', primarySkippedReasons.invalidUnit],
-      ['Review Reasons', formatReviewReasons(primarySkippedReasons)],
+      ['Imported Activity Review Reasons', formatReviewReasons(primarySkippedReasons)],
       [
         'Calculation Coverage',
         calculationCoverage,
@@ -1198,11 +1362,12 @@ function handleDownloadPDF() {
     head: [['Source Review Measure', 'Value']],
     body: [
       ['Source Files', formatSourceReviewFiles(sourceReviewSummary)],
-      ['Reviewable Source Rows', sourceReviewSummary.available ? sourceReviewSummary.totalRows : 'Not available'],
-      ['Rows Resolved / Imported', sourceReviewSummary.available ? `${sourceReviewSummary.resolvedCount} of ${sourceReviewSummary.totalRows}` : 'Not available'],
-      ['Ready Emissions Rows', sourceReviewSummary.available ? sourceReviewSummary.readyCount : 'Not available'],
-      ['Tracked Operational Rows', sourceReviewSummary.available ? sourceReviewSummary.trackedOnlyCount : 'Not available'],
-      ['Source Rows Still Requiring Review', sourceReviewSummary.available ? sourceReviewSummary.needsReviewCount : 'Not available'],
+      ['Reviewable Source Rows', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.totalRows)],
+      ['Rows Resolved / Imported', sourceReviewSummary.available ? `${sourceReviewSummary.resolvedCount} of ${sourceReviewSummary.totalRows}` : formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.importedCount ?? 0)],
+      ['Emission Rows Eligible for Import', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.readyCount)],
+      ['Tracked Operational Rows', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.trackedOnlyCount)],
+      ['Source Rows Still Requiring Review', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)],
+      ['Review Count Distinction', getSourceReviewSectionNote(sourceReviewSummary)],
       ['Source Dataset Resolution', formatSourceReviewStatus(sourceReviewSummary)],
     ],
     styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
@@ -1214,42 +1379,31 @@ function handleDownloadPDF() {
   });
 
   nextY = (doc as any).lastAutoTable.finalY + 12;
-  drawPdfSectionTitle(doc, 'Data Quality Notes', nextY);
+  drawPdfSectionTitle(doc, 'Reporting Readiness Checklist', nextY);
   autoTablePdf(doc, {
     startY: nextY + 6,
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
-    head: [['Readiness Signal', 'Value']],
+    head: [['Item', 'Status', 'Evidence']],
     body: [
-      ['Emissions Workflow Readiness', `${formatDisplayNumber(dataReadinessSummary.score)}% (${dataReadinessSummary.level})`],
+      ...buildReadinessPdfRows(reportingReadinessAssessment),
       [
-        'Optional Data Completeness',
-        `${formatDisplayNumber(dataReadinessSummary.optionalDataCompleteness.score)}% · ${formatOptionalDataCompletenessDetail(dataReadinessSummary)}`,
-      ],
-      ['Calculated Records', dataReadinessSummary.recordsReadyForCalculation],
-      ['Imported Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
-      ['Source Rows Still Requiring Review', sourceReviewSummary.available ? sourceReviewSummary.needsReviewCount : 'Not available'],
-      ['Tracked Operational Metrics', dataReadinessSummary.trackedOnlyCount],
-      ['Missing Factors', dataReadinessSummary.missingFactorCount],
-      ['Missing Jurisdiction', dataReadinessSummary.missingJurisdictionCount],
-      [
-        'Calculation Coverage Meaning',
+        'Calculation Coverage',
+        calculationCoverage,
         `Calculated emission-bearing records divided by eligible emission-bearing records. ${coverageCounts.calculatedRecords} of ${coverageCounts.eligibleEmissionBearingRecords} eligible emission-bearing records were calculated as GHG emissions records; ${primarySkippedReasons.trackedOnly} record${primarySkippedReasons.trackedOnly === 1 ? ' was' : 's were'} tracked as operational ${primarySkippedReasons.trackedOnly === 1 ? 'metric' : 'metrics'} and excluded from the denominator.`,
       ],
       [
-        'Emissions Workflow Readiness Meaning',
-        'Percentage of draft or imported records that are complete enough to calculate, trace, and report without manual correction. Optional metadata such as cost is reported separately and does not reduce this score.',
-      ],
-      [
-        'Coverage vs Readiness',
-        'Calculation Coverage and Emissions Workflow Readiness may differ. Tracked-only operational metrics are retained for review but excluded from the calculated GHG emissions total and Calculation Coverage denominator by design.',
+        'Optional Data Completeness',
+        `${formatDisplayNumber(dataReadinessSummary.optionalDataCompleteness.score)}%`,
+        formatOptionalDataCompletenessDetail(dataReadinessSummary),
       ],
     ],
     styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
     headStyles: { fillColor: [71, 85, 105] },
     columnStyles: {
-      0: { cellWidth: 58 },
-      1: { cellWidth: 122 },
+      0: { cellWidth: 50 },
+      1: { cellWidth: 38 },
+      2: { cellWidth: 92 },
     },
   });
 
@@ -1323,21 +1477,33 @@ function handleDownloadPDF() {
 
   if (facilityThresholdReferenceRows.length > 0) {
     nextY = (doc as any).lastAutoTable.finalY + 14;
+    const facilityThresholdDescription = [
+      'Regulatory threshold screening is not yet configured with reviewed source provenance for this jurisdiction.',
+      'Reviewed regulatory source provenance is required before threshold screening.',
+      FACILITY_THRESHOLD_REFERENCE_DISCLAIMER,
+    ];
+    const facilityThresholdTextHeight = estimatePdfTextBlockHeight(
+      doc,
+      facilityThresholdDescription,
+      getPdfUsableWidth(doc),
+      4.1,
+    );
+    nextY = ensurePdfSectionFits(
+      doc,
+      nextY,
+      8 + facilityThresholdTextHeight + 18 + Math.min(facilityThresholdReferenceRows.length, 2) * 12,
+    );
     drawPdfSectionTitle(doc, 'Facility-Level Reporting Threshold Reference', nextY);
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
     doc.text(
-      [
-        formatPdfText(`Canada / federal context: ${formatDisplayNumber(FACILITY_REPORTING_THRESHOLD_TCO2E)} t CO₂e/year per facility is shown as a general screening reference only.`),
-        formatPdfText(`Alberta only: ${formatDisplayNumber(ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E)} t CO₂e/year per facility is used only when a facility row has Alberta jurisdiction.`),
-        FACILITY_THRESHOLD_REFERENCE_DISCLAIMER,
-      ],
-      14,
+      facilityThresholdDescription,
+      PDF_MARGIN_MM,
       nextY + 7,
-      { maxWidth: 182 },
+      { maxWidth: getPdfUsableWidth(doc) },
     );
     autoTablePdf(doc, {
-      startY: nextY + 24,
+      startY: nextY + 10 + facilityThresholdTextHeight,
       head: [['Site / Facility', 'Jurisdiction', 'Regulatory Reference', 'Threshold', 'Total Calculated Emissions', 'Status', 'Screening Note']],
       body: facilityThresholdReferenceRows.map((row) => [
         row.siteFacility,
@@ -1368,7 +1534,7 @@ function handleDownloadPDF() {
           classifyScope(item.activityType),
           getDisplaySourceLabel(item),
         ])
-      : [['No activity records with matching conversion factors.', '', '', '', '', '', '']],
+      : [['No activity records with matching emission factors.', '', '', '', '', '', '']],
   });
 
   nextY = (doc as any).lastAutoTable?.finalY ?? 115;
@@ -1399,7 +1565,7 @@ function handleDownloadPDF() {
           formatReportFactorSummaryVerification(factor),
           factor.usedRecordsCount ?? 1,
         ])
-      : [['No conversion factors found for this report scope.', '', '', '', '', '', '']],
+      : [['No emission factors found for this report scope.', '', '', '', '', '', '']],
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
     styles: { fontSize: 7.8, cellPadding: 1.8 },
@@ -1429,33 +1595,10 @@ function handleDownloadPDF() {
   );
   if (conversionFactorsUsed.length > 0) {
     nextY += 10;
-    if (nextY > 235) {
-      doc.addPage();
-      nextY = 20;
-    }
-    drawPdfSectionTitle(doc, 'Factor Details / Assumptions', nextY);
-    nextY += 8;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.2);
-    doc.setTextColor(51, 65, 85);
-
-    conversionFactorsUsed.forEach((factor) => {
-      nextY = ensurePdfSpace(doc, nextY, 31);
-      const factorName = getFactorDisplayName(factor.factorName) || getActivityTypeLabel(factor.activityType) || 'Factor not specified';
-      const factorText = [
-        `Factor: ${factorName}`,
-        `Value: ${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`,
-        `Source: ${formatReportFactorSource(factor)}`,
-        `Version: ${formatReportFactorVersion(factor)}`,
-        `Verification: ${formatReportVerification(factor)}`,
-        `Confidence: ${formatCredibilityLabel(factor.confidenceLevel) || 'Not specified'}`,
-        `Assumption: ${formatReportAssumptions(factor)}`,
-      ].join('\n');
-      nextY = drawPdfTextBlock(doc, factorText, 14, nextY, 178, 4.1) + 5;
-    });
+    nextY = drawFactorDetailsPdfSection(doc, conversionFactorsUsed, nextY);
   }
 
-  nextY = ensurePdfSpace(doc, nextY, 58);
+  nextY = ensurePdfSpace(doc, nextY, 66);
 
   drawPdfSectionTitle(doc, 'Calculation Traceability', nextY + 10);
   autoTablePdf(doc, {
@@ -1582,20 +1725,20 @@ function handleDownloadPDF() {
   drawPdfSectionTitle(doc, 'Workflow History Summary', nextY + 10);
   autoTablePdf(doc, {
     startY: nextY + 18,
-    head: [['Workflow Step', 'Summary']],
+    head: [['Canonical Stage', 'Summary']],
     body: [
       [
-        'File uploaded',
+        `Stage ${getWorkflowStage('SOURCE_DATA').step}: ${getWorkflowStage('SOURCE_DATA').title}`,
         sourceFiles.length
           ? sourceFiles.join(', ')
           : 'Source evidence requires review. The original file or source reference was not available.',
       ],
       [
-        'Records imported',
-        `${reportCountSummary.processedRecords} included emissions records, ${calculationDetails.filter(isTrackedMetricDetail).length} tracked metric, ${calculationDetails.filter(isRecordRequiringCorrection).length} imported records requiring review.`,
+        `Stage ${getWorkflowStage('DATA_ISSUES').step}: ${getWorkflowStage('DATA_ISSUES').title}`,
+        `${reportCountSummary.processedRecords} emissions records and ${calculationDetails.filter(isTrackedMetricDetail).length} tracked metric were imported; ${formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)} unresolved source rows remain in Input Review. ${calculationDetails.filter(isRecordRequiringCorrection).length} imported activity records require review.`,
       ],
       [
-        'Report generated',
+        `Stage ${getWorkflowStage('REPORT').step}: ${getWorkflowStage('REPORT').title}`,
         `${formatEmissionsWithUnit(totalEstimatedEmissionsKgCO2e)} total for ${reportPeriod}.`,
       ],
     ],
@@ -1614,11 +1757,22 @@ function handleDownloadPDF() {
   }
 
   doc.setFontSize(14);
-  doc.text('Imported Records Requiring Review', 14, nextY + 10);
+  doc.text('Imported Activity Records Requiring Review', 14, nextY + 10);
   const reviewRows = calculationDetails.filter(isRecordRequiringCorrection);
   const trackedMetricRows = calculationDetails.filter(isTrackedMetricDetail);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  const reviewNoteY = drawPdfTextBlock(
+    doc,
+    'Unresolved source rows have not been imported into ActivityData and are not counted as imported activity records requiring review.',
+    PDF_MARGIN_MM,
+    nextY + 16,
+    getPdfAppendixUsableWidth(doc),
+    4,
+  );
   autoTablePdf(doc, {
-    startY: nextY + 18,
+    startY: reviewNoteY + 3,
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
     head: [['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']],
@@ -1671,7 +1825,7 @@ function handleDownloadPDF() {
     nextY = 20;
   }
 
-  nextY = drawRegulatoryReportingReferencePdfSection(doc, nextY + 10, regulatoryReportingSystems);
+  nextY = drawRegulatoryReportingReferencePdfSection(doc, nextY + 10, regulatoryReportingReference);
   nextY = ensurePdfSpace(doc, nextY, 42);
 
   drawPdfSectionTitle(doc, 'Methodology and Limitations', nextY + 10);
@@ -1693,13 +1847,15 @@ function handleDownloadPDF() {
   nextY = drawPdfTextBlock(
     doc,
     'Detailed record-level source evidence retained for imported activity records in this report scope. The main report body summarizes this information by source file.',
-    14,
+    PDF_MARGIN_MM,
     nextY + 8,
-    268,
+    getPdfTextWidthFromX(doc, PDF_MARGIN_MM),
     4.1,
   );
   autoTablePdf(doc, {
     startY: nextY + 4,
+    margin: { left: PDF_MARGIN_MM, right: PDF_MARGIN_MM },
+    tableWidth: getPdfAppendixUsableWidth(doc),
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
     head: [[
@@ -1708,8 +1864,7 @@ function handleDownloadPDF() {
       'Unit',
       'Date',
       'Source File',
-      'Source Type',
-      'Import Method',
+      'Source / Import Method',
       'Source Reference',
       'Status',
       'Treatment',
@@ -1722,28 +1877,26 @@ function handleDownloadPDF() {
           item.unit,
           item.recordDate,
           item.sourceFile,
-          item.sourceType,
-          item.importMethod,
+          formatSourceEvidenceMethod(item.sourceType, item.importMethod),
           item.sourceReference,
           item.matchingStatus,
           item.reportTreatment,
           item.notes,
         ])
-      : [['No source evidence available.', '', '', '', '', '', '', '', '', '', '']],
-    styles: { fontSize: 7, cellPadding: 1.5, valign: 'top' },
+      : [['No source evidence available.', '', '', '', '', '', '', '', '', '']],
+    styles: { fontSize: 7.2, cellPadding: 1.35, valign: 'top', overflow: 'linebreak' },
     headStyles: { fillColor: [15, 23, 42] },
     columnStyles: {
-      0: { cellWidth: 22 },
-      1: { cellWidth: 16 },
+      0: { cellWidth: 31 },
+      1: { cellWidth: 13 },
       2: { cellWidth: 11 },
-      3: { cellWidth: 16 },
+      3: { cellWidth: 17 },
       4: { cellWidth: 36 },
-      5: { cellWidth: 25 },
-      6: { cellWidth: 25 },
-      7: { cellWidth: 40 },
-      8: { cellWidth: 20 },
-      9: { cellWidth: 22 },
-      10: { cellWidth: 36 },
+      5: { cellWidth: 27 },
+      6: { cellWidth: 42 },
+      7: { cellWidth: 23 },
+      8: { cellWidth: 18 },
+      9: { cellWidth: 47 },
     },
   });
 
@@ -1762,13 +1915,15 @@ function handleDownloadPDF() {
   nextY = drawPdfTextBlock(
     doc,
     'Source spreadsheet rows that remained unresolved after import review. These rows are not included in ActivityData or the GHG emissions total until corrected and imported.',
-    14,
+    PDF_MARGIN_MM,
     nextY + 8,
-    268,
+    getPdfTextWidthFromX(doc, PDF_MARGIN_MM),
     4.1,
   );
   autoTablePdf(doc, {
     startY: nextY + 4,
+    margin: { left: PDF_MARGIN_MM, right: PDF_MARGIN_MM },
+    tableWidth: getPdfAppendixUsableWidth(doc),
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
     head: [[
@@ -1796,19 +1951,19 @@ function handleDownloadPDF() {
             formatSourceReviewAction(row),
           ])
         : [['No source rows require review for this report scope.', '', '', '', '', '', '', '', '']]
-      : [['Source dataset review status is not available for this report scope.', '', '', '', '', '', '', '', '']],
-    styles: { fontSize: 6.6, cellPadding: 1.4, valign: 'top' },
+      : [[getSourceReviewAppendixEmptyMessage(sourceReviewSummary), '', '', '', '', '', '', '', '']],
+    styles: { fontSize: 6.4, cellPadding: 1.1, valign: 'top', overflow: 'linebreak' },
     headStyles: { fillColor: [146, 64, 14] },
     columnStyles: {
-      0: { cellWidth: 32 },
-      1: { cellWidth: 18 },
-      2: { cellWidth: 30 },
-      3: { cellWidth: 20 },
-      4: { cellWidth: 18 },
-      5: { cellWidth: 28 },
-      6: { cellWidth: 30 },
-      7: { cellWidth: 58 },
-      8: { cellWidth: 44 },
+      0: { cellWidth: 27 },
+      1: { cellWidth: 13 },
+      2: { cellWidth: 23 },
+      3: { cellWidth: 12 },
+      4: { cellWidth: 9 },
+      5: { cellWidth: 22 },
+      6: { cellWidth: 23 },
+      7: { cellWidth: 84 },
+      8: { cellWidth: 52 },
     },
   });
 
@@ -1854,11 +2009,12 @@ function handleDownloadPDF() {
     });
   }
 
-  doc.save(`carbonlite-pilot-data-readiness-report-${today}.pdf`);
+  addPdfDocumentControlFooters(doc, documentControl);
+  doc.save(getReportPdfFileName('TECHNICAL_REVIEW', documentControl, today));
   void createClientAuditLog({
     action: 'EXPORT_PDF',
     entityType: 'Report',
-    description: `Exported PDF report for ${reportScopeLabel}`,
+    description: `Exported technical review package for ${reportScopeLabel}`,
     page: location.pathname,
   }).catch(() => {
     // PDF export should not be blocked by audit logging.
@@ -1870,6 +2026,7 @@ function handleDownloadPDF() {
     entityType: 'Report',
     metadata: {
       reportScope,
+      outputProfile: 'TECHNICAL_REVIEW',
       recordsIncluded: reportCountSummary.processedRecords,
     },
   }).catch(() => {
@@ -1885,7 +2042,8 @@ function handleDownloadPDF() {
       totalEstimatedEmissionsKgCO2e,
       countSummary,
       reportFormat: 'PDF',
-      eventLabel: 'PDF report generated',
+      eventLabel: 'Technical review package generated',
+      outputProfile: 'TECHNICAL_REVIEW',
       exportStatus: 'EXPORTED',
       reportPeriod,
       reportScopeLabel,
@@ -1897,9 +2055,416 @@ function handleDownloadPDF() {
     });
   track('REPORT_PDF_EXPORTED', {
     reportType: 'emissions',
+    outputProfile: 'TECHNICAL_REVIEW',
     reportScope,
     recordCount: reportCountSummary.processedRecords,
   });
+}
+
+function drawFactorDetailsPdfSection(
+  doc: jsPDF,
+  factors: FormalConversionFactorUsed[],
+  startY: number,
+) {
+  const firstBlockHeight = factors[0] ? estimateFactorDetailBlockHeight(doc, factors[0]) : 0;
+  let nextY = ensurePdfSpace(doc, startY, 8 + firstBlockHeight);
+
+  drawPdfSectionTitle(doc, 'Factor Details / Assumptions', nextY);
+  nextY += 8;
+
+  factors.forEach((factor) => {
+    const blockHeight = estimateFactorDetailBlockHeight(doc, factor);
+    nextY = ensurePdfSpaceWithContinuation(
+      doc,
+      nextY,
+      blockHeight,
+      'Factor Details / Assumptions (continued)',
+    );
+    nextY = drawFactorDetailBlock(doc, factor, nextY);
+  });
+
+  return nextY;
+}
+
+function buildFactorDetailText(factor: FormalConversionFactorUsed) {
+  const factorName =
+    getFactorDisplayName(factor.factorName) ||
+    getActivityTypeLabel(factor.activityType) ||
+    'Factor not specified';
+
+  return [
+    `Factor: ${factorName}`,
+    `Value: ${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`,
+    `Source: ${formatReportFactorSource(factor)}`,
+    `Version: ${formatReportFactorVersion(factor)}`,
+    `Verification: ${formatReportVerification(factor)}`,
+    `Confidence: ${formatCredibilityLabel(factor.confidenceLevel) || 'Not specified'}`,
+    `Assumption: ${formatReportAssumptions(factor)}`,
+  ].join('\n');
+}
+
+function estimateFactorDetailBlockHeight(doc: jsPDF, factor: FormalConversionFactorUsed) {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  return (
+    estimatePdfTextBlockHeight(
+      doc,
+      buildFactorDetailText(factor),
+      FACTOR_DETAIL_TEXT_WIDTH_MM,
+      FACTOR_DETAIL_LINE_HEIGHT_MM,
+    ) + FACTOR_DETAIL_BLOCK_SPACING_MM
+  );
+}
+
+function drawFactorDetailBlock(doc: jsPDF, factor: FormalConversionFactorUsed, y: number) {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.setTextColor(51, 65, 85);
+  return (
+    drawPdfTextBlock(
+      doc,
+      buildFactorDetailText(factor),
+      PDF_MARGIN_MM,
+      y,
+      FACTOR_DETAIL_TEXT_WIDTH_MM,
+      FACTOR_DETAIL_LINE_HEIGHT_MM,
+    ) + FACTOR_DETAIL_BLOCK_SPACING_MM
+  );
+}
+
+function downloadExecutiveSummaryPdf(canonicalData: CanonicalReportData) {
+  const doc = new jsPDF();
+  const {
+    calculationCoverage,
+    coverageCounts,
+    documentControl,
+    executiveSummary,
+    hotspotAnalysis,
+    outputGeneratedDate,
+    primarySkippedReasons,
+    reportingReadinessAssessment,
+    scopeSummary: pdfScopeSummary,
+    sourceReviewSummary: pdfSourceReviewSummary,
+  } = canonicalData;
+  const factorReviewCount = getFactorReviewRequiredCount(conversionFactorsUsed);
+  const keyPriorities = buildExecutiveKeyPriorities({
+    factorReviewCount,
+    sourceReviewSummary: pdfSourceReviewSummary,
+    readinessAssessment: reportingReadinessAssessment,
+    documentControl,
+  });
+
+  doc.setProperties({
+    title: `CarbonLite Executive Summary - ${documentControl.reportId}`,
+    subject: `Report ID ${documentControl.reportId}; ${documentControl.reportVersion}; ${documentControl.reviewStatus}`,
+    author: 'CarbonLite',
+    creator: documentControl.generatedWith,
+    keywords: `CarbonLite, executive summary, ${documentControl.reportId}, ${documentControl.reviewStatus}`,
+  });
+  drawReportPdfCover(doc, {
+    organizationName,
+    reportPeriod,
+    reportScopeLabel,
+    generatedDate: outputGeneratedDate,
+    documentControl,
+    outputProfile: 'EXECUTIVE_SUMMARY',
+  });
+
+  doc.addPage();
+  let nextY = 18;
+  drawPdfSectionTitle(doc, 'Executive Snapshot', nextY);
+  autoTablePdf(doc, {
+    startY: nextY + EXECUTIVE_SECTION_TITLE_TO_TABLE_MM,
+    head: [['Measure', 'Value']],
+    body: [
+      ['Estimated Emissions', executiveSummary.estimatedEmissions],
+      ['Scope 1', formatEmissionsWithUnit(pdfScopeSummary['Scope 1'])],
+      ['Scope 2', formatEmissionsWithUnit(pdfScopeSummary['Scope 2'])],
+      ['Scope 3', formatEmissionsWithUnit(pdfScopeSummary['Scope 3'])],
+      ['Imported Activity Records', reportCountSummary.totalRecordsFound],
+      ['Records Included in GHG Total', reportCountSummary.processedRecords],
+      [
+        'Calculation Coverage',
+        `${calculationCoverage} (${coverageCounts.calculatedRecords} of ${coverageCounts.eligibleEmissionBearingRecords} eligible emissions records calculated)`,
+      ],
+      ['Tracked Metrics', primarySkippedReasons.trackedOnly],
+      ['Source Review', formatExecutiveSourceReviewStatus(pdfSourceReviewSummary)],
+      [
+        'Factor Review',
+        `${factorReviewCount} of ${conversionFactorsUsed.length} emission ${conversionFactorsUsed.length === 1 ? 'factor' : 'factors'} require review before formal reporting.`,
+      ],
+      ['Boundary', formatReadinessStatus(getReadinessItemStatus(reportingReadinessAssessment, 'boundary'))],
+      ['Reviewer', documentControl.reviewStatus],
+    ],
+    styles: { fontSize: 8.1, cellPadding: 1.25, valign: 'top' },
+    headStyles: { fillColor: [15, 23, 42] },
+    columnStyles: {
+      0: { cellWidth: 62 },
+      1: { cellWidth: 118 },
+    },
+  });
+
+  nextY = ((doc as any).lastAutoTable?.finalY ?? nextY) + EXECUTIVE_SECTION_GAP_MM;
+  nextY = ensurePdfSpace(
+    doc,
+    nextY,
+    estimatePdfTableSectionHeight(Math.max(1, hotspotAnalysis.categoryHotspots.slice(0, 5).length), 6.4),
+  );
+  drawPdfSectionTitle(doc, 'Emissions Overview', nextY);
+  const contributorRows = hotspotAnalysis.categoryHotspots.slice(0, 5).map((row) => [
+    row.displayName,
+    formatEmissionsWithUnit(row.emissions),
+    `${formatDisplayNumber(row.percentageOfTotal)}%`,
+  ]);
+  autoTablePdf(doc, {
+    startY: nextY + EXECUTIVE_SECTION_TITLE_TO_TABLE_MM,
+    head: [['Top Estimated Contributors', 'Estimated Emissions', 'Share']],
+    body: contributorRows.length
+      ? contributorRows
+      : [['No calculated emissions contributors available.', '', '']],
+    styles: { fontSize: 7.8, cellPadding: 1.05, valign: 'top' },
+    headStyles: { fillColor: [15, 23, 42] },
+    columnStyles: {
+      0: { cellWidth: 76 },
+      1: { cellWidth: 56 },
+      2: { cellWidth: 36 },
+    },
+  });
+
+  nextY = ((doc as any).lastAutoTable?.finalY ?? nextY) + EXECUTIVE_SECTION_GAP_MM;
+  nextY = ensurePdfSpace(
+    doc,
+    nextY,
+    estimatePdfTableSectionHeight(reportingReadinessAssessment.items.length, 7.2),
+  );
+  drawPdfSectionTitle(doc, 'Reporting Readiness', nextY);
+  autoTablePdf(doc, {
+    startY: nextY + EXECUTIVE_SECTION_TITLE_TO_TABLE_MM,
+    head: [['Checklist Item', 'Status', 'Evidence']],
+    body: reportingReadinessAssessment.items.map((item) => [
+      item.label,
+      formatReadinessStatus(item.status),
+      item.evidence,
+    ]),
+    styles: { fontSize: 6.9, cellPadding: 0.85, valign: 'top' },
+    headStyles: { fillColor: [71, 85, 105] },
+    columnStyles: {
+      0: { cellWidth: 48 },
+      1: { cellWidth: 30 },
+      2: { cellWidth: 102 },
+    },
+  });
+
+  nextY = ((doc as any).lastAutoTable?.finalY ?? nextY) + EXECUTIVE_SECTION_GAP_MM;
+  nextY = ensurePdfSpace(
+    doc,
+    nextY,
+    estimatePdfTableSectionHeight(Math.max(1, keyPriorities.length), 6.6),
+  );
+  drawPdfSectionTitle(doc, 'Key Review Priorities', nextY);
+  autoTablePdf(doc, {
+    startY: nextY + EXECUTIVE_SECTION_TITLE_TO_TABLE_MM,
+    head: [['Priority', 'Action']],
+    body: keyPriorities.map((priority, index) => [index + 1, priority]),
+    styles: { fontSize: 7.4, cellPadding: 0.95, valign: 'top' },
+    headStyles: { fillColor: [146, 64, 14] },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: 158 },
+    },
+  });
+
+  nextY = ((doc as any).lastAutoTable?.finalY ?? nextY) + EXECUTIVE_SECTION_GAP_MM;
+  const limitationsText = buildExecutiveLimitationsSentence({
+    factorReviewCount,
+    sourceReviewSummary: pdfSourceReviewSummary,
+  });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.8);
+  const limitationsHeight = estimatePdfTextBlockHeight(doc, limitationsText, 180, 3.8);
+  nextY = ensurePdfSpace(doc, nextY, 7 + 5 + limitationsHeight);
+  drawPdfSectionTitle(doc, 'Limitations', nextY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.8);
+  doc.setTextColor(71, 85, 105);
+  drawPdfTextBlock(
+    doc,
+    limitationsText,
+    14,
+    nextY + 7,
+    180,
+    3.8,
+  );
+
+  addPdfDocumentControlFooters(doc, documentControl);
+  doc.save(getReportPdfFileName('EXECUTIVE_SUMMARY', documentControl, outputGeneratedDate));
+  void createClientAuditLog({
+    action: 'EXPORT_PDF',
+    entityType: 'Report',
+    description: `Exported executive summary for ${reportScopeLabel}`,
+    page: location.pathname,
+  }).catch(() => {
+    // PDF export should not be blocked by audit logging.
+  });
+  void trackActivityEvent({
+    eventName: 'REPORT_EXPORTED_PDF',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'Report',
+    metadata: {
+      reportScope,
+      outputProfile: 'EXECUTIVE_SUMMARY',
+      recordsIncluded: reportCountSummary.processedRecords,
+    },
+  }).catch(() => {
+    // PDF export should not be blocked by usage tracking.
+  });
+  void trackActivityEvent({
+    eventName: 'PDF_EXPORTED',
+    page: location.pathname,
+    url: window.location.href,
+    entityType: 'REPORT',
+    metadata: {
+      ...buildWorkflowReportSummary({
+        calculationDetails,
+        totalEstimatedEmissionsKgCO2e,
+        countSummary,
+        reportFormat: 'PDF',
+        eventLabel: 'Executive summary generated',
+        exportStatus: 'EXPORTED',
+        reportPeriod,
+        reportScopeLabel,
+      }),
+      outputProfile: 'EXECUTIVE_SUMMARY',
+    },
+  })
+    .then(() => loadWorkflowEvents())
+    .catch(() => {
+      // PDF audit should not block export.
+    });
+  track('REPORT_PDF_EXPORTED', {
+    reportType: 'emissions',
+    outputProfile: 'EXECUTIVE_SUMMARY',
+    reportScope,
+    recordCount: reportCountSummary.processedRecords,
+  });
+}
+
+function buildExecutiveLimitationsSentence(input: {
+  factorReviewCount: number;
+  sourceReviewSummary: SourceReviewSummary;
+}) {
+  const limitations = ['Results are pilot estimates.'];
+
+  if (input.factorReviewCount > 0) {
+    limitations.push(
+      `${input.factorReviewCount} emission ${input.factorReviewCount === 1 ? 'factor requires' : 'factors require'} review before formal use.`,
+    );
+  }
+
+  const sourceLimitation = getSourceReviewLimitationSentence(input.sourceReviewSummary);
+  if (sourceLimitation) {
+    limitations.push(sourceLimitation);
+  }
+
+  limitations.push('CarbonLite does not provide regulatory assurance, third-party verification, or carbon credit eligibility determination.');
+  return limitations.join(' ');
+}
+
+function getSourceReviewLimitationSentence(summary: SourceReviewSummary) {
+  if (summary.availability === 'STRUCTURED_REVIEW_AVAILABLE') {
+    if (summary.needsReviewCount > 0) {
+      return `${summary.needsReviewCount} source ${summary.needsReviewCount === 1 ? 'row still requires' : 'rows still require'} review.`;
+    }
+    return 'No unresolved source-review issues are currently recorded for this report scope.';
+  }
+
+  if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
+    return summary.limitation ||
+      'Structured source-review counts are not available for this document import.';
+  }
+
+  return summary.limitation || 'Source-document review is not applicable to manually entered records.';
+}
+
+function getReportPdfFileName(
+  profile: ReportOutputProfile,
+  documentControl: PdfDocumentControlMetadata,
+  dateText: string,
+) {
+  const reportId = documentControl.reportId.toLowerCase();
+  const version = documentControl.reportVersion.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const profileSlug =
+    profile === 'EXECUTIVE_SUMMARY'
+      ? 'executive-summary'
+      : 'technical-review-package';
+
+  return `carbonlite-${profileSlug}-${dateText}-${reportId}-${version}.pdf`;
+}
+
+function getFactorReviewRequiredCount(factors: FormalConversionFactorUsed[]) {
+  return factors.filter((factor) => {
+    const status = String(
+      factor.verificationStatus ||
+        factor.factorStatus ||
+        factor.confidence ||
+        factor.confidenceLevel ||
+        '',
+    ).toUpperCase();
+    return (
+      !factor.verified ||
+      status.includes('REVIEW') ||
+      status.includes('DRAFT') ||
+      status.includes('LOW') ||
+      status.includes('PLACEHOLDER') ||
+      status.includes('PILOT')
+    );
+  }).length;
+}
+
+function getReadinessItemStatus(
+  assessment: ReportingReadinessAssessment,
+  codeFragment: string,
+) {
+  const normalized = codeFragment.toLowerCase();
+  return assessment.items.find((item) => item.code.toLowerCase().includes(normalized))?.status ??
+    assessment.overallStatus;
+}
+
+function formatExecutiveSourceReviewStatus(summary: SourceReviewSummary) {
+  if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') return 'Document source lineage available';
+  if (!summary.available) return 'Not applicable';
+  return `${summary.totalRows} rows reviewed; ${summary.resolvedCount} resolved/imported; ${summary.needsReviewCount} require review`;
+}
+
+function buildExecutiveKeyPriorities(input: {
+  factorReviewCount: number;
+  sourceReviewSummary: SourceReviewSummary;
+  readinessAssessment: ReportingReadinessAssessment;
+  documentControl: PdfDocumentControlMetadata;
+}) {
+  const priorities: string[] = [];
+  if (input.sourceReviewSummary.available && input.sourceReviewSummary.needsReviewCount > 0) {
+    priorities.push(`Resolve the ${input.sourceReviewSummary.needsReviewCount} remaining source-data issue${input.sourceReviewSummary.needsReviewCount === 1 ? '' : 's'}.`);
+  }
+  if (input.factorReviewCount > 0) {
+    priorities.push(input.factorReviewCount === 1
+      ? 'Review or replace the pilot-stage emission factor.'
+      : `Review or replace ${input.factorReviewCount} pilot-stage emission factors.`);
+  }
+  const boundaryStatus = getReadinessItemStatus(input.readinessAssessment, 'boundary');
+  if (boundaryStatus !== 'COMPLETE') {
+    priorities.push('Complete the reporting boundary before formal use.');
+  }
+  if (input.documentControl.reviewStatus !== REPORT_REVIEW_STATUS_NOT_REVIEWED) {
+    priorities.push(`Confirm reviewer status for ${input.documentControl.reportVersion}.`);
+  } else {
+    priorities.push('Assign a reviewer and complete report review before formal use.');
+  }
+  if (priorities.length === 0) {
+    priorities.push('Maintain source, factor, and calculation evidence with the technical review package.');
+  }
+  return priorities;
 }
 
 function drawReportPdfCover(
@@ -1909,6 +2474,8 @@ function drawReportPdfCover(
     reportPeriod: string;
     reportScopeLabel: string;
     generatedDate: string;
+    documentControl: PdfDocumentControlMetadata;
+    outputProfile: ReportOutputProfile;
   },
 ) {
   const x = 24;
@@ -1928,14 +2495,14 @@ function drawReportPdfCover(
 
   doc.setFontSize(9);
   doc.setTextColor(4, 120, 87);
-  doc.text('Pilot reporting workflow', x + 19, y + 12);
+  doc.text(REPORT_OUTPUT_PROFILE_LABELS[input.outputProfile], x + 19, y + 12);
 
   doc.setDrawColor(203, 213, 225);
   doc.line(x, y + 28, 186, y + 28);
 
   doc.setFontSize(25);
   doc.setTextColor(15, 23, 42);
-  doc.text('Pilot Emissions Data Readiness Report', x, y + 62, { maxWidth: 166 });
+  doc.text(`CarbonLite ${REPORT_OUTPUT_PROFILE_LABELS[input.outputProfile]}`, x, y + 62, { maxWidth: 166 });
 
   doc.setFontSize(16);
   doc.setTextColor(4, 120, 87);
@@ -1944,17 +2511,43 @@ function drawReportPdfCover(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Reporting period: ${input.reportPeriod}`, x, y + 102);
-  doc.text(`Report scope: ${input.reportScopeLabel}`, x, y + 112);
-  doc.text(`Generated date: ${input.generatedDate}`, x, y + 122);
-  doc.text('Prepared by: CarbonLite', x, y + 132);
+  doc.text('Report Information', x, y + 100);
+  autoTablePdf(doc, {
+    startY: y + 104,
+    margin: { left: x, right: 24 },
+    head: [],
+    body: [
+      ['Report ID', input.documentControl.reportId],
+      ['Report Version', input.documentControl.reportVersion],
+      ['Report Status', input.documentControl.reportStatus],
+      ['Output Profile', REPORT_OUTPUT_PROFILE_LABELS[input.outputProfile]],
+      ['Reporting Period', input.reportPeriod],
+      ['Report Scope', input.reportScopeLabel],
+      ['Generated Date', input.generatedDate],
+      ['Prepared By', 'CarbonLite'],
+      ['Reviewer', input.documentControl.reviewer],
+      ['Review Status', input.documentControl.reviewStatus],
+      ['Generated With', input.documentControl.generatedWith],
+    ],
+    styles: { fontSize: 8.5, cellPadding: 1.5, valign: 'top' },
+    columnStyles: {
+      0: { cellWidth: 42, fontStyle: 'bold', textColor: [51, 65, 85] },
+      1: { cellWidth: 120 },
+    },
+  });
 
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139);
-  doc.text(
-    'Prepared for review as part of a pilot emissions data readiness and reporting workflow.',
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const rightMargin = 24;
+  drawPdfTextBlock(
+    doc,
+    'Prepared for review as part of a pilot emissions data readiness and reporting workflow. This draft export is not approved, verified, certified, or assured.',
     x,
-    270,
+    pageHeight - 31,
+    pageWidth - x - rightMargin,
+    4.2,
   );
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
@@ -2177,6 +2770,145 @@ function formatWorkflowEventSummary(event: ActivityEventItem) {
   return String(metadata.eventLabel ?? event.description ?? 'Workflow event recorded.');
 }
 
+function buildRegulatoryReportingReference({
+  reportStartDate,
+  reportEndDate,
+  hasAlbertaContext,
+  thresholdReferences = REVIEWED_REGULATORY_THRESHOLD_REFERENCES,
+}: {
+  reportStartDate?: string | null;
+  reportEndDate?: string | null;
+  hasAlbertaContext: boolean;
+  thresholdReferences?: FacilityRegulatoryThresholdReference[];
+}): RegulatoryReportingReference {
+  const currentSystems = hasAlbertaContext
+    ? [...BASE_REGULATORY_REPORTING_SYSTEMS, ...ALBERTA_REGULATORY_REPORTING_SYSTEMS]
+    : [...BASE_REGULATORY_REPORTING_SYSTEMS];
+  const historicalNotes: string[] = [];
+  const startDate = normalizeDateOnlyForComparison(reportStartDate);
+  const endDate = normalizeDateOnlyForComparison(reportEndDate);
+
+  if (startDate && endDate) {
+    if (endDate < FEDERAL_FUEL_CHARGE_REMOVAL_DATE) {
+      historicalNotes.push(HISTORICAL_FEDERAL_FUEL_CHARGE_REFERENCE);
+    } else if (startDate < FEDERAL_FUEL_CHARGE_REMOVAL_DATE) {
+      historicalNotes.push(TRANSITIONAL_FEDERAL_FUEL_CHARGE_REFERENCE);
+    }
+  }
+
+  return {
+    currentSystems,
+    historicalNotes,
+    thresholdReferences,
+  };
+}
+
+function normalizeDateOnlyForComparison(value?: string | null) {
+  const candidate = String(value ?? '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : null;
+}
+
+function formatRegulatoryThresholdReference(reference: FacilityRegulatoryThresholdReference) {
+  return [
+    reference.authority ? `Authority: ${reference.authority}` : null,
+    reference.programName ? `Program: ${reference.programName}` : null,
+    reference.jurisdictionRegion || reference.jurisdictionCountry
+      ? `Jurisdiction: ${[reference.jurisdictionRegion, reference.jurisdictionCountry].filter(Boolean).join(', ')}`
+      : null,
+    Number.isFinite(Number(reference.thresholdValue)) && reference.thresholdUnit
+      ? `Threshold: ${Number(reference.thresholdValue).toLocaleString()} ${reference.thresholdUnit}`
+      : null,
+    reference.checkedDate ? `Checked: ${reference.checkedDate}` : null,
+    reference.sourceUrl ? `Source: ${reference.sourceUrl}` : null,
+    reference.notes ? `Notes: ${reference.notes}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function buildPdfDocumentControlMetadata(input: {
+  organizationName: string;
+  organizationId?: string | null;
+  reportPeriod: string;
+  reportScope: string;
+  reportScopeLabel: string;
+  generatedBy?: string | null;
+  periodEnd?: string | null;
+  selectedRecordIds: string[];
+  selectedDocumentIds: string[];
+  activityDataIds: string[];
+  activityRecordIds: string[];
+  totalRecordsFound: number;
+  processedRecords: number;
+  totalEstimatedEmissionsKgCO2e: number;
+}): PdfDocumentControlMetadata {
+  const reportingYear = getDateOnlyYear(input.periodEnd) ?? getReportPeriodYear(input.reportPeriod) ?? 2026;
+  const stablePayload = [
+    input.organizationId || input.organizationName,
+    input.reportPeriod,
+    input.reportScope,
+    input.reportScopeLabel,
+    input.selectedRecordIds.slice().sort().join(','),
+    input.selectedDocumentIds.slice().sort().join(','),
+    input.activityDataIds.slice().sort().join(','),
+    input.activityRecordIds.slice().sort().join(','),
+    input.totalRecordsFound,
+    input.processedRecords,
+    Math.round(input.totalEstimatedEmissionsKgCO2e * 1000) / 1000,
+  ].join('|');
+
+  return {
+    reportId: `CL-DRAFT-${reportingYear}-${stableHash(stablePayload)}`,
+    reportVersion: REPORT_DOCUMENT_VERSION,
+    reportStatus: REPORT_STATUS_PILOT_DRAFT,
+    generatedWith: CARBONLITE_TEMPLATE_VERSION,
+    generatedBy: String(input.generatedBy ?? '').trim() || 'Unknown user',
+    reviewer: REPORT_REVIEWER_NOT_ASSIGNED,
+    reviewStatus: REPORT_REVIEW_STATUS_NOT_REVIEWED,
+  };
+}
+
+function getReportPeriodYear(reportPeriod: string) {
+  const match = reportPeriod.match(/\b(20\d{2})\b/);
+  return match ? Number(match[1]) : null;
+}
+
+function stableHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).toUpperCase().padStart(7, '0');
+}
+
+function addPdfDocumentControlFooters(doc: jsPDF, metadata: PdfDocumentControlMetadata) {
+  const pageCount = doc.getNumberOfPages();
+
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    doc.setPage(pageNumber);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, pageHeight - 12, pageWidth - 14, pageHeight - 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(formatPdfDocumentControlFooter(metadata, pageNumber, pageCount), pageWidth - 14, pageHeight - 7, {
+      align: 'right',
+    });
+  }
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'normal');
+}
+
+function formatPdfDocumentControlFooter(
+  metadata: Pick<PdfDocumentControlMetadata, 'reportId' | 'reportVersion'>,
+  pageNumber: number,
+  pageCount: number,
+) {
+  return `CarbonLite | Report ID ${metadata.reportId} | Version ${metadata.reportVersion} | Page ${pageNumber} of ${pageCount}`;
+}
+
 const organizationName = getOrganizationName(currentUser);
 const generatedAt = new Date().toLocaleString();
 const reportScopeLabel = getReportScopeLabel(
@@ -2190,27 +2922,68 @@ const reportPeriod =
     : reportScope === 'selectedDocuments'
     ? 'Selected documents'
     : 'Selected records';
-const inventoryBoundary = profileToInventoryBoundary(organizationProfile, reportPeriod);
+const inventoryBoundary = profileToReportContextInventoryBoundary(organizationProfile, reportPeriod);
 const inventoryBoundarySummary = summarizeInventoryBoundary(
   inventoryBoundary,
-  `${getDateOnlyYear(periodEnd) ?? 2026} reporting period`,
+  reportPeriod,
 );
 const hasAlbertaContext = hasAlbertaReportingContext({
-  inventoryBoundary,
   calculationDetails,
   activities,
 });
-const regulatoryReportingSystems = hasAlbertaContext
-  ? [...BASE_REGULATORY_REPORTING_SYSTEMS, ...ALBERTA_REGULATORY_REPORTING_SYSTEMS]
-  : [...BASE_REGULATORY_REPORTING_SYSTEMS];
+const regulatoryReportingReference = buildRegulatoryReportingReference({
+  reportStartDate: reportScope === 'dateRange' ? periodStart : null,
+  reportEndDate: reportScope === 'dateRange' ? periodEnd : null,
+  hasAlbertaContext,
+});
 const dataReadinessSummary = buildDataReadinessSummary(calculationDetails);
-const sourceReviewSummary = buildSourceReviewSummary(sourceReviewRows);
+const sourceReviewSummary = buildSourceReviewSummary({
+  rows: sourceReviewRows,
+  calculationDetails,
+});
+const reportingCoverageCounts = getCalculationCoverageCounts(calculationDetails);
+const reportingCalculationCoverage = reportingCoverageCounts.eligibleEmissionBearingRecords > 0
+  ? `${Math.round(
+      (reportingCoverageCounts.calculatedRecords / reportingCoverageCounts.eligibleEmissionBearingRecords) *
+        1000,
+    ) / 10}%`
+  : 'Not applicable';
+const reportingReadinessAssessment = buildReportingReadinessAssessment({
+  calculationDetails,
+  inventoryBoundary,
+  sourceReviewSummary,
+});
 const carbonCreditReadiness = buildCarbonCreditReadinessAssessment(
   calculationDetails,
   dataReadinessSummary,
 );
 const includeCarbonCreditReadinessNotes = DEFAULT_REPORT_OPTIONS.includeCarbonCreditReadinessNotes === true;
 const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails);
+const currentReportDocumentControl = buildPdfDocumentControlMetadata({
+  organizationName,
+  organizationId: currentWorkspaceId,
+  reportPeriod,
+  reportScope,
+  reportScopeLabel,
+  generatedBy: currentUser?.email,
+  periodEnd,
+  selectedRecordIds,
+  selectedDocumentIds,
+  activityDataIds: calculationDetails.map((detail) => detail.activityDataId),
+  activityRecordIds: activities.map((activity) => activity.id),
+  totalRecordsFound: reportCountSummary.totalRecordsFound,
+  processedRecords: reportCountSummary.processedRecords,
+  totalEstimatedEmissionsKgCO2e,
+});
+const auditEvidenceChains = calculationDetails.map((detail) =>
+  buildEvidenceChainFromCalculationDetail(detail, {
+    report: {
+      reportId: currentReportDocumentControl.reportId,
+      reportVersion: currentReportDocumentControl.reportVersion,
+    },
+  }),
+);
+const auditEvidenceRows = buildEvidenceChainSummaryRows(auditEvidenceChains);
 const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
 const sourceEvidenceRows = buildSourceEvidenceRows(activities, calculationDetails);
 const latestWorkflowEvent = workflowEvents[0] ?? null;
@@ -2271,7 +3044,7 @@ function setAllReportSections(expanded: boolean) {
           <h1 style={reportsTitleStyle}>Reports</h1>
 
           <p style={reportsSubtitleStyle}>
-            Review your emissions summary, data quality, reporting boundary, and exportable review package.
+            Stage {getWorkflowStage('REPORT').step}: {getWorkflowStage('REPORT').title}. Review your emissions summary, data quality, reporting boundary, and exportable review package. Review Status remains Not reviewed until a human reviewer completes review.
           </p>
         </div>
       </div>
@@ -2384,90 +3157,60 @@ function setAllReportSections(expanded: boolean) {
           {loading ? 'Generating...' : 'Generate Report'}
         </button>
 
-        <button
-          onClick={handleDownloadCSV}
-          disabled={exportDisabled}
-          title={exportDisabledTitle}
-          style={secondaryButtonStyle(exportDisabled)}
-        >
-          Download CSV
-        </button>
-
-        <div ref={reviewPackageMenuRef} style={reviewPackageMenuWrapperStyle}>
+        <div ref={exportMenuRef} style={exportMenuWrapperStyle}>
           <button
+            ref={exportMenuTriggerRef}
             type="button"
-            onClick={() => setIsReviewPackageMenuOpen((open) => !open)}
+            onClick={() => setIsExportMenuOpen((open) => !open)}
             disabled={exportDisabled}
             title={exportDisabledTitle}
             aria-haspopup="menu"
-            aria-expanded={isReviewPackageMenuOpen}
-            aria-controls="review-package-export-menu"
+            aria-expanded={isExportMenuOpen}
+            aria-controls="report-export-menu"
             style={primaryButtonStyle(exportDisabled)}
           >
-            Export Review Package
+            <span style={exportButtonContentStyle}>
+              Export reports
+              <span aria-hidden="true" style={exportButtonChevronStyle}>▾</span>
+            </span>
           </button>
-          {isReviewPackageMenuOpen ? (
+          {isExportMenuOpen ? (
             <div
-              id="review-package-export-menu"
+              id="report-export-menu"
               role="menu"
-              aria-label="Export review package"
-              style={reviewPackageMenuStyle}
+              aria-label="Export report"
+              style={exportMenuStyle}
             >
-              <p style={reviewPackageMenuHelpStyle}>
-                Download CSV files for internal review, consultant review, or pilot workflow validation. These exports are not official regulatory submissions.
-              </p>
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => handleExportReviewPackageCsv('data-records')}
-                style={reviewPackageMenuItemStyle}
+                disabled={exportDisabled}
+                onClick={() => handleExportMenuItem(() => handleDownloadPDF('EXECUTIVE_SUMMARY'))}
+                style={exportMenuItemStyle(exportDisabled)}
               >
-                Export Data Records CSV
+                Executive Summary (PDF)
               </button>
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => handleExportReviewPackageCsv('site-facility-breakdown')}
-                style={reviewPackageMenuItemStyle}
+                disabled={exportDisabled}
+                onClick={() => handleExportMenuItem(() => handleDownloadPDF('TECHNICAL_REVIEW'))}
+                style={exportMenuItemStyle(exportDisabled)}
               >
-                Export Site / Facility Breakdown
+                Technical Review Package (PDF)
               </button>
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => handleExportReviewPackageCsv('factor-source-summary')}
-                style={reviewPackageMenuItemStyle}
+                disabled={exportDisabled}
+                onClick={() => handleExportMenuItem(handleDownloadCSV)}
+                style={exportMenuItemStyle(exportDisabled)}
               >
-                Export Factor Source Summary
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => handleExportReviewPackageCsv('calculation-traceability')}
-                style={reviewPackageMenuItemStyle}
-              >
-                Export Calculation Traceability
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => handleExportReviewPackageCsv('records-requiring-review')}
-                style={reviewPackageMenuItemStyle}
-              >
-                Export Records Requiring Review
+                Data Export (CSV)
               </button>
             </div>
           ) : null}
         </div>
-
-        <button
-          onClick={handleDownloadPDF}
-          disabled={exportDisabled}
-          title={exportDisabledTitle}
-          style={secondaryButtonStyle(exportDisabled)}
-        >
-          Download PDF
-        </button>
       </div>
 
       {error ? <div style={errorStyle}>{error}</div> : null}
@@ -2525,6 +3268,7 @@ function setAllReportSections(expanded: boolean) {
             conversionFactorsUsed={conversionFactorsUsed}
             sourceEvidenceRows={sourceEvidenceRows}
             calculationDetails={calculationDetails}
+            sourceReviewSummary={sourceReviewSummary}
             showSectionToolbar={false}
             sectionExpansionRequest={previewExpansionRequest}
           />
@@ -2578,32 +3322,31 @@ function setAllReportSections(expanded: boolean) {
             onToggle={() => toggleReportSection('dataQualityNotes')}
           >
             <div style={dataQualityNotesGridStyle}>
-              <DataQualityNote label="Emissions Workflow Readiness" value={`${formatDisplayNumber(dataReadinessSummary.score)}% · ${dataReadinessSummary.level}`} />
+              <DataQualityNote label="Readiness Status" value={formatReadinessStatus(reportingReadinessAssessment.overallStatus)} />
+              <DataQualityNote label="Calculation Coverage" value={reportingCalculationCoverage} />
               <DataQualityNote
                 label="Optional Data Completeness"
                 value={`${formatDisplayNumber(dataReadinessSummary.optionalDataCompleteness.score)}%`}
                 detail={formatOptionalDataCompletenessDetail(dataReadinessSummary)}
               />
               <DataQualityNote label="Calculated Records" value={dataReadinessSummary.recordsReadyForCalculation} />
-              <DataQualityNote label="Imported Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
+              <DataQualityNote label="Imported Activity Records Requiring Review" value={dataReadinessSummary.recordsRequiringReview} />
               <DataQualityNote
                 label="Source Rows Still Requiring Review"
-                value={sourceReviewSummary.available ? sourceReviewSummary.needsReviewCount : 'Not available'}
+                value={formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)}
               />
               <DataQualityNote label="Tracked Operational Metrics" value={dataReadinessSummary.trackedOnlyCount} />
               <DataQualityNote label="Missing Factors" value={dataReadinessSummary.missingFactorCount} />
               <DataQualityNote label="Missing Jurisdiction" value={dataReadinessSummary.missingJurisdictionCount} />
             </div>
+            <ReportingReadinessChecklist assessment={reportingReadinessAssessment} />
             <div style={dataQualityExplanationStyle}>
               <strong>How to read these metrics:</strong>
               <p>
-                Calculation Coverage is calculated emission-bearing records divided by eligible emission-bearing records. Tracked-only operational metrics are retained for review but excluded from the denominator.
+                Calculation Coverage is calculated emission-bearing records divided by eligible emission-bearing records. Tracked metrics are retained for review but excluded from the denominator.
               </p>
               <p>
-                Emissions Workflow Readiness is the percentage of draft or imported records that are complete enough to calculate, trace, and report without manual correction. Optional metadata such as cost is reported separately and does not reduce this score.
-              </p>
-              <p>
-                Calculation Coverage and Emissions Workflow Readiness may differ. Tracked-only operational metrics such as Water are retained for review and excluded from the calculated GHG emissions total by design.
+                Reporting Readiness is an evidence-based checklist. Optional metadata such as cost is reported separately and does not reduce readiness.
               </p>
               <p>
                 Accommodation estimates are treated as selected business-travel-related Scope 3 activity records in this pilot.
@@ -2631,17 +3374,17 @@ function setAllReportSections(expanded: boolean) {
           >
             <div style={dataQualityNotesGridStyle}>
               <DataQualityNote label="Source Files" value={formatSourceReviewFiles(sourceReviewSummary)} />
-              <DataQualityNote label="Reviewable Source Rows" value={sourceReviewSummary.available ? sourceReviewSummary.totalRows : 'Not available'} />
+              <DataQualityNote label="Reviewable Source Rows" value={formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.totalRows)} />
               <DataQualityNote
                 label="Rows Resolved / Imported"
-                value={sourceReviewSummary.available ? `${sourceReviewSummary.resolvedCount} of ${sourceReviewSummary.totalRows}` : 'Not available'}
+                value={sourceReviewSummary.available ? `${sourceReviewSummary.resolvedCount} of ${sourceReviewSummary.totalRows}` : formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.importedCount ?? 0)}
               />
-              <DataQualityNote label="Ready Emissions Rows" value={sourceReviewSummary.available ? sourceReviewSummary.readyCount : 'Not available'} />
-              <DataQualityNote label="Tracked Operational Rows" value={sourceReviewSummary.available ? sourceReviewSummary.trackedOnlyCount : 'Not available'} />
-              <DataQualityNote label="Source Rows Still Requiring Review" value={sourceReviewSummary.available ? sourceReviewSummary.needsReviewCount : 'Not available'} />
+              <DataQualityNote label="Emission Rows Eligible for Import" value={formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.readyCount)} />
+              <DataQualityNote label="Tracked Operational Rows" value={formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.trackedOnlyCount)} />
+              <DataQualityNote label="Source Rows Still Requiring Review" value={formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)} />
             </div>
             <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
-              Source dataset review status is joined by source document ID. Unresolved source rows remain in spreadsheet review history and are not imported into ActivityData or included in emissions totals.
+              {getSourceReviewSectionNote(sourceReviewSummary)}
             </p>
             {sourceReviewSummary.needsReviewRows.length > 0 ? (
               <table style={{ ...tableStyle, marginTop: 12 }}>
@@ -2668,6 +3411,56 @@ function setAllReportSections(expanded: boolean) {
                   ))}
                 </tbody>
               </table>
+            ) : null}
+          </CollapsibleReportSection>
+          <CollapsibleReportSection
+            id="audit-evidence-chain-report-section"
+            title="Audit / Evidence Chain"
+            summary={`${auditEvidenceRows.length} source-to-report chain${auditEvidenceRows.length === 1 ? '' : 's'} · ${currentReportDocumentControl.reportId}`}
+            expanded={expandedSections.auditEvidenceChain}
+            onToggle={() => toggleReportSection('auditEvidenceChain')}
+          >
+            <p style={sectionDescriptionStyle}>
+              Read-only evidence chain derived from linked source, review, factor, calculation, scope, and report metadata. Export Audit Evidence for the machine-readable version.
+            </p>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Source</th>
+                  <th style={thStyle}>Activity</th>
+                  <th style={thStyle}>Factor</th>
+                  <th style={thStyle}>Calculation</th>
+                  <th style={thStyle}>Scope</th>
+                  <th style={thStyle}>Report</th>
+                  <th style={thStyle}>Warnings</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditEvidenceRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={emptyStyle}>
+                      No evidence chains available for this report.
+                    </td>
+                  </tr>
+                ) : (
+                  auditEvidenceRows.slice(0, 25).map((row, index) => (
+                    <tr key={`${row.source}-${row.activity}-${index}`}>
+                      <td style={tdStyle}>{row.source}</td>
+                      <td style={tdStyle}>{row.activity}</td>
+                      <td style={tdStyle}>{row.factor}</td>
+                      <td style={tdStyle}>{row.calculation}</td>
+                      <td style={tdStyle}>{row.scope}</td>
+                      <td style={tdStyle}>{row.report || currentReportDocumentControl.reportId}</td>
+                      <td style={tdStyle}>{row.warnings || 'None'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            {auditEvidenceRows.length > 25 ? (
+              <p style={{ ...sectionDescriptionStyle, marginTop: 10 }}>
+                Showing first 25 chains in the report preview. Export Audit Evidence for the full set.
+              </p>
             ) : null}
           </CollapsibleReportSection>
           {includeCarbonCreditReadinessNotes ? (
@@ -2768,12 +3561,12 @@ function setAllReportSections(expanded: boolean) {
             <CollapsibleReportSection
               id="facility-threshold-reference-report-section"
               title="Facility-Level Reporting Threshold Reference"
-              summary={`${formatDisplayNumber(FACILITY_REPORTING_THRESHOLD_TCO2E)} t CO₂e/year Canada / federal context · Alberta rows only use ${formatDisplayNumber(ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E)} t CO₂e/year Alberta TIER reference`}
+              summary="Regulatory threshold screening provenance not configured"
               expanded={expandedSections.facilityThresholdReference}
               onToggle={() => toggleReportSection('facilityThresholdReference')}
             >
               <p style={sectionDescriptionStyle}>
-                Canada / federal context is shown separately from province-specific screening. Alberta TIER is evaluated only for rows with Alberta jurisdiction; unsupported or missing jurisdictions are marked as not evaluated.
+                Regulatory threshold screening is not yet configured with reviewed source provenance for this jurisdiction.
               </p>
               <p style={thresholdDisclaimerStyle}>{FACILITY_THRESHOLD_REFERENCE_DISCLAIMER}</p>
               <FacilityThresholdReferenceTable rows={facilityThresholdReferenceRows} />
@@ -2786,12 +3579,12 @@ function setAllReportSections(expanded: boolean) {
             expanded={expandedSections.regulatoryReportingReference}
             onToggle={() => toggleReportSection('regulatoryReportingReference')}
           >
-            <RegulatoryReportingReferenceContent regulatoryReportingSystems={regulatoryReportingSystems} />
+            <RegulatoryReportingReferenceContent regulatoryReportingReference={regulatoryReportingReference} />
           </CollapsibleReportSection>
         </>
       ) : null}
 
-      {canViewWorkflowHistory ? (
+      {canViewWorkflowHistory && !isPilotReviewerAccount ? (
         <WorkflowAuditTrail
           events={workflowEvents}
           loading={workflowEventsLoading}
@@ -2810,9 +3603,9 @@ function setAllReportSections(expanded: boolean) {
 }
 
 function RegulatoryReportingReferenceContent({
-  regulatoryReportingSystems,
+  regulatoryReportingReference,
 }: {
-  regulatoryReportingSystems: string[];
+  regulatoryReportingReference: RegulatoryReportingReference;
 }) {
   return (
     <div style={regulatoryReferenceContentStyle}>
@@ -2820,12 +3613,38 @@ function RegulatoryReportingReferenceContent({
         {REGULATORY_REPORTING_REFERENCE_TEXT}
       </p>
       <div>
-        <p style={regulatoryReferenceIntroStyle}>Relevant reporting systems may include:</p>
+        <p style={regulatoryReferenceIntroStyle}>Current regulatory/reporting references:</p>
         <ul style={regulatoryReferenceListStyle}>
-          {regulatoryReportingSystems.map((system) => (
+          {regulatoryReportingReference.currentSystems.map((system) => (
             <li key={system}>{system}</li>
           ))}
         </ul>
+      </div>
+      {regulatoryReportingReference.historicalNotes.length ? (
+        <div>
+          <p style={regulatoryReferenceIntroStyle}>Historical / period-specific reference:</p>
+          <ul style={regulatoryReferenceListStyle}>
+            {regulatoryReportingReference.historicalNotes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <div>
+        <p style={regulatoryReferenceIntroStyle}>Regulatory threshold provenance:</p>
+        {regulatoryReportingReference.thresholdReferences.length ? (
+          <ul style={regulatoryReferenceListStyle}>
+            {regulatoryReportingReference.thresholdReferences.map((reference) => (
+              <li key={`${reference.jurisdictionRegion}-${reference.programName}`}>
+                {formatRegulatoryThresholdReference(reference)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p style={thresholdDisclaimerStyle}>
+            Regulatory threshold screening is not yet configured with reviewed source provenance for this jurisdiction.
+          </p>
+        )}
       </div>
       <p style={thresholdDisclaimerStyle}>
         Reference only. CarbonLite does not determine regulatory obligations. Consult a qualified professional before making regulatory filing or compliance decisions.
@@ -2966,23 +3785,75 @@ function DataQualityNote({
   );
 }
 
+function ReportingReadinessChecklist({
+  assessment,
+}: {
+  assessment: ReportingReadinessAssessment;
+}) {
+  return (
+    <div style={reportingReadinessChecklistStyle}>
+      <h3 style={reportingReadinessChecklistTitleStyle}>Reporting Readiness Checklist</h3>
+      {assessment.items.map((item) => (
+        <div key={item.code} style={reportingReadinessRowStyle}>
+          <span style={reportingReadinessBadgeStyle(item)}>{formatReadinessStatus(item.status)}</span>
+          <div>
+            <strong>{item.workflowStageLabel}: {item.label}</strong>
+            <div style={reportingReadinessEvidenceStyle}>{item.evidence}</div>
+            {item.action ? <div style={reportingReadinessActionStyle}>{item.action}</div> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function formatOptionalDataCompletenessDetail(
   summary: ReturnType<typeof buildDataReadinessSummary>,
 ) {
   const { costDataCount, totalRecords } = summary.optionalDataCompleteness;
-  return `${costDataCount} of ${totalRecords} imported records include optional cost data`;
+  return `${costDataCount} of ${totalRecords} imported activity records include optional cost data`;
 }
 
-function buildSourceReviewSummary(rows: SpreadsheetReviewRowItem[]) {
-  const reviewRows = rows.filter((row) => !isSourceReviewSummaryRow(row));
+function buildReadinessPdfRows(assessment: ReportingReadinessAssessment) {
+  return assessment.items.map((item) => [
+    `${item.workflowStageLabel}: ${item.label}`,
+    formatReadinessStatus(item.status),
+    [item.evidence, item.action].filter(Boolean).join(' Action: '),
+  ]);
+}
+
+type SourceReviewSummary = SourceReviewReadinessSummary & {
+  sourceFiles: string[];
+  readyCount: number;
+  trackedOnlyCount: number;
+  resolutionPercent: number;
+  needsReviewRows: SpreadsheetReviewRowItem[];
+};
+
+function buildSourceReviewSummary(input: {
+  rows: SpreadsheetReviewRowItem[];
+  calculationDetails: CalculationAuditDetail[];
+}): SourceReviewSummary {
+  const reviewRows = input.rows.filter((row) => !isSourceReviewSummaryRow(row));
   const readyRows = reviewRows.filter((row) => normalizeReviewStatus(row.status) === 'READY');
   const trackedRows = reviewRows.filter((row) => normalizeReviewStatus(row.status) === 'TRACKED_ONLY');
   const needsReviewRows = reviewRows.filter((row) => normalizeReviewStatus(row.status) === 'NEEDS_REVIEW');
   const resolvedCount = readyRows.length + trackedRows.length;
   const totalRows = reviewRows.length;
 
+  if (totalRows === 0) {
+    return buildUnstructuredSourceReviewSummary(input.calculationDetails);
+  }
+
   return {
     available: totalRows > 0,
+    availability: 'STRUCTURED_REVIEW_AVAILABLE',
+    sourceType: 'SPREADSHEET',
+    status: needsReviewRows.length > 0 ? 'NEEDS_ATTENTION' : 'COMPLETE',
+    evidence: `${totalRows} source ${totalRows === 1 ? 'row was' : 'rows were'} reviewed.`,
+    limitation: needsReviewRows.length > 0
+      ? `${needsReviewRows.length} source ${needsReviewRows.length === 1 ? 'row still requires' : 'rows still require'} review.`
+      : 'No unresolved source-review issues are currently recorded for this report scope.',
     sourceFiles: uniqueReviewValues(reviewRows.map((row) => row.sourceFileName)),
     totalRows,
     readyCount: readyRows.length,
@@ -2992,6 +3863,67 @@ function buildSourceReviewSummary(rows: SpreadsheetReviewRowItem[]) {
     resolutionPercent: totalRows > 0 ? Math.round((resolvedCount / totalRows) * 1000) / 10 : 0,
     needsReviewRows,
   };
+}
+
+function buildUnstructuredSourceReviewSummary(
+  calculationDetails: CalculationAuditDetail[],
+): SourceReviewSummary {
+  const lineageDetails = calculationDetails.filter(hasDocumentSourceLineage);
+  const sourceFiles = uniqueReviewValues(lineageDetails.map((detail) => detail.sourceFileName));
+  const sourceDocumentCount = uniqueReviewValues(
+    lineageDetails.map((detail) => detail.sourceDocumentId || detail.sourceFileName),
+  ).length;
+
+  if (lineageDetails.length > 0) {
+    return {
+      available: false,
+      availability: 'DOCUMENT_LINEAGE_AVAILABLE',
+      sourceType: 'DOCUMENT',
+      status: 'LIMITED',
+      evidence: `Source document lineage is available for ${lineageDetails.length} imported ${lineageDetails.length === 1 ? 'record' : 'records'}.`,
+      limitation: 'Structured unresolved-source-row counts are not available for this document import.',
+      sourceDocumentCount,
+      importedCount: lineageDetails.length,
+      sourceFiles,
+      totalRows: 0,
+      readyCount: 0,
+      trackedOnlyCount: 0,
+      resolvedCount: lineageDetails.length,
+      needsReviewCount: 0,
+      resolutionPercent: 0,
+      needsReviewRows: [],
+    };
+  }
+
+  return {
+    available: false,
+    availability: 'NO_SOURCE_REVIEW',
+    sourceType: 'MANUAL',
+    status: 'NOT_APPLICABLE',
+    evidence: 'No source document is associated with this report scope.',
+    limitation: 'Source-document review is not applicable to manually entered records.',
+    sourceDocumentCount: 0,
+    importedCount: calculationDetails.length,
+    sourceFiles: [],
+    totalRows: 0,
+    readyCount: 0,
+    trackedOnlyCount: 0,
+    resolvedCount: 0,
+    needsReviewCount: 0,
+    resolutionPercent: 0,
+    needsReviewRows: [],
+  };
+}
+
+function hasDocumentSourceLineage(detail: CalculationAuditDetail) {
+  const sourceType = String(detail.sourceType ?? '').toUpperCase();
+  const fileName = String(detail.sourceFileName ?? '').trim();
+  return Boolean(
+    detail.sourceDocumentId ||
+      sourceType.includes('DOCUMENT') ||
+      sourceType.includes('PDF') ||
+      /\.pdf$/i.test(fileName),
+  );
 }
 
 function normalizeReviewStatus(value?: string | null) {
@@ -3018,13 +3950,42 @@ function isSourceReviewSummaryRow(row: SpreadsheetReviewRowItem) {
   return /\b(SUBTOTAL|SUB TOTAL|GRAND TOTAL|TOTAL|SUMMARY)\b/.test(text);
 }
 
-function formatSourceReviewFiles(summary: ReturnType<typeof buildSourceReviewSummary>) {
-  if (!summary.available) return 'Not available';
+function formatSourceReviewFiles(summary: SourceReviewSummary) {
+  if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
+    return summary.sourceFiles.length ? summary.sourceFiles.join(', ') : 'Document source file available';
+  }
+  if (!summary.available) return 'Not applicable';
   return summary.sourceFiles.length ? summary.sourceFiles.join(', ') : 'Source file not specified';
 }
 
-function formatSourceReviewStatus(summary: ReturnType<typeof buildSourceReviewSummary>) {
-  if (!summary.available) return 'Not available for manual-only report scope';
+function formatSourceReviewCount(summary: SourceReviewSummary, value: number) {
+  if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') return 'Limited';
+  if (!summary.available) return 'Not applicable';
+  return value;
+}
+
+function getSourceReviewAppendixEmptyMessage(summary: SourceReviewSummary) {
+  if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
+    return 'Document source lineage is available, but structured source-review rows are not available for this document import.';
+  }
+  return 'Source-document review is not applicable to manually entered records.';
+}
+
+function getSourceReviewSectionNote(summary: SourceReviewSummary) {
+  if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
+    return 'Source document lineage is available for imported records. Structured unresolved-source-row counts are not available for this document import.';
+  }
+  if (!summary.available) {
+    return 'Source-document review is not applicable when this report scope contains manually entered records with no associated source document.';
+  }
+  return 'Source dataset review status is joined by source document ID. Unresolved source rows remain in spreadsheet review history and are not imported into ActivityData or included in emissions totals.';
+}
+
+function formatSourceReviewStatus(summary: SourceReviewSummary) {
+  if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
+    return 'Document source lineage available; structured review counts limited';
+  }
+  if (!summary.available) return 'Not applicable for manual-only report scope';
   return `${summary.resolvedCount} of ${summary.totalRows} source rows resolved/imported · ${summary.needsReviewCount} require review`;
 }
 
@@ -3039,7 +4000,9 @@ function formatSourceReviewIssue(row: SpreadsheetReviewRowItem) {
 
 function formatSourceReviewIssueType(row: SpreadsheetReviewRowItem) {
   const issue = row.issues?.[0];
-  return issue?.code || row.calculationStatus || row.matchingStatus || row.status || 'NEEDS_REVIEW';
+  return formatCalculationStatusLabel(
+    issue?.code || row.calculationStatus || row.matchingStatus || row.status || 'NEEDS_REVIEW',
+  ) || 'Needs Review';
 }
 
 function formatReviewRowJurisdiction(row: SpreadsheetReviewRowItem) {
@@ -3069,6 +4032,15 @@ function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
   }
 
   return 'Review and correct this source row before importing it into the report scope.';
+}
+
+function formatSourceEvidenceMethod(sourceType?: string | null, importMethod?: string | null) {
+  const source = String(sourceType ?? '').trim();
+  const method = String(importMethod ?? '').trim();
+
+  if (!source) return method || 'Not specified';
+  if (!method || source.toLowerCase() === method.toLowerCase()) return source;
+  return `${source} / ${method}`;
 }
 
 function SiteFacilityBreakdownTable({ rows }: { rows: SiteFacilityBreakdownRow[] }) {
@@ -3232,6 +4204,10 @@ function InventoryBoundaryPanel({
       <div style={reportingBoundaryGroupStyle}>
         <h3 style={reportingBoundaryGroupHeadingStyle}>Configured reporting boundary</h3>
         <DataQualityNote label="Boundary status" value={boundaryStatus} />
+        <DataQualityNote label="Boundary review status" value={formatBoundaryReviewStatus(boundary)} />
+        <DataQualityNote label="Boundary version" value={`v${boundary.boundaryVersion ?? 1}`} />
+        <DataQualityNote label="Boundary reviewed by" value={boundary.boundaryReviewedBy || 'Not assigned'} />
+        <DataQualityNote label="Boundary reviewed at" value={formatBoundaryReviewedAt(boundary.boundaryReviewedAt)} />
         <DataQualityNote label="Organization / Workspace" value={formatBoundaryValue(boundary.organizationWorkspace)} />
         {boundary.industry ? (
           <DataQualityNote label="Industry" value={boundary.industry} />
@@ -3276,6 +4252,25 @@ function InventoryBoundaryPanel({
 function formatBoundaryValue(value?: string | null) {
   const trimmed = String(value ?? '').trim();
   return trimmed || 'Not specified';
+}
+
+function formatBoundaryReviewStatus(boundary: Pick<InventoryBoundary, 'boundaryStatus'>) {
+  switch (boundary.boundaryStatus) {
+    case 'REVIEWED':
+      return 'Reviewed';
+    case 'NOT_DEFINED':
+      return 'Not Defined';
+    case 'DRAFT':
+    default:
+      return 'Draft';
+  }
+}
+
+function formatBoundaryReviewedAt(value?: string | null) {
+  if (!value) return 'Not reviewed';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not reviewed';
+  return date.toLocaleString();
 }
 
 function ReadOnlyReportScopeSummary({
@@ -3624,44 +4619,50 @@ const readOnlyReportScopeStyle: React.CSSProperties = {
   gap: 12,
 };
 
-const reviewPackageMenuWrapperStyle: React.CSSProperties = {
+const exportMenuWrapperStyle: React.CSSProperties = {
   position: 'relative',
   display: 'inline-flex',
 };
 
-const reviewPackageMenuStyle: React.CSSProperties = {
+const exportMenuStyle: React.CSSProperties = {
   position: 'absolute',
   top: 'calc(100% + 8px)',
   left: 0,
   zIndex: 30,
-  width: 320,
-  padding: 10,
+  width: 260,
+  padding: 6,
   borderRadius: 12,
   border: `1px solid ${reportsPalette.border}`,
   background: reportsPalette.white,
   boxShadow: '0 20px 42px rgba(15, 23, 42, 0.12)',
 };
 
-const reviewPackageMenuHelpStyle: React.CSSProperties = {
-  margin: '0 0 8px',
-  color: reportsPalette.secondaryText,
-  fontSize: 12,
-  lineHeight: 1.45,
+const exportButtonContentStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
 };
 
-const reviewPackageMenuItemStyle: React.CSSProperties = {
-  width: '100%',
-  display: 'block',
-  padding: '8px 10px',
-  border: 0,
-  borderRadius: 8,
-  background: 'transparent',
-  color: reportsPalette.primaryText,
-  fontSize: 13,
-  fontWeight: 700,
-  textAlign: 'left',
-  cursor: 'pointer',
+const exportButtonChevronStyle: React.CSSProperties = {
+  fontSize: 12,
+  lineHeight: 1,
 };
+
+function exportMenuItemStyle(disabled = false): React.CSSProperties {
+  return {
+    width: '100%',
+    display: 'block',
+    padding: '9px 10px',
+    border: 0,
+    borderRadius: 8,
+    background: 'transparent',
+    color: disabled ? reportsPalette.mutedText : reportsPalette.primaryText,
+    fontSize: 13,
+    fontWeight: 700,
+    textAlign: 'left',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
 
 const readOnlyReportScopeNoteStyle: React.CSSProperties = {
   margin: 0,
@@ -3684,6 +4685,66 @@ const dataQualityNoteDetailStyle: React.CSSProperties = {
   color: reportsPalette.secondaryText,
   fontSize: 12,
   lineHeight: 1.4,
+};
+
+const reportingReadinessChecklistStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  marginTop: 12,
+};
+
+const reportingReadinessChecklistTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: reportsPalette.primaryText,
+  fontSize: 15,
+};
+
+const reportingReadinessRowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '130px 1fr',
+  gap: 10,
+  alignItems: 'start',
+  padding: 10,
+  borderRadius: 12,
+  background: reportsPalette.white,
+  border: `1px solid ${reportsPalette.border}`,
+};
+
+function reportingReadinessBadgeStyle(item: ReportingReadinessItem): React.CSSProperties {
+  const palette = item.status === 'COMPLETE'
+    ? { bg: '#dcfce7', fg: '#047857', border: '#bbf7d0' }
+    : item.status === 'NEEDS_ATTENTION'
+    ? { bg: '#fffbeb', fg: '#92400e', border: '#fde68a' }
+    : { bg: '#f8fafc', fg: '#475569', border: '#cbd5e1' };
+
+  return {
+    display: 'inline-flex',
+    justifyContent: 'center',
+    width: 'fit-content',
+    padding: '4px 8px',
+    borderRadius: 999,
+    background: palette.bg,
+    color: palette.fg,
+    border: `1px solid ${palette.border}`,
+    fontSize: 12,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  };
+}
+
+const reportingReadinessEvidenceStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: reportsPalette.secondaryText,
+  fontSize: 12,
+  lineHeight: 1.45,
+};
+
+const reportingReadinessActionStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: reportsPalette.primaryGreen,
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: 1.45,
 };
 
 const dataQualityExplanationStyle: React.CSSProperties = {

@@ -53,6 +53,82 @@ describe('confirmDocumentImport', () => {
     });
   });
 
+  it('preserves factor-selection metadata and strips unsupported factor source URL before confirming imported records', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ count: 1, createdIds: ['activity-1'] }), {
+        status: 200,
+      }),
+    );
+
+    await confirmDocumentImport('doc-1', [
+      {
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-05-01',
+        quantity: 980,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        matchedFactorId: 'factor-electricity-ab-2025',
+        matchedFactorName: 'Electricity - Alberta',
+        matchedFactorSourceYear: 2025,
+        matchedFactorSourceUrl: 'https://example.test/source',
+        factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
+        factorSelectionExplanation: 'No exact 2026 factor was available.',
+        calculatedEmissionsKgCO2e: 519.4,
+        totallyUnknownField: 'x',
+      } as any,
+    ]);
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody.activities[0]).toMatchObject({
+      activityType: 'ELECTRICITY',
+      matchedFactorId: 'factor-electricity-ab-2025',
+      factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
+      factorSelectionExplanation: 'No exact 2026 factor was available.',
+      totallyUnknownField: 'x',
+    });
+    expect(requestBody.activities[0]).not.toHaveProperty('matchedFactorSourceUrl');
+  });
+
+  it('preserves canonical spreadsheet cost and source sheet metadata before confirm import', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ count: 1, createdIds: ['activity-march-elec-001'] }), {
+        status: 200,
+      }),
+    );
+
+    await confirmDocumentImport('doc-spreadsheet-1', [
+      {
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-03-01',
+        quantity: 980,
+        unit: 'kWh',
+        sourceType: 'DOCUMENT_AI',
+        sourceReference: 'MARCH-ELEC-001',
+        sourceDocumentId: 'doc-spreadsheet-1',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceSheetName: 'Messy_Operations',
+        sourceRow: 2,
+        costCad: 214.55,
+        costCurrency: 'CAD',
+      },
+    ]);
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody.activities[0]).toMatchObject({
+      sourceReference: 'MARCH-ELEC-001',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceSheetName: 'Messy_Operations',
+      sourceRow: 2,
+      costCad: 214.55,
+      costCurrency: 'CAD',
+    });
+  });
+
   it('blocks viewer users from importing extracted records', async () => {
     localStorage.setItem(
       'currentUser',

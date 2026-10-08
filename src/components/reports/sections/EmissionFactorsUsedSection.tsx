@@ -36,7 +36,7 @@ export function EmissionFactorsUsedSection({
           'Verification',
           'Used Records',
         ]}
-        emptyMessage="No conversion factors found for this report scope."
+        emptyMessage="No emission factors found for this report scope."
         rows={conversionFactorsUsed.map((factor) => [
           getFactorDisplayName(factor.factorName) || getActivityTypeLabel(factor.activityType),
           formatFactorValue(factor.factorValue),
@@ -63,9 +63,12 @@ export function EmissionFactorsUsedSection({
                 <dl style={detailListStyle}>
                   <Detail label="Value" value={`${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`} />
                   <Detail label="Source" value={formatReportFactorSource(factor)} />
+                  <Detail label="Source URL" value={factor.sourceUrl || 'Not specified'} />
                   <Detail label="Version" value={formatReportFactorVersion(factor)} />
                   <Detail label="Verification" value={formatReportVerification(factor)} />
                   <Detail label="Confidence" value={formatCredibilityLabel(factor.confidenceLevel) || 'Not specified'} />
+                  <Detail label="Selection" value={factor.factorSelectionReason || factor.matchingMethod || 'Not specified'} />
+                  <Detail label="Selection Note" value={factor.factorSelectionExplanation || factor.matchingMessage || 'Not specified'} />
                   <Detail label="Assumption" value={formatReportAssumptions(factor)} />
                 </dl>
               </section>

@@ -15,6 +15,7 @@ describe('factor credibility helpers', () => {
     resultUnit: 'kgCO2e',
     sourceAuthority: 'CarbonLite',
     sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+    sourceUrl: '/methodology/default-factors',
     sourceYear: 2025,
     factorVersion: 'v1.0',
     confidenceLevel: 'LOW',
@@ -39,6 +40,8 @@ describe('factor credibility helpers', () => {
         factor: groundTransportFactor,
         sourceLabel: 'System Default Factor',
         factorYear: 2025,
+        selectionReason: 'PILOT_DEFAULT_FALLBACK',
+        selectionExplanation: 'A CarbonLite pilot/default factor was used and requires review before formal reporting.',
       }),
     ).toMatchObject({
       matchedFactorValue: 0.2,
@@ -46,9 +49,11 @@ describe('factor credibility helpers', () => {
       matchedFactorVersion: 'v1.0',
       matchedFactorSourceAuthority: 'CarbonLite',
       matchedFactorSourceDocument: 'CarbonLite MVP Default Factors v1.0',
+      matchedFactorSourceUrl: '/methodology/default-factors',
       matchedFactorVerificationStatus: 'PILOT_ESTIMATE',
       matchedFactorConfidenceLevel: 'LOW',
       matchedFactorAssumptions: 'Pilot estimate for ground transport distance-based calculation.',
+      factorSelectionReason: 'PILOT_DEFAULT_FALLBACK',
     });
   });
 });

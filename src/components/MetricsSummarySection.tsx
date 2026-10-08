@@ -32,13 +32,22 @@ import {
   formatScopeSource,
   resolveScopeClassification,
 } from '../utils/scopeClassification';
-import { getDateOnlyYear } from '../utils/dateOnly';
+import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
 import {
   formatReportFactorUnit,
   formatReportVerification,
   isRecordRequiringCorrection,
   isTrackedMetricDetail,
 } from '../utils/reportCredibility';
+import { formatJurisdictionDisplayLabel } from '../utils/terminology';
+import {
+  buildReportingReadinessAssessment,
+  formatReadinessStatus,
+  type ReportingReadinessAssessment,
+  type ReportingReadinessItem,
+  type SourceReviewReadinessSummary,
+  type ReportingReadinessStatus,
+} from '../utils/reportingReadiness';
 import { IssueBadge as SharedIssueBadge } from './shared/StatusBadge';
 import { CollapsibleSection } from './common/CollapsibleSection';
 
@@ -111,6 +120,8 @@ export type HotspotAnalysis = {
     excludedRecordCount: number;
     rank: number;
     hotspotLevel: 'HIGH' | 'MEDIUM' | 'LOW';
+    estimateConfidence: string;
+    decisionReadiness: string;
     focusMessage: string;
   }>;
   excludedCategories: Array<{
@@ -131,7 +142,29 @@ export type HotspotAnalysis = {
 type HotspotExclusionSummary = Pick<
   HotspotAnalysis,
   'excludedCategories' | 'excludedRecordCount'
->;
+> & {
+  sourceReviewSummary?: Pick<SourceReviewReadinessSummary, 'available' | 'needsReviewCount'> | null;
+};
+
+type HotspotFactorQualityReason =
+  | 'pilot'
+  | 'placeholder'
+  | 'engineering'
+  | 'priorYear'
+  | 'reviewRequired'
+  | 'unverified'
+  | 'proxy';
+
+type HotspotFactorQualityAssessment = {
+  isProvisional: boolean;
+  reasonKeys: Set<HotspotFactorQualityReason>;
+};
+
+type HotspotFactorQualitySummary = {
+  estimateConfidence: string;
+  decisionReadiness: string;
+  recommendationMode: 'VALIDATE_FIRST' | 'REDUCTION_READY';
+};
 
 export type DataReadinessSummary = {
   score: number;
@@ -321,6 +354,14 @@ export function MetricsSummarySection({
   const calculatedDetailsCount = calculationDetails.filter(
     (detail) => detail.status === 'CALCULATED',
   ).length;
+  const trackedMetricCount = calculationDetails.filter(isTrackedMetricDetail).length;
+  const recordsIncludedInGhgTotal =
+    calculationDetails.length > 0 ? calculatedDetailsCount : countSummary.processedRecords;
+  const recordsRequiringReviewCount =
+    calculationDetails.length > 0
+      ? calculationDetails.filter(isRecordRequiringCorrection).length
+      : countSummary.skippedRecords;
+  const excludedDueToCalculationIssuesCount = recordsRequiringReviewCount;
   const calculatedFromLine =
     calculatedDetailsCount > 1
       ? `Calculated from ${calculatedDetailsCount} activity records`
@@ -353,6 +394,9 @@ export function MetricsSummarySection({
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildScopeSummary(calculationDetails);
   const dataReadiness = buildDataReadinessSummary(calculationDetails);
+  const reportingReadiness = buildReportingReadinessAssessment({
+    calculationDetails,
+  });
   const carbonCreditReadiness = buildCarbonCreditReadinessAssessment(
     calculationDetails,
     dataReadiness,
@@ -432,10 +476,18 @@ export function MetricsSummarySection({
         />
 
         <MetricCard
-          title="Records Included in Summary"
-          value={String(countSummary.processedRecords)}
+          title="Records Included in GHG Total"
+          value={String(recordsIncludedInGhgTotal)}
           icon="📄"
           color="#64748b"
+          loading={isLoading}
+        />
+
+        <MetricCard
+          title="Tracked Metrics"
+          value={String(trackedMetricCount)}
+          icon="📊"
+          color="#0f766e"
           loading={isLoading}
         />
       </div>
@@ -447,7 +499,7 @@ export function MetricsSummarySection({
         }
       />
 
-      <DataReadinessCard summary={dataReadiness} />
+      <DataReadinessCard summary={dataReadiness} assessment={reportingReadiness} />
 
       <HotspotAnalysisSection
         analysis={hotspotAnalysis}
@@ -469,7 +521,7 @@ export function MetricsSummarySection({
         <div style={reconciliationHeaderStyle}>
           <h2 style={{ margin: 0, fontSize: 18 }}>Record Reconciliation</h2>
           <span
-            title="Records included in summary are records successfully used in emissions calculations."
+            title="Records included in GHG total are records successfully used in emissions calculations. Tracked metrics are reported separately."
             style={helpBadgeStyle}
           >
             ?
@@ -477,16 +529,22 @@ export function MetricsSummarySection({
         </div>
         <div style={reconciliationGridStyle}>
           <div>
-            <strong>{countSummary.totalRecordsFound}</strong> total activity {countSummary.totalRecordsFound === 1 ? 'record' : 'records'} found
+            <strong>{countSummary.totalRecordsFound}</strong> Imported Activity {countSummary.totalRecordsFound === 1 ? 'Record' : 'Records'}
           </div>
           <div>
-            <strong>{countSummary.processedRecords}</strong> {countSummary.processedRecords === 1 ? 'record' : 'records'} included in summary
+            <strong>{recordsIncludedInGhgTotal}</strong> Calculated Emissions {recordsIncludedInGhgTotal === 1 ? 'Record' : 'Records'}
           </div>
           <div>
-            <strong>{countSummary.skippedRecords}</strong> {countSummary.skippedRecords === 1 ? 'record' : 'records'} skipped
+            <strong>{trackedMetricCount}</strong> Tracked {trackedMetricCount === 1 ? 'Metric' : 'Metrics'}
+          </div>
+          <div>
+            <strong>{recordsRequiringReviewCount}</strong> {recordsRequiringReviewCount === 1 ? 'record' : 'records'} requiring review
+          </div>
+          <div>
+            <strong>{excludedDueToCalculationIssuesCount}</strong> Excluded Due to Calculation Issues
           </div>
         </div>
-        {countSummary.skippedRecords > 0 ? (
+        {recordsRequiringReviewCount > 0 ? (
           <div style={reasonListStyle}>
             <div style={{ fontWeight: 800, color: '#334155' }}>Reasons:</div>
             {buildSkippedReasonRows(skippedReasons, hasBlockingCalculationIssues).map((reason) => (
@@ -497,11 +555,11 @@ export function MetricsSummarySection({
             ))}
           </div>
         ) : (
-          <div style={allIncludedStyle}>All records included</div>
+          <div style={allIncludedStyle}>No records require calculation review</div>
         )}
       </div>
 
-      {countSummary.processedRecords > 0 && countSummary.skippedRecords > 0 && hasBlockingCalculationIssues ? (
+      {recordsIncludedInGhgTotal > 0 && recordsRequiringReviewCount > 0 && hasBlockingCalculationIssues ? (
         <div style={partialCalculationWarningStyle}>
           Some records require review and were not included in emissions totals.
         </div>
@@ -514,7 +572,7 @@ export function MetricsSummarySection({
           </div>
           <div style={{ marginBottom: 10 }}>
             {hasBlockingCalculationIssues
-              ? 'Review the items below to see whether the record needs more data, a conversion factor, or no emissions factor is required.'
+              ? 'Review the items below to see whether the record needs more data, an emission factor, or no emissions factor is required.'
               : 'Tracked metrics are shown for transparency and are excluded from calculated GHG emissions totals.'}
           </div>
           <div style={missingFactorListStyle}>
@@ -698,7 +756,7 @@ export function MetricsSummarySection({
                   <th style={thStyle}>Activity</th>
                   <th style={thStyle}>Quantity</th>
                   <th style={thStyle}>Activity Source</th>
-                  <th style={thStyle}>Jurisdiction</th>
+                  <th style={thStyle}>Activity Jurisdiction</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Scope</th>
                   <th style={thStyle}>Factor Used</th>
@@ -796,7 +854,8 @@ function CalculationDetailModal({
             value={`${formatDisplayNumber(detail.activityQuantity)} ${detail.activityUnit}`}
           />
           <CalculationDetailField label="Activity Source" value={formatCalculationSourceReference(detail)} />
-          <CalculationDetailField label="Jurisdiction" value={formatDetailJurisdiction(detail)} />
+          <CalculationDetailField label="Activity Jurisdiction" value={formatDetailJurisdiction(detail)} />
+          <CalculationDetailField label="Factor Jurisdiction" value={formatFactorJurisdiction(detail)} />
           <CalculationDetailField label="Status" value={formatCalculationStatus(detail.status)} />
           <CalculationDetailField label="Scope" value={formatCalculationScopeLabel(detail)} />
           <CalculationDetailField
@@ -1067,7 +1126,7 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
         />
         <CalculationDetailField
           label="Factor set"
-          value={formatSafeValue(detail.factorSet)}
+          value={formatFactorSetValue(detail.factorSet)}
         />
         <CalculationDetailField
           label="Factor source year"
@@ -1092,8 +1151,18 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
           fullWidth
         />
         <CalculationDetailField
-          label="Assumptions / review notes"
-          value={formatTrailAssumptions(detail)}
+          label="Source Note"
+          value={formatTrailSourceNote(detail)}
+          fullWidth
+        />
+        <CalculationDetailField
+          label="Factor Assumptions"
+          value={formatTrailFactorAssumptions(detail)}
+          fullWidth
+        />
+        <CalculationDetailField
+          label="Review Recommendation"
+          value={formatTrailReviewRecommendation(detail)}
           fullWidth
         />
       </div>
@@ -1102,6 +1171,7 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
 }
 
 function formatCalculationScopeLabel(detail: CalculationAuditDetail) {
+  if (isTrackedMetricDetail(detail)) return 'Tracked Metric';
   if (detail.status !== 'CALCULATED') return 'Not calculated';
 
   const resolution = resolveScopeClassification({
@@ -1232,12 +1302,10 @@ function buildTrailFactorSummary(detail: CalculationAuditDetail) {
 
 function formatFactorJurisdiction(detail: CalculationAuditDetail) {
   return (
-    detail.factorJurisdictionRegion ||
-    detail.jurisdictionRegion ||
-    detail.factorJurisdictionCountry ||
-    detail.jurisdictionCountry ||
-    detail.jurisdiction ||
-    'Canada - National'
+    formatJurisdictionDisplayLabel(
+      detail.factorJurisdictionRegion,
+      detail.factorJurisdictionCountry,
+    ) || 'Not specified'
   );
 }
 
@@ -1248,7 +1316,8 @@ function formatSafeValue(value: unknown, fallback = 'Source review required') {
 }
 
 function formatDateForTrail(value?: string | null) {
-  return formatSafeValue(value, 'Date not specified');
+  const dateOnly = formatDateOnly(value);
+  return dateOnly || 'Date not specified';
 }
 
 function formatTrailRecordTitle(detail: CalculationAuditDetail) {
@@ -1264,10 +1333,25 @@ function formatTrailRecordTitle(detail: CalculationAuditDetail) {
 
 function formatConvertedQuantity(detail: CalculationAuditDetail) {
   const normalizedUnit = detail.normalizedUnit || detail.factorInputUnit;
-  if (!normalizedUnit || normalizedUnit === detail.activityUnit) return 'No conversion used';
-  const conversion = getDisplayUnitConversion(detail.activityQuantity, detail.activityUnit, normalizedUnit);
+  const activityUnit = normalizeUnitForDisplay(detail.activityUnit);
+  const factorUnit = normalizeUnitForDisplay(normalizedUnit);
+  const activityUnitLabel =
+    activityUnit.status === 'valid' || activityUnit.status === 'ambiguous'
+      ? activityUnit.value
+      : String(detail.activityUnit ?? '').trim();
+  const factorUnitLabel =
+    factorUnit.status === 'valid' || factorUnit.status === 'ambiguous'
+      ? factorUnit.value
+      : String(normalizedUnit ?? '').trim();
+
+  if (!factorUnitLabel) return 'No conversion required';
+  if (activityUnitLabel.toLowerCase() === factorUnitLabel.toLowerCase()) {
+    return 'No conversion required';
+  }
+
+  const conversion = getDisplayUnitConversion(detail.activityQuantity, activityUnitLabel, factorUnitLabel);
   if (conversion) return conversion;
-  return `${formatDisplayNumber(detail.activityQuantity)} ${detail.activityUnit} converted for factor unit ${normalizedUnit}`;
+  return `${formatDisplayNumber(detail.activityQuantity)} ${activityUnitLabel} converted for factor unit ${factorUnitLabel}`;
 }
 
 function formatTrailFormula(detail: CalculationAuditDetail) {
@@ -1285,18 +1369,26 @@ function getDisplayUnitConversion(quantity: number, fromUnit?: string | null, to
   return null;
 }
 
-function formatTrailAssumptions(detail: CalculationAuditDetail) {
-  const notes = [
-    detail.factorAssumptions,
-    detail.notes,
-    getResolvedScope(detail) === 'SCOPE_3' ? 'Consultant Review Recommended' : null,
-  ]
-    .map((value) => String(value ?? '').trim())
-    .filter(Boolean);
+function formatTrailSourceNote(detail: CalculationAuditDetail) {
+  return formatSafeValue(detail.notes, 'None documented');
+}
 
-  return notes.length > 0
-    ? Array.from(new Set(notes)).join(' ')
-    : 'Pilot-stage factor. Internal Review Required before formal reporting.';
+function formatTrailFactorAssumptions(detail: CalculationAuditDetail) {
+  return formatSafeValue(detail.factorAssumptions, 'None documented');
+}
+
+function formatTrailReviewRecommendation(detail: CalculationAuditDetail) {
+  if (getResolvedScope(detail) === 'SCOPE_3') return 'Consultant Review Recommended';
+
+  const verification = formatReportVerification({
+    activityType: detail.activityType,
+    verified: detail.factorVerified,
+    factorStatus: detail.factorStatus,
+    verificationStatus: detail.factorVerificationStatus,
+  });
+
+  if (/review|required|unverified|draft/i.test(verification)) return verification;
+  return 'No additional review recommendation documented';
 }
 
 function sanitizeIssueValue(value: unknown, fallback = 'Unknown') {
@@ -1323,6 +1415,7 @@ export function buildHotspotAnalysis(calculationDetails: CalculationAuditDetail[
     recordCount: number;
     calculatedRecordCount: number;
     excludedRecordCount: number;
+    factorQualityAssessments: HotspotFactorQualityAssessment[];
   }>();
 
   calculationDetails.forEach((detail) => {
@@ -1335,12 +1428,14 @@ export function buildHotspotAnalysis(calculationDetails: CalculationAuditDetail[
       recordCount: 0,
       calculatedRecordCount: 0,
       excludedRecordCount: 0,
+      factorQualityAssessments: [],
     };
 
     existing.recordCount += 1;
     if (detail.status === 'CALCULATED' && Number.isFinite(emissions) && emissions > 0) {
       existing.emissions += emissions;
       existing.calculatedRecordCount += 1;
+      existing.factorQualityAssessments.push(assessHotspotFactorQuality(detail));
     } else if (detail.status !== 'CALCULATED') {
       existing.excludedRecordCount += 1;
     }
@@ -1356,13 +1451,20 @@ export function buildHotspotAnalysis(calculationDetails: CalculationAuditDetail[
     .sort((a, b) => b.emissions - a.emissions)
     .map((row, index) => {
       const percentageOfTotal = totalEmissions > 0 ? (row.emissions / totalEmissions) * 100 : 0;
+      const quality = summarizeHotspotFactorQuality(row.factorQualityAssessments);
       return {
-        ...row,
+        activityType: row.activityType,
+        displayName: row.displayName,
+        recordCount: row.recordCount,
+        calculatedRecordCount: row.calculatedRecordCount,
+        excludedRecordCount: row.excludedRecordCount,
         emissions: roundDisplay(row.emissions),
         percentageOfTotal: roundDisplay(percentageOfTotal),
         rank: index + 1,
         hotspotLevel: getHotspotLevel(percentageOfTotal),
-        focusMessage: buildHotspotFocusMessage(row.displayName, percentageOfTotal),
+        estimateConfidence: quality.estimateConfidence,
+        decisionReadiness: quality.decisionReadiness,
+        focusMessage: buildHotspotFocusMessage(row.displayName, percentageOfTotal, quality),
       };
     });
   const excludedCategories = buildExcludedHotspotCategories(calculationDetails);
@@ -1424,9 +1526,113 @@ function getHotspotLevel(percentage: number): HotspotAnalysis['categoryHotspots'
   return 'LOW';
 }
 
-function buildHotspotFocusMessage(displayName: string, percentage: number) {
+function assessHotspotFactorQuality(detail: CalculationAuditDetail): HotspotFactorQualityAssessment {
+  const reasonKeys: HotspotFactorQualityAssessment['reasonKeys'] = new Set();
+  const verification = formatReportVerification({
+    activityType: detail.activityType,
+    verified: detail.factorVerified,
+    factorStatus: detail.factorStatus,
+    verificationStatus: detail.factorVerificationStatus,
+  });
+  const confidence = formatCredibilityLabel(detail.factorConfidenceLevel);
+  const sourceYear = Number(detail.sourceYear ?? detail.factorYear);
+  const reportingYear = Number(detail.reportingYear ?? detail.recordYear);
+  const qualityText = [
+    detail.factorStatus,
+    detail.factorVerificationStatus,
+    detail.factorConfidenceLevel,
+    detail.factorAssumptions,
+    detail.factorNotes,
+    detail.matchingMessage,
+    (detail as { calculationMessage?: string | null }).calculationMessage,
+    detail.sourceAuthority,
+    detail.sourceDocument,
+    detail.factorSource,
+    verification,
+    confidence,
+  ].join(' ').toLowerCase();
+
+  if (/pilot|demo|draft|default factor/.test(qualityText)) reasonKeys.add('pilot');
+  if (/placeholder|missing source/.test(qualityText)) reasonKeys.add('placeholder');
+  if (/engineering estimate|engineering/.test(qualityText)) reasonKeys.add('engineering');
+  if (/proxy|prior-year|prior year|nearest available/.test(qualityText)) reasonKeys.add('proxy');
+  if (/internal review|required|review recommended|consultant review|replace with|formal reporting/.test(qualityText)) {
+    reasonKeys.add('reviewRequired');
+  }
+  if (/unverified|user review/.test(qualityText) || !detail.factorVerified) reasonKeys.add('unverified');
+  if (Number.isFinite(sourceYear) && Number.isFinite(reportingYear) && sourceYear < reportingYear) {
+    reasonKeys.add('priorYear');
+  }
+
+  return {
+    isProvisional: reasonKeys.size > 0,
+    reasonKeys,
+  };
+}
+
+function summarizeHotspotFactorQuality(
+  assessments: HotspotFactorQualityAssessment[],
+): HotspotFactorQualitySummary {
+  const provisionalAssessments = assessments.filter((item) => item.isProvisional);
+  if (provisionalAssessments.length === 0) {
+    return {
+      estimateConfidence: 'Reviewed / production-quality',
+      decisionReadiness: 'Ready for reduction planning',
+      recommendationMode: 'REDUCTION_READY',
+    };
+  }
+
+  const reasonKeys = new Set<HotspotFactorQualityReason>();
+  provisionalAssessments.forEach((item) => {
+    item.reasonKeys.forEach((reason) => reasonKeys.add(reason));
+  });
+  const hasMixedQuality = provisionalAssessments.length < assessments.length;
+
+  return {
+    estimateConfidence: formatHotspotEstimateConfidence(reasonKeys, hasMixedQuality),
+    decisionReadiness: 'Validate before reduction planning',
+    recommendationMode: 'VALIDATE_FIRST',
+  };
+}
+
+function formatHotspotEstimateConfidence(
+  reasonKeys: Set<HotspotFactorQualityReason>,
+  hasMixedQuality: boolean,
+) {
+  if (hasMixedQuality) return 'Mixed factor quality / review required';
+  if (reasonKeys.has('engineering')) return 'Engineering estimate / review required';
+  if (reasonKeys.has('pilot') && (reasonKeys.has('priorYear') || reasonKeys.has('proxy'))) {
+    return 'Pilot-stage / prior-year estimate';
+  }
+  if (reasonKeys.has('pilot')) return 'Pilot estimate / review required';
+  if (reasonKeys.has('placeholder')) return 'Placeholder / review required';
+  if (reasonKeys.has('priorYear') || reasonKeys.has('proxy')) return 'Prior-year estimate / review required';
+  if (reasonKeys.has('unverified')) return 'Internal Review Required';
+  return 'Review required';
+}
+
+function formatValidationReasonPhrase(estimateConfidence: string) {
+  const normalized = estimateConfidence.toLowerCase();
+  if (normalized.includes('engineering')) return 'an engineering estimate requiring review';
+  if (normalized.includes('pilot-stage') || normalized.includes('pilot estimate')) return 'a pilot-stage estimate';
+  if (normalized.includes('prior-year')) return 'a prior-year estimate requiring review';
+  if (normalized.includes('placeholder')) return 'a placeholder factor requiring review';
+  if (normalized.includes('mixed')) return 'mixed factor quality';
+  if (normalized.includes('unverified')) return 'an unverified factor';
+  return 'a factor requiring review';
+}
+
+function buildHotspotFocusMessage(
+  displayName: string,
+  percentage: number,
+  quality: HotspotFactorQualitySummary,
+) {
+  if (quality.recommendationMode === 'VALIDATE_FIRST') {
+    return `${displayName} represents ${formatDisplayNumber(percentage)}% of the current estimated emissions total. Because the underlying factor is ${formatValidationReasonPhrase(quality.estimateConfidence)}, validate the factor before using this hotspot for reduction planning.`;
+  }
+
   if (percentage >= 40) {
-    return `${displayName} contributes ${formatDisplayNumber(percentage)}% of calculated emissions. Review this hotspot first for reduction opportunities or data quality checks.`;
+    return `${displayName} contributes ${formatDisplayNumber(percentage)}% of calculated emissions. Consider this category for reduction planning because it represents a large share of calculated emissions.`;
   }
   if (percentage >= 15) {
     return `${displayName} is a material contributor to calculated emissions and should be included in early review.`;
@@ -1448,22 +1654,32 @@ function buildHotspotRecommendations(input: {
     recommendations.push({
       priority: 'HIGH',
       title: 'No calculated emissions available yet',
-      message: 'Hotspot analysis will be available once activity records can be calculated with valid units and matching conversion factors.',
+      message: 'Hotspot analysis will be available once activity records can be calculated with valid units and matching emission factors.',
     });
   } else if (top.percentageOfTotal >= 40) {
+    const validateFirst = top.decisionReadiness === 'Validate before reduction planning';
     recommendations.push({
       priority: 'HIGH',
-      title: `Focus first on ${top.displayName}`,
-      message: `${top.displayName} contributes ${formatDisplayNumber(top.percentageOfTotal)}% of calculated emissions. This is the largest hotspot and should be reviewed first for reduction opportunities or data quality checks.`,
+      title: validateFirst
+        ? `Validate ${top.displayName} before reduction planning`
+        : `Focus first on ${top.displayName}`,
+      message: validateFirst
+        ? `Review this hotspot first for factor validation and data-quality checks. If the estimate is confirmed, ${top.displayName} may become a priority for reduction planning.`
+        : `${top.displayName} contributes ${formatDisplayNumber(top.percentageOfTotal)}% of calculated emissions. Consider this category for reduction planning because it represents the largest share of calculated emissions.`,
       relatedActivityType: top.activityType,
     });
   }
 
   if (top && second && top.percentageOfTotal + second.percentageOfTotal >= 70) {
+    const hasProvisionalHotspot = [top, second].some(
+      (row) => row.decisionReadiness === 'Validate before reduction planning',
+    );
     recommendations.push({
       priority: 'MEDIUM',
       title: 'Most emissions are concentrated in a few categories',
-      message: `The top two categories contribute ${formatDisplayNumber(top.percentageOfTotal + second.percentageOfTotal)}% of calculated emissions. Focusing on these areas may provide the most useful first step.`,
+      message: hasProvisionalHotspot
+        ? `The top two categories represent ${formatDisplayNumber(top.percentageOfTotal + second.percentageOfTotal)}% of the current estimated emissions total. Validate provisional factor quality before using this concentration ranking for reduction decisions.`
+        : `The top two categories contribute ${formatDisplayNumber(top.percentageOfTotal + second.percentageOfTotal)}% of calculated emissions. Focusing on these areas may help prioritize reduction planning.`,
     });
   }
 
@@ -1487,8 +1703,8 @@ function buildHotspotRecommendations(input: {
   if (input.excludedCategories.some((item) => item.reason === 'MISSING_FACTOR')) {
     recommendations.push({
       priority: 'MEDIUM',
-      title: 'Some categories need conversion factors',
-      message: 'Some records could not be calculated because no matching conversion factor was available.',
+      title: 'Some categories need emission factors',
+      message: 'Some records could not be calculated because no matching emission factor was available.',
     });
   }
 
@@ -1508,20 +1724,28 @@ export function getRecordsRequiringReviewCount(input: HotspotExclusionSummary) {
 export function formatHotspotExclusionNote(input: HotspotExclusionSummary) {
   const trackedMetrics = getTrackedOperationalMetricCount(input);
   const reviewRecords = getRecordsRequiringReviewCount(input);
+  const unresolvedSourceRows =
+    input.sourceReviewSummary?.available && Number.isFinite(input.sourceReviewSummary.needsReviewCount)
+      ? Math.max(0, input.sourceReviewSummary.needsReviewCount)
+      : null;
+  const sourceReviewSentence =
+    unresolvedSourceRows !== null
+      ? ` ${formatCount(unresolvedSourceRows, 'unresolved source row')} ${unresolvedSourceRows === 1 ? 'remains' : 'remain'} in Input Review.`
+      : '';
 
   if (trackedMetrics > 0 && reviewRecords === 0) {
-    return `${formatCount(trackedMetrics, 'tracked operational metric')} ${trackedMetrics === 1 ? 'was' : 'were'} excluded from the calculated GHG emissions total. No records require review for this report scope.`;
+    return `${formatCount(trackedMetrics, 'tracked operational metric')} ${trackedMetrics === 1 ? 'is' : 'are'} excluded from the calculated GHG emissions total. No imported activity records require review.${sourceReviewSentence}`;
   }
 
   if (trackedMetrics > 0 && reviewRecords > 0) {
-    return 'Tracked operational metrics are excluded from the calculated GHG emissions total by design. Some additional records require review before they can be included.';
+    return `Tracked operational metrics are excluded from the calculated GHG emissions total by design. ${formatCount(reviewRecords, 'imported activity record')} ${reviewRecords === 1 ? 'requires' : 'require'} review before inclusion.${sourceReviewSentence}`;
   }
 
   if (reviewRecords > 0) {
-    return 'Some records require review before they can be included in the calculated GHG emissions total. See Records Requiring Review for details.';
+    return `${formatCount(reviewRecords, 'imported activity record')} ${reviewRecords === 1 ? 'requires' : 'require'} review before inclusion in the calculated GHG emissions total. See Records Requiring Review for details.${sourceReviewSentence}`;
   }
 
-  return 'No tracked metrics or records requiring review were identified for this report scope.';
+  return `No tracked metrics or imported activity records requiring review were identified for this report scope.${sourceReviewSentence}`;
 }
 
 function mapHotspotExcludedReason(
@@ -1541,7 +1765,7 @@ function buildExcludedHotspotMessage(
 ) {
   const displayName = formatActivityTypeLabel(activityType);
   if (reason === 'MISSING_FACTOR') {
-    return `${displayName} records were excluded because no matching conversion factor was available.`;
+    return `${displayName} records were excluded because no matching emission factor was available.`;
   }
   if (reason === 'INVALID_UNIT') {
     return `${displayName} records were excluded because the unit could not be normalized or matched.`;
@@ -1678,7 +1902,7 @@ export function buildDataReadinessSummary(calculationDetails: CalculationAuditDe
         passed: factorCoverageScore >= 80,
         count: recordsReadyForCalculation,
         total: emissionBearingTotal,
-        message: 'Records need matching conversion factors to be included in emissions totals.',
+        message: 'Records need matching emission factors to be included in emissions totals.',
       },
       {
         key: 'jurisdiction',
@@ -1724,9 +1948,19 @@ function hasOptionalCostData(detail: CalculationAuditDetail) {
     return true;
   }
 
-  return /(\bcost\b|\$|\bcad\b|\busd\b)/i.test(
-    `${candidate.notes ?? ''} ${candidate.sourceTextSnippet ?? ''}`,
-  );
+  return [
+    candidate.sourceTextSnippet,
+    candidate.sourceText,
+    candidate.notes,
+    candidate.description,
+  ].some(hasCostEvidenceText);
+}
+
+function hasCostEvidenceText(value: unknown) {
+  const text = String(value ?? '').trim();
+  if (!text) return false;
+
+  return /(?:cost|amount|spend|total)\s*(?:[:=-]\s*)?(?:\$|cad|usd)?\s*\d/i.test(text);
 }
 
 function percentage(count: number, total: number) {
@@ -1755,10 +1989,10 @@ function getDataReadinessMessage(input: {
     missingJurisdictionCount,
   } = input;
   if (totalRecords <= 0) {
-    return 'Add activity records to calculate a data readiness score.';
+    return 'Add activity records to assess reporting readiness.';
   }
   if (level === 'Good') {
-    return `Emissions workflow readiness is ${formatDisplayNumber(score)}%. Most records are ready for calculation and traceability review.`;
+    return 'Most emissions-bearing records are calculated with traceability available for review.';
   }
   if (
     recordsRequiringReview === 0 &&
@@ -1769,12 +2003,12 @@ function getDataReadinessMessage(input: {
     const trackedText = trackedOnlyCount > 0
       ? ` ${formatCount(trackedOnlyCount, 'tracked operational metric')} ${trackedOnlyCount === 1 ? 'is' : 'are'} reported separately and do not reduce GHG calculation coverage.`
       : '';
-    return `Emissions workflow readiness is ${formatDisplayNumber(score)}%. No records currently require correction.${trackedText}`;
+    return `No records currently require correction.${trackedText}`;
   }
   if (level === 'Needs Review') {
-    return `Emissions workflow readiness is ${formatDisplayNumber(score)}%. Some records need missing fields, factors, jurisdiction, or source references before final reporting.`;
+    return 'Some records need missing fields, factors, jurisdiction, or source references before final reporting.';
   }
-  return 'Emissions workflow readiness is incomplete. Add required fields, source references, and matching factors before relying on emissions results.';
+  return 'Reporting readiness is incomplete. Add required fields, source references, and matching factors before relying on emissions results.';
 }
 
 function getOptionalDataCompletenessMessage(input: {
@@ -1882,10 +2116,12 @@ export function assessCarbonCreditReadiness(input: {
       },
       {
         key: 'factor-traceability',
-        label: 'Conversion factors are traceable',
+        label: 'Emission factor provenance',
         status: input.hasTraceableFactors ? 'PASS' : 'WARNING',
         message:
-          'Factor source, year, jurisdiction, confidence level, and verification status should be visible.',
+          input.hasTraceableFactors
+            ? 'Emission factor provenance is traceable.'
+            : 'Factor source, year, jurisdiction, confidence level, and verification status should be visible.',
       },
       {
         key: 'jurisdiction',
@@ -2007,7 +2243,7 @@ function buildCarbonCreditNextSteps(input: {
 
   if (!input.hasBaselineData) steps.push('Collect baseline data for a clear historical reference period.');
   if (!input.hasSourceEvidence) steps.push('Improve source documentation with bills, invoices, meter records, or source references.');
-  if (!input.hasTraceableFactors) steps.push('Review conversion factor source, year, jurisdiction, confidence level, and verification status.');
+  if (!input.hasTraceableFactors) steps.push('Review emission factor source, year, jurisdiction, confidence level, and verification status.');
   if (!input.jurisdictionKnown) steps.push('Confirm jurisdiction and facility location for the reduction activity.');
   if (!input.projectBoundaryDefined) steps.push('Define the activity boundary, facility, and operational scope before professional review.');
   if (input.recordsRequiringReviewCount > 0) steps.push('Resolve records requiring review before using results in carbon credit discussions.');
@@ -2107,26 +2343,34 @@ function ScopeSummaryCard({
   );
 }
 
-function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
+function DataReadinessCard({
+  summary,
+  assessment,
+}: {
+  summary: DataReadinessSummary;
+  assessment: ReportingReadinessAssessment;
+}) {
   return (
     <section style={readinessCardStyle} aria-labelledby="data-readiness-title">
       <div style={readinessHeaderStyle}>
         <div>
           <h2 id="data-readiness-title" style={{ margin: 0, fontSize: 18 }}>
-            Emissions Workflow Readiness
+            Reporting Readiness Checklist
           </h2>
           <p style={summaryHelperTextStyle}>
-            CarbonLite checks whether records have the required fields, traceability, jurisdiction, factors, and reporting treatment needed for emissions review.
+            CarbonLite checks reporting boundary, source review, required activity data, factor review, calculations, traceability, and reviewer approval as separate evidence-based items.
           </p>
         </div>
-        <div style={readinessScoreStyle(summary.level)}>
-          <span>{summary.level}</span>
-          <strong>{formatDisplayNumber(summary.score)}%</strong>
+        <div style={readinessStatusStyle(assessment.overallStatus)}>
+          <span>Readiness status</span>
+          <strong>{formatReadinessStatus(assessment.overallStatus)}</strong>
         </div>
       </div>
-      <p style={readinessMessageStyle}>{summary.message}</p>
+      <p style={readinessMessageStyle}>
+        Readiness is shown as checklist evidence rather than a weighted percentage. Calculation Coverage and Optional Data Completeness remain separate metrics below.
+      </p>
       <div style={readinessStatsGridStyle}>
-        <div><strong>{summary.recordsReadyForCalculation}</strong> {summary.recordsReadyForCalculation === 1 ? 'record' : 'records'} ready for calculation</div>
+        <div><strong>{summary.recordsReadyForCalculation}</strong> calculated {summary.recordsReadyForCalculation === 1 ? 'record' : 'records'}</div>
         <div><strong>{summary.recordsRequiringReview}</strong> {summary.recordsRequiringReview === 1 ? 'record' : 'records'} require review</div>
         <div><strong>{summary.missingFactorCount}</strong> missing {summary.missingFactorCount === 1 ? 'factor' : 'factors'}</div>
         <div><strong>{summary.invalidUnitCount}</strong> invalid {summary.invalidUnitCount === 1 ? 'unit' : 'units'}</div>
@@ -2140,38 +2384,24 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
         <summary style={readinessDetailsSummaryStyle}>View readiness details</summary>
         <div style={readinessExplanationStyle}>
           <p>
-            Emissions Workflow Readiness estimates whether draft or imported records are
-            complete enough to calculate, trace, and report without manual correction.
+            Reporting Readiness is a checklist. A complete calculation does not imply that source issues, factor review, reporting boundary, or reviewer approval are complete.
           </p>
           <p>
             Calculation Coverage is calculated emission-bearing records divided by eligible
-            emission-bearing records. Tracked-only operational metrics are reported
+            emission-bearing records. Tracked metrics are reported
             separately and do not reduce GHG calculation coverage.
           </p>
           <p>
             Optional metadata such as cost can help later financial analysis, but it does
-            not reduce emissions workflow readiness.
+            not reduce reporting readiness.
           </p>
         </div>
         <div style={readinessChecklistStyle}>
-          {summary.checks.map((check) => (
-            <div key={check.key} style={readinessCheckStyle}>
-              <span style={readinessCheckBadgeStyle(check.passed)}>
-                {check.passed ? 'Ready' : 'Needs review'}
-              </span>
-              <div>
-                <strong>{check.label}</strong>
-                <div style={missingFactorHintStyle}>
-                  {typeof check.count === 'number' && typeof check.total === 'number'
-                    ? `${check.count} of ${check.total} records · `
-                    : ''}
-                  {check.message}
-                </div>
-              </div>
-            </div>
+          {assessment.items.map((item) => (
+            <ReadinessChecklistRow key={item.code} item={item} />
           ))}
           <div style={readinessCheckStyle}>
-            <span style={readinessCheckBadgeStyle(true)}>Optional</span>
+            <span style={readinessCheckBadgeStyle('NOT_APPLICABLE')}>Separate metric</span>
             <div>
               <strong>Optional data completeness</strong>
               <div style={missingFactorHintStyle}>
@@ -2182,6 +2412,28 @@ function DataReadinessCard({ summary }: { summary: DataReadinessSummary }) {
         </div>
       </details>
     </section>
+  );
+}
+
+function ReadinessChecklistRow({ item }: { item: ReportingReadinessItem }) {
+  return (
+    <div style={readinessCheckStyle}>
+      <span style={readinessCheckBadgeStyle(item.status)}>
+        {formatReadinessStatus(item.status)}
+      </span>
+      <div>
+        <strong>{item.workflowStageLabel}: {item.label}</strong>
+        <div style={missingFactorHintStyle}>
+          {item.evidence}
+          {item.action ? (
+            <>
+              {' '}
+              <span style={readinessActionStyle}>{item.action}</span>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2275,7 +2527,7 @@ function HotspotAnalysisSection({
       title="Emissions Hotspots"
       summary={
         isExpanded
-          ? 'Calculated emissions by activity category. Records requiring review are excluded from hotspot totals.'
+          ? 'Estimated emissions by activity category. Records requiring review are excluded from hotspot totals.'
           : 'Top contributing activity areas are available for review.'
       }
       expanded={isExpanded}
@@ -2288,7 +2540,7 @@ function HotspotAnalysisSection({
           <div style={topHotspotLabelStyle}>Top Hotspot</div>
           <strong>{analysis.topCategory.displayName}</strong>
           <div style={topHotspotValueStyle}>
-            {formatDisplayNumber(analysis.topCategory.percentageOfTotal)}% of calculated emissions
+	            {formatDisplayNumber(analysis.topCategory.percentageOfTotal)}% of current estimated emissions
           </div>
         </div>
       ) : null}
@@ -2310,7 +2562,7 @@ function HotspotAnalysisSection({
           <div style={hotspotChartStyle} aria-label="Top emission categories">
             <div style={hotspotChartTitleStyle}>
               <strong>Top Emission Categories</strong>
-              <span>Share of calculated emissions</span>
+                <span>Share of current estimated emissions</span>
             </div>
             {analysis.categoryHotspots.map((row) => (
               <div key={row.activityType} style={hotspotBarRowStyle}>
@@ -2348,10 +2600,12 @@ function HotspotAnalysisSection({
                   <th style={thStyle}>Category</th>
                   <th style={thStyle}>Emissions</th>
                   <th style={thStyle}>Share of total</th>
-                  <th style={thStyle}>Records</th>
-                  <th style={thStyle}>Level</th>
-                  <th style={thStyle}>Focus message</th>
-                  <th style={thStyle}>Trail</th>
+	                  <th style={thStyle}>Records</th>
+	                  <th style={thStyle}>Level</th>
+	                  <th style={thStyle}>Estimate confidence</th>
+	                  <th style={thStyle}>Decision readiness</th>
+	                  <th style={thStyle}>Focus message</th>
+	                  <th style={thStyle}>Trail</th>
                 </tr>
               </thead>
               <tbody>
@@ -2365,12 +2619,14 @@ function HotspotAnalysisSection({
                       {row.calculatedRecordCount} calculated
                       {row.excludedRecordCount > 0 ? ` · ${row.excludedRecordCount} excluded` : ''}
                     </td>
-                    <td style={tdStyle}>
-                      <span style={hotspotLevelBadgeStyle(row.hotspotLevel)}>
-                        {formatHotspotLevel(row.hotspotLevel)}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>{row.focusMessage}</td>
+	                    <td style={tdStyle}>
+	                      <span style={hotspotLevelBadgeStyle(row.hotspotLevel)}>
+	                        {formatHotspotLevel(row.hotspotLevel)}
+	                      </span>
+	                    </td>
+	                    <td style={tdStyle}>{row.estimateConfidence}</td>
+	                    <td style={tdStyle}>{row.decisionReadiness}</td>
+	                    <td style={tdStyle}>{row.focusMessage}</td>
                     <td style={tdStyle}>
                       <button
                         type="button"
@@ -2418,11 +2674,11 @@ function HotspotAnalysisSection({
         </div>
       ) : null}
 
-      {analysis.categoryHotspots.some((row) => row.hotspotLevel === 'HIGH') ? (
-        <div style={hotspotCreditPromptStyle}>
-          High-emission categories may be useful starting points for reduction planning. If reductions are later achieved and documented, they may require further professional assessment before any carbon credit discussion.
-        </div>
-      ) : null}
+	      {analysis.categoryHotspots.some((row) => row.hotspotLevel === 'HIGH') ? (
+	        <div style={hotspotCreditPromptStyle}>
+	          High-emission categories may become useful starting points for reduction planning after factor quality and calculations are validated. If reductions are later achieved and documented, they may require further professional assessment before any carbon credit discussion.
+	        </div>
+	      ) : null}
     </CollapsibleSection>
   );
 }
@@ -2652,11 +2908,25 @@ function formatCalculationSourceReference(detail: CalculationAuditDetail) {
 function formatDetailJurisdiction(detail: CalculationAuditDetail) {
   const province = detail.jurisdictionRegion?.trim();
   const country = detail.jurisdictionCountry?.trim();
-  const location = [province, country].filter(Boolean).join(', ') || detail.jurisdiction || 'Not specified';
+  const explicitLocation = [province, country].filter(Boolean).join(', ');
+  const fallbackJurisdiction = String(detail.jurisdiction ?? '').trim();
+  const location =
+    explicitLocation ||
+    (/canada\s*(?:\(|-| )?\s*generic/i.test(fallbackJurisdiction)
+      ? ''
+      : fallbackJurisdiction) ||
+    'Not specified';
   const source = detail.jurisdictionSource ? formatJurisdictionSource(detail.jurisdictionSource) : null;
   const assumed = detail.jurisdictionAssumed ? ' · assumed; review before reporting' : '';
 
   return `${location}${source ? ` · ${source}` : ''}${assumed}`;
+}
+
+function formatFactorSetValue(value?: string | null) {
+  const text = String(value ?? '').trim();
+  if (!text || ['null', 'undefined', 'nan'].includes(text.toLowerCase())) return 'Not specified';
+  if (/source review required|internal review required|review required/i.test(text)) return 'Not specified';
+  return text;
 }
 
 function formatJurisdictionSource(source: NonNullable<CalculationAuditDetail['jurisdictionSource']>) {
@@ -2678,7 +2948,7 @@ function MetricRelationshipLabel({ item }: { item: MetricsSummaryTableRow }) {
       <span>
         <strong>{item.totalValue} {item.unit}</strong>{' '}
         {formatActivityTypeLabel(item.activityType)}
-        {item.trackedOnly ? <span style={trackedMetricInlineNoteStyle}> — tracked only</span> : null}
+        {item.trackedOnly ? <span style={trackedMetricInlineNoteStyle}> — tracked metric</span> : null}
       </span>
     );
   }
@@ -2721,7 +2991,7 @@ function getCalculationIssueTitle(group: CalculationIssueGroup) {
   }
 
   if (group.issueType === 'informational') {
-    return `${formatActivityTypeLabel(group.activityType)} / ${group.unit} — tracked only`;
+    return `${formatActivityTypeLabel(group.activityType)} / ${group.unit} — tracked metric`;
   }
 
   return `No factor found for: ${group.activityType} / ${group.unit}`;
@@ -2756,7 +3026,7 @@ function getCalculationIssueDescription(group: CalculationIssueGroup) {
     return 'Tracked metric only. No emission factor required.';
   }
 
-  return 'Create a conversion factor to include these records in emissions calculations.';
+  return 'Create an emission factor to include these records in emissions calculations.';
 }
 
 function IssueBadge({ type }: { type: CalculationIssueGroup['issueType'] }) {
@@ -2889,7 +3159,9 @@ const readinessHeaderStyle: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
-function readinessScoreStyle(level: DataReadinessSummary['level']): React.CSSProperties {
+function readinessStatusStyle(status: ReportingReadinessAssessment['overallStatus']): React.CSSProperties {
+  const palette = getReadinessStatusPalette(status);
+
   return {
     display: 'grid',
     justifyItems: 'end',
@@ -2898,8 +3170,8 @@ function readinessScoreStyle(level: DataReadinessSummary['level']): React.CSSPro
     padding: 12,
     borderRadius: 12,
     background: '#fff',
-    border: `1px solid ${level === 'Good' ? '#bbf7d0' : level === 'Needs Review' ? '#fde68a' : '#fecaca'}`,
-    color: level === 'Good' ? '#047857' : level === 'Needs Review' ? '#92400e' : '#991b1b',
+    border: `1px solid ${palette.border}`,
+    color: palette.color,
   };
 }
 
@@ -2959,7 +3231,9 @@ const readinessCheckStyle: React.CSSProperties = {
   border: '1px solid #dbeafe',
 };
 
-function readinessCheckBadgeStyle(passed: boolean): React.CSSProperties {
+function readinessCheckBadgeStyle(status: ReportingReadinessStatus): React.CSSProperties {
+  const palette = getReadinessStatusPalette(status);
+
   return {
     display: 'inline-flex',
     justifyContent: 'center',
@@ -2968,12 +3242,30 @@ function readinessCheckBadgeStyle(passed: boolean): React.CSSProperties {
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 800,
-    color: passed ? '#047857' : '#92400e',
-    background: passed ? '#dcfce7' : '#fffbeb',
-    border: `1px solid ${passed ? '#bbf7d0' : '#fde68a'}`,
+    color: palette.color,
+    background: palette.background,
+    border: `1px solid ${palette.border}`,
     whiteSpace: 'nowrap',
   };
 }
+
+function getReadinessStatusPalette(status: ReportingReadinessStatus | ReportingReadinessAssessment['overallStatus']) {
+  if (status === 'READY' || status === 'COMPLETE') {
+    return { color: '#047857', background: '#dcfce7', border: '#bbf7d0' };
+  }
+  if (status === 'NOT_REVIEWED') {
+    return { color: '#475569', background: '#f8fafc', border: '#cbd5e1' };
+  }
+  if (status === 'NOT_APPLICABLE') {
+    return { color: '#475569', background: '#f1f5f9', border: '#cbd5e1' };
+  }
+  return { color: '#92400e', background: '#fffbeb', border: '#fde68a' };
+}
+
+const readinessActionStyle: React.CSSProperties = {
+  color: '#1d4ed8',
+  fontWeight: 700,
+};
 
 const creditReadinessCardStyle: React.CSSProperties = {
   marginBottom: 24,

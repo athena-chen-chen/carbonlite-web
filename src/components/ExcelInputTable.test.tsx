@@ -132,6 +132,30 @@ describe('ExcelInputTable empty activity row UX', () => {
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
         {
+          id: 'factor-natural-gas-gj-canada-generic',
+          name: 'Natural Gas - Canada Generic',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'GJ',
+          unit: 'GJ',
+          factorValue: 49.44,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Canada',
+          sourceAuthority: 'Environment and Climate Change Canada',
+          sourceDocument: 'Greenhouse gas and air pollutant emissions projections – 2025',
+          sourceUrl: 'https://www.canada.ca/en/environment-climate-change/services/climate-change/greenhouse-gas-emissions/projections/2025-report.html',
+          sourceYear: 2025,
+          confidenceLevel: 'HIGH',
+          verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+          consultantReviewRecommended: true,
+          verified: false,
+          isSystemDefault: true,
+          isDefault: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
           id: 'factor-gasoline',
           name: 'Gasoline factor',
           type: 'EMISSION',
@@ -232,6 +256,16 @@ describe('ExcelInputTable empty activity row UX', () => {
       await screen.findByRole('button', { name: /Add activity record|Add another manual row/i }),
     );
     return getActivityRow(rowNumber);
+  }
+
+  function getUnitControl(row: HTMLElement) {
+    return within(row).getByRole('combobox', { name: /^Unit$/i }) as HTMLSelectElement;
+  }
+
+  function getUnitOptions(unitSelect: HTMLElement) {
+    return Array.from(unitSelect.querySelectorAll('option'))
+      .map((option) => option.getAttribute('value') ?? '')
+      .filter(Boolean);
   }
 
   async function addValidDieselRow(quantity = '100') {
@@ -693,9 +727,9 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     const row = await addEmptyRow();
     const activityTypeSelect = within(row).getByRole('combobox', { name: /Activity type/i });
-    const unitInput = within(row).getByPlaceholderText('Unit');
 
     await userEvent.selectOptions(activityTypeSelect, 'ELECTRICITY');
+    const unitInput = getUnitControl(row);
     expect(unitInput).toHaveValue('kWh');
 
     await userEvent.selectOptions(activityTypeSelect, 'GASOLINE');
@@ -714,23 +748,42 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(unitInput).toHaveValue('m3');
   });
 
+  it('exposes Natural Gas m3 and GJ unit options without changing other activity unit options', async () => {
+    renderTable();
+
+    const row = await addEmptyRow();
+    const activityTypeSelect = within(row).getByRole('combobox', { name: /Activity type/i });
+
+    await userEvent.selectOptions(activityTypeSelect, 'NATURAL_GAS');
+    const unitInput = getUnitControl(row);
+    expect(getUnitOptions(unitInput)).toEqual(['m3', 'GJ']);
+
+    await userEvent.selectOptions(activityTypeSelect, 'ELECTRICITY');
+    expect(getUnitOptions(unitInput)).toEqual(['kWh']);
+
+    await userEvent.selectOptions(activityTypeSelect, 'WATER');
+    expect(getUnitOptions(unitInput)).toEqual(['m3']);
+
+    await userEvent.selectOptions(activityTypeSelect, 'HOTEL');
+    expect(getUnitOptions(unitInput)).toEqual(['nights']);
+  });
+
   it('preserves manual unit edits until activity type changes again', async () => {
     renderTable();
 
     const row = await addEmptyRow();
     const activityTypeSelect = within(row).getByRole('combobox', { name: /Activity type/i });
-    const unitInput = within(row).getByPlaceholderText('Unit');
 
     await userEvent.selectOptions(activityTypeSelect, 'NATURAL_GAS');
+    const unitInput = getUnitControl(row);
     expect(unitInput).toHaveValue('m3');
 
-    await userEvent.clear(unitInput);
-    await userEvent.type(unitInput, 'GJ');
+    await userEvent.selectOptions(unitInput, 'GJ');
     expect(unitInput).toHaveValue('GJ');
 
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '3');
     await waitFor(() => {
-      expect(within(row).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
+      expect(within(row).getByText('Calculated')).toBeInTheDocument();
     });
     expect(unitInput).toHaveValue('GJ');
 
@@ -797,15 +850,15 @@ describe('ExcelInputTable empty activity row UX', () => {
     const row = await addEmptyRow();
     await userEvent.selectOptions(within(row).getByRole('combobox', { name: /Activity type/i }), 'WATER');
 
-    expect(within(row).getByText('Tracked Metric')).toBeInTheDocument();
+    expect(within(row).getAllByText('Tracked Metric').length).toBeGreaterThan(0);
     expect(within(row).getAllByText('Not Emissions Factor Required').length).toBeGreaterThan(0);
-    expect(within(row).getByText('Tracked Only')).toBeInTheDocument();
+    expect(within(row).getAllByText('Tracked Metric').length).toBeGreaterThan(1);
     expect(within(row).getByText('Excluded from GHG total.')).toBeInTheDocument();
-    expect(within(row).queryByText('Included')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Included in GHG Total')).not.toBeInTheDocument();
     expect(within(row).queryByText('Included in GHG total.')).not.toBeInTheDocument();
   });
 
-  it('saves water rows as tracked only and excluded from GHG totals', async () => {
+  it('saves water rows as tracked metrics and excluded from GHG totals', async () => {
     renderTable();
 
     const row = await addEmptyRow();
@@ -829,8 +882,8 @@ describe('ExcelInputTable empty activity row UX', () => {
         }),
       );
     });
-    expect(within(row).getByText('Saved · Tracked Only')).toBeInTheDocument();
-    expect(within(row).getByText('Tracked Only')).toBeInTheDocument();
+    expect(within(row).getByText('Saved · Tracked Metric')).toBeInTheDocument();
+    expect(within(row).getAllByText('Tracked Metric').length).toBeGreaterThan(0);
     expect(within(row).getByText('Excluded from GHG total.')).toBeInTheDocument();
     expect(within(row).queryByText('Included in GHG total.')).not.toBeInTheDocument();
   });
@@ -862,8 +915,8 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     expect(within(row).getByText('Scope')).toBeInTheDocument();
     expect(within(row).getByText(scopeLabel)).toBeInTheDocument();
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
     expect(within(row).getByText(factorName)).toBeInTheDocument();
   });
 
@@ -942,13 +995,13 @@ describe('ExcelInputTable empty activity row UX', () => {
       within(row).getByRole('combobox', { name: /Province required for electricity records/i }),
     ).toHaveDisplayValue('British Columbia');
     expect(within(row).queryByText('Missing Province')).not.toBeInTheDocument();
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
     expect(
       within(row).getByText('British Columbia electricity factor matched. Using latest available factor year: 2025.'),
     ).toBeInTheDocument();
     expect(within(row).getByText('Electricity - British Columbia - 2025')).toBeInTheDocument();
     expect(within(row).getByText('Scope 2')).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
   });
 
   it('matches a valid manual electricity row with the Alberta pilot factor', async () => {
@@ -987,11 +1040,11 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
 
     await waitFor(() => {
-      expect(within(row).getByText('Ready')).toBeInTheDocument();
+      expect(within(row).getByText('Calculated')).toBeInTheDocument();
     });
     expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
     expect(within(row).getByText('Scope 2')).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Province')).not.toBeInTheDocument();
   });
 
@@ -1009,19 +1062,18 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
     await userEvent.clear(within(row).getByLabelText('Date'));
     await userEvent.type(within(row).getByLabelText('Date'), '2026-07-20');
-    await userEvent.clear(within(row).getByPlaceholderText('Unit'));
-    await userEvent.type(within(row).getByPlaceholderText('Unit'), 'KWH');
+    await userEvent.selectOptions(getUnitControl(row), 'kWh');
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '12500');
     await userEvent.selectOptions(
       within(row).getByRole('combobox', { name: /Province required for electricity records/i }),
       province,
     );
 
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
     expect(within(row).getByText(factorName)).toBeInTheDocument();
     expect(within(row).getAllByText(/Using latest available factor year: 2025/i).length).toBeGreaterThan(0);
     expect(within(row).getByText(emissionsText)).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
@@ -1035,11 +1087,11 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta - 2025')).toBeInTheDocument();
     expect(within(row).getAllByText(/Using latest available factor year: 2025/i).length).toBeGreaterThan(0);
     expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(row).queryByText('No factor found')).not.toBeInTheDocument();
   });
@@ -1086,18 +1138,17 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.selectOptions(within(row).getByRole('combobox', { name: /Activity type/i }), 'ELECTRICITY');
     await userEvent.clear(within(row).getByLabelText('Date'));
     await userEvent.type(within(row).getByLabelText('Date'), recordDate);
-    await userEvent.clear(within(row).getByPlaceholderText('Unit'));
-    await userEvent.type(within(row).getByPlaceholderText('Unit'), 'kWh');
+    await userEvent.selectOptions(getUnitControl(row), 'kWh');
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '100');
     await userEvent.selectOptions(
       within(row).getByRole('combobox', { name: /Province required for electricity records/i }),
       'Alberta',
     );
 
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: 53 kg CO₂e')).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(row).queryByText('No factor found')).not.toBeInTheDocument();
   });
@@ -1131,17 +1182,16 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
     await userEvent.clear(within(row).getByLabelText('Date'));
     await userEvent.type(within(row).getByLabelText('Date'), '2025-07-20');
-    await userEvent.clear(within(row).getByPlaceholderText('Unit'));
-    await userEvent.type(within(row).getByPlaceholderText('Unit'), 'kwh');
+    await userEvent.selectOptions(getUnitControl(row), 'kWh');
     await userEvent.selectOptions(
       within(row).getByRole('combobox', { name: /Province required for electricity records/i }),
       'Alberta',
     );
 
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta - 2025')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
@@ -1217,51 +1267,57 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '100');
 
     await waitFor(() => {
-      expect(within(row).getByText('Ready')).toBeInTheDocument();
+      expect(within(row).getByText('Calculated')).toBeInTheDocument();
     });
     expect(within(row).queryByRole('combobox', { name: /Province required for electricity records/i })).not.toBeInTheDocument();
     expect(within(row).getByText('Ground Transport - Canada - 2025')).toBeInTheDocument();
     expect(within(row).getByText('Scope 3')).toBeInTheDocument();
-    expect(within(row).getByText('Included')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: 20 kg CO₂e')).toBeInTheDocument();
   });
 
-  it('shows Unit Mismatch for Ground Transport when the unit is not km', async () => {
+  it('calculates Natural Gas GJ with the Canada-generic ECCC factor', async () => {
     renderTable();
 
     const row = await addEmptyRow();
-    await userEvent.selectOptions(
-      within(row).getByRole('combobox', { name: /Activity type/i }),
-      'GROUND_TRANSPORT',
-    );
-    await userEvent.type(within(row).getByPlaceholderText('Quantity'), '100');
-    await userEvent.clear(within(row).getByPlaceholderText('Unit'));
-    await userEvent.type(within(row).getByPlaceholderText('Unit'), 'miles');
-
-    await waitFor(() => {
-      expect(within(row).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
-    });
-    expect(within(row).getAllByText(/Supported unit: km/i).length).toBeGreaterThan(0);
-    expect(within(row).queryByText('Missing Province')).not.toBeInTheDocument();
-  });
-
-  it('shows Natural Gas GJ as Unit Mismatch when only an m3 factor is available', async () => {
-    renderTable();
-
-    const row = await addEmptyRow();
+    await userEvent.clear(within(row).getByLabelText('Date'));
+    await userEvent.type(within(row).getByLabelText('Date'), '2025-08-01');
     await userEvent.selectOptions(
       within(row).getByRole('combobox', { name: /Activity type/i }),
       'NATURAL_GAS',
     );
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '3');
-    await userEvent.clear(within(row).getByPlaceholderText('Unit'));
-    await userEvent.type(within(row).getByPlaceholderText('Unit'), 'GJ');
+    await userEvent.selectOptions(getUnitControl(row), 'GJ');
 
     await waitFor(() => {
-      expect(within(row).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
-      expect(within(row).getByText('Natural gas usage is in GJ, but the available factor uses m3.')).toBeInTheDocument();
+      expect(within(row).getByText('Calculated')).toBeInTheDocument();
     });
-    expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
+    expect(within(row).getByText('Natural Gas - Canada Generic')).toBeInTheDocument();
+    expect(within(row).getByText('Scope 1')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Estimated emissions: 148.32 kg CO₂e')).toBeInTheDocument();
+    expect(within(row).queryByText('Unit Mismatch')).not.toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+
+    await waitFor(() => {
+      expect(createActivityData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activityType: 'NATURAL_GAS',
+          quantity: 3,
+          unit: 'GJ',
+          matchingStatus: 'MATCHED',
+          calculationStatus: 'CALCULATED',
+          reportTreatment: 'INCLUDED',
+          scope: 'SCOPE_1',
+          matchedFactorName: 'Natural Gas - Canada Generic',
+          matchedFactorValue: 49.44,
+          matchedFactorUnit: 'kgCO2e/GJ',
+          factorSelectionReason: 'GENERIC_JURISDICTION_FALLBACK',
+          calculatedEmissionsKgCO2e: 148.32,
+        }),
+      );
+    });
   });
 
   it('saves electricity rows missing province as requiring review', async () => {
@@ -1286,38 +1342,6 @@ describe('ExcelInputTable empty activity row UX', () => {
       expect(within(row).getByText('Requires Review')).toBeInTheDocument();
     });
     expect(within(row).getByText('Province is required before this electricity record can be calculated.')).toBeInTheDocument();
-  });
-
-  it('saves invalid-unit rows as requiring review instead of blocking save', async () => {
-    renderTable();
-
-    const row = await addEmptyRow();
-    await userEvent.selectOptions(within(row).getByRole('combobox', { name: /Activity type/i }), 'DIESEL');
-    await userEvent.type(within(row).getByPlaceholderText('Quantity'), '20');
-    await userEvent.clear(within(row).getByPlaceholderText('Unit'));
-    await userEvent.type(within(row).getByPlaceholderText('Unit'), 'bottles');
-
-    await waitFor(() => {
-      expect(within(row).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
-      expect(within(row).getByText(/Submitted unit does not match available factor units/i)).toBeInTheDocument();
-      expect(within(row).getAllByText(/Supported unit: liters/i).length).toBeGreaterThan(0);
-    });
-
-    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
-
-    await waitFor(() => {
-      expect(createActivityData).toHaveBeenCalledWith(
-        expect.objectContaining({
-          activityType: 'DIESEL',
-          quantity: 20,
-          unit: 'bottles',
-        }),
-      );
-    });
-    await waitFor(() => {
-      expect(within(row).getByText('Saved · Unit Mismatch')).toBeInTheDocument();
-    });
-    expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
   });
 
   it('requires a valid date and positive amount before save', async () => {
@@ -1438,7 +1462,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(rowA).getByRole('combobox', { name: /Province required for electricity records/i })).toHaveValue('Alberta');
 
     await waitFor(() => {
-      expect(within(rowA).getByText('Ready')).toBeInTheDocument();
+      expect(within(rowA).getByText('Calculated')).toBeInTheDocument();
     });
     expect(within(rowB).getAllByText('Missing Province').length).toBeGreaterThan(0);
     expect(within(rowA).queryByText('Missing Factor')).not.toBeInTheDocument();

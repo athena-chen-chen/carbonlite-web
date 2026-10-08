@@ -1,13 +1,15 @@
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { CARBONLITE_WORKFLOW, getWorkflowStage } from '../constants/carbonliteWorkflow';
 import { openFeedbackOverlay } from '../utils/feedbackOverlay';
 
 const reviewPath = [
-  { label: 'Data Records', to: '/data-records' },
-  { label: 'Factors', to: '/conversion-factors' },
-  { label: 'Calculation Review', to: '/metrics-summary' },
-  { label: 'Reports', to: '/reports' },
-  { label: 'Send Feedback', to: 'feedback' },
+  { stage: getWorkflowStage('BOUNDARY'), label: 'Organization & Boundary', to: '/organization-profile' },
+  { stage: getWorkflowStage('SOURCE_DATA'), label: 'Input Data', to: '/input-data' },
+  { stage: getWorkflowStage('DATA_ISSUES'), label: 'Data Records', to: '/data-records' },
+  { stage: getWorkflowStage('FACTORS_CALCULATIONS'), label: 'Factors / Calculation Review', to: '/metrics-summary' },
+  { stage: getWorkflowStage('RESULTS'), label: 'Calculation Review / Reports', to: '/reports' },
+  { stage: getWorkflowStage('REPORT'), label: 'Reports', to: '/reports' },
 ];
 
 const focusQuestions = [
@@ -36,20 +38,23 @@ export default function PilotReviewInstructionsPage() {
 
       <section style={sectionStyle}>
         <h2 style={sectionTitleStyle}>Suggested Review Path</h2>
+        <p style={sectionTextStyle}>
+          This read-only path follows the same {CARBONLITE_WORKFLOW.length}-stage CarbonLite workflow used across the app.
+        </p>
         <ol style={orderedListStyle}>
           {reviewPath.map((item) => (
-            <li key={item.label} style={listItemStyle}>
-              {item.to === 'feedback' ? (
-                <button type="button" onClick={openFeedbackOverlay} style={feedbackButtonStyle}>
-                  {item.label}
-                </button>
-              ) : (
-                <Link to={item.to} style={linkStyle}>
-                  {item.label}
-                </Link>
-              )}
+            <li key={item.stage.id} style={listItemStyle}>
+              <Link to={item.to} style={linkStyle}>
+                Stage {item.stage.step}: {item.stage.title}
+              </Link>
+              <span style={mutedTextStyle}> · {item.label}</span>
             </li>
           ))}
+          <li style={listItemStyle}>
+            <button type="button" onClick={openFeedbackOverlay} style={feedbackButtonStyle}>
+              Send Feedback
+            </button>
+          </li>
         </ol>
       </section>
 
@@ -131,6 +136,17 @@ const sectionTitleStyle: CSSProperties = {
   margin: '0 0 12px',
   color: '#0f172a',
   fontSize: 20,
+};
+
+const sectionTextStyle: CSSProperties = {
+  margin: '0 0 12px',
+  color: '#475569',
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const mutedTextStyle: CSSProperties = {
+  color: '#64748b',
 };
 
 const orderedListStyle: CSSProperties = {

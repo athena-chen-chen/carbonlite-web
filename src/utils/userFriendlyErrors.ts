@@ -34,7 +34,7 @@ const contextMessages: Record<ErrorMessageContext, string> = {
   confirmImport: 'We could not import the selected records. Please review the records and try again.',
   activityRecords: 'We could not update activity records. Please refresh the page and try again.',
   factorMatching: 'Some records could not be matched to emission factors. Please review the highlighted records.',
-  conversionFactors: 'We could not update conversion factors. Please refresh the page and try again.',
+  conversionFactors: 'We could not update emission factors. Please refresh the page and try again.',
   organizationProfile:
     'Organization profile could not be saved. Please try again.',
   calculationReview: 'We could not load the calculation review. Please refresh the page and try again.',

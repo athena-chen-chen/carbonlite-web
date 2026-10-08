@@ -25,6 +25,7 @@ import {
   buildSourceEvidenceNote,
   formatReportAssumptions,
   formatReportFactorVersion,
+  formatReportImportMethod,
   formatReportSourceReference,
   formatReportSourceType,
   formatReportVerification,
@@ -49,6 +50,10 @@ import {
   summarizeInventoryBoundary,
   type InventoryBoundary,
 } from '../constants/inventoryBoundary';
+import {
+  buildReportingReadinessAssessment,
+  type SourceReviewReadinessSummary,
+} from '../utils/reportingReadiness';
 
 export { formatFuelUsageBreakdown };
 
@@ -56,8 +61,9 @@ export const FORMAL_REPORT_DISCLAIMER =
   'This report was generated using CarbonLite Pilot Demo v0.1 for emissions data readiness and workflow review purposes only. It is not a certified GHG emissions report and does not constitute regulatory compliance advice, third-party verification, audit assurance, or carbon credit eligibility determination. Emission factors, assumptions, and calculations should be reviewed by qualified sustainability professionals before formal use.';
 
 export const FORMAL_REPORT_METHODOLOGY = [
-  'Emissions are calculated from imported or manually entered activity data and configured conversion factors. CarbonLite applies factor matching based on activity type, unit, jurisdiction, and reporting year.',
-  'Records without valid factors, units, quantities, dates, or required jurisdiction are excluded from emissions totals and listed as records requiring review. Tracked-only metrics are not included in calculated emissions totals.',
+  'CarbonLite uses one six-stage workflow: Define Reporting Boundary; Collect & Upload Source Data; Review & Resolve Data Issues; Validate Factors & Calculations; Review Results; Generate & Review Report.',
+  'Emissions are calculated from imported or manually entered activity data and configured emission factors. CarbonLite applies factor matching based on activity type, unit, jurisdiction, and reporting year.',
+  'Records without valid factors, units, quantities, dates, or required jurisdiction are excluded from emissions totals and listed as records requiring review. Tracked metrics are not included in calculated emissions totals.',
   'Source documents, source references, and factor metadata should be reviewed before using report outputs for internal, consultant, or external reporting workflows.',
   FORMAL_REPORT_DISCLAIMER,
 ];
@@ -138,6 +144,8 @@ export type FormalConversionFactorUsed = {
   usedRecordsCount?: number;
   matchingMethod?: string | null;
   matchingMessage?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
 };
 
 export type ReportExecutiveSummary = {
@@ -549,9 +557,9 @@ export function buildSourceEvidenceSummaryRows(
           : `${summary.recordLevelReferenceCount} record-level references`;
     }
 
-    if (row.reportTreatment === 'Included') summary.includedRecords += 1;
-    else if (row.reportTreatment === 'Tracked Only') summary.trackedMetrics += 1;
-    else if (row.reportTreatment === 'Requires Review') summary.recordsRequiringReview += 1;
+    if (row.reportTreatment === 'Included in GHG Total' || row.reportTreatment === 'Included') summary.includedRecords += 1;
+    else if (row.reportTreatment === 'Tracked Metric' || row.reportTreatment === 'Tracked Only') summary.trackedMetrics += 1;
+    else if (row.reportTreatment === 'Needs Review' || row.reportTreatment === 'Requires Review') summary.recordsRequiringReview += 1;
   });
 
   return Array.from(summaryBySource.values());
@@ -610,7 +618,11 @@ export function buildSourceEvidenceRows(
         sourceFileName: activity.sourceFileName,
       }),
       sourceType,
-      importMethod: formatSourceEvidenceImportMethod(sourceType),
+      importMethod: formatReportImportMethod(
+        activity.sourceType,
+        activity.sourceFileName,
+        activity.sourceReference,
+      ),
       matchingStatus: formatSourceEvidenceStatus(detail),
       reportTreatment: formatSourceEvidenceTreatment(detail),
       notes: buildSourceEvidenceNote({ activity, detail }),
@@ -653,27 +665,18 @@ function isGenericSourceEvidenceReference(value: string) {
   );
 }
 
-function formatSourceEvidenceImportMethod(sourceType: string) {
-  if (sourceType === 'Spreadsheet Import') return 'Spreadsheet Import';
-  if (sourceType === 'PDF Extraction') return 'PDF Extraction';
-  if (sourceType === 'Manual Entry') return 'Manual Entry';
-  if (sourceType === 'Document Import') return 'Document Import';
-  if (sourceType === 'Pasted Spreadsheet Rows') return 'Pasted Spreadsheet Rows';
-  return sourceType || 'Source Review Required';
-}
-
 function formatSourceEvidenceStatus(detail?: CalculationAuditDetail) {
   if (!detail) return 'Source Review Required';
   if (isTrackedMetricDetail(detail)) return 'Tracked Metric';
-  if (detail.status === 'CALCULATED') return 'Matched';
+  if (detail.status === 'CALCULATED') return 'Calculated';
   return formatCalculationStatus(detail.matchingStatus || detail.calculationStatus || detail.status);
 }
 
 function formatSourceEvidenceTreatment(detail?: CalculationAuditDetail) {
   if (!detail) return 'Source Review Required';
-  if (isTrackedMetricDetail(detail)) return 'Tracked Only';
-  if (detail.status === 'CALCULATED') return 'Included';
-  if (isRecordRequiringCorrection(detail)) return 'Requires Review';
+  if (isTrackedMetricDetail(detail)) return 'Tracked Metric';
+  if (detail.status === 'CALCULATED') return 'Included in GHG Total';
+  if (isRecordRequiringCorrection(detail)) return 'Needs Review';
   return 'Excluded';
 }
 
@@ -733,6 +736,7 @@ export function FormalReportPreview({
   conversionFactorsUsed,
   sourceEvidenceRows,
   calculationDetails,
+  sourceReviewSummary,
   showSectionToolbar = true,
   sectionExpansionRequest,
 }: {
@@ -748,6 +752,7 @@ export function FormalReportPreview({
   conversionFactorsUsed: FormalConversionFactorUsed[];
   sourceEvidenceRows: SourceEvidenceRow[];
   calculationDetails: CalculationAuditDetail[];
+  sourceReviewSummary?: SourceReviewReadinessSummary | null;
   showSectionToolbar?: boolean;
   sectionExpansionRequest?: {
     token: number;
@@ -784,6 +789,11 @@ export function FormalReportPreview({
   const scopeSummaryLine = `Scope 1: ${formatEmissionsWithUnit(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsWithUnit(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsWithUnit(scopeSummary.SCOPE_3)}`;
   const inventoryBoundary =
     providedInventoryBoundary ?? buildInventoryBoundary(organizationName, reportPeriod);
+  const reportingReadinessAssessment = buildReportingReadinessAssessment({
+    calculationDetails,
+    inventoryBoundary,
+    sourceReviewSummary,
+  });
   const inventoryBoundaryStatus = getInventoryBoundaryStatus(inventoryBoundary);
   const inventoryBoundarySummary = summarizeInventoryBoundary(
     inventoryBoundary,
@@ -866,6 +876,10 @@ export function FormalReportPreview({
       >
         <div style={factsGridStyle}>
           <Fact label="Configured reporting boundary" value={inventoryBoundaryStatus} />
+          <Fact label="Boundary review status" value={formatBoundaryReviewStatus(inventoryBoundary)} />
+          <Fact label="Boundary version" value={`v${inventoryBoundary.boundaryVersion ?? 1}`} />
+          <Fact label="Boundary reviewed by" value={inventoryBoundary.boundaryReviewedBy || 'Not assigned'} />
+          <Fact label="Boundary reviewed at" value={formatBoundaryReviewedAt(inventoryBoundary.boundaryReviewedAt)} />
           <Fact label="Organization / Workspace" value={formatBoundaryValue(inventoryBoundary.organizationWorkspace)} />
           {inventoryBoundary.industry ? (
             <Fact label="Industry" value={inventoryBoundary.industry} />
@@ -938,7 +952,7 @@ export function FormalReportPreview({
             : 'No calculated hotspots yet'
         }
       >
-        <EmissionsHotspotsSection analysis={hotspotAnalysis} />
+        <EmissionsHotspotsSection analysis={hotspotAnalysis} sourceReviewSummary={sourceReviewSummary} />
       </ReportSection>
 
       <ReportSection
@@ -969,7 +983,8 @@ export function FormalReportPreview({
           reportCountSummary={reportCountSummary}
           primarySkippedReasons={primarySkippedReasons}
           dataQualityCoverage={executiveSummary.dataQualityCoverage}
-          dataReadinessScore={`${formatDisplayNumber(dataReadinessSummary.score)}% (${dataReadinessSummary.level})`}
+          readinessAssessment={reportingReadinessAssessment}
+          optionalDataCompleteness={`${formatDisplayNumber(dataReadinessSummary.optionalDataCompleteness.score)}%`}
           reviewReasonsLabel={formatReviewReasons(primarySkippedReasons)}
         />
       </ReportSection>
@@ -1178,6 +1193,25 @@ function Fact({ label, value }: { label: string; value: string }) {
 function formatBoundaryValue(value?: string | null) {
   const trimmed = String(value ?? '').trim();
   return trimmed || 'Not specified';
+}
+
+function formatBoundaryReviewStatus(boundary: Pick<InventoryBoundary, 'boundaryStatus'>) {
+  switch (boundary.boundaryStatus) {
+    case 'REVIEWED':
+      return 'Reviewed';
+    case 'NOT_DEFINED':
+      return 'Not Defined';
+    case 'DRAFT':
+    default:
+      return 'Draft';
+  }
+}
+
+function formatBoundaryReviewedAt(value?: string | null) {
+  if (!value) return 'Not reviewed';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not reviewed';
+  return date.toLocaleString();
 }
 
 function SimpleTable({

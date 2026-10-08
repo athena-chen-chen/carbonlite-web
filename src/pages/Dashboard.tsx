@@ -30,7 +30,7 @@ export default function DashboardPage() {
         <div className="card-body">
           <div className="page-title">From messy records to traceable emissions insights</div>
           <p className="text-sm text-[rgb(var(--muted))] leading-6 mt-2 max-w-3xl">
-            CarbonLite helps organize operational data, match records with appropriate conversion factors, and explain calculation results with source, jurisdiction, confidence level, and review status.
+            CarbonLite helps organize operational data, match records with appropriate emission factors, and explain calculation results with source, jurisdiction, confidence level, and review status.
           </p>
         </div>
       </section>

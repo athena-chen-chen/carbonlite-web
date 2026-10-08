@@ -91,7 +91,7 @@ Never delete:
 - sessions
 - roles
 - company settings
-- system conversion factors
+- system emission factors
 - custom factors unless a future explicit factor-reset feature is designed
 
 Production rule: in `APP_ENV=production`, reset must return `403` even for
@@ -212,7 +212,7 @@ Tenant isolation requirements:
   the current company before returning or mutating it.
 - List endpoints must never return another company's rows.
 - Bulk endpoints must apply the company filter together with requested ids.
-- System conversion factors may have no company id and be visible to all
+- System emission factors may have no company id and be visible to all
   authenticated users.
 - Custom factors must always belong to exactly one company and must only be
   visible inside that company.
@@ -225,7 +225,7 @@ Company-scoped models:
 - parsed or staged input-review rows
 - generated reports and report drafts
 - `Facility`
-- custom conversion factors
+- custom emission factors
 - company settings
 
 Destructive endpoint rules:
@@ -316,7 +316,7 @@ Required behavior:
 
 - create demo company if missing
 - create demo Owner/Admin user if missing
-- create required system conversion factors if missing
+- create required system emission factors if missing
 - update system factor metadata only when the canonical seed version changes
 - load the golden dataset only when explicitly requested
 - skip golden dataset loading by default to avoid polluting a clean reset state
@@ -329,7 +329,7 @@ APP_ENV=pilot LOAD_GOLDEN_DATASET=true npm run seed:pilot
 ```
 
 Pilot seed must preserve existing users, companies, auth accounts, sessions,
-roles, company settings, and conversion factor ownership.
+roles, company settings, and emission factor ownership.
 
 ## Frontend Scripts
 

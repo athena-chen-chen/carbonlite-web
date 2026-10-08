@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { ActivityRecordFields } from './ActivityRecordFields';
 import type { ActivityRecordField, ActivityRecordFormValues } from './types';
 import { getProvinceOptionsForActivity } from '../../utils/province';
+import { getSupportedUnitsForActivityType } from '../../constants/activityTypes';
 
 export type { ActivityRecordField, ActivityRecordFormValues } from './types';
 
@@ -50,6 +51,7 @@ export function ActivityRecordForm({
         onChange={onChange}
         errors={fieldErrors}
         activityTypeOptions={activityTypes}
+        unitOptions={getSupportedUnitsForActivityType(values.activityType)}
         provinceOptions={availableProvinceOptions}
         facilityField={facilityField}
         isElectricity={isElectricity}

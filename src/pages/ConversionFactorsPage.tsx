@@ -30,6 +30,7 @@ import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
 import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
 import { formatEmissionsUnit } from '../utils/numberFormatting';
+import { formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -293,7 +294,7 @@ function formatFactorValue(value: ConversionFactorItem['factorValue']) {
 }
 
 function formatFactorValueDisplay(item: ConversionFactorItem) {
-  if (isWaterTrackedFactor(item)) return 'Tracked only';
+  if (isWaterTrackedFactor(item)) return 'Tracked Metric';
   return `${formatFactorValue(item.factorValue)} ${formatFactorUnitDisplay(item)}`;
 }
 
@@ -458,7 +459,7 @@ function formatFactorStatusLabel(value?: string | null) {
   if (!normalized) return '';
   if (normalized === 'GENERIC_ESTIMATE') return 'Generic estimate';
   if (normalized === 'REVIEW_RECOMMENDED') return 'Review recommended';
-  if (normalized === 'TRACKED_ONLY') return 'Tracked only';
+  if (normalized === 'TRACKED_ONLY') return 'Tracked Metric';
   if (normalized === 'INTERNAL_REVIEW_REQUIRED') return 'Internal review required';
   if (normalized === 'ACTIVE') return 'Active';
   return formatCredibilityLabel(value) || normalized
@@ -487,11 +488,11 @@ function isSystemFactor(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'fa
 }
 
 function getFactorTypeLabel(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'factorType' | 'organizationId'>) {
-  return isSystemFactor(item) ? 'CarbonLite System Factor' : 'Company Factor';
+  return isSystemFactor(item) ? 'Provided by CarbonLite' : 'Company Factor';
 }
 
 function getFactorTypeTableLabel(item: Pick<ConversionFactorItem, 'isSystemDefault' | 'factorType' | 'organizationId'>) {
-  return isSystemFactor(item) ? 'System Factor' : 'Company Factor';
+  return isSystemFactor(item) ? 'Provided by CarbonLite' : 'Company Factor';
 }
 
 function getCustomFactorFormErrors(
@@ -735,7 +736,7 @@ export function ConversionFactorsPage() {
     setShowFactorForm(true);
     setError(null);
     setSuccessMessage(
-      `Add a conversion factor for ${
+      `Add an emission factor for ${
         prefillFactor.activityType ? getActivityTypeLabel(prefillFactor.activityType) : 'this activity'
       } / ${prefillFactor.unit ?? 'this unit'} to include skipped records.`,
     );
@@ -1138,7 +1139,7 @@ export function ConversionFactorsPage() {
       <div className="print-report-header" style={printHeaderStyle}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800 }}>CarbonLite</div>
-          <h1 style={{ margin: '8px 0 0', fontSize: 24 }}>Conversion Factors Report</h1>
+          <h1 style={{ margin: '8px 0 0', fontSize: 24 }}>Emission Factors Report</h1>
         </div>
         <div style={{ textAlign: 'right', fontSize: 12, color: '#475569' }}>
           <div>Generated: {generatedAt}</div>
@@ -1148,9 +1149,9 @@ export function ConversionFactorsPage() {
 
       <div style={pageHeaderStyle}>
         <div>
-          <h1 style={{ margin: 0 }}>Conversion Factors</h1>
+          <h1 style={{ margin: 0 }}>Emission Factors</h1>
           <p style={{ marginTop: 8, color: factorsPalette.secondaryText }}>
-            Review the factors used in CarbonLite calculations, including jurisdiction, unit, year, and source.
+            {formatWorkflowStageLabel(getWorkflowStage('FACTORS_CALCULATIONS'))}. CarbonLite suggests and applies factors; reviewers or consultants validate provenance, assumptions, fallback use, and applicability before formal use.
           </p>
         </div>
         <button
@@ -1197,12 +1198,12 @@ export function ConversionFactorsPage() {
       </div>
       {loading ? (
         <div className="no-print" style={summaryLoadingIndicatorStyle}>
-          <LinearLoadingIndicator label="Loading conversion factors" />
+          <LinearLoadingIndicator label="Loading emission factors" />
         </div>
       ) : null}
 
       <div className="no-print" style={pilotDisclaimerStyle}>
-        System default factors are provided for pilot workflow validation. Users should verify factors against applicable reporting requirements before relying on final reports.
+        CarbonLite-provided factors are provided for pilot workflow validation. Users should review factors against applicable reporting requirements before relying on final reports.
       </div>
       <div className="no-print" style={pilotCoverageNoteStyle}>
         Electricity requires province-specific factors. {PILOT_PROVINCE_COVERAGE_HELPER_TEXT}
@@ -1215,12 +1216,12 @@ export function ConversionFactorsPage() {
         <div className="no-print" style={readOnlyNoticeStyle}>
           {pilotReviewerReadOnly
             ? 'Pilot reviewer accounts can view factor information for transparency. Factor editing is disabled.'
-            : 'Read-only access: system factors are visible to all authenticated users. Only Owners and Admins can create, edit, or delete company-specific factors.'}
+            : 'Read-only access: CarbonLite-provided factors are visible to all authenticated users. Only Owners and Admins can create, edit, or delete company-specific factors.'}
         </div>
       ) : !showFactorForm ? (
         <div className="no-print" style={collapsedFormStyle}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 20 }}>Company conversion factors</h2>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Company emission factors</h2>
             <p style={{ marginTop: 6, color: factorsPalette.secondaryText }}>
               System default factors are already available. Add a company-specific factor only when you need workspace-specific values.
             </p>
@@ -1471,11 +1472,11 @@ export function ConversionFactorsPage() {
               checked={Boolean(form.verified)}
               onChange={(e) => updateField('verified', e.target.checked)}
             />
-            Verified source and methodology
+            Reviewed source and methodology
           </label>
           {form.activityType === 'WATER' ? (
             <div style={waterCustomFactorNoticeStyle}>
-              Water is tracked only in CarbonLite pilot reporting and remains excluded from GHG totals by default.
+              Water is a tracked metric in CarbonLite pilot reporting and remains excluded from GHG totals by default.
             </div>
           ) : null}
         </div>
@@ -1528,7 +1529,7 @@ export function ConversionFactorsPage() {
       <div className="print-table-card" style={tableCardStyle}>
         <div style={tableHeaderStyle}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 20 }}>Conversion Factor Library</h2>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Emission Factor Library</h2>
             <p style={{ marginTop: 6, color: factorsPalette.secondaryText }}>
               Conversion factors should be current, source-backed, and jurisdiction-aware. CarbonLite tracks factor source, year, confidence level, and verification status to support more transparent calculations.
             </p>
@@ -1654,7 +1655,7 @@ export function ConversionFactorsPage() {
 
         {loading ? (
           <div role="status" aria-live="polite" style={{ padding: 16 }}>
-            Loading conversion factors...
+            Loading emission factors...
             {isSlowLoadingFactors ? (
               <div style={slowLoadingTextStyle}>
                 Still loading — this may take a few seconds.
@@ -1716,7 +1717,7 @@ export function ConversionFactorsPage() {
                         <div>Try clearing filters or choosing different filter values.</div>
                       </>
                     ) : (
-                      'No conversion factors yet.'
+                      'No emission factors yet.'
                     )}
                   </td>
                 </tr>
@@ -1956,7 +1957,7 @@ function FactorDetailsModal({
               <Badge label={getFactorTypeLabel(item)} color="#047857" background="#ECFDF5" />
             )}
             {traceability.verified ? (
-              <Badge label="Verified" color="#047857" background="#ECFDF5" />
+              <Badge label="Reviewed" color="#047857" background="#ECFDF5" />
             ) : (
               <Badge label="Internal Review Required" color="#B45309" background="#FFFBEB" />
             )}

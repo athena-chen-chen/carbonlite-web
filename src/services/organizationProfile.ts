@@ -17,8 +17,9 @@ import {
   getOrganizationName,
   type AuthUser,
 } from './auth';
-import { canEditWorkspace } from '../utils/permissions';
+import { canEditWorkspace, canReviewBoundary } from '../utils/permissions';
 import { apiFetch } from './api';
+import { trackBusinessAuditEvent } from './businessAuditEvents';
 
 export type OrganizationProfile = {
   organizationName: string;
@@ -38,6 +39,13 @@ export type OrganizationProfile = {
   scope3CoverageNote: string;
   exclusionsAndLimitations: string;
   boundaryNotes: string;
+  boundaryStatus: 'NOT_DEFINED' | 'DRAFT' | 'REVIEWED';
+  boundaryReviewedBy: string;
+  boundaryReviewedByUserId: string;
+  boundaryReviewedAt: string;
+  boundaryVersion: number;
+  boundaryReviewNote: string;
+  boundaryReviewFingerprint: string;
 };
 
 const PROFILE_STORAGE_PREFIX = 'carbonlite:organization-profile:';
@@ -63,6 +71,13 @@ export const SAMPLE_WORKSPACE_PROFILE: OrganizationProfile = {
   exclusionsAndLimitations: DEFAULT_INVENTORY_BOUNDARY.exclusionsLimitations,
   boundaryNotes:
     'Current pilot supports selected units and activity types. Additional unit conversion and Scope 3 categories may be added in future versions.',
+  boundaryStatus: 'DRAFT',
+  boundaryReviewedBy: '',
+  boundaryReviewedByUserId: '',
+  boundaryReviewedAt: '',
+  boundaryVersion: 1,
+  boundaryReviewNote: '',
+  boundaryReviewFingerprint: '',
 };
 
 export function getDefaultOrganizationProfile(user: AuthUser | null = getCurrentUser()): OrganizationProfile {
@@ -114,10 +129,13 @@ export function saveOrganizationProfile(
   }
 
   const profile = normalizeOrganizationProfile(input);
-  validateOrganizationProfile(profile);
-  localStorage.setItem(getOrganizationProfileStorageKey(user), JSON.stringify(profile));
+  const previous = loadOrganizationProfile(user);
+  const profileWithBoundaryReview = applyBoundaryReviewInvalidation(previous, profile);
+  validateOrganizationProfile(profileWithBoundaryReview);
+  localStorage.setItem(getOrganizationProfileStorageKey(user), JSON.stringify(profileWithBoundaryReview));
   window.dispatchEvent(new Event(ORGANIZATION_PROFILE_UPDATED_EVENT));
-  return profile;
+  void trackOrganizationBoundaryAuditEvent('BOUNDARY_UPDATED', previous, profileWithBoundaryReview, user);
+  return profileWithBoundaryReview;
 }
 
 export function hasBackendOrganizationProfileSession() {
@@ -145,18 +163,39 @@ export async function persistOrganizationProfile(
   }
 
   const profile = normalizeOrganizationProfile(input);
-  validateOrganizationProfile(profile);
+  const previous = await fetchOrganizationProfile(user).catch(() => loadOrganizationProfile(user));
+  const profileWithBoundaryReview = applyBoundaryReviewInvalidation(previous, profile);
+  validateOrganizationProfile(profileWithBoundaryReview);
   const saved = await apiFetch<Partial<OrganizationProfile>>('/organization-profile', {
     method: 'PATCH',
-    body: JSON.stringify(profile),
+    body: JSON.stringify(profileWithBoundaryReview),
   });
   const normalizedSaved = normalizeOrganizationProfile({
-    ...profile,
+    ...profileWithBoundaryReview,
     ...saved,
   });
 
   dispatchOrganizationProfileUpdated(normalizedSaved);
+  void trackOrganizationBoundaryAuditEvent('BOUNDARY_UPDATED', previous, normalizedSaved, user);
   return normalizedSaved;
+}
+
+export async function reviewOrganizationBoundary(input: {
+  profile: OrganizationProfile;
+  reviewNote?: string;
+  user?: AuthUser | null;
+}) {
+  const user = input.user ?? getCurrentUser();
+  if (!canReviewBoundary(user)) {
+    throw new Error('Reviewer permission required.');
+  }
+
+  const reviewedProfile = markBoundaryReviewed(input.profile, user, input.reviewNote);
+  const saved = hasBackendOrganizationProfileSession()
+    ? await persistBoundaryReview(reviewedProfile, user)
+    : saveBoundaryReviewLocally(reviewedProfile, user);
+  void trackOrganizationBoundaryAuditEvent('BOUNDARY_REVIEWED', input.profile, saved, user);
+  return saved;
 }
 
 export function profileToInventoryBoundary(
@@ -214,6 +253,24 @@ export function profileToInventoryBoundary(
       DEFAULT_INVENTORY_BOUNDARY.boundaryNotes,
       isSampleWorkspace,
     ),
+    boundaryStatus: profile.boundaryStatus,
+    boundaryReviewedBy: profile.boundaryReviewedBy || undefined,
+    boundaryReviewedAt: profile.boundaryReviewedAt || undefined,
+    boundaryVersion: profile.boundaryVersion,
+    boundaryReviewNote: profile.boundaryReviewNote || undefined,
+  };
+}
+
+export function profileToReportContextInventoryBoundary(
+  profile: OrganizationProfile,
+  reportingPeriod?: string | null,
+): InventoryBoundary {
+  const boundary = profileToInventoryBoundary(profile, reportingPeriod);
+  const selectedReportingPeriod = reportingPeriod?.trim();
+
+  return {
+    ...boundary,
+    reportingPeriod: selectedReportingPeriod || boundary.reportingPeriod,
   };
 }
 
@@ -286,6 +343,13 @@ function normalizeOrganizationProfile(
         defaults.exclusionsAndLimitations,
     ),
     boundaryNotes: clean(input.boundaryNotes ?? defaults.boundaryNotes),
+    boundaryStatus: normalizeBoundaryStatus(input.boundaryStatus, input, defaults),
+    boundaryReviewedBy: clean(input.boundaryReviewedBy ?? defaults.boundaryReviewedBy),
+    boundaryReviewedByUserId: clean(input.boundaryReviewedByUserId ?? defaults.boundaryReviewedByUserId),
+    boundaryReviewedAt: clean(input.boundaryReviewedAt ?? defaults.boundaryReviewedAt),
+    boundaryVersion: normalizeBoundaryVersion(input.boundaryVersion, defaults.boundaryVersion),
+    boundaryReviewNote: clean(input.boundaryReviewNote ?? defaults.boundaryReviewNote),
+    boundaryReviewFingerprint: clean(input.boundaryReviewFingerprint ?? defaults.boundaryReviewFingerprint),
   };
 }
 
@@ -347,6 +411,175 @@ function validateOrganizationProfile(profile: OrganizationProfile) {
 
 function clean(value?: string | null) {
   return String(value ?? '').trim();
+}
+
+export function getBoundaryMaterialFingerprint(profile: Pick<
+  OrganizationProfile,
+  | 'organizationName'
+  | 'country'
+  | 'provinceOrState'
+  | 'reportingPeriodStart'
+  | 'reportingPeriodEnd'
+  | 'geographicBoundary'
+  | 'includedFacilitiesOrLocations'
+  | 'excludedFacilitiesOrLocations'
+  | 'includedScopes'
+  | 'scope3CoverageNote'
+  | 'exclusionsAndLimitations'
+  | 'boundaryNotes'
+>) {
+  const materialFields = [
+    profile.organizationName,
+    profile.country,
+    profile.provinceOrState,
+    profile.reportingPeriodStart,
+    profile.reportingPeriodEnd,
+    profile.geographicBoundary,
+    profile.includedFacilitiesOrLocations,
+    profile.excludedFacilitiesOrLocations,
+    profile.includedScopes,
+    profile.scope3CoverageNote,
+    profile.exclusionsAndLimitations,
+    profile.boundaryNotes,
+  ];
+
+  return materialFields
+    .map((value) => clean(value).replace(/\s+/g, ' ').toLowerCase())
+    .join('|');
+}
+
+export function getBoundaryDisplayStatus(profile: Pick<OrganizationProfile, 'boundaryStatus'>) {
+  const labels = {
+    NOT_DEFINED: 'Not Defined',
+    DRAFT: 'Draft',
+    REVIEWED: 'Reviewed',
+  } as const;
+  return labels[profile.boundaryStatus] ?? 'Draft';
+}
+
+function markBoundaryReviewed(
+  profile: OrganizationProfile,
+  user: AuthUser | null,
+  reviewNote?: string,
+): OrganizationProfile {
+  const reviewer = getReviewerDisplayName(user);
+  return normalizeOrganizationProfile({
+    ...profile,
+    boundaryStatus: 'REVIEWED',
+    boundaryReviewedBy: reviewer,
+    boundaryReviewedByUserId: user?.id ?? '',
+    boundaryReviewedAt: new Date().toISOString(),
+    boundaryVersion: Math.max(1, Number(profile.boundaryVersion) || 1),
+    boundaryReviewNote: clean(reviewNote),
+    boundaryReviewFingerprint: getBoundaryMaterialFingerprint(profile),
+  });
+}
+
+function saveBoundaryReviewLocally(profile: OrganizationProfile, user: AuthUser | null) {
+  localStorage.setItem(getOrganizationProfileStorageKey(user), JSON.stringify(profile));
+  dispatchOrganizationProfileUpdated(profile);
+  return profile;
+}
+
+async function persistBoundaryReview(profile: OrganizationProfile, user: AuthUser | null) {
+  const saved = await apiFetch<Partial<OrganizationProfile>>('/organization-profile', {
+    method: 'PATCH',
+    body: JSON.stringify(profile),
+  });
+  const normalizedSaved = normalizeOrganizationProfile({
+    ...profile,
+    ...saved,
+  });
+  dispatchOrganizationProfileUpdated(normalizedSaved);
+  return normalizedSaved;
+}
+
+function applyBoundaryReviewInvalidation(
+  previous: OrganizationProfile,
+  next: OrganizationProfile,
+): OrganizationProfile {
+  const nextFingerprint = getBoundaryMaterialFingerprint(next);
+  const previousFingerprint = previous.boundaryReviewFingerprint || getBoundaryMaterialFingerprint(previous);
+  const materialChanged = nextFingerprint !== previousFingerprint;
+
+  if (previous.boundaryStatus === 'REVIEWED' && materialChanged) {
+    return {
+      ...next,
+      boundaryStatus: 'DRAFT',
+      boundaryReviewedBy: '',
+      boundaryReviewedByUserId: '',
+      boundaryReviewedAt: '',
+      boundaryReviewNote: '',
+      boundaryReviewFingerprint: '',
+      boundaryVersion: Math.max(1, previous.boundaryVersion) + 1,
+    };
+  }
+
+  return {
+    ...next,
+    boundaryVersion: Math.max(1, previous.boundaryVersion || next.boundaryVersion || 1),
+  };
+}
+
+function normalizeBoundaryStatus(
+  value: unknown,
+  input: Partial<OrganizationProfile>,
+  defaults: OrganizationProfile,
+) {
+  const normalized = clean(String(value ?? '')).toUpperCase();
+  if (normalized === 'REVIEWED') return 'REVIEWED';
+  if (normalized === 'NOT_DEFINED') return 'NOT_DEFINED';
+  if (normalized === 'DRAFT') return 'DRAFT';
+
+  const fingerprint = getBoundaryMaterialFingerprint({
+    ...defaults,
+    ...input,
+  } as OrganizationProfile);
+  return fingerprint.replace(/\|/g, '').trim() ? 'DRAFT' : 'NOT_DEFINED';
+}
+
+function normalizeBoundaryVersion(value: unknown, fallback: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : Math.max(1, fallback || 1);
+}
+
+function getReviewerDisplayName(user: AuthUser | null) {
+  return clean(user?.name) || clean(user?.email) || 'Reviewer';
+}
+
+async function trackOrganizationBoundaryAuditEvent(
+  eventType: 'BOUNDARY_UPDATED' | 'BOUNDARY_REVIEWED',
+  before: OrganizationProfile,
+  after: OrganizationProfile,
+  user: AuthUser | null,
+) {
+  if (!getToken()) return;
+
+  try {
+    await trackBusinessAuditEvent({
+      organizationId: getOrganizationId(user),
+      eventType,
+      entityType: 'REPORTING_BOUNDARY',
+      entityId: getOrganizationId(user) || after.organizationName,
+      actorType: 'USER',
+      actorUserId: user?.id,
+      actorDisplayName: getReviewerDisplayName(user),
+      previousVersion: before.boundaryVersion,
+      newVersion: after.boundaryVersion,
+      reason: eventType === 'BOUNDARY_REVIEWED'
+        ? 'Reporting boundary reviewed by an authorized user.'
+        : 'Reporting boundary material fields changed.',
+      beforeSnapshot: before,
+      afterSnapshot: after,
+      metadata: {
+        boundaryStatus: after.boundaryStatus,
+        boundaryReviewedAt: after.boundaryReviewedAt,
+        boundaryReviewedBy: after.boundaryReviewedBy,
+      },
+    });
+  } catch {
+    // Boundary saves should not fail if audit persistence is temporarily unavailable.
+  }
 }
 
 export function isValidPrimaryContactEmail(email: string) {

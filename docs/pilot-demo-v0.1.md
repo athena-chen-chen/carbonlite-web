@@ -8,7 +8,7 @@ CarbonLite Pilot Demo v0.1 is a stable feedback version for structured review wi
 
 This version is intended to demonstrate the pilot workflow:
 
-Input Data -> Activity Records -> Factor Matching -> Calculation Review -> PDF / CSV Reports
+Define Reporting Boundary -> Collect & Upload Source Data -> Review & Resolve Data Issues -> Validate Factors & Calculations -> Review Results -> Generate & Review Report
 
 This is not production-ready, not certification-ready, and not official reporting-ready.
 
@@ -60,7 +60,7 @@ The following pilot-demo workflows are expected to be stable in this freeze:
 - Calculation Review loads totals, scope cards, data quality, source traceability, and calculation details.
 - PDF report export uses pilot-facing wording, factor traceability, source evidence, and tracked metrics.
 - CSV export uses pilot-facing columns, row numbers, raw numeric fields, and no internal database ids.
-- Reset Demo Data clears saved records and input-review staging data without deleting users, facilities, settings, or conversion factors.
+- Reset Demo Data clears saved records and input-review staging data without deleting users, facilities, settings, or emission factors.
 - No temporary debug UI appears in pilot-facing screens.
 - No internal backend wording appears in pilot-facing reports or exports.
 - Pilot-facing report/export output does not expose database ids.
@@ -78,7 +78,7 @@ Supported calculated GHG activity types:
 - Ground Transport, Scope 3.
 - Shipping, Scope 3 if present in configured factors.
 
-Tracked-only activity types:
+Tracked metric activity types:
 
 - Water, tracked operational metric, excluded from Scope 1 / Scope 2 / Scope 3 and total emissions.
 
@@ -156,7 +156,7 @@ Use this checklist before each consultant or SME pilot-feedback session.
 
 ## Pilot Disclaimer
 
-CarbonLite Pilot Demo v0.1 is provided for pilot feedback, workflow validation, and data-readiness review only. CarbonLite does not certify emissions, guarantee compliance, determine carbon credit eligibility, or replace professional sustainability review. Pilot reviewers should validate source documents, conversion factors, assumptions, boundaries, and reporting requirements before relying on any output.
+CarbonLite Pilot Demo v0.1 is provided for pilot feedback, workflow validation, and data-readiness review only. CarbonLite does not certify emissions, guarantee compliance, determine carbon credit eligibility, or replace professional sustainability review. Pilot reviewers should validate source documents, emission factors, assumptions, boundaries, and reporting requirements before relying on any output.
 
 ## What Not To Change Before Pilot Feedback
 

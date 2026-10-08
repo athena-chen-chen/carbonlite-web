@@ -41,7 +41,7 @@ The current frontend test suite already covers meaningful pieces of the pilot wo
 - Metrics summary rendering, readiness, and hotspots.
 - Report preview and report export paths at the component level.
 - Data records interactions, including details modal behavior.
-- Playwright smoke coverage for upload, reports, records, and conversion factor management, though several smoke assertions are now stale or failing.
+- Playwright smoke coverage for upload, reports, records, and emission factor management, though several smoke assertions are now stale or failing.
 
 ## Coverage Added
 
@@ -73,14 +73,14 @@ The existing Playwright smoke suite is not green. The failing assertions are:
 - Reports generation smoke expects `Emissions Summary Report`, but it is not found after generating.
 - Conversion factor smoke expects row `Electricity - Alberta - 2026`, but it is not found.
 
-These look like stale UI/fixture expectations or mocked-data drift rather than failures introduced by the new unit coverage. They still represent pilot risk because the browser smoke suite no longer validates the complete Input Data -> Records -> Metrics -> Reports journey.
+These look like stale UI/fixture expectations or mocked-data drift rather than failures introduced by the new unit coverage. They still represent pilot risk because the browser smoke suite no longer validates the complete Define Reporting Boundary -> Collect & Upload Source Data -> Review & Resolve Data Issues -> Validate Factors & Calculations -> Review Results -> Generate & Review Report journey.
 
 ## Missing Coverage
 
 High-value coverage still missing:
 
 - Backend integration tests for the real API, database, auth, tenant scoping, and report/cache invalidation.
-- End-to-end happy path with stable mocked API data for Input Data -> Activity Records -> Factor Matching -> Metrics -> Reports.
+- End-to-end happy path with stable mocked API data for Define Reporting Boundary -> Collect & Upload Source Data -> Review & Resolve Data Issues -> Validate Factors & Calculations -> Review Results -> Generate & Review Report.
 - E2E assertions that reports do not show stale totals after data changes.
 - Browser-level layout regression for the upload preview table at narrow and desktop widths.
 - Direct server tests for admin-only clear activity records, if that endpoint lives in a separate backend repo.

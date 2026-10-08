@@ -1,25 +1,35 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { getCurrentUser, getOrganizationId } from '../services/auth';
+import { getCurrentUser, getOrganizationId, type AuthUser } from '../services/auth';
 import {
   CANADA_PROVINCE_TERRITORY_OPTIONS,
   INDUSTRY_OPTIONS,
   DEFAULT_COUNTRY,
 } from '../constants/organizationProfileOptions';
-import { canEditWorkspace, isPilotReviewer } from '../utils/permissions';
+import {
+  canEditWorkspace,
+  canManageUsers,
+  canReviewBoundary,
+  formatOrganizationRole,
+  getOrganizationRole,
+  isPilotReviewer,
+} from '../utils/permissions';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { ApiError } from '../services/api';
 import {
   fetchOrganizationProfile,
+  getBoundaryDisplayStatus,
   hasBackendOrganizationProfileSession,
   isValidPrimaryContactEmail,
   loadOrganizationProfile,
   persistOrganizationProfile,
   PRIMARY_CONTACT_EMAIL_ERROR,
+  reviewOrganizationBoundary,
   saveOrganizationProfile,
   type OrganizationProfile,
 } from '../services/organizationProfile';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
+import { formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
 
 const fieldGroups: Array<{
   title: string;
@@ -82,6 +92,9 @@ export function OrganizationProfilePage() {
   const currentUser = getCurrentUser();
   const currentUserKey = `${currentUser?.id ?? ''}:${getOrganizationId(currentUser)}:${currentUser?.email ?? ''}`;
   const canEdit = canEditWorkspace(currentUser);
+  const canReview = canReviewBoundary(currentUser);
+  const canManageMembers = canManageUsers(currentUser);
+  const organizationRole = getOrganizationRole(currentUser);
   const readOnlyReviewer = isPilotReviewer(currentUser);
   const [profile, setProfile] = useState<OrganizationProfile>(() =>
     loadOrganizationProfile(currentUser),
@@ -90,6 +103,8 @@ export function OrganizationProfilePage() {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof OrganizationProfile, string>>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isReviewingBoundary, setIsReviewingBoundary] = useState(false);
+  const [boundaryReviewNote, setBoundaryReviewNote] = useState('');
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const isSlowProfileLoading = useSlowLoading(isProfileLoading);
 
@@ -188,13 +203,49 @@ export function OrganizationProfilePage() {
     }
   }
 
+  async function handleReviewBoundary() {
+    if (!canReview) {
+      setSuccessMessage('');
+      setError('Reviewer permission required to review the reporting boundary.');
+      return;
+    }
+
+    try {
+      setIsReviewingBoundary(true);
+      const reviewedProfile = await reviewOrganizationBoundary({
+        profile,
+        reviewNote: boundaryReviewNote,
+        user: currentUser,
+      });
+      setProfile(reviewedProfile);
+      setBoundaryReviewNote('');
+      setSuccessMessage('Reporting boundary marked as reviewed.');
+      setError('');
+    } catch (error) {
+      setSuccessMessage('');
+      setError(getUserFriendlyErrorMessage(error, 'organizationProfile'));
+    } finally {
+      setIsReviewingBoundary(false);
+    }
+  }
+
   return (
     <div style={pageStyle}>
       <h1 style={pageTitleStyle}>Organization & Boundary</h1>
       <p style={pageIntroStyle}>
-        Define your organization, reporting period, facilities, and emissions boundary used
-        throughout CarbonLite.
+        {formatWorkflowStageLabel(getWorkflowStage('BOUNDARY'))}. Define your organization, reporting period,
+        facilities, and emissions boundary used throughout CarbonLite.
       </p>
+
+      <div style={currentUserContextStyle}>
+        <strong>Your role:</strong> {formatOrganizationRole(organizationRole)}
+        <span style={currentUserContextDividerStyle}>|</span>
+        <span>
+          {canReview
+            ? 'Boundary review available'
+            : 'Reviewer permission required for boundary review'}
+        </span>
+      </div>
 
       {!canEdit ? (
         <div style={readOnlyNoticeStyle}>
@@ -216,6 +267,15 @@ export function OrganizationProfilePage() {
           ) : null}
         </div>
       ) : null}
+
+      <BoundaryReviewSection
+        profile={profile}
+        canReview={canReview}
+        isReviewing={isReviewingBoundary}
+        reviewNote={boundaryReviewNote}
+        onReviewNoteChange={setBoundaryReviewNote}
+        onReview={handleReviewBoundary}
+      />
 
       {readOnlyReviewer ? (
         <div style={formStyle}>
@@ -325,6 +385,155 @@ export function OrganizationProfilePage() {
           ) : null}
         </form>
       )}
+
+      <MembersAndAccessSection
+        currentUser={currentUser}
+        roleLabel={formatOrganizationRole(organizationRole)}
+        canManageMembers={canManageMembers}
+      />
+
+      <DataPrivacySection />
+    </div>
+  );
+}
+
+function BoundaryReviewSection({
+  profile,
+  canReview,
+  isReviewing,
+  reviewNote,
+  onReviewNoteChange,
+  onReview,
+}: {
+  profile: OrganizationProfile;
+  canReview: boolean;
+  isReviewing: boolean;
+  reviewNote: string;
+  onReviewNoteChange: (value: string) => void;
+  onReview: () => void;
+}) {
+  return (
+    <section style={sectionStyle} aria-labelledby="boundary-review-title">
+      <h2 id="boundary-review-title" style={sectionTitleStyle}>Reporting Boundary Review</h2>
+      <p style={sectionNoteStyle}>
+        Record that an authorized user has reviewed the configured reporting boundary. This is separate
+        from CarbonLite calculation coverage and is not a certification or external assurance opinion.
+      </p>
+      <div style={trustGridStyle}>
+        <TrustFact label="Review status" value={getBoundaryDisplayStatus(profile)} />
+        <TrustFact label="Boundary version" value={`v${profile.boundaryVersion || 1}`} />
+        <TrustFact label="Reviewed by" value={profile.boundaryReviewedBy || 'Not assigned'} />
+        <TrustFact label="Reviewed at" value={formatDateTime(profile.boundaryReviewedAt)} />
+      </div>
+      {profile.boundaryReviewNote ? (
+        <div style={trustFactStyle}>
+          <span style={labelStyle}>Review note</span>
+          <span style={readOnlyValueStyle}>{profile.boundaryReviewNote}</span>
+        </div>
+      ) : null}
+      <div style={reviewActionPanelStyle}>
+        <label style={fieldStyle}>
+          <span style={labelStyle}>Reviewer note</span>
+          <textarea
+            value={reviewNote}
+            onChange={(event) => onReviewNoteChange(event.target.value)}
+            disabled={!canReview || isReviewing}
+            maxLength={1200}
+            style={boundaryReviewNoteStyle(!canReview || isReviewing)}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={onReview}
+          disabled={!canReview || isReviewing}
+          title={canReview ? 'Record boundary review' : 'Reviewer permission required'}
+          style={saveButtonStyle(!canReview || isReviewing)}
+        >
+          {isReviewing ? 'Recording Review...' : 'Review Boundary'}
+        </button>
+        <p style={permissionHelpStyle}>
+          {canReview
+            ? 'Use this after confirming the organization, period, facilities, scopes, and exclusions are correct.'
+            : 'Only organization owners, admins, or reviewers can record boundary review.'}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function MembersAndAccessSection({
+  currentUser,
+  roleLabel,
+  canManageMembers,
+}: {
+  currentUser: AuthUser | null;
+  roleLabel: string;
+  canManageMembers: boolean;
+}) {
+  return (
+    <section style={sectionStyle} aria-labelledby="members-access-title">
+      <h2 id="members-access-title" style={sectionTitleStyle}>Members & Roles</h2>
+      <p style={sectionNoteStyle}>
+        Workspace data is visible to organization-authorized users according to role. Authorization checks
+        are enforced by application permissions and must also be enforced by backend APIs.
+      </p>
+      <div style={memberRowStyle}>
+        <TrustFact label="Current user" value={currentUser?.name || currentUser?.email || 'Unknown user'} />
+        <TrustFact label="Email" value={currentUser?.email || 'Not available'} />
+        <TrustFact label="Role" value={roleLabel} />
+        <TrustFact label="Access status" value={currentUser ? 'Signed in' : 'Not signed in'} />
+      </div>
+      <p style={permissionHelpStyle}>
+        {canManageMembers
+          ? 'Member management is controlled by backend membership APIs when available.'
+          : 'Only organization owners or admins can manage members.'}
+      </p>
+    </section>
+  );
+}
+
+function DataPrivacySection() {
+  return (
+    <section style={sectionStyle} aria-labelledby="data-privacy-title">
+      <h2 id="data-privacy-title" style={sectionTitleStyle}>Data & Privacy</h2>
+      <p style={sectionNoteStyle}>
+        This section describes the customer-facing posture currently visible in the app.
+      </p>
+      <div style={trustGridStyle}>
+        <TrustFact
+          label="Data handling"
+          value="CarbonLite processes uploaded operational data to extract source rows, calculate emissions, and prepare review outputs."
+        />
+        <TrustFact
+          label="Retention"
+          value="Workspace data is retained until deleted by an authorized workspace user or by CarbonLite support action. No automatic deletion window is currently shown in the app."
+        />
+        <TrustFact
+          label="Deletion"
+          value="Deleting source documents or records may remove active workspace content; minimal audit metadata may remain for traceability."
+        />
+        <TrustFact
+          label="Backup / recovery"
+          value="No customer-facing backup or point-in-time recovery guarantee is currently configured in the app UI."
+        />
+        <TrustFact
+          label="Upload guidance"
+          value="Upload only information you are authorized to provide. Avoid unnecessary personal or sensitive information in source files."
+        />
+        <TrustFact
+          label="Exports"
+          value="Reports and CSV exports may contain uploaded source references, calculated values, review status, and audit metadata."
+        />
+      </div>
+    </section>
+  );
+}
+
+function TrustFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={trustFactStyle}>
+      <span style={labelStyle}>{label}</span>
+      <span style={readOnlyValueStyle}>{value}</span>
     </div>
   );
 }
@@ -365,6 +574,13 @@ function getReadOnlyFieldValue(profile: OrganizationProfile, key: keyof Organiza
   }
 
   return profile[key] || 'Not specified';
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Not reviewed';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not reviewed';
+  return date.toLocaleString();
 }
 
 function getSectionNote(title: string) {
@@ -412,6 +628,20 @@ const pageIntroStyle: React.CSSProperties = {
   fontSize: 16,
 };
 
+const currentUserContextStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+  alignItems: 'center',
+  margin: '0 0 20px',
+  color: '#334155',
+  fontSize: 13,
+};
+
+const currentUserContextDividerStyle: React.CSSProperties = {
+  color: '#cbd5e1',
+};
+
 const formStyle: React.CSSProperties = {
   display: 'grid',
   gap: 24,
@@ -442,6 +672,38 @@ const gridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
   gap: 16,
+};
+
+const trustGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 14,
+};
+
+const trustFactStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  alignContent: 'start',
+};
+
+const reviewActionPanelStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
+  marginTop: 16,
+  maxWidth: 680,
+};
+
+const permissionHelpStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#64748b',
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const memberRowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 14,
 };
 
 const fieldStyle: React.CSSProperties = {
@@ -503,6 +765,13 @@ function textareaStyle(disabled: boolean): React.CSSProperties {
     minHeight: 92,
     resize: disabled ? 'none' : 'vertical',
     fontFamily: 'inherit',
+  };
+}
+
+function boundaryReviewNoteStyle(disabled: boolean): React.CSSProperties {
+  return {
+    ...textareaStyle(disabled),
+    minHeight: 72,
   };
 }
 

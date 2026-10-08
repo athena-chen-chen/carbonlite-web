@@ -41,7 +41,7 @@ describe('data records CSV export', () => {
     expect(csv).not.toContain('Hotel - Canada');
   });
 
-  it('marks water as tracked only and uses Unassigned for missing site or facility', () => {
+  it('marks water as a tracked metric and uses Unassigned for missing site or facility', () => {
     const csv = buildDataRecordsCsv([
       {
         activityType: 'WATER',
@@ -62,7 +62,7 @@ describe('data records CSV export', () => {
     expect(csv).toContain('Water');
     expect(csv).toContain('Unassigned');
     expect(csv).toContain('Tracked Metric');
-    expect(csv).toContain('Tracked Only');
+    expect(csv).not.toContain('Tracked Only');
     expect(csv).toContain('Manual Entry');
   });
 

@@ -27,6 +27,23 @@ function cleanText(value?: string | number | null) {
   return String(value ?? '').trim();
 }
 
+function normalizeJurisdictionText(value?: string | number | null) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function isGenericJurisdictionValue(value?: string | number | null) {
+  const normalized = normalizeJurisdictionText(value);
+  return (
+    normalized === 'canada' ||
+    normalized === 'national' ||
+    normalized === 'canada - national' ||
+    normalized === 'canada (generic)' ||
+    normalized.includes('generic')
+  );
+}
+
 function getFileExtension(value?: string | number | null) {
   const text = cleanText(value).toLowerCase();
   const match = text.match(/\.([a-z0-9]+)(?:[?#].*)?$/);
@@ -178,10 +195,10 @@ export function formatReportVerification(input: {
   }
 
   const status = input.verified
-    ? 'Verified'
+    ? 'Reviewed'
     : formatCredibilityLabel(input.factorStatus) ||
       formatCredibilityLabel(input.verificationStatus) ||
-      'Unverified / user review required';
+      'Internal Review Required';
 
   if (isScope3PilotActivity(input.activityType) && !/consultant review recommended/i.test(status)) {
     return `${status} · Consultant Review Recommended`;
@@ -347,21 +364,50 @@ export function formatReportSourceType(
 
   if (value === 'MANUAL') return 'Manual Entry';
 
-  if (extension === 'xlsx' || extension === 'xls') return 'Spreadsheet Import';
+  if (extension === 'xlsx' || extension === 'xls') return 'Spreadsheet';
 
-  if (extension === 'csv') return 'Spreadsheet Import';
+  if (extension === 'csv') return 'Spreadsheet';
 
   if (extension === 'pdf') {
-    return documentExtracted ? 'PDF Extraction' : 'Uploaded PDF';
+    return 'PDF';
   }
 
-  if (value === 'CSV') return 'Spreadsheet Import';
-  if (value === 'EXCEL' || value === 'SPREADSHEET') return 'Spreadsheet Import';
+  if (value === 'CSV') return 'Spreadsheet';
+  if (value === 'EXCEL' || value === 'SPREADSHEET') return 'Spreadsheet';
+  if (value === 'PASTE') return 'Spreadsheet';
+  if (value === 'AI-ASSISTED SPREADSHEET IMPORT') return 'Spreadsheet';
+  if (value === 'AI-ASSISTED PDF EXTRACTION') return 'PDF';
+  if (value === 'AI-ASSISTED IMPORT') return 'Document';
+  if (documentExtracted) return 'Document';
+
+  return sourceType ? cleanText(sourceType) : 'Unknown';
+}
+
+export function formatReportImportMethod(
+  sourceType?: string | null,
+  sourceFileName?: string | null,
+  sourceReference?: string | null,
+) {
+  const value = cleanText(sourceType).toUpperCase();
+  const extension = getFileExtension(sourceFileName || sourceReference);
+
+  if (value === 'MANUAL') return 'Manual Entry';
+  if (
+    extension === 'xlsx' ||
+    extension === 'xls' ||
+    extension === 'csv' ||
+    value === 'CSV' ||
+    value === 'EXCEL' ||
+    value === 'SPREADSHEET' ||
+    value === 'AI-ASSISTED SPREADSHEET IMPORT'
+  ) {
+    return 'File Import';
+  }
+  if (extension === 'pdf' || value === 'DOCUMENT_AI' || value === 'AI_EXTRACTION' || value === 'AI-ASSISTED PDF EXTRACTION') {
+    return 'Document Extraction';
+  }
   if (value === 'PASTE') return 'Pasted Spreadsheet Rows';
-  if (value === 'AI-ASSISTED SPREADSHEET IMPORT') return 'Spreadsheet Import';
-  if (value === 'AI-ASSISTED PDF EXTRACTION') return 'PDF Extraction';
-  if (value === 'AI-ASSISTED IMPORT') return 'Document Import';
-  if (documentExtracted) return 'Document Import';
+  if (value === 'AI-ASSISTED IMPORT') return 'Document Extraction';
 
   return sourceType ? cleanText(sourceType) : 'Unknown';
 }
@@ -386,12 +432,7 @@ export function formatReportSourceReference(input: {
     return 'Not provided';
   }
 
-  if (
-    sourceType === 'Spreadsheet Import' ||
-    sourceType === 'PDF Extraction' ||
-    sourceType === 'Uploaded PDF' ||
-    sourceType === 'Uploaded Spreadsheet'
-  ) {
+  if (sourceType === 'Spreadsheet' || sourceType === 'PDF' || sourceType === 'Document') {
     return 'Not provided';
   }
 
@@ -424,6 +465,8 @@ export function formatTraceabilityReviewNote(detail: CalculationAuditDetail) {
 
   const calculationStatus = normalizeStatus(detail.calculationStatus);
   const matchingStatus = normalizeStatus(detail.matchingStatus);
+  const factorSelectionReason = normalizeStatus(detail.factorSelectionReason);
+  const factorSelectionExplanation = cleanText(detail.factorSelectionExplanation);
   const recordYear = Number(detail.recordYear ?? detail.reportingYear);
   const factorYear = Number(detail.factorYear ?? detail.sourceYear);
   const usedPriorYear =
@@ -431,6 +474,23 @@ export function formatTraceabilityReviewNote(detail: CalculationAuditDetail) {
     Number.isFinite(factorYear) &&
     factorYear > 0 &&
     factorYear < recordYear;
+  const activityRegion = cleanText(detail.jurisdictionRegion);
+  const factorRegion = cleanText(detail.factorJurisdictionRegion);
+  const factorCountry = cleanText(detail.factorJurisdictionCountry);
+  const usedGenericJurisdiction =
+    factorSelectionReason.includes('GENERIC_JURISDICTION') ||
+    (
+      Boolean(activityRegion) &&
+      !isGenericJurisdictionValue(activityRegion) &&
+      (
+        isGenericJurisdictionValue(factorRegion) ||
+        (!factorRegion && isGenericJurisdictionValue(factorCountry))
+      )
+    );
+  const explanationMentionsPriorYear = /prior[-\s]?year|nearest available|no exact.*year|latest available/i.test(
+    factorSelectionExplanation,
+  );
+  const shouldMentionPriorYear = usedPriorYear || explanationMentionsPriorYear;
 
   if (matchingStatus === 'MISSING_FACTOR' || detail.status === 'MISSING_FACTOR') {
     return 'Factor required before inclusion.';
@@ -444,7 +504,13 @@ export function formatTraceabilityReviewNote(detail: CalculationAuditDetail) {
     return 'Unit must match an available factor before inclusion.';
   }
 
-  if (usedPriorYear) return 'Prior-year factor used; review before formal reporting.';
+  if (usedGenericJurisdiction && shouldMentionPriorYear) {
+    return 'Canada-generic and prior-year fallback used; review before formal reporting.';
+  }
+  if (usedGenericJurisdiction) {
+    return 'Canada-generic jurisdiction fallback used; review before formal reporting.';
+  }
+  if (shouldMentionPriorYear) return 'Prior-year factor used; review before formal reporting.';
   if (isScope3PilotActivity(detail.activityType)) {
     return 'Pilot-stage Scope 3 estimate; consultant review recommended before formal reporting.';
   }
@@ -491,7 +557,7 @@ export function buildSourceEvidenceNote(input: {
   ) {
     const matched = factorName
       ? `Matched factor: ${factorName}${Number.isFinite(factorYear) && factorYear > 0 ? ` - ${factorYear}` : ''}.`
-      : 'Matched to CarbonLite System Factor.';
+      : 'Matched to a factor provided by CarbonLite.';
     const yearNote = usedPriorYear
       ? ' Using latest available prior-year factor because no factor was found for the record year.'
       : '';
@@ -500,7 +566,7 @@ export function buildSourceEvidenceNote(input: {
 
   if (isTrackedMetricDetail(detail)) return getTrackedMetricMessage(detail);
   if (matchingStatus === 'MISSING_FACTOR' || detail.status === 'MISSING_FACTOR') {
-    return 'No matching conversion factor is available for this record.';
+    return 'No matching emission factor is available for this record.';
   }
   if (matchingStatus === 'MISSING_JURISDICTION' || detail.status === 'MISSING_JURISDICTION') {
     return 'Required jurisdiction information is missing for factor matching.';

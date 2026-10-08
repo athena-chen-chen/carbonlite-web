@@ -39,6 +39,9 @@ describe('calculation traceability formatting', () => {
     } as any;
 
     expect(formatTraceableFactor(waterDetail)).toBe('N/A — Tracked Metric');
+    expect(buildCalculatedFormula(waterDetail)).toBe(
+      'Tracked Metric. Not included in the GHG emissions total.',
+    );
   });
 
   it('keeps quantity units plural while factor denominators are singular', () => {

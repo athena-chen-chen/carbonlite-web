@@ -26,14 +26,14 @@ import { openFeedbackOverlay } from '../utils/feedbackOverlay';
 import {
   summarizeInventoryBoundary,
 } from '../constants/inventoryBoundary';
-import { getDateOnlyYear } from '../utils/dateOnly';
 import {
   fetchOrganizationProfile,
   hasBackendOrganizationProfileSession,
   loadOrganizationProfile,
   ORGANIZATION_PROFILE_UPDATED_EVENT,
-  profileToInventoryBoundary,
+  profileToReportContextInventoryBoundary,
 } from '../services/organizationProfile';
+import { getWorkflowStage } from '../constants/carbonliteWorkflow';
 import {
   buildSiteFacilityRollup,
   type SiteFacilityBreakdownRow,
@@ -429,13 +429,14 @@ function handleDownloadPDF() {
   const hasLoadedSummary = lastUpdated !== null || summary !== null;
   const isInitialLoading = !hasLoadedSummary && !error;
   const isRefreshing = loading && hasLoadedSummary;
-  const inventoryBoundary = profileToInventoryBoundary(
+  const reportPeriod = `${periodStart} to ${periodEnd}`;
+  const inventoryBoundary = profileToReportContextInventoryBoundary(
     organizationProfile,
-    'Pilot sample reporting period',
+    reportPeriod,
   );
   const inventoryBoundarySummary = summarizeInventoryBoundary(
     inventoryBoundary,
-    `${getDateOnlyYear(periodEnd) ?? 2026} reporting period`,
+    reportPeriod,
   );
   const siteFacilityRollup = buildSiteFacilityRollup(calculationDetails);
   const siteFacilityBreakdownRows = siteFacilityRollup.rows;
@@ -697,26 +698,30 @@ function formatSiteFacilityActivityBreakdown(row: SiteFacilityBreakdownRow) {
 }
 
 function PilotReviewerWelcomePanel() {
+  const factorStage = getWorkflowStage('FACTORS_CALCULATIONS');
+  const resultsStage = getWorkflowStage('RESULTS');
+  const reportStage = getWorkflowStage('REPORT');
+
   return (
     <section aria-label="How to review CarbonLite" style={pilotReviewerPanelStyle}>
       <h2 style={pilotReviewerTitleStyle}>How to review CarbonLite</h2>
       <p style={pilotReviewerTextStyle}>This account is read-only and uses sample data only.</p>
-      <p style={pilotReviewerPathLabelStyle}>Suggested review path:</p>
+      <p style={pilotReviewerPathLabelStyle}>Suggested review path using the canonical CarbonLite workflow:</p>
       <ol style={pilotReviewerListStyle}>
         <li>
-          <Link to="/data-records" style={pilotReviewerLinkStyle}>Data Records</Link>
-          <span style={pilotReviewerDescriptionStyle}> — review sample activity data</span>
+          <Link to="/data-records" style={pilotReviewerLinkStyle}>Stage 3: Review & Resolve Data Issues</Link>
+          <span style={pilotReviewerDescriptionStyle}> — review sample activity data and source-data issues</span>
         </li>
         <li>
-          <Link to="/conversion-factors" style={pilotReviewerLinkStyle}>Factors</Link>
-          <span style={pilotReviewerDescriptionStyle}> — review emission factor transparency</span>
+          <Link to="/conversion-factors" style={pilotReviewerLinkStyle}>Stage {factorStage.step}: {factorStage.title}</Link>
+          <span style={pilotReviewerDescriptionStyle}> — review emission factor transparency and assumptions</span>
         </li>
         <li>
-          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Calculation Review</Link>
-          <span style={pilotReviewerDescriptionStyle}> — review totals and calculation trail</span>
+          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Stage {resultsStage.step}: {resultsStage.title}</Link>
+          <span style={pilotReviewerDescriptionStyle}> — review totals, hotspots, and calculation trail</span>
         </li>
         <li>
-          <Link to="/reports" style={pilotReviewerLinkStyle}>Reports</Link>
+          <Link to="/reports" style={pilotReviewerLinkStyle}>Stage {reportStage.step}: {reportStage.title}</Link>
           <span style={pilotReviewerDescriptionStyle}> — review sample report structure and disclaimer</span>
         </li>
         <li>

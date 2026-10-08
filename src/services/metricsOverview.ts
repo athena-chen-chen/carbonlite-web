@@ -36,6 +36,7 @@ import {
   getFactorAssumptionDisclosure,
   getFactorConfidenceLevel,
   getFactorSourceDocument,
+  getFactorSourceUrl,
   getFactorVerificationStatus,
   getFactorVersionLabel,
 } from '../utils/factorCredibility';
@@ -92,6 +93,7 @@ export type MetricsOverview = {
     sourceReference?: string | null;
     sourceDocumentId?: string | null;
     sourceFileName?: string | null;
+    sourceSheetName?: string | null;
     sourcePage?: string | number | null;
     sourceRow?: string | number | null;
     sourceTextSnippet?: string | null;
@@ -145,6 +147,7 @@ type SupplementalCalculation = {
   unit: string;
   emissions: number;
   factor: MatchableConversionFactor;
+  match: NonNullable<ReturnType<typeof findBestConversionFactorMatch>>;
 };
 
 type MatchedActivityEmission = NonNullable<
@@ -155,7 +158,7 @@ type UsedConversionFactor = NonNullable<
 >[number];
 type CalculationExplanationRecord = NonNullable<MetricsSummaryResponse['records']>[number];
 
-const VISIBLE_FACTOR_LIBRARY_MATCH_MESSAGE = 'Matched to CarbonLite System Factor.';
+const VISIBLE_FACTOR_LIBRARY_MATCH_MESSAGE = 'Matched to a factor provided by CarbonLite.';
 
 function firstFiniteNumber(...values: unknown[]) {
   for (const value of values) {
@@ -279,12 +282,12 @@ export async function loadMetricsOverview(options?: {
     supplementalCalculations,
     activities,
   );
-  const facilityEnrichedCalculationDetails = enrichCalculationDetailsWithActivityFacilities(
+  const metadataEnrichedCalculationDetails = enrichCalculationDetailsWithActivityMetadata(
     mergedCalculationDetails,
     activities,
   );
   const finalCalculationDetails = dedupeCalculationDetailsByActivityId(
-    facilityEnrichedCalculationDetails,
+    metadataEnrichedCalculationDetails,
   );
   const finalProcessedRecords = getOverviewProcessedRecords({
     calculationDetails: finalCalculationDetails,
@@ -634,7 +637,9 @@ function mergeCalculationRecordsIntoDetails(
       factorSource: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? 'Source not specified',
       sourceAuthority: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? null,
       sourceDocument: activity?.matchedFactorSourceDocument ?? record.factor?.sourceDocument ?? null,
-      sourceUrl: record.factor?.sourceUrl ?? null,
+      sourceUrl: activity?.matchedFactorSourceUrl ?? record.factor?.sourceUrl ?? null,
+      factorSelectionReason: activity?.factorSelectionReason ?? null,
+      factorSelectionExplanation: activity?.factorSelectionExplanation ?? null,
       sourceYear: activity?.matchedFactorSourceYear ?? record.factor?.sourceYear ?? null,
       boundary: record.factor?.boundary ?? null,
       factorNotes: record.factor?.notes ?? null,
@@ -655,11 +660,15 @@ function mergeCalculationRecordsIntoDetails(
       sourceType: activity?.sourceType ?? 'UNKNOWN',
       sourceReference: activity?.sourceReference ?? null,
       sourceFileName: activity?.sourceFileName ?? null,
+      sourceSheetName: activity?.sourceSheetName ?? null,
       sourcePage: activity?.sourcePage ?? null,
       sourceRow: activity?.sourceRow ?? null,
       sourceTextSnippet: activity?.sourceTextSnippet ?? null,
       sourceDocumentId: activity?.sourceDocumentId ?? null,
-      costCad: firstPresentCost(record.costCad, activity?.costCad),
+      costCad: firstPresentCost(
+        normalizeApiCostCandidate(record.costCad, record.costCurrency, activity?.costCad),
+        activity?.costCad,
+      ),
       costCurrency: firstPresentString(record.costCurrency, activity?.costCurrency),
       notes: activity?.notes ?? null,
     };
@@ -764,7 +773,9 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       factorSource: factor?.sourceAuthority ?? 'Source not specified',
       sourceAuthority: factor?.sourceAuthority ?? null,
       sourceDocument: factor?.sourceDocument ?? null,
-      sourceUrl: factor?.sourceUrl ?? null,
+      sourceUrl: activity?.matchedFactorSourceUrl ?? factor?.sourceUrl ?? null,
+      factorSelectionReason: activity?.factorSelectionReason ?? null,
+      factorSelectionExplanation: activity?.factorSelectionExplanation ?? null,
       sourceYear: factor?.sourceYear ?? null,
       boundary: factor?.boundary ?? null,
       factorNotes: factor?.notes ?? null,
@@ -785,11 +796,15 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       sourceType: emission.sourceType ?? activity?.sourceType ?? 'UNKNOWN',
       sourceReference: emission.sourceReference ?? activity?.sourceReference ?? null,
       sourceFileName: emission.sourceFileName ?? activity?.sourceFileName ?? null,
+      sourceSheetName: emission.sourceSheetName ?? activity?.sourceSheetName ?? null,
       sourcePage: emission.sourcePage ?? activity?.sourcePage ?? null,
       sourceRow: emission.sourceRow ?? activity?.sourceRow ?? null,
       sourceTextSnippet: emission.sourceTextSnippet ?? activity?.sourceTextSnippet ?? null,
       sourceDocumentId: emission.sourceDocumentId ?? activity?.sourceDocumentId ?? null,
-      costCad: firstPresentCost(emission.costCad, activity?.costCad),
+      costCad: firstPresentCost(
+        normalizeApiCostCandidate(emission.costCad, emission.costCurrency, activity?.costCad),
+        activity?.costCad,
+      ),
       costCurrency: firstPresentString(emission.costCurrency, activity?.costCurrency),
       notes: emission.notes ?? activity?.notes ?? null,
     };
@@ -864,7 +879,7 @@ function formatJurisdiction(activity?: ActivityDataItem) {
     .join(', ');
 }
 
-function enrichCalculationDetailsWithActivityFacilities(
+function enrichCalculationDetailsWithActivityMetadata(
   calculationDetails: CalculationAuditDetail[],
   activities: ActivityDataItem[],
 ) {
@@ -892,8 +907,19 @@ function enrichCalculationDetailsWithActivityFacilities(
         .map((part) => String(part ?? '').trim())
         .filter(Boolean)
         .join(', ');
-    const costCad = firstPresentCost(detail.costCad, activity.costCad);
+    const costCad = firstPresentCost(
+      normalizeApiCostCandidate(detail.costCad, detail.costCurrency, activity.costCad),
+      activity.costCad,
+    );
     const costCurrency = firstPresentString(detail.costCurrency, activity.costCurrency);
+    const sourceType = firstPresentString(detail.sourceType, activity.sourceType) ?? detail.sourceType;
+    const sourceReference = firstPresentString(detail.sourceReference, activity.sourceReference);
+    const sourceFileName = firstPresentString(detail.sourceFileName, activity.sourceFileName);
+    const sourceSheetName = firstPresentString(detail.sourceSheetName, activity.sourceSheetName);
+    const sourcePage = firstPresentString(detail.sourcePage, activity.sourcePage);
+    const sourceRow = firstPresentString(detail.sourceRow, activity.sourceRow);
+    const sourceTextSnippet = firstPresentString(detail.sourceTextSnippet, activity.sourceTextSnippet);
+    const sourceDocumentId = firstPresentString(detail.sourceDocumentId, activity.sourceDocumentId);
 
     if (
       facilityId === detail.facilityId &&
@@ -902,7 +928,15 @@ function enrichCalculationDetailsWithActivityFacilities(
       jurisdictionRegion === detail.jurisdictionRegion &&
       jurisdiction === detail.jurisdiction &&
       costCad === detail.costCad &&
-      costCurrency === detail.costCurrency
+      costCurrency === detail.costCurrency &&
+      sourceType === detail.sourceType &&
+      sourceReference === detail.sourceReference &&
+      sourceFileName === detail.sourceFileName &&
+      sourceSheetName === detail.sourceSheetName &&
+      sourcePage === detail.sourcePage &&
+      sourceRow === detail.sourceRow &&
+      sourceTextSnippet === detail.sourceTextSnippet &&
+      sourceDocumentId === detail.sourceDocumentId
     ) {
       return detail;
     }
@@ -914,6 +948,14 @@ function enrichCalculationDetailsWithActivityFacilities(
       jurisdiction: jurisdiction || detail.jurisdiction,
       jurisdictionCountry: jurisdictionCountry ?? null,
       jurisdictionRegion: jurisdictionRegion ?? null,
+      sourceType,
+      sourceReference,
+      sourceFileName,
+      sourceSheetName,
+      sourcePage,
+      sourceRow,
+      sourceTextSnippet,
+      sourceDocumentId,
       costCad,
       costCurrency,
     };
@@ -1007,6 +1049,21 @@ function firstPresentCost(...values: unknown[]) {
   return null;
 }
 
+function normalizeApiCostCandidate(
+  value: unknown,
+  currency?: unknown,
+  activityCost?: unknown,
+) {
+  const cost = firstPresentCost(value);
+  if (cost !== 0) return cost;
+
+  const activityCostValue = firstPresentCost(activityCost);
+  if (activityCostValue === 0) return 0;
+
+  const hasCurrency = firstPresentString(currency) !== null;
+  return hasCurrency ? 0 : null;
+}
+
 function isCompleteCalculatedDetail(detail?: CalculationAuditDetail) {
   return (
     detail?.status === 'CALCULATED' &&
@@ -1079,6 +1136,7 @@ async function buildSupplementalCalculations(input: {
         unit: normalizedUnit.value,
         emissions: quantity * factorValue,
         factor: match.factor,
+        match,
       },
     ];
   });
@@ -1146,7 +1204,7 @@ function buildSupplementalCalculationDetail(
     dateEstimated: false,
     reportingYear: recordYear ?? null,
     recordYear,
-    jurisdiction: formatJurisdiction(activity) || item.factor.jurisdiction || '',
+    jurisdiction: formatJurisdiction(activity),
     jurisdictionCountry: activity?.jurisdictionCountry ?? null,
     jurisdictionRegion: activity?.jurisdictionRegion ?? null,
     jurisdictionSource: activity ? 'record' : null,
@@ -1169,6 +1227,9 @@ function buildSupplementalCalculationDetail(
     factorSource: sourceAuthority || 'Source not specified',
     sourceAuthority,
     sourceDocument: getFactorSourceDocument(item.factor) || null,
+    sourceUrl: activity?.matchedFactorSourceUrl ?? (getFactorSourceUrl(item.factor) || null),
+    factorSelectionReason: activity?.factorSelectionReason ?? item.match.selectionReason,
+    factorSelectionExplanation: activity?.factorSelectionExplanation ?? item.match.selectionExplanation,
     sourceYear: item.factor.sourceYear ?? null,
     boundary: item.factor.boundary ?? null,
     factorNotes: item.factor.notes ?? null,
@@ -1191,6 +1252,7 @@ function buildSupplementalCalculationDetail(
     sourceType: activity?.sourceType ?? 'MANUAL',
     sourceReference: activity?.sourceReference ?? null,
     sourceFileName: activity?.sourceFileName ?? null,
+    sourceSheetName: activity?.sourceSheetName ?? null,
     sourcePage: activity?.sourcePage ?? null,
     sourceRow: activity?.sourceRow ?? null,
     sourceTextSnippet: activity?.sourceTextSnippet ?? null,
@@ -1218,6 +1280,7 @@ function buildSupplementalMatchedEmission(
     sourceReference: activity?.sourceReference ?? null,
     sourceDocumentId: activity?.sourceDocumentId ?? null,
     sourceFileName: activity?.sourceFileName ?? null,
+    sourceSheetName: activity?.sourceSheetName ?? null,
     sourcePage: activity?.sourcePage ?? null,
     sourceRow: activity?.sourceRow ?? null,
     sourceTextSnippet: activity?.sourceTextSnippet ?? null,
@@ -1265,7 +1328,9 @@ function mergeConversionFactorsUsed(
       assumptions: getFactorAssumptionDisclosure(item.activityType, item.factor) || null,
       sourceAuthority: getFactorSourceAuthority(item.factor) || 'Source not specified',
       sourceDocument: getFactorSourceDocument(item.factor) || null,
-      sourceUrl: item.factor.sourceUrl ?? null,
+      sourceUrl: getFactorSourceUrl(item.factor) || null,
+      factorSelectionReason: item.match.selectionReason,
+      factorSelectionExplanation: item.match.selectionExplanation,
       sourceYear: item.factor.sourceYear ?? null,
       factorType: item.factor.organizationId ? 'Custom' : 'System',
       verified: Boolean(item.factor.verified),

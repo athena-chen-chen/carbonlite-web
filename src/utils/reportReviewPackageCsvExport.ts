@@ -20,12 +20,18 @@ import {
   resolveScopeClassification,
 } from './scopeClassification';
 import type { SiteFacilityBreakdownRow } from './siteFacilityBreakdown';
+import {
+  buildEvidenceChainFromCalculationDetail,
+  type EvidenceChainReportMetadata,
+} from './businessAuditTrail';
+import { formatReportTreatmentLabel } from './terminology';
 
 export type ReviewPackageCsvKind =
   | 'data-records'
   | 'site-facility-breakdown'
   | 'factor-source-summary'
   | 'calculation-traceability'
+  | 'audit-evidence'
   | 'records-requiring-review';
 
 type CsvPrimitive = string | number;
@@ -72,8 +78,8 @@ function getScope(detail: CalculationAuditDetail) {
 }
 
 function getTreatment(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Tracked Only';
-  return detail.status === 'CALCULATED' ? 'Included' : 'Excluded';
+  if (isTrackedMetricDetail(detail)) return formatReportTreatmentLabel('TRACKED_ONLY');
+  return formatReportTreatmentLabel(detail.status === 'CALCULATED' ? 'INCLUDED' : 'EXCLUDED');
 }
 
 function getStatus(detail: CalculationAuditDetail) {
@@ -112,7 +118,7 @@ function getFactorUnit(detail: CalculationAuditDetail) {
 }
 
 function getFormula(detail: CalculationAuditDetail) {
-  if (isTrackedMetricDetail(detail)) return 'Tracked only — excluded from GHG total';
+  if (isTrackedMetricDetail(detail)) return 'Tracked metric — excluded from GHG total';
   if (detail.status !== 'CALCULATED') return getIssueType(detail) || 'Calculation not completed';
   return detail.calculationFormula || buildCalculatedFormula(detail);
 }
@@ -244,7 +250,7 @@ export function buildReviewPackageSiteFacilityActivityBreakdownCsv(rows: SiteFac
       row.siteFacility || 'Unassigned',
         activity.activityType,
         '',
-        'Included',
+        formatReportTreatmentLabel('INCLUDED'),
         '',
         '',
         numberValue(activity.totalKgCO2e),
@@ -344,6 +350,86 @@ export function buildReviewPackageCalculationTraceabilityCsv(details: Calculatio
   );
 }
 
+export function buildReviewPackageAuditEvidenceCsv(
+  details: CalculationAuditDetail[],
+  report: EvidenceChainReportMetadata = {},
+) {
+  const chains = details.map((detail) =>
+    buildEvidenceChainFromCalculationDetail(detail, { report }),
+  );
+
+  return buildCsv(
+    [
+      'Source Document ID',
+      'Source File',
+      'Source Sheet',
+      'Source Row',
+      'Source Reference',
+      'Activity Data ID',
+      'Activity Version',
+      'Activity Type',
+      'Quantity',
+      'Unit',
+      'Country',
+      'Province',
+      'Treatment',
+      'Factor ID',
+      'Factor Version ID',
+      'Factor Version',
+      'Factor Name',
+      'Factor Value',
+      'Factor Unit',
+      'Factor Source',
+      'Factor Source Year',
+      'Conversion Status',
+      'Conversion Reason',
+      'Calculation ID',
+      'Calculation Version',
+      'Formula',
+      'Calculated Emissions kgCO2e',
+      'Scope',
+      'Scope Source',
+      'Report ID',
+      'Report Version',
+      'Warnings',
+    ],
+    chains.map((chain) => [
+      clean(chain.sourceDocument.id),
+      chain.sourceDocument.fileName,
+      chain.sourceDocument.sheetName,
+      chain.sourceDocument.row,
+      chain.sourceDocument.sourceReference,
+      chain.reviewedActivity.id,
+      chain.reviewedActivity.version,
+      chain.reviewedActivity.activityType,
+      numberValue(chain.reviewedActivity.quantity),
+      chain.reviewedActivity.unit,
+      chain.reviewedActivity.jurisdictionCountry,
+      chain.reviewedActivity.jurisdictionRegion,
+      chain.reviewedActivity.reportTreatment,
+      clean(chain.factor.id),
+      clean(chain.factor.versionId),
+      chain.factor.version,
+      chain.factor.name,
+      chain.factor.value,
+      chain.factor.unit,
+      chain.factor.source,
+      chain.factor.sourceYear,
+      chain.conversion.status,
+      chain.conversion.reason,
+      clean(chain.calculation.id),
+      chain.calculation.version ?? '',
+      chain.calculation.formula,
+      chain.calculation.resultKgCO2e ?? '',
+      chain.scope.value,
+      chain.scope.source,
+      chain.finalResult.reportId,
+      chain.finalResult.reportVersion,
+      chain.warnings.join('; '),
+    ]),
+  );
+}
+
 export function buildReviewPackageRecordsRequiringReviewCsv(details: CalculationAuditDetail[]) {
   const reviewRows = details.filter((detail) => isRecordRequiringCorrection(detail));
 
@@ -388,6 +474,7 @@ export function getReviewPackageCsvFileName(kind: ReviewPackageCsvKind, date = n
     'site-facility-breakdown': 'carbonlite-site-facility-breakdown',
     'factor-source-summary': 'carbonlite-factor-source-summary',
     'calculation-traceability': 'carbonlite-calculation-traceability',
+    'audit-evidence': 'carbonlite-audit-evidence',
     'records-requiring-review': 'carbonlite-records-requiring-review',
   };
 

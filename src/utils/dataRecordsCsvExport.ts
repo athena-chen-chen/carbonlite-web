@@ -5,6 +5,11 @@ import {
   formatScopeClassification,
   resolveScopeClassification,
 } from './scopeClassification';
+import {
+  formatCalculationStatusLabel,
+  formatReportTreatmentLabel,
+  TERMINOLOGY,
+} from './terminology';
 import { normalizeUnitForDisplay } from './unitNormalization';
 
 export type DataRecordCsvExportItem = {
@@ -31,6 +36,15 @@ export type DataRecordCsvExportItem = {
   matchedFactorName?: string | null;
   matchedFactorValue?: number | string | null;
   matchedFactorUnit?: string | null;
+  matchedFactorSourceYear?: number | string | null;
+  matchedFactorVersion?: string | null;
+  matchedFactorSourceAuthority?: string | null;
+  matchedFactorSourceDocument?: string | null;
+  matchedFactorSourceUrl?: string | null;
+  matchedFactorVerificationStatus?: string | null;
+  matchedFactorConfidenceLevel?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
   calculatedEmissionsKgCO2e?: number | string | null;
   calculatedEmission?: number | string | null;
   calculationStatus?: string | null;
@@ -47,6 +61,15 @@ export const DATA_RECORDS_CSV_HEADERS = [
   'Scope',
   'Emission Factor',
   'Factor Unit',
+  'Factor Source Year',
+  'Factor Version',
+  'Factor Source Authority',
+  'Factor Source Document',
+  'Factor Source URL',
+  'Factor Verification Status',
+  'Factor Confidence Level',
+  'Factor Selection Reason',
+  'Factor Selection Explanation',
   'Calculated Emissions kgCO2e',
   'Treatment',
   'Status',
@@ -59,13 +82,13 @@ type DataRecordsCsvHeader = (typeof DATA_RECORDS_CSV_HEADERS)[number];
 type DataRecordsCsvRow = Record<DataRecordsCsvHeader, string>;
 
 const STATUS_LABELS: Record<string, string> = {
-  CALCULATED: 'Ready',
-  MATCHED: 'Ready',
-  READY: 'Ready',
-  INCLUDED: 'Included',
-  TRACKED_ONLY: 'Tracked Metric',
-  TRACKED_METRIC: 'Tracked Metric',
-  REQUIRES_REVIEW: 'Requires Review',
+  CALCULATED: TERMINOLOGY.calculated,
+  MATCHED: TERMINOLOGY.factorMatched,
+  READY: TERMINOLOGY.readyForCalculation,
+  INCLUDED: TERMINOLOGY.includedInGhgTotal,
+  TRACKED_ONLY: TERMINOLOGY.trackedMetric,
+  TRACKED_METRIC: TERMINOLOGY.trackedMetric,
+  REQUIRES_REVIEW: TERMINOLOGY.needsReview,
   MISSING_FACTOR: 'Missing Factor',
   MISSING_PROVINCE: 'Missing Province',
   MISSING_JURISDICTION: 'Missing Province',
@@ -160,8 +183,8 @@ function formatScope(record: DataRecordCsvExportItem) {
 }
 
 function formatTreatment(record: DataRecordCsvExportItem) {
-  if (isTrackedMetricRecord(record)) return 'Tracked Only';
-  return formatDisplayLabel(record.reportTreatment) || '';
+  if (isTrackedMetricRecord(record)) return TERMINOLOGY.trackedMetric;
+  return formatReportTreatmentLabel(record.reportTreatment) || '';
 }
 
 function formatRecordStatus(record: DataRecordCsvExportItem) {
@@ -176,13 +199,13 @@ function formatRecordStatus(record: DataRecordCsvExportItem) {
     matchingStatus === 'MATCHED' ||
     treatment === 'INCLUDED'
   ) {
-    return 'Ready';
+    return TERMINOLOGY.calculated;
   }
 
   return (
-    formatDisplayLabel(record.calculationStatus) ||
-    formatDisplayLabel(record.matchingStatus) ||
-    formatDisplayLabel(record.reportTreatment) ||
+    formatCalculationStatusLabel(record.calculationStatus) ||
+    formatCalculationStatusLabel(record.matchingStatus) ||
+    formatReportTreatmentLabel(record.reportTreatment) ||
     ''
   );
 }
@@ -204,6 +227,15 @@ function buildDataRecordsCsvRows(records: DataRecordCsvExportItem[]): DataRecord
       : formatOptionalValue(getFactorDisplayName(record.matchedFactorName)) ||
         formatNumberValue(record.matchedFactorValue),
     'Factor Unit': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorUnit),
+    'Factor Source Year': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceYear),
+    'Factor Version': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorVersion),
+    'Factor Source Authority': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceAuthority),
+    'Factor Source Document': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceDocument),
+    'Factor Source URL': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceUrl),
+    'Factor Verification Status': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorVerificationStatus),
+    'Factor Confidence Level': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorConfidenceLevel),
+    'Factor Selection Reason': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.factorSelectionReason),
+    'Factor Selection Explanation': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.factorSelectionExplanation),
     'Calculated Emissions kgCO2e': isTrackedMetricRecord(record)
       ? ''
       : formatNumberValue(record.calculatedEmissionsKgCO2e ?? record.calculatedEmission),

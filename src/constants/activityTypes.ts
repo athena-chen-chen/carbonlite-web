@@ -13,7 +13,7 @@ export type PilotActivityTypeDefinition = {
   value: PilotActivityType;
   label: string;
   defaultScope?: 'SCOPE_1' | 'SCOPE_2' | 'SCOPE_3';
-  reportTreatment: 'Included' | 'Tracked Only';
+  reportTreatment: 'Included in GHG Total' | 'Tracked Metric';
   provinceRequired: boolean;
   factorRequired: boolean;
   supportedUnits: string[];
@@ -25,7 +25,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'ELECTRICITY',
     label: 'Electricity',
     defaultScope: 'SCOPE_2',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: true,
     factorRequired: true,
     supportedUnits: ['kWh'],
@@ -35,7 +35,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'NATURAL_GAS',
     label: 'Natural Gas',
     defaultScope: 'SCOPE_1',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['m3', 'GJ'],
@@ -45,7 +45,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'GASOLINE',
     label: 'Gasoline',
     defaultScope: 'SCOPE_1',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['liters', 'L'],
@@ -55,7 +55,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'DIESEL',
     label: 'Diesel',
     defaultScope: 'SCOPE_1',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['liters', 'L'],
@@ -65,7 +65,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'AIR_TRAVEL',
     label: 'Air Travel',
     defaultScope: 'SCOPE_3',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['km'],
@@ -75,7 +75,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'HOTEL',
     label: 'Business Travel - Accommodation',
     defaultScope: 'SCOPE_3',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['nights'],
@@ -85,7 +85,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'GROUND_TRANSPORT',
     label: 'Ground Transport',
     defaultScope: 'SCOPE_3',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['km'],
@@ -94,7 +94,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
   {
     value: 'WATER',
     label: 'Water',
-    reportTreatment: 'Tracked Only',
+    reportTreatment: 'Tracked Metric',
     provinceRequired: false,
     factorRequired: false,
     supportedUnits: ['m3'],
@@ -104,7 +104,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     value: 'SHIPPING',
     label: 'Shipping',
     defaultScope: 'SCOPE_3',
-    reportTreatment: 'Included',
+    reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
     supportedUnits: ['ton-km'],
@@ -140,4 +140,13 @@ export function getDefaultUnitForActivityType(value?: string | null) {
   const definition = getPilotActivityTypeDefinition(normalized);
 
   return definition?.defaultUnit ?? definition?.supportedUnits[0] ?? '';
+}
+
+export function getSupportedUnitsForActivityType(value?: string | null) {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  const definition =
+    getPilotActivityTypeDefinition(normalized) ??
+    pilotActivityTypeDefinitions.find((item) => item.label.toUpperCase() === normalized);
+
+  return definition?.supportedUnits ?? [];
 }

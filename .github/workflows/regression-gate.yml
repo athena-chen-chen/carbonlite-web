@@ -36,10 +36,18 @@ jobs:
       - name: Run deployment verification
         run: pnpm verify:deployment
 
-      - name: Upload Playwright report on failure
-        if: failure()
+      - name: Upload Playwright report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: carbonlite-playwright-report
           path: apps/web-e2e/playwright-report
+          retention-days: 7
+
+      - name: Upload Playwright failure artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carbonlite-playwright-test-results
+          path: apps/web-e2e/test-results
           retention-days: 7

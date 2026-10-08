@@ -12,6 +12,7 @@ import { getAllConversionFactors } from '../services/conversionFactors';
 import {
   activityTypes,
   getDefaultUnitForActivityType,
+  getSupportedUnitsForActivityType,
 } from '../constants/activityTypes';
 import * as XLSX from 'xlsx';
 import {
@@ -53,7 +54,6 @@ import {
   getTodayDateOnly,
   isValidDateOnly,
 } from '../utils/dateOnly';
-import { getActivityTypeLabel } from '../utils/activityType';
 import { getFacilities, type FacilityItem } from '../services/facilities';
 import {
   ManualEntryForm,
@@ -67,6 +67,7 @@ import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { formatReportFactorUnit } from '../utils/reportCredibility';
 import { getActivitySourceType } from '../utils/activitySourceType';
 import { formatCount, formatEmissionsUnit } from '../utils/numberFormatting';
+import { getActivityTypeLabel } from '../utils/activityType';
 
 type Row = {
   id: string;
@@ -97,11 +98,14 @@ type Row = {
   factorSourceLabel?: string;
   factorSourceAuthority?: string;
   factorSourceDocument?: string;
+  factorSourceUrl?: string;
   factorSourceYear?: string | number | null;
   factorVersion?: string;
   factorConfidenceLevel?: string;
   factorVerificationStatus?: string;
   factorAssumptions?: string;
+  factorSelectionReason?: string;
+  factorSelectionExplanation?: string;
   factorCredibilityBadges?: string[];
   factorYearFallback?: boolean;
   factorResultUnit?: string;
@@ -305,14 +309,22 @@ function buildSpreadsheetObjectsFromWorksheet(worksheet: XLSX.WorkSheet) {
 
 type ExcelInputTableMode = 'spreadsheet' | 'manual';
 
+export type ExcelInputTableSaveResult = {
+  source: 'manual' | 'spreadsheet';
+  sourceDocumentId?: string;
+  sourceDocumentFileName?: string;
+  savedReviewRows?: SpreadsheetReviewRowInput[];
+  savedCount?: number;
+  readyCount?: number;
+  needsReviewCount?: number;
+  trackedOnlyCount?: number;
+};
+
 export function ExcelInputTable({
   onSuccess,
   mode = 'manual',
 }: {
-  onSuccess: (result?: {
-    source: 'manual' | 'spreadsheet';
-    sourceDocumentId?: string;
-  }) => void | Promise<void>;
+  onSuccess: (result?: ExcelInputTableSaveResult) => void | Promise<void>;
   mode?: ExcelInputTableMode;
 }) {
   const canImportRows = canImportActivityRecords(getCurrentUser());
@@ -326,33 +338,43 @@ export function ExcelInputTable({
   const [bulkProvince, setBulkProvince] = useState('');
   const [bulkProvinceMessage, setBulkProvinceMessage] = useState('');
   const [facilities, setFacilities] = useState<FacilityItem[]>([]);
+  const [conversionFactors, setConversionFactors] = useState<any[]>([]);
+  const facilitiesRef = useRef<FacilityItem[]>([]);
+  const conversionFactorsRef = useRef<any[]>([]);
   const [isSavingAll, setIsSavingAll] = useState(false);
   const isSpreadsheetMode = mode === 'spreadsheet';
+
   useEffect(() => {
-  async function loadReferenceData() {
-    try {
-      const [factorItems, facilityData] = await Promise.all([
-        getAllConversionFactors(),
-        getFacilities().catch(() => []),
-      ]);
-      setConversionFactors(factorItems ?? []);
-      setFacilities(facilityData);
-    } catch {
-      setConversionFactors([]);
-      setFacilities([]);
+    async function loadReferenceData() {
+      try {
+        const [factorItems, facilityData] = await Promise.all([
+          getAllConversionFactors(),
+          getFacilities().catch(() => []),
+        ]);
+        conversionFactorsRef.current = factorItems ?? [];
+        facilitiesRef.current = facilityData;
+        setConversionFactors(factorItems ?? []);
+        setFacilities(facilityData);
+      } catch {
+        conversionFactorsRef.current = [];
+        facilitiesRef.current = [];
+        setConversionFactors([]);
+        setFacilities([]);
+      }
     }
-  }
 
-  loadReferenceData();
-}, []);
-const [conversionFactors, setConversionFactors] = useState<any[]>([]);
-useEffect(() => {
-  setRows((prev) => prev.map(applyFactorToRow));
-}, [conversionFactors, facilities]);
+    loadReferenceData();
+  }, []);
 
-const hasUnsavedRows = rows.some(
-  (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
-);
+  useEffect(() => {
+    facilitiesRef.current = facilities;
+    conversionFactorsRef.current = conversionFactors;
+    setRows((prev) => prev.map(applyFactorToRow));
+  }, [conversionFactors, facilities]);
+
+  const hasUnsavedRows = rows.some(
+    (row) => !isRowCompletelyEmpty(row) && row.status !== 'saved',
+  );
 
 useEffect(() => {
   function handleBeforeUnload(event: BeforeUnloadEvent) {
@@ -461,14 +483,14 @@ function findMatchingFactor(row: Pick<Row, 'activityType' | 'unit' | 'jurisdicti
     recordYear,
     organizationId: getOrganizationId(getCurrentUser()),
     allowPlaceholderConfidence: true,
-    factors: conversionFactors,
+    factors: conversionFactorsRef.current,
   };
   return findBestConversionFactorMatch(matchInput);
 }
 
-function getSupportedUnitsForActivityType(activityType: string) {
+function getAvailableFactorUnitsForActivityType(activityType: string) {
   const normalizedActivityType = normalizeActivityType(activityType);
-  const units = conversionFactors
+  const units = conversionFactorsRef.current
     .filter((factor) => normalizeFactorActivityType(factor) === normalizedActivityType)
     .map((factor) => factor.inputUnit || factor.unit)
     .filter((unit): unit is string => Boolean(unit));
@@ -491,7 +513,9 @@ function getRowCalculationReview(
     };
   }
 
-  const supportedUnits = getSupportedUnitsForActivityType(row.activityType);
+  const activitySupportedUnits = getSupportedUnitsForActivityType(row.activityType);
+  const availableFactorUnits = getAvailableFactorUnitsForActivityType(row.activityType);
+  const supportedUnits = activitySupportedUnits.length ? activitySupportedUnits : availableFactorUnits;
 
   if (row.activityType === 'ELECTRICITY' && !normalizeJurisdictionRegion(row.jurisdictionRegion)) {
     return {
@@ -517,40 +541,49 @@ function getRowCalculationReview(
   if (normalizedUnit.status !== 'valid') {
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
       supportedUnits,
     };
   }
 
-  const normalizedSupportedUnits = supportedUnits.map((unit) => normalizeUnitForDisplay(unit).value);
+  const normalizedSupportedUnits = supportedUnits
+    .map((unit) => normalizeUnitForDisplay(unit))
+    .filter((unit): unit is { status: 'valid'; value: string } => unit.status === 'valid')
+    .map((unit) => unit.value);
   if (supportedUnits.length > 0 && !normalizedSupportedUnits.includes(normalizedUnit.value)) {
-    const compatibleUnits = getCompatibleFactorUnitLabels({
-      activityType: row.activityType,
-      inputUnit: normalizedUnit.value,
-      jurisdictionCountry: row.jurisdictionCountry,
-      jurisdictionRegion: row.jurisdictionRegion,
-      recordYear,
-      organizationId: getOrganizationId(getCurrentUser()),
-      allowPlaceholderConfidence: true,
-      factors: conversionFactors,
-    }).filter((unit) => unit.toLowerCase() !== normalizedUnit.value.toLowerCase());
-
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: compatibleUnits.length > 0
-        ? buildFactorUnitMismatchMessage({
-          activityType: row.activityType,
-          inputUnit: normalizedUnit.value,
-          availableUnits: compatibleUnits,
-        })
-        : `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} factor unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      supportedUnits,
+    };
+  }
+
+  const compatibleUnits = getCompatibleFactorUnitLabels({
+    activityType: row.activityType,
+    inputUnit: normalizedUnit.value,
+    jurisdictionCountry: row.jurisdictionCountry,
+    jurisdictionRegion: row.jurisdictionRegion,
+    recordYear,
+    organizationId: getOrganizationId(getCurrentUser()),
+    allowPlaceholderConfidence: true,
+    factors: conversionFactorsRef.current,
+  }).filter((unit) => unit.toLowerCase() !== normalizedUnit.value.toLowerCase());
+
+  if (compatibleUnits.length > 0) {
+    return {
+      calculationStatus: 'invalidUnit' as const,
+      calculationMessage: buildFactorUnitMismatchMessage({
+        activityType: row.activityType,
+        inputUnit: normalizedUnit.value,
+        availableUnits: compatibleUnits,
+      }),
       supportedUnits,
     };
   }
 
   return {
     calculationStatus: 'missingFactor' as const,
-    calculationMessage: `No conversion factor found for ${activityTypeLabel} / ${normalizedUnit.value}. This record was saved but excluded from emissions totals.`,
+    calculationMessage: `No emission factor found for ${activityTypeLabel} / ${normalizedUnit.value}. This record was saved but excluded from emissions totals.`,
     supportedUnits,
   };
 }
@@ -565,11 +598,14 @@ function applyFactorToRow(row: Row): Row {
       factorSourceLabel: undefined,
       factorSourceAuthority: undefined,
       factorSourceDocument: undefined,
+      factorSourceUrl: undefined,
       factorSourceYear: undefined,
       factorVersion: undefined,
       factorConfidenceLevel: undefined,
       factorVerificationStatus: undefined,
       factorAssumptions: undefined,
+      factorSelectionReason: undefined,
+      factorSelectionExplanation: undefined,
       factorCredibilityBadges: undefined,
       factorYearFallback: undefined,
       factorResultUnit: undefined,
@@ -580,7 +616,7 @@ function applyFactorToRow(row: Row): Row {
     };
   }
 
-  const matchedFacility = findFacilityByName(row.facilityName, facilities);
+  const matchedFacility = findFacilityByName(row.facilityName, facilitiesRef.current);
   const facilityProvince = normalizeProvince(matchedFacility?.provinceState);
   const facilityCountry = normalizeCountry(matchedFacility?.country);
   const normalizedRow = {
@@ -600,11 +636,14 @@ function applyFactorToRow(row: Row): Row {
       factorSourceLabel: undefined,
       factorSourceAuthority: undefined,
       factorSourceDocument: undefined,
+      factorSourceUrl: undefined,
       factorSourceYear: undefined,
       factorVersion: undefined,
       factorConfidenceLevel: undefined,
       factorVerificationStatus: undefined,
       factorAssumptions: undefined,
+      factorSelectionReason: undefined,
+      factorSelectionExplanation: undefined,
       factorCredibilityBadges: undefined,
       factorYearFallback: undefined,
       factorResultUnit: undefined,
@@ -624,11 +663,14 @@ function applyFactorToRow(row: Row): Row {
       factorSourceLabel: undefined,
       factorSourceAuthority: undefined,
       factorSourceDocument: undefined,
+      factorSourceUrl: undefined,
       factorSourceYear: undefined,
       factorVersion: undefined,
       factorConfidenceLevel: undefined,
       factorVerificationStatus: undefined,
       factorAssumptions: undefined,
+      factorSelectionReason: undefined,
+      factorSelectionExplanation: undefined,
       factorCredibilityBadges: undefined,
       factorYearFallback: undefined,
       factorResultUnit: undefined,
@@ -638,6 +680,7 @@ function applyFactorToRow(row: Row): Row {
   }
 
   const { factor } = match;
+  const factorSnapshot = buildMatchedFactorSnapshot(match);
 
   return {
     ...normalizedRow,
@@ -646,12 +689,15 @@ function applyFactorToRow(row: Row): Row {
     factorValue: getFactorValue(factor),
     factorSourceLabel: match.sourceLabel,
     factorSourceAuthority: getFactorSourceAuthority(factor),
-    factorSourceDocument: buildMatchedFactorSnapshot(match).matchedFactorSourceDocument,
+    factorSourceDocument: factorSnapshot.matchedFactorSourceDocument,
+    factorSourceUrl: factorSnapshot.matchedFactorSourceUrl,
     factorSourceYear: match.factorYear ?? getFactorSourceYear(factor),
     factorVersion: getFactorVersionLabel(factor),
-    factorConfidenceLevel: buildMatchedFactorSnapshot(match).matchedFactorConfidenceLevel,
-    factorVerificationStatus: buildMatchedFactorSnapshot(match).matchedFactorVerificationStatus,
+    factorConfidenceLevel: factorSnapshot.matchedFactorConfidenceLevel,
+    factorVerificationStatus: factorSnapshot.matchedFactorVerificationStatus,
     factorAssumptions: getFactorAssumptionDisclosure(row.activityType, factor),
+    factorSelectionReason: factorSnapshot.factorSelectionReason,
+    factorSelectionExplanation: factorSnapshot.factorSelectionExplanation,
     factorCredibilityBadges: getFactorCredibilityBadges(row.activityType, factor),
     factorYearFallback: match.usedPriorYearFallback,
     factorResultUnit: getFactorResultUnit(factor),
@@ -1031,7 +1077,7 @@ function buildActivityPayload(row: Row) {
   const matchedNotes = row.factorStatus === 'matched'
     ? [
         row.notes,
-        `Calculation status: Matched.${row.factorYearFallback && row.factorSourceYear ? ` Using latest available factor year: ${row.factorSourceYear}.` : ''}`,
+        `Calculation status: Calculated.${row.factorYearFallback && row.factorSourceYear ? ` Using latest available factor year: ${row.factorSourceYear}.` : ''}`,
         `Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'}).`,
         estimatedEmission === null
           ? ''
@@ -1052,6 +1098,7 @@ function buildActivityPayload(row: Row) {
     sourceType: getActivitySourceType(row.origin ?? entrySourceType),
     sourceReference: normalizeOptional(row.sourceReference),
     sourceFileName: normalizeOptional(row.sourceFileName),
+    sourceSheetName: normalizeOptional(row.sourceSheetName),
     sourceRow: row.sourceRow,
     costCad: normalizeOptionalNumber(row.costCad),
     costCurrency: normalizeOptional(row.costCurrency),
@@ -1076,9 +1123,12 @@ function buildActivityPayload(row: Row) {
     matchedFactorVersion: canonicalCalculation.matchedFactorVersion,
     matchedFactorSourceAuthority: canonicalCalculation.matchedFactorSourceAuthority,
     matchedFactorSourceDocument: canonicalCalculation.matchedFactorSourceDocument,
+    matchedFactorSourceUrl: canonicalCalculation.matchedFactorSourceUrl,
     matchedFactorVerificationStatus: canonicalCalculation.matchedFactorVerificationStatus,
     matchedFactorConfidenceLevel: canonicalCalculation.matchedFactorConfidenceLevel,
     matchedFactorAssumptions: canonicalCalculation.matchedFactorAssumptions,
+    factorSelectionReason: canonicalCalculation.factorSelectionReason,
+    factorSelectionExplanation: canonicalCalculation.factorSelectionExplanation,
     calculatedEmissionsKgCO2e: canonicalCalculation.calculatedEmissionsKgCO2e,
     calculationStatus: canonicalCalculation.calculationStatus,
     calculationMessage: row.calculationMessage,
@@ -1132,9 +1182,12 @@ function buildSpreadsheetReviewRowPayload(row: Row): SpreadsheetReviewRowInput {
     matchedFactorVersion: canonicalCalculation.matchedFactorVersion,
     matchedFactorSourceAuthority: canonicalCalculation.matchedFactorSourceAuthority,
     matchedFactorSourceDocument: canonicalCalculation.matchedFactorSourceDocument,
+    matchedFactorSourceUrl: canonicalCalculation.matchedFactorSourceUrl,
     matchedFactorVerificationStatus: canonicalCalculation.matchedFactorVerificationStatus,
     matchedFactorConfidenceLevel: canonicalCalculation.matchedFactorConfidenceLevel,
     matchedFactorAssumptions: canonicalCalculation.matchedFactorAssumptions,
+    factorSelectionReason: canonicalCalculation.factorSelectionReason,
+    factorSelectionExplanation: canonicalCalculation.factorSelectionExplanation,
     calculatedEmissionsKgCO2e: reviewCalculation.calculatedEmissionsKgCO2e,
   };
 }
@@ -1194,9 +1247,12 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
       matchedFactorVersion: undefined,
       matchedFactorSourceAuthority: undefined,
       matchedFactorSourceDocument: undefined,
+      matchedFactorSourceUrl: undefined,
       matchedFactorVerificationStatus: undefined,
       matchedFactorConfidenceLevel: undefined,
       matchedFactorAssumptions: undefined,
+      factorSelectionReason: undefined,
+      factorSelectionExplanation: undefined,
       calculatedEmissionsKgCO2e: undefined,
     };
   }
@@ -1218,9 +1274,12 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
       matchedFactorVersion: row.factorVersion,
       matchedFactorSourceAuthority: row.factorSourceAuthority,
       matchedFactorSourceDocument: row.factorSourceDocument,
+      matchedFactorSourceUrl: row.factorSourceUrl,
       matchedFactorVerificationStatus: row.factorVerificationStatus,
       matchedFactorConfidenceLevel: row.factorConfidenceLevel,
       matchedFactorAssumptions: row.factorAssumptions,
+      factorSelectionReason: row.factorSelectionReason,
+      factorSelectionExplanation: row.factorSelectionExplanation,
       calculatedEmissionsKgCO2e: estimatedEmission ?? undefined,
     };
   }
@@ -1238,9 +1297,12 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
       matchedFactorVersion: undefined,
       matchedFactorSourceAuthority: undefined,
       matchedFactorSourceDocument: undefined,
+      matchedFactorSourceUrl: undefined,
       matchedFactorVerificationStatus: undefined,
       matchedFactorConfidenceLevel: undefined,
       matchedFactorAssumptions: undefined,
+      factorSelectionReason: undefined,
+      factorSelectionExplanation: undefined,
       calculatedEmissionsKgCO2e: undefined,
     };
   }
@@ -1258,9 +1320,12 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
       matchedFactorVersion: undefined,
       matchedFactorSourceAuthority: undefined,
       matchedFactorSourceDocument: undefined,
+      matchedFactorSourceUrl: undefined,
       matchedFactorVerificationStatus: undefined,
       matchedFactorConfidenceLevel: undefined,
       matchedFactorAssumptions: undefined,
+      factorSelectionReason: undefined,
+      factorSelectionExplanation: undefined,
       calculatedEmissionsKgCO2e: undefined,
     };
   }
@@ -1269,7 +1334,7 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
     return {
       matchingStatus: 'UNIT_MISMATCH',
       reportTreatment: 'EXCLUDED',
-      calculationStatus: 'UNIT_MISMATCH',
+      calculationStatus: 'NEEDS_REVIEW',
       matchedFactorId: undefined,
       matchedFactorName: undefined,
       matchedFactorSourceYear: undefined,
@@ -1278,9 +1343,12 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
       matchedFactorVersion: undefined,
       matchedFactorSourceAuthority: undefined,
       matchedFactorSourceDocument: undefined,
+      matchedFactorSourceUrl: undefined,
       matchedFactorVerificationStatus: undefined,
       matchedFactorConfidenceLevel: undefined,
       matchedFactorAssumptions: undefined,
+      factorSelectionReason: undefined,
+      factorSelectionExplanation: undefined,
       calculatedEmissionsKgCO2e: undefined,
     };
   }
@@ -1297,9 +1365,12 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
     matchedFactorVersion: undefined,
     matchedFactorSourceAuthority: undefined,
     matchedFactorSourceDocument: undefined,
+    matchedFactorSourceUrl: undefined,
     matchedFactorVerificationStatus: undefined,
     matchedFactorConfidenceLevel: undefined,
     matchedFactorAssumptions: undefined,
+    factorSelectionReason: undefined,
+    factorSelectionExplanation: undefined,
     calculatedEmissionsKgCO2e: undefined,
   };
 }
@@ -1351,7 +1422,7 @@ function getValidationCalculationMessage(status: string) {
     case 'UNIT_MISMATCH':
       return 'Unit mismatch. This record is excluded from emissions totals.';
     case 'MISSING_FACTOR':
-      return 'No matching conversion factor is available for this record.';
+    return 'No matching emission factor is available for this record.';
     default:
       return 'Required fields must be completed before calculation.';
   }
@@ -1427,9 +1498,9 @@ function getCalculationStatusLabel(row: Row) {
 
   switch (row.calculationStatus) {
     case 'calculated':
-      return 'Ready';
+      return 'Calculated';
     case 'trackedMetric':
-      return 'Tracked Only';
+      return 'Tracked Metric';
     case 'invalidUnit':
       return 'Unit Mismatch';
     case 'missingFactor':
@@ -1446,7 +1517,7 @@ function getCalculationStatusLabel(row: Row) {
 function getSavedReviewLabel(row: Row) {
   if (row.calculationStatus === 'missingJurisdiction') return 'Requires Review';
   const status = getCalculationStatusLabel(row);
-  return status === 'Matched' ? 'Saved · Matched' : `Saved · ${status}`;
+  return status === 'Factor Matched' ? 'Saved · Factor Matched' : `Saved · ${status}`;
 }
 
 function buildImportReviewSummary(rows: Row[]) {
@@ -1598,7 +1669,7 @@ function renderFactorCell(row: Row) {
       <div style={{ color: '#0369a1', fontSize: 12, lineHeight: 1.45 }}>
         <strong>Not Emissions Factor Required</strong>
         <br />
-        Tracked only.
+        Tracked metric.
         <br />
         {row.calculationMessage}
       </div>
@@ -1716,6 +1787,29 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
   }
 
   const quantity = Number(row.quantity);
+  if (row.calculationStatus === 'calculated' && row.factorStatus === 'matched') {
+    if (row.activityType === 'ELECTRICITY') {
+      const province = normalizeProvince(row.jurisdictionRegion);
+      return {
+        badge: 'Calculated',
+        detail: row.factorYearFallback && row.factorSourceYear
+          ? `${province || 'Province'} electricity factor matched. Using latest available factor year: ${row.factorSourceYear}.`
+          : `${province || 'Province'} electricity factor matched.`,
+      };
+    }
+
+    return { badge: 'Calculated', detail: 'Factor matched.' };
+  }
+
+  if (row.activityType === 'ELECTRICITY' && row.calculationStatus === 'missingJurisdiction') {
+    return {
+      badge: 'Missing Province',
+      detail: row.status === 'saved'
+        ? 'Province is required before this electricity record can be calculated.'
+        : 'Select province to calculate.',
+    };
+  }
+
   if (!String(row.quantity ?? '').trim() || !Number.isFinite(quantity) || quantity <= 0) {
     return { badge: 'Invalid Amount', detail: 'Enter a quantity greater than 0.' };
   }
@@ -1740,7 +1834,7 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
     if (row.calculationStatus === 'calculated') {
       const province = normalizeProvince(row.jurisdictionRegion);
       return {
-        badge: 'Ready',
+        badge: 'Calculated',
         detail: row.factorYearFallback && row.factorSourceYear
           ? `${province || 'Province'} electricity factor matched. Using latest available factor year: ${row.factorSourceYear}.`
           : `${province || 'Province'} electricity factor matched.`,
@@ -1750,9 +1844,9 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
 
   switch (row.calculationStatus) {
     case 'calculated':
-      return { badge: 'Ready', detail: 'Factor matched.' };
+      return { badge: 'Calculated', detail: 'Factor matched.' };
     case 'trackedMetric':
-      return { badge: 'Not Emissions Factor Required', detail: 'Tracked only, excluded from GHG totals.' };
+      return { badge: 'Tracked Metric', detail: 'Tracked metric, excluded from GHG totals.' };
     case 'invalidUnit':
       return { badge: 'Unit Mismatch', detail: row.calculationMessage || 'Review unit before calculation.' };
     case 'missingFactor':
@@ -1767,14 +1861,14 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
 function getReportTreatment(row: Row) {
   if (row.calculationStatus === 'trackedMetric' || inferDefaultScope(row.activityType) === 'TRACKED_METRIC') {
     return {
-      label: 'Tracked Only',
+      label: 'Tracked Metric',
       detail: 'Excluded from GHG total.',
     };
   }
 
   if (row.calculationStatus === 'calculated') {
     return {
-      label: 'Included',
+      label: 'Included in GHG Total',
       detail: 'Included in GHG total.',
     };
   }
@@ -1832,7 +1926,7 @@ function renderScopeCell(row: Row) {
 
 function renderTreatmentCell(row: Row) {
   if (!hasRowStarted(row)) {
-    return renderEmptyPreviewValue('Shows whether this row will be included, excluded, or tracked only.');
+    return renderEmptyPreviewValue('Shows whether this row will be included in the GHG total, excluded, or tracked as a metric.');
   }
 
   const treatment = getReportTreatment(row);
@@ -1860,6 +1954,24 @@ function renderPreviewPanel(title: string, helpText: string, children: ReactNode
 function getDefaultUnit(activityType: string) {
   return getDefaultUnitForActivityType(activityType);
 }
+
+function getUnitForActivityTypeChange(currentUnit: string | undefined, nextActivityType: string) {
+  const supportedUnits = getSupportedUnitsForActivityType(nextActivityType);
+  const normalizedCurrentUnit = normalizeUnitForDisplay(currentUnit);
+
+  if (
+    normalizedCurrentUnit.status === 'valid' &&
+    supportedUnits.some((unit) => {
+      const normalizedSupportedUnit = normalizeUnitForDisplay(unit);
+      return normalizedSupportedUnit.status === 'valid' && normalizedSupportedUnit.value === normalizedCurrentUnit.value;
+    })
+  ) {
+    return currentUnit ?? '';
+  }
+
+  return getDefaultUnit(nextActivityType);
+}
+
 function updateRow(id: string, key: keyof Row, value: string) {
   setRows((prev) =>
     prev.map((row) => {
@@ -1879,7 +1991,7 @@ function updateRow(id: string, key: keyof Row, value: string) {
       };
 
       if (key === 'activityType') {
-        updated.unit = getDefaultUnit(value);
+        updated.unit = getUnitForActivityTypeChange(row.unit, value);
       }
 
       return applyFactorToRow(updated);
@@ -2309,15 +2421,27 @@ async function saveAllSpreadsheetRows(rowsToSave: Row[]) {
       }),
     );
 
-    await onSuccess({
-      source: 'spreadsheet',
-      sourceDocumentId: response.sourceDocument?.id,
-    });
     const savedCount = Number(response.savedCount ?? Math.max(0, reviewRows.length - failedKeys.size));
     const readyCount = response.readyCount ?? reviewRows.filter((row) => row.status === 'READY').length;
     const needsReviewCount = response.needsReviewCount ?? reviewRows.filter((row) => row.status === 'NEEDS_REVIEW').length;
     const trackedOnlyCount = response.trackedOnlyCount ?? reviewRows.filter((row) => row.status === 'TRACKED_ONLY').length;
     const failedCount = failedRows.length;
+    const savedReviewRows = reviewRows.filter((row) => {
+      const rowId = row.rowId ?? '';
+      const sourceRow = String(row.sourceRow ?? '');
+      return !failedKeys.has(rowId) && !failedKeys.has(sourceRow);
+    });
+
+    await onSuccess({
+      source: 'spreadsheet',
+      sourceDocumentId: response.sourceDocument?.id,
+      sourceDocumentFileName: response.sourceDocument?.fileName,
+      savedReviewRows,
+      savedCount,
+      readyCount,
+      needsReviewCount,
+      trackedOnlyCount,
+    });
 
     toast.success(
       failedCount > 0
@@ -2595,7 +2719,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                       ? applyFactorToRow({
                           ...currentRow,
                           activityType: value,
-                          unit: getDefaultUnit(value),
+                          unit: getUnitForActivityTypeChange(currentRow.unit, value),
                           status: 'draft',
                           errors: undefined,
                         })

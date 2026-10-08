@@ -26,7 +26,7 @@ const sections = [
         <ul>
           <li>Uploading invoices, utility bills, spreadsheets, and operational documents.</li>
           <li>Extracting and organizing activity data.</li>
-          <li>Calculating estimated emissions using applicable conversion factors.</li>
+          <li>Calculating estimated emissions using applicable emission factors.</li>
           <li>Generating metrics, summaries, and reporting workflow outputs.</li>
         </ul>
       </>
@@ -50,7 +50,7 @@ const sections = [
         <ul>
           <li>The documents, data, and other content you upload or enter.</li>
           <li>Having the necessary rights and permissions to use that content.</li>
-          <li>Reviewing extracted data, conversion factors, calculations, and generated results.</li>
+          <li>Reviewing extracted data, emission factors, calculations, and generated results.</li>
           <li>Correcting errors and maintaining accurate source records.</li>
           <li>Keeping your account credentials secure and promptly reporting suspected unauthorized use.</li>
         </ul>
@@ -115,7 +115,7 @@ const sections = [
         CarbonLite will not be liable for indirect, incidental, special,
         consequential, or punitive damages; lost profits or business opportunities;
         business interruption; loss of data; or reporting errors arising from
-        user-provided data, unreviewed extraction results, conversion factors, or use
+        user-provided data, unreviewed extraction results, emission factors, or use
         of the service. Nothing in these terms excludes liability that cannot lawfully
         be excluded or limited.
       </p>

@@ -1,5 +1,11 @@
 import type { CSSProperties } from 'react';
 import type { MetricsCountSummary } from '../../MetricsSummarySection';
+import {
+  formatReadinessStatus,
+  type ReportingReadinessAssessment,
+  type ReportingReadinessItem,
+  type ReportingReadinessStatus,
+} from '../../../utils/reportingReadiness';
 
 type SkippedReasonSummary = {
   missingFactor: number;
@@ -16,7 +22,8 @@ type CalculationQualitySectionProps = {
   reportCountSummary: MetricsCountSummary;
   primarySkippedReasons: SkippedReasonSummary;
   dataQualityCoverage: string;
-  dataReadinessScore?: string;
+  readinessAssessment: ReportingReadinessAssessment;
+  optionalDataCompleteness?: string;
   reviewReasonsLabel: string;
 };
 
@@ -24,7 +31,8 @@ export function CalculationQualitySection({
   reportCountSummary,
   primarySkippedReasons,
   dataQualityCoverage,
-  dataReadinessScore,
+  readinessAssessment,
+  optionalDataCompleteness,
   reviewReasonsLabel,
 }: CalculationQualitySectionProps) {
   const recordsRequiringReview =
@@ -47,9 +55,16 @@ export function CalculationQualitySection({
         <Fact label="Missing Jurisdiction" value={String(primarySkippedReasons.missingJurisdiction)} />
         <Fact label="Invalid Unit" value={String(primarySkippedReasons.invalidUnit)} />
         <Fact label="Calculation Coverage" value={dataQualityCoverage} />
-        {dataReadinessScore ? (
-          <Fact label="Emissions Workflow Readiness" value={dataReadinessScore} />
+        {optionalDataCompleteness ? (
+          <Fact label="Optional Data Completeness" value={optionalDataCompleteness} />
         ) : null}
+        <Fact label="Readiness Status" value={formatReadinessStatus(readinessAssessment.overallStatus)} />
+      </div>
+      <div style={readinessChecklistStyle}>
+        <h4 style={readinessChecklistTitleStyle}>Reporting Readiness Checklist</h4>
+        {readinessAssessment.items.map((item) => (
+          <ReadinessRow key={item.code} item={item} />
+        ))}
       </div>
       <div style={qualityExplanationStyle}>
         <strong>How to read these metrics:</strong>
@@ -57,10 +72,7 @@ export function CalculationQualitySection({
           Calculation Coverage is calculated emission-bearing records divided by eligible emission-bearing records.
         </p>
         <p>
-          Emissions Workflow Readiness is the percentage of draft or imported records that are complete enough to calculate, trace, and report without manual correction.
-        </p>
-        <p>
-          Calculation Coverage and Emissions Workflow Readiness may differ. Tracked-only operational metrics are retained for review but excluded from the Calculation Coverage denominator. Optional metadata such as cost is tracked separately and does not reduce readiness.
+          Reporting Readiness is an evidence checklist. Tracked metrics are retained for review but excluded from the Calculation Coverage denominator. Optional metadata such as cost is tracked separately and does not reduce readiness.
         </p>
       </div>
       {recordsRequiringReview > 0 ? (
@@ -76,6 +88,21 @@ export function CalculationQualitySection({
         <div style={qualitySuccessStyle}>All in-scope records were calculated.</div>
       )}
     </>
+  );
+}
+
+function ReadinessRow({ item }: { item: ReportingReadinessItem }) {
+  const status = normalizeReadinessStatus(item.status);
+
+  return (
+    <div style={readinessRowStyle}>
+      <span style={readinessBadgeStyle(status)}>{formatSafeReadinessStatus(item.status, status)}</span>
+      <div>
+        <strong>{item.workflowStageLabel}: {item.label}</strong>
+        <div style={readinessEvidenceStyle}>{item.evidence}</div>
+        {item.action ? <div style={readinessActionStyle}>{item.action}</div> : null}
+      </div>
+    </div>
   );
 }
 
@@ -139,4 +166,86 @@ const qualityExplanationStyle: CSSProperties = {
   background: '#f8fafc',
   color: '#334155',
   lineHeight: 1.55,
+};
+
+const readinessChecklistStyle: CSSProperties = {
+  marginTop: 14,
+  display: 'grid',
+  gap: 8,
+};
+
+const readinessChecklistTitleStyle: CSSProperties = {
+  margin: '0 0 2px',
+  color: '#0f172a',
+  fontSize: 14,
+};
+
+const readinessRowStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '120px 1fr',
+  gap: 10,
+  alignItems: 'start',
+  padding: 10,
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  background: '#fff',
+};
+
+type ReadinessTone = { bg: string; fg: string; border: string };
+
+const READINESS_TONES: Record<ReportingReadinessStatus, ReadinessTone> = {
+  COMPLETE: { bg: '#dcfce7', fg: '#047857', border: '#bbf7d0' },
+  LIMITED: { bg: '#fffbeb', fg: '#92400e', border: '#fde68a' },
+  NEEDS_ATTENTION: { bg: '#fffbeb', fg: '#92400e', border: '#fde68a' },
+  NOT_REVIEWED: { bg: '#f8fafc', fg: '#475569', border: '#cbd5e1' },
+  NOT_APPLICABLE: { bg: '#f1f5f9', fg: '#475569', border: '#cbd5e1' },
+};
+
+function normalizeReadinessStatus(status: unknown): ReportingReadinessStatus {
+  if (typeof status === 'string' && status in READINESS_TONES) {
+    return status as ReportingReadinessStatus;
+  }
+
+  if (import.meta.env.DEV) {
+    console.warn('Unexpected reporting readiness status', status);
+  }
+
+  return 'NOT_REVIEWED';
+}
+
+function formatSafeReadinessStatus(status: unknown, normalizedStatus = normalizeReadinessStatus(status)) {
+  return normalizedStatus === status ? formatReadinessStatus(normalizedStatus) : 'Not reviewed';
+}
+
+function readinessBadgeStyle(status: ReportingReadinessStatus): CSSProperties {
+  const colors = READINESS_TONES[status] ?? READINESS_TONES.NOT_REVIEWED;
+
+  return {
+    display: 'inline-flex',
+    justifyContent: 'center',
+    width: 'fit-content',
+    padding: '4px 8px',
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    background: colors.bg,
+    color: colors.fg,
+    border: `1px solid ${colors.border}`,
+    whiteSpace: 'nowrap',
+  };
+}
+
+const readinessEvidenceStyle: CSSProperties = {
+  marginTop: 4,
+  color: '#475569',
+  fontSize: 12,
+  lineHeight: 1.45,
+};
+
+const readinessActionStyle: CSSProperties = {
+  marginTop: 4,
+  color: '#1d4ed8',
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: 1.45,
 };

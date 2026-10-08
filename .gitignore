@@ -10,4 +10,5 @@ coverage
 .vite
 apps/web-e2e/playwright-report
 apps/web-e2e/test-results
+apps/web-e2e/playwright/.auth
 carbonlite-pilot-data-readiness-report-*.pdf

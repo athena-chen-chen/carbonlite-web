@@ -38,11 +38,30 @@ export type FacilityThresholdReferenceRow = {
   regulatoryReference: string;
   thresholdLabel: string;
   thresholdTCO2e: number | null;
+  authority?: string | null;
+  programName?: string | null;
+  effectiveDate?: string | null;
+  checkedDate?: string | null;
+  sourceUrl?: string | null;
+  referenceNotes?: string | null;
   totalKgCO2e: number;
   totalTCO2e: number;
   percentOfThreshold: number | null;
   status: FacilityThresholdScreeningStatus;
   screeningNote: FacilityThresholdScreeningNote;
+};
+
+export type FacilityRegulatoryThresholdReference = {
+  authority?: string | null;
+  programName?: string | null;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  thresholdValue?: number | null;
+  thresholdUnit?: string | null;
+  effectiveDate?: string | null;
+  checkedDate?: string | null;
+  sourceUrl?: string | null;
+  notes?: string | null;
 };
 
 export type FacilityThresholdScreeningStatus =
@@ -57,7 +76,8 @@ export type FacilityThresholdScreeningNote =
   | 'Above threshold reference — professional review recommended'
   | `Jurisdiction-specific threshold screening is not currently configured for ${string}.`
   | 'Jurisdiction required for facility-level threshold screening.'
-  | 'Facility includes records from multiple jurisdictions; review jurisdiction before screening.';
+  | 'Facility includes records from multiple jurisdictions; review jurisdiction before screening.'
+  | 'Reviewed regulatory source provenance is required before threshold screening.';
 
 export const FACILITY_REPORTING_THRESHOLD_TCO2E = 10000;
 export const ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E = 100000;
@@ -173,6 +193,7 @@ export function buildSiteFacilityRollup(
 
 export function buildFacilityThresholdReferenceRows(
   siteFacilityRows: SiteFacilityBreakdownRow[] = [],
+  regulatoryReferences: FacilityRegulatoryThresholdReference[] = [],
 ): FacilityThresholdReferenceRow[] {
   return siteFacilityRows.map((row) => {
     const totalTCO2e = row.totalKgCO2e / 1000;
@@ -214,34 +235,47 @@ export function buildFacilityThresholdReferenceRows(
       };
     }
 
-    if (jurisdictionRegion !== 'Alberta') {
+    const regulatoryReference = findRegulatoryThresholdReference(
+      regulatoryReferences,
+      jurisdictionRegion,
+      jurisdictionCountry,
+    );
+
+    if (!regulatoryReference) {
       return {
         siteFacility: row.siteFacility,
         jurisdictionCountry,
         jurisdictionRegion,
         jurisdictionLabel,
         regulatoryReference: 'Not configured',
-        thresholdLabel: '—',
+        thresholdLabel: 'Not evaluated',
         thresholdTCO2e: null,
         totalKgCO2e: row.totalKgCO2e,
         totalTCO2e,
         percentOfThreshold: null,
         status: 'Not evaluated',
-        screeningNote: `Jurisdiction-specific threshold screening is not currently configured for ${jurisdictionRegion}.`,
+        screeningNote: jurisdictionRegion === 'Alberta'
+          ? 'Reviewed regulatory source provenance is required before threshold screening.'
+          : `Jurisdiction-specific threshold screening is not currently configured for ${jurisdictionRegion}.`,
       };
     }
 
-    const percentOfThreshold =
-      (totalTCO2e / ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E) * 100;
+    const percentOfThreshold = (totalTCO2e / regulatoryReference.thresholdValue) * 100;
 
     return {
       siteFacility: row.siteFacility,
       jurisdictionCountry,
       jurisdictionRegion,
       jurisdictionLabel,
-      regulatoryReference: 'Alberta TIER pilot screening reference',
-      thresholdLabel: `${ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E.toLocaleString()} t CO₂e/year`,
-      thresholdTCO2e: ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E,
+      regulatoryReference: regulatoryReference.programName,
+      thresholdLabel: `${regulatoryReference.thresholdValue.toLocaleString()} ${regulatoryReference.thresholdUnit}`,
+      thresholdTCO2e: regulatoryReference.thresholdValue,
+      authority: regulatoryReference.authority,
+      programName: regulatoryReference.programName,
+      effectiveDate: regulatoryReference.effectiveDate,
+      checkedDate: regulatoryReference.checkedDate,
+      sourceUrl: regulatoryReference.sourceUrl,
+      referenceNotes: regulatoryReference.notes,
       totalKgCO2e: row.totalKgCO2e,
       totalTCO2e,
       percentOfThreshold,
@@ -249,6 +283,49 @@ export function buildFacilityThresholdReferenceRows(
       screeningNote: getFacilityThresholdScreeningNote(percentOfThreshold),
     };
   });
+}
+
+function findRegulatoryThresholdReference(
+  references: FacilityRegulatoryThresholdReference[],
+  jurisdictionRegion: string | null,
+  jurisdictionCountry: string | null,
+) {
+  if (!jurisdictionRegion) return null;
+
+  return references.find((reference) => {
+    if (!hasCompleteRegulatoryThresholdProvenance(reference)) return false;
+    const referenceRegion = normalizeJurisdictionRegion(reference.jurisdictionRegion);
+    const referenceCountry = normalizeJurisdictionCountry(reference.jurisdictionCountry);
+
+    return (
+      referenceRegion === jurisdictionRegion &&
+      (!referenceCountry || !jurisdictionCountry || referenceCountry === jurisdictionCountry)
+    );
+  }) ?? null;
+}
+
+function hasCompleteRegulatoryThresholdProvenance(
+  reference: FacilityRegulatoryThresholdReference,
+): reference is Required<
+  Pick<
+    FacilityRegulatoryThresholdReference,
+    'authority' | 'programName' | 'jurisdictionRegion' | 'thresholdValue' | 'thresholdUnit' | 'checkedDate' | 'sourceUrl'
+  >
+> & FacilityRegulatoryThresholdReference {
+  return Boolean(
+    clean(reference.authority) &&
+      clean(reference.programName) &&
+      clean(reference.jurisdictionRegion) &&
+      Number.isFinite(Number(reference.thresholdValue)) &&
+      Number(reference.thresholdValue) > 0 &&
+      clean(reference.thresholdUnit) &&
+      clean(reference.checkedDate) &&
+      clean(reference.sourceUrl),
+  );
+}
+
+function clean(value?: string | null) {
+  return String(value ?? '').trim();
 }
 
 function getSiteFacilityLabel(detail: CalculationAuditDetail) {

@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
+import fs from 'node:fs/promises';
 import {
   createCarbonLiteApiState,
   installCarbonLiteApiMock,
+  seedEnmaxMissingCostReport,
   seedFailedDocument,
   seedImportedDocument,
   seedMissingFileDocument,
@@ -184,6 +186,33 @@ test('@smoke reports generate content and enable exports from activity records',
   await expect(page.getByText('Calculation Traceability')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download CSV' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
+  failures.assertClean(api.unexpectedRequests);
+});
+
+test('@smoke ENMAX report CSV keeps missing Cost CAD cells blank', async ({ page }) => {
+  const api = createCarbonLiteApiState();
+  seedEnmaxMissingCostReport(api);
+  const failures = monitorCriticalFailures(page);
+  await authenticateTestUser(page);
+  await installCarbonLiteApiMock(page, api);
+
+  await page.goto('/reports');
+  await page.getByRole('button', { name: 'Generate Report' }).click();
+
+  await expect(page.getByText('Pilot Emissions Data Readiness Report')).toBeVisible();
+  await expect(page.getByText('0 of 3 imported activity records include optional cost data')).toBeVisible();
+
+  const csvDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: /^Export reports$/i }).click();
+  await page.getByRole('menuitem', { name: /Data Export \(CSV\)/i }).click();
+  const csvDownload = await csvDownloadPromise;
+  const csvPath = await csvDownload.path();
+  expect(csvPath).toBeTruthy();
+  const csv = await fs.readFile(csvPath ?? '', 'utf8');
+
+  expect(csv).toContain('\n1,Electricity,2025-08-01,358,358 kWh,kWh,,');
+  expect(csv).toContain('\n2,Natural Gas,2025-08-01,3,3 GJ,GJ,,');
+  expect(csv).toContain('\n3,Water,2025-08-01,6,6 m3,m3,,');
   failures.assertClean(api.unexpectedRequests);
 });
 

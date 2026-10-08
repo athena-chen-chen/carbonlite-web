@@ -110,7 +110,7 @@ function normalizeActivityTypeBySubstring(value: string) {
   if (value.includes('NATURAL_GAS')) return 'NATURAL_GAS';
   if (value.includes('DIESEL')) return 'DIESEL';
   if (value.includes('GASOLINE')) return 'GASOLINE';
-  if (value.includes('ELECTRICITY')) return 'ELECTRICITY';
+  if (value.includes('ELECTRICITY') || value.includes('ELECTRIC_UTILITY')) return 'ELECTRICITY';
   if (value.includes('WATER')) return 'WATER';
   if (value.includes('WASTE')) return null;
   if (value.includes('AIR_TRAVEL')) return 'AIR_TRAVEL';

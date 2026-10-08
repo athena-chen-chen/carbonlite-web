@@ -56,7 +56,16 @@ vi.mock('../components/ExcelInputTable', () => ({
     onSuccess,
   }: {
     mode?: 'spreadsheet' | 'manual';
-    onSuccess?: (result?: { source: 'manual' | 'spreadsheet'; sourceDocumentId?: string }) => void | Promise<void>;
+    onSuccess?: (result?: {
+      source: 'manual' | 'spreadsheet';
+      sourceDocumentId?: string;
+      sourceDocumentFileName?: string;
+      savedReviewRows?: any[];
+      savedCount?: number;
+      readyCount?: number;
+      needsReviewCount?: number;
+      trackedOnlyCount?: number;
+    }) => void | Promise<void>;
   }) =>
     mode === 'spreadsheet' ? (
       <div>
@@ -70,6 +79,96 @@ vi.mock('../components/ExcelInputTable', () => ({
             void onSuccess?.({
               source: 'spreadsheet',
               sourceDocumentId: 'spreadsheet-source-1',
+              sourceDocumentFileName: 'carbonlite_needs_review_test.xlsx',
+              savedReviewRows: [
+                {
+                  rowId: 'row-1',
+                  status: 'READY',
+                  activityType: 'Electricity',
+                  recordDate: '2026-03-01',
+                  quantity: 1200,
+                  unit: 'kWh',
+                  jurisdictionCountry: 'Canada',
+                  jurisdictionRegion: 'Alberta',
+                  sourceFileName: 'carbonlite_needs_review_test.xlsx',
+                  sourceSheetName: 'Activity Data',
+                  sourceRow: 2,
+                  sourceReference: 'ELEC-001',
+                  matchingStatus: 'MATCHED',
+                  reportTreatment: 'INCLUDED',
+                  scope: 'SCOPE_2',
+                  calculationStatus: 'CALCULATED',
+                  issues: [],
+                },
+                {
+                  rowId: 'row-2',
+                  status: 'READY',
+                  activityType: 'Natural Gas',
+                  recordDate: '2026-03-02',
+                  quantity: 30,
+                  unit: 'GJ',
+                  jurisdictionCountry: 'Canada',
+                  jurisdictionRegion: 'Alberta',
+                  sourceFileName: 'carbonlite_needs_review_test.xlsx',
+                  sourceSheetName: 'Activity Data',
+                  sourceRow: 3,
+                  sourceReference: 'GAS-002',
+                  matchingStatus: 'MATCHED',
+                  reportTreatment: 'INCLUDED',
+                  scope: 'SCOPE_1',
+                  calculationStatus: 'CALCULATED',
+                  issues: [],
+                },
+                ...Array.from({ length: 6 }, (_, index) => ({
+                  rowId: `needs-review-${index + 1}`,
+                  status: 'NEEDS_REVIEW',
+                  activityType: index === 0 ? '' : 'Electricity',
+                  recordDate: '2026-03-04',
+                  quantity: index === 0 ? null : 42,
+                  unit: index === 1 ? '' : 'kWh',
+                  jurisdictionCountry: 'Canada',
+                  jurisdictionRegion: '',
+                  sourceFileName: 'carbonlite_needs_review_test.xlsx',
+                  sourceSheetName: 'Activity Data',
+                  sourceRow: [4, 5, 6, 7, 9, 10][index],
+                  sourceReference: `REVIEW-${index + 1}`,
+                  matchingStatus: 'NEEDS_REVIEW',
+                  reportTreatment: 'REQUIRES_REVIEW',
+                  scope: 'SCOPE_2',
+                  calculationStatus: 'NEEDS_REVIEW',
+                  calculationMessage: 'Needs review',
+                  issues: [
+                    {
+                      code: 'NEEDS_REVIEW',
+                      field: 'activityType',
+                      message: 'Needs review',
+                    },
+                  ],
+                })),
+                {
+                  rowId: 'row-8',
+                  status: 'TRACKED_ONLY',
+                  activityType: 'Water',
+                  recordDate: '2026-03-07',
+                  quantity: 18,
+                  unit: 'm3',
+                  jurisdictionCountry: 'Canada',
+                  jurisdictionRegion: 'Alberta',
+                  sourceFileName: 'carbonlite_needs_review_test.xlsx',
+                  sourceSheetName: 'Activity Data',
+                  sourceRow: 8,
+                  sourceReference: 'MARCH-WATER-007',
+                  matchingStatus: 'TRACKED_ONLY',
+                  reportTreatment: 'TRACKED_ONLY',
+                  scope: 'TRACKED_METRIC',
+                  calculationStatus: 'TRACKED_ONLY',
+                  issues: [],
+                },
+              ],
+              savedCount: 9,
+              readyCount: 2,
+              needsReviewCount: 6,
+              trackedOnlyCount: 1,
             })
           }
         >
@@ -474,7 +573,7 @@ describe('UploadPage sample workflow', () => {
 
     await waitFor(() => {
       expect(within(row!).getByDisplayValue('Alberta')).toBeInTheDocument();
-      expect(within(row!).getByText('Ready')).toBeInTheDocument();
+      expect(within(row!).getByText('Calculated')).toBeInTheDocument();
     });
     expect(within(row!).queryByText('Missing Province')).not.toBeInTheDocument();
     expect(within(row!).queryByText('Missing Factor')).not.toBeInTheDocument();
@@ -600,7 +699,7 @@ describe('UploadPage sample workflow', () => {
     expect(rowB).toBeTruthy();
 
     expect(within(rowA!).getByDisplayValue('Alberta')).toBeInTheDocument();
-    expect(within(rowA!).getByText('Ready')).toBeInTheDocument();
+    expect(within(rowA!).getByText('Calculated')).toBeInTheDocument();
     expect(within(rowA!).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(rowA!).queryByText('Missing Province')).not.toBeInTheDocument();
     expect(within(rowA!).getByRole('checkbox', { name: 'Select preview row 1' })).toBeChecked();
@@ -844,7 +943,7 @@ describe('UploadPage sample workflow', () => {
     await waitFor(() => {
       const updatedDieselRow = screen.getByDisplayValue('MARCH-DIESEL-006').closest('tr');
       expect(updatedDieselRow).toBeTruthy();
-      expect(within(updatedDieselRow!).getByText('Ready')).toBeInTheDocument();
+      expect(within(updatedDieselRow!).getByText('Calculated')).toBeInTheDocument();
     });
     const updatedDieselRow = screen.getByDisplayValue('MARCH-DIESEL-006').closest('tr');
     expect(updatedDieselRow).toBeTruthy();
@@ -1370,11 +1469,10 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText('Spreadsheet import')).toBeInTheDocument();
     expect(screen.getByText('Needs Review')).toBeInTheDocument();
     expect(screen.getByText('9')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Review Selected Data' })).toBeDisabled();
-
-    await userEvent.click(screen.getByLabelText('Select document carbonlite_needs_review_test.xlsx'));
-    expect(screen.getByRole('button', { name: 'Review Selected Data' })).toBeEnabled();
-    expect(screen.getByText('Spreadsheet rows saved for review.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Draft Records Review' })).toBeInTheDocument();
+    expect(screen.getByText('Calculated: 2 · Tracked metrics: 1 · Requires review: 6 · Selected for import: 3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeEnabled();
+    expect(screen.getByText('Spreadsheet rows saved for review. 3 records ready to import; 6 source rows remain in Input Review.')).toBeInTheDocument();
   });
 
   it('uses the current Save All source document id when duplicate filenames exist', async () => {
@@ -1423,31 +1521,35 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(getDocumentExtraction).mockResolvedValue({
       documentId: 'spreadsheet-source-1',
       status: 'REVIEW_REQUIRED',
-      parsedActivities: [
-        {
-          activityType: 'Water',
-          recordDate: '2026-03-07',
-          quantity: 18,
-          unit: 'm3',
-          country: 'Canada',
-          province: 'Alberta',
-          sourceReference: 'MARCH-WATER-007',
-          matchingStatus: 'TRACKED_ONLY',
-          reportTreatment: 'TRACKED_ONLY',
-          scope: 'TRACKED_METRIC',
-          calculationStatus: 'TRACKED_ONLY',
-          sourceRow: 8,
-        },
-      ] as any,
+      parsedActivities: Array.from({ length: 6 }, (_, index) => ({
+        activityType: 'Electricity',
+        recordDate: '2026-03-04',
+        quantity: 42,
+        unit: 'kWh',
+        country: 'Canada',
+        province: '',
+        sourceReference: `REVIEW-${index + 1}`,
+        matchingStatus: 'NEEDS_REVIEW',
+        reportTreatment: 'REQUIRES_REVIEW',
+        scope: 'SCOPE_2',
+        calculationStatus: 'NEEDS_REVIEW',
+        calculationMessage: 'Needs review',
+        status: 'NEEDS_REVIEW',
+        sourceRow: [4, 5, 6, 7, 9, 10][index],
+      })) as any,
       sourceRowCount: 9,
       extractedRowCount: 9,
       possibleMissingRows: false,
       warning: null,
     });
     vi.mocked(confirmDocumentImport).mockResolvedValue({
-      count: 1,
-      createdIds: ['created-water'],
-      createdRecordKeys: ['spreadsheet-source-1::row:8'],
+      count: 3,
+      createdIds: ['created-electricity', 'created-gas', 'created-water'],
+      createdRecordKeys: [
+        'spreadsheet-source-1::row:2',
+        'spreadsheet-source-1::row:3',
+        'spreadsheet-source-1::row:8',
+      ],
       importBatchId: 'document-spreadsheet-source-1',
       alreadyImported: false,
     });
@@ -1460,6 +1562,15 @@ describe('UploadPage sample workflow', () => {
       >
         <Routes>
           <Route path={INPUT_DATA_ROUTE} element={<UploadPage />} />
+          <Route
+            path={DATA_RECORDS_ROUTE}
+            element={
+              <>
+                <div>Data Records route</div>
+                <LocationStateProbe />
+              </>
+            }
+          />
         </Routes>
       </MemoryRouter>,
     );
@@ -1467,10 +1578,8 @@ describe('UploadPage sample workflow', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Mock spreadsheet save' }));
 
     expect(await screen.findByText(/Save All documentId: spreadsheet-source-1/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Review Selected Data' }));
-    await waitFor(() => {
-      expect(getDocumentExtraction).toHaveBeenCalledWith('spreadsheet-source-1');
-    });
+    expect(await screen.findByRole('heading', { level: 2, name: 'Draft Records Review' })).toBeInTheDocument();
+    expect(getDocumentExtraction).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
 
@@ -1482,7 +1591,18 @@ describe('UploadPage sample workflow', () => {
       expect.any(Array),
       'document-spreadsheet-source-1',
     );
-    expect(screen.getByText(/Confirm documentId: spreadsheet-source-1/i)).toBeInTheDocument();
+    expect(await screen.findByText('Data Records route')).toBeInTheDocument();
+    expect(screen.getByTestId('location-state')).toHaveTextContent(
+      JSON.stringify({
+        flashMessage:
+          'Imported 3 activity record(s). 6 rows were left in draft because they require review. Generated emissions metrics.',
+        sourceDocumentIds: ['spreadsheet-source-1'],
+        importedActivityIds: ['created-electricity', 'created-gas', 'created-water'],
+        importedCount: 3,
+        trackedMetricCount: 1,
+        rowsLeftForReview: 6,
+      }),
+    );
   }, 15000);
 
   it('redirects the old Input Review URL to the Input Data review section', async () => {
@@ -1897,15 +2017,12 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByRole('button', { name: 'View Calculation Review' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
 
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: /Document Type/i }),
-      'UTILITY_BILL',
-    );
     const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
     await userEvent.upload(
       fileInput,
       new File(['new invoice bytes'], 'new-invoice.pdf', { type: 'application/pdf' }),
     );
+    expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
 
     expect(await screen.findByText('new-invoice.pdf')).toBeInTheDocument();
@@ -2126,15 +2243,8 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText(/Supported files: PDF, JPG, PNG, HEIC/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Download CSV template/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Add activity record/i })).not.toBeInTheDocument();
-    const documentTypeSelect = screen.getByRole('combobox', { name: /Document Type/i });
-    expect(documentTypeSelect).toHaveValue('');
-    expect(within(documentTypeSelect).getByRole('option', { name: /Select document type/i })).toBeInTheDocument();
-    expect(within(documentTypeSelect).getByRole('option', { name: /Utility Bill/i })).toBeInTheDocument();
-    expect(within(documentTypeSelect).getByRole('option', { name: /Fuel Invoice/i })).toBeInTheDocument();
-    expect(within(documentTypeSelect).getByRole('option', { name: /Water Bill/i })).toBeInTheDocument();
-    expect(within(documentTypeSelect).getByRole('option', { name: /Travel Document/i })).toBeInTheDocument();
-    expect(within(documentTypeSelect).getByRole('option', { name: /Hotel Invoice/i })).toBeInTheDocument();
-    expect(within(documentTypeSelect).queryByRole('option', { name: /^SPREADSHEET$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /Document Type/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Extract Data' })).toBeDisabled();
 
     await userEvent.click(screen.getByRole('tab', { name: /Import Spreadsheet/i }));
     expect(screen.getByRole('heading', { name: /^Import Spreadsheet$/i })).toBeInTheDocument();
@@ -2193,6 +2303,200 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByText(/CSV, XLSX/i)).not.toBeInTheDocument();
   });
 
+  it('keeps FortisBC comparison chart values out of current draft activities', async () => {
+    const fortisbcDocument = {
+      id: 'fortisbc-doc',
+      fileName: 'PD_064532180789.pdf',
+      fileUrl: '',
+      type: 'PDF',
+      status: 'UPLOADED',
+      fileSize: 100,
+      createdAt: '2026-09-24T00:00:00.000Z',
+      updatedAt: '2026-09-24T00:00:00.000Z',
+    } as any;
+    vi.mocked(uploadDocument).mockResolvedValueOnce(fortisbcDocument);
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [fortisbcDocument],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValueOnce({
+      documentId: 'fortisbc-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'Natural Gas',
+          recordDate: '2026-09-24',
+          endDate: '2026-09-24',
+          quantity: 2.1,
+          unit: 'GJ',
+          periodRole: 'CURRENT',
+          country: 'Canada',
+          province: 'British Columbia',
+          sourceReference: 'Gas charges: Aug 25 - Sep 24, 2026',
+          sourceTextSnippet: 'Current bill gas charges. Delivery (2.1 GJ x rate).',
+          sourcePage: 2,
+        },
+        {
+          activityType: 'Natural Gas',
+          recordDate: '2026-09-24',
+          endDate: '2026-09-24',
+          quantity: 2.2,
+          unit: 'GJ',
+          periodRole: 'PRIOR_YEAR',
+          country: 'Canada',
+          province: 'British Columbia',
+          sourceReference: null,
+          sourceTextSnippet: null,
+          sourcePage: 1,
+        },
+        {
+          activityType: 'Natural Gas',
+          recordDate: '2026-09-24',
+          endDate: '2026-09-24',
+          quantity: 0.7,
+          unit: 'GJ',
+          periodRole: 'PREVIOUS_PERIOD',
+          country: 'Canada',
+          province: 'British Columbia',
+          sourceReference: null,
+          sourceTextSnippet: null,
+          sourcePage: 1,
+        },
+        {
+          activityType: 'Natural Gas',
+          recordDate: '2026-09-24',
+          endDate: '2026-09-24',
+          quantity: 2.1,
+          unit: 'GJ',
+          periodRole: 'CURRENT',
+          country: 'Canada',
+          province: 'British Columbia',
+          sourceReference: 'Current meter readings',
+          sourceTextSnippet: 'Current meter readings support this bill usage of 2.1 GJ.',
+          sourcePage: 2,
+        },
+      ],
+      sourceRowCount: 4,
+      extractedRowCount: 4,
+      possibleMissingRows: false,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
+    const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
+    await userEvent.upload(
+      fileInput,
+      new File(['fortisbc bill'], 'PD_064532180789.pdf', { type: 'application/pdf' }),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+
+    await waitFor(() => expect(extractDocument).toHaveBeenCalledWith('fortisbc-doc'));
+    expect(await screen.findByText('Draft Records Review')).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue('Natural Gas')).toHaveLength(1);
+    expect(screen.getByDisplayValue('2.1')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('GJ')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-09-24')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('British Columbia')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('2.2')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('0.7')).not.toBeInTheDocument();
+    const unitMismatchLabels = screen.getAllByText('Unit Mismatch');
+    expect(unitMismatchLabels.length).toBeGreaterThan(0);
+    expect(
+      unitMismatchLabels.some((label) =>
+        label.getAttribute('title')?.includes('Natural Gas is recorded in GJ, but the available emission factor requires m3.'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps distinct current Natural Gas billing periods as separate draft activities', async () => {
+    const currentDocument = {
+      id: 'multi-period-gas-doc',
+      fileName: 'gas-current-periods.pdf',
+      fileUrl: '',
+      type: 'PDF',
+      status: 'UPLOADED',
+      fileSize: 100,
+      createdAt: '2026-09-24T00:00:00.000Z',
+      updatedAt: '2026-09-24T00:00:00.000Z',
+    } as any;
+    vi.mocked(uploadDocument).mockResolvedValueOnce(currentDocument);
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [currentDocument],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValueOnce({
+      documentId: 'multi-period-gas-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'Natural Gas',
+          recordDate: '2026-08-24',
+          endDate: '2026-08-24',
+          quantity: 1.8,
+          unit: 'GJ',
+          periodRole: 'CURRENT',
+          country: 'Canada',
+          province: 'British Columbia',
+          sourceReference: 'Gas charges: Jul 25 - Aug 24, 2026',
+          sourceTextSnippet: 'Current bill gas charges. Delivery (1.8 GJ x rate).',
+          sourcePage: 2,
+        },
+        {
+          activityType: 'Natural Gas',
+          recordDate: '2026-09-24',
+          endDate: '2026-09-24',
+          quantity: 2.1,
+          unit: 'GJ',
+          periodRole: 'CURRENT',
+          country: 'Canada',
+          province: 'British Columbia',
+          sourceReference: 'Gas charges: Aug 25 - Sep 24, 2026',
+          sourceTextSnippet: 'Current bill gas charges. Delivery (2.1 GJ x rate).',
+          sourcePage: 3,
+        },
+      ],
+      sourceRowCount: 2,
+      extractedRowCount: 2,
+      possibleMissingRows: false,
+      warning: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
+    const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
+    await userEvent.upload(
+      fileInput,
+      new File(['gas bills'], 'gas-current-periods.pdf', { type: 'application/pdf' }),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+
+    expect(await screen.findByText('Draft Records Review')).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue('Natural Gas')).toHaveLength(2);
+    expect(screen.getByDisplayValue('1.8')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2.1')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-08-24')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-09-24')).toBeInTheDocument();
+  });
+
   it('blocks duplicate document uploads without offering a separate copy import', async () => {
     vi.mocked(uploadDocument).mockRejectedValue(
       new DuplicateDocumentError({
@@ -2209,10 +2513,6 @@ describe('UploadPage sample workflow', () => {
     );
 
     expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: /Document Type/i }),
-      'UTILITY_BILL',
-    );
     const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
     await userEvent.upload(
       fileInput,
@@ -2220,6 +2520,7 @@ describe('UploadPage sample workflow', () => {
         type: 'application/pdf',
       }),
     );
+    expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
 
     expect(
@@ -2228,6 +2529,7 @@ describe('UploadPage sample workflow', () => {
       ),
     ).toBeInTheDocument();
     expect(uploadDocument).toHaveBeenCalledTimes(1);
+    expect(uploadDocument).toHaveBeenCalledWith(expect.objectContaining({ type: 'PDF' }));
     expect(getDocumentExtraction).not.toHaveBeenCalled();
     expect(screen.queryByText(/Keep separate copy/i)).not.toBeInTheDocument();
   });
@@ -2507,7 +2809,7 @@ describe('UploadPage sample workflow', () => {
     await waitFor(() => {
       expect(within(row!).queryByText('Province required')).not.toBeInTheDocument();
     });
-    expect(within(row!).getByText('Ready')).toBeInTheDocument();
+    expect(within(row!).getByText('Calculated')).toBeInTheDocument();
     expect(within(row!).getByRole('checkbox')).toBeEnabled();
     expect(within(row!).getByRole('checkbox')).toBeChecked();
   });
@@ -3186,7 +3488,7 @@ describe('UploadPage sample workflow', () => {
     expect(within(row!).getByText(`Date estimated: ${uploadDate}`)).toBeInTheDocument();
     expect(within(row!).queryByText(/Use Suggestion/i)).not.toBeInTheDocument();
     expect(within(row!).queryByText('Missing Date')).not.toBeInTheDocument();
-    expect(within(row!).getByText('Ready')).toBeInTheDocument();
+    expect(within(row!).getByText('Calculated')).toBeInTheDocument();
     expect(within(row!).getByRole('checkbox')).toBeChecked();
     expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeEnabled();
 
@@ -3204,7 +3506,139 @@ describe('UploadPage sample workflow', () => {
     });
   });
 
-  it('shows completion, clears draft review, and redirects after a full successful import', async () => {
+  it('stays on review rows when confirm returns zero new records', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'zero-import-doc',
+          fileName: 'already-imported.csv',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'zero-import-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'Natural Gas',
+          amount: 100,
+          unit: 'm3',
+          country: 'Canada',
+          startDate: '2026-07-20',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+    vi.mocked(confirmDocumentImport).mockResolvedValueOnce({
+      count: 0,
+      createdIds: [],
+      createdRecordKeys: [],
+      importBatchId: 'document-zero-import-doc',
+      alreadyImported: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/input-data']}>
+        <Routes>
+          <Route
+            path="/input-data"
+            element={
+              <>
+                <LocationProbe />
+                <UploadPage />
+              </>
+            }
+          />
+          <Route path={DATA_RECORDS_ROUTE} element={<div>Data Records route</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
+
+    await waitFor(() => {
+      expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText('No new records were imported.')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/input-data');
+    expect(screen.queryByText('Data Records route')).not.toBeInTheDocument();
+  });
+
+  it('stays on review rows when confirm fails', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [
+        {
+          ...failedDocument,
+          id: 'failed-confirm-doc',
+          fileName: 'failed-confirm.csv',
+          type: 'SPREADSHEET',
+        },
+      ],
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      totalPages: 1,
+    });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'failed-confirm-doc',
+      status: 'REVIEW_REQUIRED',
+      parsedActivities: [
+        {
+          activityType: 'Natural Gas',
+          amount: 100,
+          unit: 'm3',
+          country: 'Canada',
+          startDate: '2026-07-20',
+        },
+      ],
+      sourceRowCount: 1,
+      extractedRowCount: 1,
+      possibleMissingRows: 0,
+      warning: null,
+    });
+    vi.mocked(confirmDocumentImport).mockRejectedValueOnce(new Error('Confirm failed'));
+
+    render(
+      <MemoryRouter initialEntries={['/input-data']}>
+        <Routes>
+          <Route
+            path="/input-data"
+            element={
+              <>
+                <LocationProbe />
+                <UploadPage />
+              </>
+            }
+          />
+          <Route path={DATA_RECORDS_ROUTE} element={<div>Data Records route</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry Extract/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
+
+    await waitFor(() => {
+      expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      await screen.findByText('Import could not be completed. Please review the records and try again.'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/input-data');
+    expect(screen.queryByText('Data Records route')).not.toBeInTheDocument();
+  });
+
+  it('shows completion, clears draft review, and navigates to Data Records after a full successful import', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {
@@ -3242,10 +3676,10 @@ describe('UploadPage sample workflow', () => {
         <Routes>
           <Route path="/input-data" element={<UploadPage />} />
           <Route
-            path="/calculation-review"
+            path={DATA_RECORDS_ROUTE}
             element={
               <>
-                <div>Calculation Review route</div>
+                <div>Data Records route</div>
                 <LocationStateProbe />
               </>
             }
@@ -3261,22 +3695,21 @@ describe('UploadPage sample workflow', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
 
-    expect(
-      await screen.findByText(
-        'Import completed successfully. The selected records have been saved as Data Records. 1 record imported. 0 records require review. Redirecting to Calculation Review...',
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Draft Records Review')).not.toBeInTheDocument();
     expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
     expect(calculateMetrics).toHaveBeenCalledWith(['created-1']);
 
     await waitFor(() => {
-      expect(screen.getByText('Calculation Review route')).toBeInTheDocument();
-    }, { timeout: 2500 });
+      expect(screen.getByText('Data Records route')).toBeInTheDocument();
+    });
     expect(screen.getByTestId('location-state')).toHaveTextContent(
       JSON.stringify({
-        selectedDocumentIds: ['complete-import-doc'],
-        reportScope: 'selectedDocuments',
+        flashMessage:
+          'Import completed successfully. The selected records have been saved as Data Records. 1 record imported. 0 records require review. Opening Data Records...',
+        sourceDocumentIds: ['complete-import-doc'],
+        importedActivityIds: ['created-1'],
+        importedCount: 1,
+        trackedMetricCount: 0,
+        rowsLeftForReview: 0,
       }),
     );
   });
@@ -3326,7 +3759,7 @@ describe('UploadPage sample workflow', () => {
     const row = screen.getByDisplayValue('Electricity').closest('tr');
     expect(row).toBeTruthy();
     expect(within(row!).getByRole('checkbox')).toBeChecked();
-    expect(within(row!).getByText('Ready')).toBeInTheDocument();
+    expect(within(row!).getByText('Calculated')).toBeInTheDocument();
 
     await userEvent.clear(screen.getByDisplayValue('Alberta'));
 

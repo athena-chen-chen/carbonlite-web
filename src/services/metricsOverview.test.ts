@@ -7,6 +7,8 @@ import {
   loadDefaultMetricsDateRange,
   loadMetricsOverview,
 } from './metricsOverview';
+import { buildPilotCsv, buildPilotCsvRows } from '../utils/reportCsvExport';
+import { buildDataReadinessSummary } from '../components/MetricsSummarySection';
 
 vi.mock('./activityData', () => ({
   getAllActivityData: vi.fn(),
@@ -540,6 +542,415 @@ describe('loadMetricsOverview', () => {
     ]);
   });
 
+  it('enriches complete calculation details with ActivityData source and cost metadata before CSV export', async () => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      totalRecordsFound: 3,
+      recordsInScope: 3,
+      recordsCalculated: 2,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 0,
+      missingFactorCount: 0,
+      missingFactorRecords: 0,
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      calculationDetails: [
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          calculatedEmissionsKgCO2e: 519.4,
+          calculatedEmission: 519.4,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-ELEC-001',
+          sourceSheetName: null,
+          costCad: null,
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          calculatedEmissionsKgCO2e: null,
+          calculatedEmission: null,
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          status: 'TRACKED_ONLY',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-WATER-007',
+          sourceSheetName: null,
+          costCad: null,
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          calculatedEmissionsKgCO2e: 60,
+          calculatedEmission: 60,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
+          sourceSheetName: null,
+          costCad: null,
+        },
+      ],
+      matchedActivityEmissions: [],
+      missingFactors: [],
+      activities: [
+        {
+          id: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          quantity: 980,
+          unit: 'kWh',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-ELEC-001',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceSheetName: 'Messy_Operations',
+          sourceRow: 2,
+          sourceDocumentId: 'doc-messy-ops',
+          costCad: 214.55,
+          costCurrency: 'CAD',
+        },
+        {
+          id: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          quantity: 18,
+          unit: 'm3',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-WATER-007',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceSheetName: 'Messy_Operations',
+          sourceRow: 8,
+          sourceDocumentId: 'doc-messy-ops',
+          costCad: 64,
+          costCurrency: 'CAD',
+        },
+        {
+          id: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          quantity: 4,
+          unit: 'nights',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'MARCH-HOTEL-010',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceSheetName: 'Messy_Operations',
+          sourceRow: 11,
+          sourceDocumentId: 'doc-messy-ops',
+          costCad: 720,
+          costCurrency: 'CAD',
+        },
+      ],
+    } as any);
+
+    const overview = await loadMetricsOverview({
+      dateFrom: '2026-03-01',
+      dateTo: '2026-03-31',
+    });
+    const byReference = new Map(
+      overview.calculationDetails.map((detail) => [detail.sourceReference, detail]),
+    );
+    const csvRows = buildPilotCsvRows(overview.calculationDetails);
+    const csvByReference = new Map(csvRows.map((row) => [row['Source Reference'], row]));
+
+    expect(overview.totalEstimatedEmissionsKgCO2e).toBe(579.4);
+    expect(byReference.get('MARCH-ELEC-001')).toMatchObject({
+      costCad: 214.55,
+      costCurrency: 'CAD',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceSheetName: 'Messy_Operations',
+      sourceRow: '2',
+      sourceDocumentId: 'doc-messy-ops',
+    });
+    expect(byReference.get('MARCH-WATER-007')).toMatchObject({
+      costCad: 64,
+      sourceSheetName: 'Messy_Operations',
+      sourceRow: '8',
+    });
+    expect(byReference.get('MARCH-HOTEL-010')).toMatchObject({
+      costCad: 720,
+      sourceSheetName: 'Messy_Operations',
+      sourceRow: '11',
+    });
+    expect(csvByReference.get('MARCH-ELEC-001')).toMatchObject({
+      'Cost CAD': '214.55',
+      'Source Sheet': 'Messy_Operations',
+    });
+    expect(csvByReference.get('MARCH-WATER-007')).toMatchObject({
+      'Cost CAD': '64',
+      'Source Sheet': 'Messy_Operations',
+    });
+    expect(csvByReference.get('MARCH-HOTEL-010')).toMatchObject({
+      'Cost CAD': '720',
+      'Source Sheet': 'Messy_Operations',
+    });
+  });
+
+  it('preserves existing detail metadata over ActivityData fallback and keeps zero costs', async () => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      totalRecordsFound: 2,
+      recordsInScope: 2,
+      recordsCalculated: 2,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 0,
+      missingFactorCount: 0,
+      missingFactorRecords: 0,
+      totalEstimatedEmissionsKgCO2e: 12,
+      calculationDetails: [
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-detail-wins',
+          activityType: 'DIESEL',
+          calculatedEmissionsKgCO2e: 12,
+          calculatedEmission: 12,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'DETAIL-REF',
+          sourceFileName: 'detail-file.xlsx',
+          sourceSheetName: 'Detail_Sheet',
+          sourceRow: '99',
+          sourceDocumentId: 'detail-doc',
+          costCad: 123.45,
+          costCurrency: 'CAD',
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'activity-zero-cost',
+          activityType: 'DIESEL',
+          calculatedEmissionsKgCO2e: 0,
+          calculatedEmission: 0,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'ZERO-COST',
+          sourceSheetName: null,
+          costCad: null,
+        },
+      ],
+      matchedActivityEmissions: [],
+      missingFactors: [],
+      activities: [
+        {
+          id: 'activity-detail-wins',
+          activityType: 'DIESEL',
+          recordDate: '2026-03-01',
+          quantity: 1,
+          unit: 'liters',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'ACTIVITY-REF',
+          sourceFileName: 'activity-file.xlsx',
+          sourceSheetName: 'Activity_Sheet',
+          sourceRow: 1,
+          sourceDocumentId: 'activity-doc',
+          costCad: 999,
+          costCurrency: 'CAD',
+        },
+        {
+          id: 'activity-zero-cost',
+          activityType: 'DIESEL',
+          recordDate: '2026-03-02',
+          quantity: 1,
+          unit: 'liters',
+          sourceType: 'SPREADSHEET',
+          sourceReference: 'ZERO-COST',
+          sourceFileName: 'zero.xlsx',
+          sourceSheetName: 'Zero_Costs',
+          sourceRow: 2,
+          sourceDocumentId: 'zero-doc',
+          costCad: 0,
+          costCurrency: 'CAD',
+        },
+      ],
+    } as any);
+
+    const overview = await loadMetricsOverview();
+    const detailWins = overview.calculationDetails.find(
+      (detail) => detail.activityDataId === 'activity-detail-wins',
+    );
+    const zeroCost = overview.calculationDetails.find(
+      (detail) => detail.activityDataId === 'activity-zero-cost',
+    );
+    const csvRows = buildPilotCsvRows(overview.calculationDetails);
+    const zeroCostCsvRow = csvRows.find((row) => row['Source Reference'] === 'ZERO-COST');
+
+    expect(detailWins).toMatchObject({
+      sourceReference: 'DETAIL-REF',
+      sourceFileName: 'detail-file.xlsx',
+      sourceSheetName: 'Detail_Sheet',
+      sourceRow: '99',
+      sourceDocumentId: 'detail-doc',
+      costCad: 123.45,
+    });
+    expect(zeroCost).toMatchObject({
+      sourceReference: 'ZERO-COST',
+      sourceFileName: 'zero.xlsx',
+      sourceSheetName: 'Zero_Costs',
+      sourceRow: '2',
+      sourceDocumentId: 'zero-doc',
+      costCad: 0,
+      costCurrency: 'CAD',
+    });
+    expect(zeroCostCsvRow).toMatchObject({
+      'Cost CAD': '0',
+    });
+  });
+
+  it('treats unbacked API zero costs as missing through the report CSV path', async () => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      totalRecordsFound: 3,
+      recordsInScope: 3,
+      recordsCalculated: 2,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      totalEstimatedEmissionsKgCO2e: 338.06,
+      calculationDetails: [
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'enmax-electricity',
+          activityType: 'ELECTRICITY',
+          recordDate: '2025-08-01',
+          activityQuantity: 358,
+          activityUnit: 'kWh',
+          calculatedEmissionsKgCO2e: 189.74,
+          calculatedEmission: 189.74,
+          status: 'CALCULATED',
+          calculationStatus: 'CALCULATED',
+          matchingStatus: 'MATCHED',
+          sourceReference: 'ENMAX electricity',
+          costCad: 0,
+          costCurrency: null,
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'enmax-natural-gas',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2025-08-01',
+          activityQuantity: 3,
+          activityUnit: 'GJ',
+          calculatedEmissionsKgCO2e: 148.32,
+          calculatedEmission: 148.32,
+          status: 'CALCULATED',
+          calculationStatus: 'CALCULATED',
+          matchingStatus: 'MATCHED',
+          sourceReference: 'ENMAX natural gas',
+          costCad: 0,
+          costCurrency: null,
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'enmax-water',
+          activityType: 'WATER',
+          recordDate: '2025-08-01',
+          activityQuantity: 6,
+          activityUnit: 'm3',
+          calculatedEmissionsKgCO2e: null,
+          calculatedEmission: null,
+          status: 'TRACKED_ONLY',
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          sourceReference: 'ENMAX water',
+          costCad: 0,
+          costCurrency: null,
+        },
+      ],
+      matchedActivityEmissions: [],
+      records: [],
+      activities: [
+        {
+          id: 'enmax-electricity',
+          activityType: 'ELECTRICITY',
+          recordDate: '2025-08-01',
+          quantity: 358,
+          unit: 'kWh',
+          sourceReference: 'ENMAX electricity',
+          costCad: null,
+          costCurrency: null,
+        },
+        {
+          id: 'enmax-natural-gas',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2025-08-01',
+          quantity: 3,
+          unit: 'GJ',
+          sourceReference: 'ENMAX natural gas',
+          costCad: null,
+          costCurrency: null,
+        },
+        {
+          id: 'enmax-water',
+          activityType: 'WATER',
+          recordDate: '2025-08-01',
+          quantity: 6,
+          unit: 'm3',
+          sourceReference: 'ENMAX water',
+          costCad: null,
+          costCurrency: null,
+        },
+      ],
+    } as any);
+
+    const overview = await loadMetricsOverview();
+    const csvRows = buildPilotCsvRows(overview.calculationDetails);
+    const csv = buildPilotCsv(overview.calculationDetails);
+    const readiness = buildDataReadinessSummary(overview.calculationDetails);
+
+    expect(
+      overview.calculationDetails.map((detail) => [detail.activityDataId, detail.costCad]),
+    ).toEqual([
+      ['enmax-electricity', null],
+      ['enmax-natural-gas', null],
+      ['enmax-water', null],
+    ]);
+    expect(csvRows.map((row) => [row['Activity Type'], row['Cost CAD']])).toEqual([
+      ['Electricity', ''],
+      ['Natural Gas', ''],
+      ['Water', ''],
+    ]);
+    expect(csv).toContain('\n1,Electricity,2025-08-01,358,358 kWh,kWh,,');
+    expect(csv).toContain('\n2,Natural Gas,2025-08-01,3,3 GJ,GJ,,');
+    expect(csv).toContain('\n3,Water,2025-08-01,6,6 m3,m3,,');
+    expect(readiness.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        costDataCount: 0,
+        totalRecords: 3,
+        missingCostDataCount: 3,
+        score: 0,
+      }),
+    );
+  });
+
   it('accepts refactored summary count fields when recordsCalculated is absent', async () => {
     const summary = backendSummary();
     delete (summary as any).recordsCalculated;
@@ -1047,7 +1458,7 @@ describe('loadMetricsOverview', () => {
       expect(overview.calculationDetails[0]).toMatchObject({
         status: 'CALCULATED',
         factorId: 'factor-visible',
-        matchingMessage: 'Matched to CarbonLite System Factor.',
+        matchingMessage: 'Matched to a factor provided by CarbonLite.',
         calculatedEmissionsKgCO2e: expectedEmissions,
       });
       expect(overview.calculationDetails[0].matchingMessage).not.toMatch(/backend factor matching/i);

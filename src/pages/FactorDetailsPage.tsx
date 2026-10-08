@@ -15,7 +15,7 @@ import { formatEmissionsUnit } from '../utils/numberFormatting';
 
 const statusLabels: Record<string, string> = {
   DRAFT: 'Draft',
-  VERIFIED: 'Verified',
+  VERIFIED: 'Reviewed',
   OFFICIAL: 'Official',
   DEPRECATED: 'Deprecated',
   ARCHIVED: 'Archived',
@@ -314,7 +314,7 @@ function getSourceLinkLabel(sourceUrl?: string | null, version?: FactorVersion |
 
 function getFactorTypeLabel(version: FactorVersion) {
   if (version.source?.isOfficial) return 'Official Factor';
-  if (version.isSystem) return 'CarbonLite System Factor';
+  if (version.isSystem) return 'Provided by CarbonLite';
   return 'Custom Factor';
 }
 
@@ -439,7 +439,7 @@ export function FactorDetailsPage() {
               <span style={statusBadgeStyle(version.source?.isOfficial ? 'OFFICIAL' : 'DRAFT')}>
                 {getFactorTypeLabel(version)}
               </span>
-              {version.verified ? <span style={statusBadgeStyle('VERIFIED')}>Verified</span> : null}
+              {version.verified ? <span style={statusBadgeStyle('VERIFIED')}>Reviewed</span> : null}
               <span style={statusBadgeStyle(ready ? 'OFFICIAL' : 'DRAFT')}>
                 {ready ? 'Production Ready' : 'Review Required'}
               </span>
@@ -490,7 +490,7 @@ export function FactorDetailsPage() {
         ) : null}
 
         {version.isSystem && !version.verified ? (
-          <Card title="System Factor Review" style={fullWidthCardStyle}>
+          <Card title="CarbonLite Factor Review" style={fullWidthCardStyle}>
             <div style={reviewNoticeStyle}>
               This system factor is included for pilot validation and should be reviewed
               before regulatory, client-facing, or compliance reporting.
@@ -578,7 +578,7 @@ export function FactorDetailsPage() {
             <Info label="Status" value={<span style={statusBadgeStyle(version.status)}>{formatStatus(version.status)}</span>} />
             <Info label="Confidence Level" value={titleCase(version.confidenceLevel)} />
             <Info label="Verification Status" value={displayValue(version.verificationStatus)} />
-            <Info label="Verified" value={version.verified ? 'Yes' : 'No'} />
+            <Info label="Reviewed" value={version.verified ? 'Yes' : 'No'} />
             <Info label="Reviewed By" value={displayValue(version.reviewedBy)} />
             <Info label="Reviewed At" value={formatShortDate(version.reviewedAt)} />
             <Info label="Approval Source" value={displayValue(version.approvalSource)} />

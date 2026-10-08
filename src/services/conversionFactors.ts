@@ -101,6 +101,100 @@ export type ConversionFactorListResponse = {
   totalPages: number;
 };
 
+const VALID_VERIFICATION_STATUSES = new Set([
+  'UNREVIEWED',
+  'INTERNAL_REVIEW_REQUIRED',
+  'REVIEWED',
+  'VERIFIED',
+  'OFFICIAL_SOURCE',
+  'PILOT_ESTIMATE',
+  'DRAFT',
+  'ACTIVE',
+]);
+
+const VALID_CONFIDENCE_LEVELS = new Set([
+  'HIGH',
+  'MEDIUM',
+  'LOW',
+  'PLACEHOLDER',
+  'PILOT_ESTIMATE',
+]);
+
+function normalizeGovernanceValue(value?: string | null) {
+  return String(value ?? '').trim().replace(/[\s-]+/g, '_').toUpperCase();
+}
+
+function validateConversionFactorInput(input: Partial<ConversionFactorInput>) {
+  const errors: string[] = [];
+  const factorValue = Number(input.factorValue);
+
+  if (input.factorValue !== undefined && (!Number.isFinite(factorValue) || factorValue < 0)) {
+    errors.push('Factor value must be a valid number greater than or equal to 0.');
+  }
+
+  if (input.unit !== undefined && !String(input.unit).trim()) {
+    errors.push('Unit is required.');
+  }
+
+  if (input.activityType !== undefined && !normalizeActivityType(input.activityType)) {
+    errors.push('Activity type must be recognized.');
+  }
+
+  if (input.effectiveFrom && input.effectiveTo) {
+    const effectiveFrom = Date.parse(input.effectiveFrom);
+    const effectiveTo = Date.parse(input.effectiveTo);
+    if (Number.isFinite(effectiveFrom) && Number.isFinite(effectiveTo) && effectiveFrom > effectiveTo) {
+      errors.push('Effective from must be before or equal to effective to.');
+    }
+  }
+
+  if (input.sourceYear !== undefined) {
+    const sourceYear = Number(input.sourceYear);
+    if (!Number.isInteger(sourceYear) || sourceYear < 1900 || sourceYear > 2100) {
+      errors.push('Source year must be a plausible four-digit year.');
+    }
+  }
+
+  if (input.sourceUrl) {
+    try {
+      const origin = typeof window === 'undefined' ? 'https://carbonlite.local' : window.location.origin;
+      const parsed = new URL(input.sourceUrl, origin);
+      if (!['http:', 'https:'].includes(parsed.protocol) && !parsed.pathname.startsWith('/methodology/')) {
+        errors.push('Source URL must be an http(s) URL or a CarbonLite methodology path.');
+      }
+    } catch {
+      errors.push('Source URL must be a valid URL.');
+    }
+  }
+
+  const verificationStatus = normalizeGovernanceValue(input.verificationStatus);
+  if (verificationStatus && !VALID_VERIFICATION_STATUSES.has(verificationStatus)) {
+    errors.push('Verification status is not recognized.');
+  }
+
+  const confidenceLevel = normalizeGovernanceValue(input.confidenceLevel ?? input.confidence);
+  if (confidenceLevel && !VALID_CONFIDENCE_LEVELS.has(confidenceLevel)) {
+    errors.push('Confidence level is not recognized.');
+  }
+
+  const factorType = normalizeGovernanceValue(input.factorType);
+  const sourceAuthority = String(input.sourceAuthority ?? '').trim();
+  const sourceDocument = String(input.sourceDocument ?? '').trim();
+  const isInternalPilotDefault =
+    sourceAuthority.toLowerCase() === 'carbonlite' ||
+    normalizeGovernanceValue(input.factorSet).includes('PILOT') ||
+    Boolean(input.isPilotEstimate);
+
+  if (factorType !== 'CUSTOM' && !isInternalPilotDefault) {
+    if (!sourceAuthority) errors.push('Source authority is required for non-internal factors.');
+    if (!sourceDocument) errors.push('Source document is required for non-internal factors.');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join(' '));
+  }
+}
+
 const PILOT_ELECTRICITY_FACTOR_VALUES: Record<string, number> = {
   AB: 0.53,
   BC: 0.02,
@@ -259,8 +353,53 @@ const PILOT_GROUND_TRANSPORT_FACTOR: ConversionFactorItem = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+const ECCC_NATURAL_GAS_GJ_FACTOR: ConversionFactorItem = {
+  id: 'eccc-natural-gas-canada-generic-gj-2025',
+  organizationId: null,
+  factorType: 'SYSTEM',
+  name: 'Natural Gas - Canada Generic',
+  type: 'EMISSION',
+  activityType: 'NATURAL_GAS',
+  jurisdiction: 'Canada (Generic)',
+  region: 'Canada',
+  country: 'Canada',
+  inputUnit: 'GJ',
+  unit: 'GJ',
+  factorValue: 49.44,
+  resultUnit: 'kgCO2e',
+  sourceName: 'ECCC Table A8 national fuel energy emission factor',
+  sourceReference: 'Table A8: Mass of CO2 equivalent emissions emitted per quantity of energy for various fuels',
+  sourceAuthority: 'Environment and Climate Change Canada',
+  sourceDocument: 'Greenhouse gas and air pollutant emissions projections – 2025',
+  sourceYear: 2025,
+  sourceUrl: 'https://www.canada.ca/en/environment-climate-change/services/climate-change/greenhouse-gas-emissions/projections/2025-report.html',
+  factorVersion: 'ECCC_EPR_2025_TABLE_A8',
+  factorSet: 'ECCC_EPR_2025_TABLE_A8',
+  factorStatus: 'ACTIVE',
+  confidence: 'HIGH',
+  boundary: 'Canada-generic direct Natural Gas combustion CO2e estimate by energy consumed.',
+  assumptions:
+    'ECCC Table A8 national Natural Gas CO2e estimate. The source identifies this as an approximate estimate and notes that actual emission factors may vary by year, sector, and province.',
+  methodology:
+    'Table A8 publishes Natural Gas at 49.44 g CO2e/MJ. CarbonLite stores the equivalent direct factor as 49.44 kg CO2e/GJ.',
+  confidenceLevel: 'HIGH',
+  verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+  isPilotEstimate: false,
+  consultantReviewRecommended: true,
+  verified: false,
+  notes:
+    'Canada-generic fallback estimate from ECCC Table A8. Not Alberta-specific, facility-specific, or compliance-certified.',
+  isDefault: true,
+  isSystemDefault: true,
+  defaultScope: 'SCOPE_1',
+  scope: 'SCOPE_1',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
 export async function createConversionFactor(input: ConversionFactorInput) {
   requirePermission(canManageCompanyFactors(getCurrentUser()));
+  validateConversionFactorInput(input);
 
   return apiFetch<ConversionFactorItem>('/conversion-factors', {
     method: 'POST',
@@ -358,6 +497,7 @@ function getPilotSystemFactorsForParams(params?: {
     ...getPilotElectricityFactorsForParams(params),
     ...getOfficialElectricityFactorsForParams(params),
     ...(matchesPilotGroundTransportParams(params) ? [PILOT_GROUND_TRANSPORT_FACTOR] : []),
+    ...(matchesEcccNaturalGasGJParams(params) ? [ECCC_NATURAL_GAS_GJ_FACTOR] : []),
   ];
 }
 
@@ -461,6 +601,40 @@ function matchesPilotGroundTransportParams(params?: {
     PILOT_GROUND_TRANSPORT_FACTOR.sourceAuthority,
     PILOT_GROUND_TRANSPORT_FACTOR.confidenceLevel,
     PILOT_GROUND_TRANSPORT_FACTOR.verificationStatus,
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(searchFilter));
+}
+
+function matchesEcccNaturalGasGJParams(params?: {
+  activityType?: string;
+  jurisdiction?: string;
+  sourceYear?: number;
+  search?: string;
+}) {
+  const activityType = normalizeActivityType(params?.activityType);
+  if (activityType && activityType !== 'NATURAL_GAS') return false;
+
+  if (params?.sourceYear && params.sourceYear !== 2025) return false;
+
+  const jurisdictionFilter = String(params?.jurisdiction ?? '').trim().toLowerCase();
+  if (jurisdictionFilter && !isCanadaNationalJurisdiction(jurisdictionFilter)) {
+    return false;
+  }
+
+  const searchFilter = String(params?.search ?? '').trim().toLowerCase();
+  if (!searchFilter) return true;
+
+  return [
+    ECCC_NATURAL_GAS_GJ_FACTOR.name,
+    ECCC_NATURAL_GAS_GJ_FACTOR.activityType,
+    ECCC_NATURAL_GAS_GJ_FACTOR.jurisdiction,
+    ECCC_NATURAL_GAS_GJ_FACTOR.country,
+    ECCC_NATURAL_GAS_GJ_FACTOR.inputUnit,
+    ECCC_NATURAL_GAS_GJ_FACTOR.sourceAuthority,
+    ECCC_NATURAL_GAS_GJ_FACTOR.sourceDocument,
+    ECCC_NATURAL_GAS_GJ_FACTOR.sourceReference,
+    ECCC_NATURAL_GAS_GJ_FACTOR.factorSet,
   ]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(searchFilter));
@@ -571,6 +745,7 @@ export async function updateConversionFactor(
   input: Partial<ConversionFactorInput>,
 ) {
   requirePermission(canManageCompanyFactors(getCurrentUser()));
+  validateConversionFactorInput(input);
 
   return apiFetch<ConversionFactorItem>(`/conversion-factors/${id}`, {
     method: 'PATCH',

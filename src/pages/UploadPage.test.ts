@@ -12,7 +12,36 @@ import {
   buildDraftRowAuditSummary,
   resolveActivityRecordDate,
   buildDocumentImportActivityPayload,
+  extractProvinceFromAddress,
 } from './UploadPage';
+import { evaluateActivityRecord } from '../utils/canonicalRecordEvaluation';
+
+const albertaElectricity2025Factor = {
+  id: 'factor-electricity-ab-2025',
+  organizationId: null,
+  factorType: 'SYSTEM',
+  name: 'Electricity - Alberta',
+  type: 'EMISSION',
+  activityType: 'ELECTRICITY',
+  inputUnit: 'kWh',
+  unit: 'kWh',
+  factorValue: 0.53,
+  resultUnit: 'kgCO2e/kWh',
+  sourceYear: 2025,
+  effectiveYear: 2025,
+  jurisdictionCountry: 'Canada',
+  jurisdictionRegion: 'Alberta',
+  sourceAuthority: 'CarbonLite',
+  sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+  factorVersion: 'v1.0',
+  verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+  confidenceLevel: 'LOW',
+  assumptions: 'Pilot default electricity factor.',
+  isSystemDefault: true,
+  isDefault: true,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
 
 function buildImportRow(overrides: Record<string, any> = {}) {
   return {
@@ -42,6 +71,15 @@ describe('duplicate document messaging', () => {
 });
 
 describe('document import factor matching metadata', () => {
+  it('extracts province from the real ENMAX service address shape', () => {
+    expect(
+      extractProvinceFromAddress({
+        value: '4100 Test Industrial Way, Calgary, AB',
+        confidence: 'high',
+      }),
+    ).toBe('Alberta');
+  });
+
   it('builds golden-style import audit summary counts from draft rows', () => {
     const readyRows = Array.from({ length: 9 }, (_, index) =>
       buildImportRow({
@@ -138,6 +176,183 @@ describe('document import factor matching metadata', () => {
     expect(payload.notes).not.toMatch(/Missing Factor|No conversion factor/i);
     expect(payload.notes).toContain('Imported via PDF extraction. Source file: bc-hydro.pdf.');
     expect(payload.notes).not.toContain('Document ID');
+  });
+
+  it('uses the same canonical selector and evaluator for equivalent Excel and document electricity records', () => {
+    const factors = [albertaElectricity2025Factor] as any;
+    const excelEvaluation = evaluateActivityRecord({
+      activityType: 'Electricity',
+      quantity: 980,
+      unit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors,
+    });
+    const documentPayload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: 'Electricity', confidence: 'high' },
+        recordDate: { value: '2026-05-31', confidence: 'high' },
+        quantity: { value: 980, confidence: 'high' },
+        unit: { value: 'kWh', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'Alberta', confidence: 'high' },
+      }),
+      documentId: 'doc-enmax-electricity',
+      sourceFileName: 'enmax-electricity.pdf',
+      importBatchId: 'document-doc-enmax-electricity',
+      organizationId: 'org-1',
+      conversionFactors: factors,
+    });
+
+    expect(excelEvaluation).toMatchObject({
+      activityType: 'ELECTRICITY',
+      normalizedUnit: 'kWh',
+      matchingStatus: 'MATCHED',
+      calculationStatus: 'CALCULATED',
+      reportTreatment: 'INCLUDED',
+      matchedFactorName: 'Electricity - Alberta',
+      matchedFactorSourceYear: 2025,
+      calculatedEmissionsKgCO2e: 519.4,
+    });
+    expect(documentPayload).toMatchObject({
+      activityType: 'ELECTRICITY',
+      unit: 'kWh',
+      jurisdictionRegion: 'Alberta',
+      matchingStatus: excelEvaluation.matchingStatus,
+      calculationStatus: excelEvaluation.calculationStatus,
+      reportTreatment: excelEvaluation.reportTreatment,
+      matchedFactorId: excelEvaluation.matchedFactorId,
+      matchedFactorName: excelEvaluation.matchedFactorName,
+      matchedFactorValue: 0.53,
+      matchedFactorUnit: 'kgCO2e/kWh',
+      matchedFactorSourceYear: 2025,
+      matchedFactorVersion: 'v1.0',
+      matchedFactorSourceAuthority: 'CarbonLite',
+      matchedFactorSourceDocument: 'CarbonLite MVP Default Factors v1.0',
+      matchedFactorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+      matchedFactorConfidenceLevel: 'LOW',
+      factorSelectionReason: 'PILOT_DEFAULT_FALLBACK',
+      calculatedEmissionsKgCO2e: excelEvaluation.calculatedEmissionsKgCO2e,
+    });
+    expect(documentPayload.notes).not.toMatch(/Missing Factor/i);
+  });
+
+  it('calculates document electricity quantities generically without depending on the golden 980 kWh row', () => {
+    const payload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: 'Electric Utility', confidence: 'high' },
+        recordDate: { value: '2026-05-31', confidence: 'high' },
+        quantity: { value: 500, confidence: 'high' },
+        unit: { value: 'kwh', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'AB', confidence: 'high' },
+      }),
+      documentId: 'doc-enmax-electricity',
+      sourceFileName: 'enmax-electricity.pdf',
+      importBatchId: 'document-doc-enmax-electricity',
+      organizationId: 'org-1',
+      conversionFactors: [albertaElectricity2025Factor] as any,
+    });
+
+    expect(payload).toMatchObject({
+      activityType: 'ELECTRICITY',
+      matchingStatus: 'MATCHED',
+      calculationStatus: 'CALCULATED',
+      reportTreatment: 'INCLUDED',
+      matchedFactorName: 'Electricity - Alberta',
+      matchedFactorValue: 0.53,
+      matchedFactorSourceYear: 2025,
+      calculatedEmissionsKgCO2e: 265,
+    });
+  });
+
+  it('preserves canonical spreadsheet lineage metadata in confirm import payloads', () => {
+    const payload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        documentFileName: 'carbonlite_needs_review_test.xlsx',
+        activityType: { value: 'Electricity', confidence: 'high' },
+        recordDate: { value: '2026-03-01', confidence: 'high' },
+        quantity: { value: 980, confidence: 'high' },
+        unit: { value: 'kWh', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'Alberta', confidence: 'high' },
+        sourceReference: { value: 'MARCH-ELEC-001', confidence: 'high' },
+        sourceSheetName: 'Messy_Operations',
+        sourceRow: 2,
+        costCad: '214.55',
+        costCurrency: 'CAD',
+      }),
+      documentId: 'doc-golden-spreadsheet',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      importBatchId: 'document-doc-golden-spreadsheet',
+      organizationId: 'org-1',
+      conversionFactors: [albertaElectricity2025Factor] as any,
+    });
+
+    expect(payload).toMatchObject({
+      sourceReference: 'MARCH-ELEC-001',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceSheetName: 'Messy_Operations',
+      sourceRow: 2,
+      costCad: 214.55,
+      costCurrency: 'CAD',
+    });
+  });
+
+  it('prioritizes missing province over missing factor for document electricity rows', () => {
+    const payload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: 'Electricity', confidence: 'high' },
+        recordDate: { value: '2026-05-31', confidence: 'high' },
+        quantity: { value: 500, confidence: 'high' },
+        unit: { value: 'KWH', confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: '', confidence: 'low' },
+      }),
+      documentId: 'doc-electricity-missing-province',
+      sourceFileName: 'electricity-bill.pdf',
+      importBatchId: 'document-doc-electricity-missing-province',
+      organizationId: 'org-1',
+      conversionFactors: [albertaElectricity2025Factor] as any,
+    });
+
+    expect(payload).toMatchObject({
+      activityType: 'ELECTRICITY',
+      matchingStatus: 'MISSING_PROVINCE',
+      calculationStatus: 'MISSING_PROVINCE',
+      reportTreatment: 'EXCLUDED',
+      calculatedEmissionsKgCO2e: undefined,
+    });
+    expect(payload.calculationMessage).toContain('province');
+    expect(payload.calculationMessage).not.toMatch(/Missing Factor|No matching emission factor/i);
+  });
+
+  it.each(['kWh', 'KWH', 'kwh'])('normalizes %s document electricity units for factor matching', (unit) => {
+    const payload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: 'Power', confidence: 'high' },
+        recordDate: { value: '2026-05-31', confidence: 'high' },
+        quantity: { value: 500, confidence: 'high' },
+        unit: { value: unit, confidence: 'high' },
+        jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+        jurisdictionRegion: { value: 'Alberta', confidence: 'high' },
+      }),
+      documentId: `doc-electricity-${unit}`,
+      sourceFileName: 'electricity-bill.pdf',
+      importBatchId: `document-doc-electricity-${unit}`,
+      organizationId: 'org-1',
+      conversionFactors: [albertaElectricity2025Factor] as any,
+    });
+
+    expect(payload).toMatchObject({
+      activityType: 'ELECTRICITY',
+      matchingStatus: 'MATCHED',
+      calculationStatus: 'CALCULATED',
+      matchedFactorName: 'Electricity - Alberta',
+      calculatedEmissionsKgCO2e: 265,
+    });
   });
 
   it('uses service period year instead of upload or record date for imported bill factor matching', () => {
@@ -372,8 +587,8 @@ describe('formatSourceReference', () => {
     expect(result).not.toContain('[object Object]');
   });
 
-  it('falls back to source review when object metadata has no filename', () => {
-    expect(formatSourceReference({ value: { page: 2 } })).toBe('Source review required');
+  it('does not invent source review status when object metadata has no filename', () => {
+    expect(formatSourceReference({ value: { page: 2 } })).toBe('');
   });
 
   it('uses the uploaded filename when source reference is missing', () => {

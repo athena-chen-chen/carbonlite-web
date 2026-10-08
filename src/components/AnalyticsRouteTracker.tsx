@@ -12,7 +12,7 @@ const pageNames: Record<string, string> = {
   '/upload': 'Input Data',
   '/data-records': 'Data Records',
   '/activity-data': 'Data Records',
-  '/conversion-factors': 'Conversion Factors',
+  '/conversion-factors': 'Emission Factors',
   '/metrics-summary': 'Calculation Review',
   '/reports': 'Reports',
   '/reporting': 'Reports',

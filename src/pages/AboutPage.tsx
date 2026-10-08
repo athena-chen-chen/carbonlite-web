@@ -1,17 +1,10 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { CARBONLITE_WORKFLOW } from '../constants/carbonliteWorkflow';
 
 const defaultTitle = 'CarbonLite | Emissions Data Readiness for SMEs';
 const defaultDescription =
   'Turn invoices, utility bills, and spreadsheets into structured emissions data readiness and reporting workflows. CarbonLite helps SMEs and environmental consultants improve factor matching and calculation traceability.';
-
-const workflowSteps = [
-  'Upload invoices, utility bills, spreadsheets, and operational documents.',
-  'Extract structured activity data from source files.',
-  'Review and validate records before they are imported.',
-  'Apply jurisdiction-aware factor selection with source, year, confidence level, and verification status.',
-  'Generate traceable emissions summaries, data quality notes, and reporting outputs.',
-];
 
 const audiences = [
   'Sustainability consultants',
@@ -36,7 +29,7 @@ const approachItems = [
   },
   {
     title: 'Transparent methodology',
-    text: 'Show how activity data and conversion factors contribute to estimated emissions.',
+    text: 'Show how activity data and emission factors contribute to estimated emissions.',
   },
   {
     title: 'SME-friendly design',
@@ -138,15 +131,17 @@ export default function AboutPage() {
               </p>
             </div>
             <ol className="space-y-3">
-              {workflowSteps.map((step, index) => (
+              {CARBONLITE_WORKFLOW.map((step) => (
                 <li
-                  key={step}
+                  key={step.id}
                   className="flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">
-                    {index + 1}
+                    {step.step}
                   </span>
-                  <span className="pt-1 text-sm leading-6 text-slate-700">{step}</span>
+                  <span className="pt-1 text-sm leading-6 text-slate-700">
+                    <strong>{step.title}.</strong> {step.description}
+                  </span>
                 </li>
               ))}
             </ol>

@@ -35,6 +35,7 @@ export type ActivityDataInput = {
   documentId?: string;
   sourceDocumentId?: string;
   sourceFileName?: string;
+  sourceSheetName?: string;
   sourcePage?: string | number;
   sourceRow?: string | number;
   sourceTextSnippet?: string;
@@ -56,9 +57,12 @@ export type ActivityDataInput = {
   matchedFactorVersion?: string;
   matchedFactorSourceAuthority?: string;
   matchedFactorSourceDocument?: string;
+  matchedFactorSourceUrl?: string;
   matchedFactorVerificationStatus?: string;
   matchedFactorConfidenceLevel?: string;
   matchedFactorAssumptions?: string;
+  factorSelectionReason?: string;
+  factorSelectionExplanation?: string;
   calculatedEmissionsKgCO2e?: number;
   calculationStatus?: string;
   calculationMessage?: string;
@@ -74,6 +78,7 @@ export type ActivityDataItem = {
   documentId?: string | null;
   sourceDocumentId?: string | null;
   sourceFileName?: string | null;
+  sourceSheetName?: string | null;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
   sourceTextSnippet?: string | null;
@@ -105,9 +110,12 @@ export type ActivityDataItem = {
   matchedFactorVersion?: string | null;
   matchedFactorSourceAuthority?: string | null;
   matchedFactorSourceDocument?: string | null;
+  matchedFactorSourceUrl?: string | null;
   matchedFactorVerificationStatus?: string | null;
   matchedFactorConfidenceLevel?: string | null;
   matchedFactorAssumptions?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
   calculatedEmissionsKgCO2e?: number | string | null;
   calculatedEmission?: number | string | null;
   calculationStatus?: string | null;
@@ -205,6 +213,7 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     documentId: normalizeOptionalString(input.documentId),
     sourceDocumentId: normalizeOptionalString(input.sourceDocumentId),
     sourceFileName: normalizeOptionalString(input.sourceFileName),
+    sourceSheetName: normalizeOptionalString(input.sourceSheetName),
     sourcePage: input.sourcePage,
     sourceRow: input.sourceRow,
     sourceTextSnippet: normalizeOptionalString(input.sourceTextSnippet),
@@ -229,6 +238,8 @@ function buildActivityDataPayload(input: ActivityDataInput): ActivityDataInput {
     matchedFactorVerificationStatus: normalizeOptionalString(input.matchedFactorVerificationStatus),
     matchedFactorConfidenceLevel: normalizeOptionalString(input.matchedFactorConfidenceLevel),
     matchedFactorAssumptions: normalizeOptionalString(input.matchedFactorAssumptions),
+    factorSelectionReason: normalizeOptionalString(input.factorSelectionReason),
+    factorSelectionExplanation: normalizeOptionalString(input.factorSelectionExplanation),
     calculatedEmissionsKgCO2e: input.calculatedEmissionsKgCO2e,
     calculationStatus: normalizeOptionalString(input.calculationStatus),
     calculationMessage: normalizeOptionalString(input.calculationMessage),

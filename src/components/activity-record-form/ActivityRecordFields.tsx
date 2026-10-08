@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { ProvinceSelect } from './ProvinceSelect';
 import type { ActivityRecordField, ActivityRecordFormValues } from './types';
 import { getActivityTypeLabel } from '../../utils/activityType';
+import { normalizeUnitForDisplay } from '../../utils/unitNormalization';
 
 export type SharedActivityRecordFieldProps = {
   values: ActivityRecordFormValues;
@@ -35,6 +36,13 @@ export function ActivityDetailsFields({
   activityTypeOptions,
   unitOptions,
 }: ActivityDetailsFieldsProps) {
+  const unitSelectValue = getUnitSelectValue(values.unit, unitOptions);
+  const includeCurrentUnit =
+    Boolean(unitOptions?.length) &&
+    Boolean(values.unit) &&
+    unitSelectValue === values.unit &&
+    !unitOptions?.some((unit) => unit === values.unit);
+
   return (
     <div>
       <div style={sectionLabelStyle}>Activity details</div>
@@ -74,7 +82,7 @@ export function ActivityDetailsFields({
           <span>Unit</span>
           {unitOptions?.length ? (
             <select
-              value={values.unit ?? ''}
+              value={unitSelectValue}
               onChange={(event) => onChange('unit', event.target.value)}
               disabled={disabled}
               style={inputStyle(Boolean(errors.unit), compact)}
@@ -85,6 +93,9 @@ export function ActivityDetailsFields({
                   {unit}
                 </option>
               ))}
+              {includeCurrentUnit ? (
+                <option value={values.unit ?? ''}>{values.unit}</option>
+              ) : null}
             </select>
           ) : (
             <input
@@ -226,6 +237,22 @@ export function ActivityRecordFields({
         isElectricity={isElectricity}
       />
     </>
+  );
+}
+
+function getUnitSelectValue(value?: string | null, unitOptions?: string[]) {
+  const raw = String(value ?? '').trim();
+  if (!raw || !unitOptions?.length) return raw;
+  if (unitOptions.includes(raw)) return raw;
+
+  const normalizedValue = normalizeUnitForDisplay(raw);
+  if (normalizedValue.status !== 'valid') return raw;
+
+  return (
+    unitOptions.find((unit) => {
+      const normalizedOption = normalizeUnitForDisplay(unit);
+      return normalizedOption.status === 'valid' && normalizedOption.value === normalizedValue.value;
+    }) ?? raw
   );
 }
 

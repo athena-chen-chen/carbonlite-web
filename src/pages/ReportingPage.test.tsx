@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ReportingPage from './ReportingPage';
 import {
@@ -61,6 +62,15 @@ async function readBlobAsText(blob: Blob) {
 function LocationProbe() {
   const location = useLocation();
   return <div>Current path: {location.pathname}</div>;
+}
+
+async function openExportMenu() {
+  await userEvent.click(screen.getByRole('button', { name: /^Export reports$/i }));
+}
+
+async function downloadTechnicalReviewPackage() {
+  await openExportMenu();
+  await userEvent.click(screen.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/i }));
 }
 
 describe('ReportingPage audit trail', () => {
@@ -253,6 +263,8 @@ describe('ReportingPage audit trail', () => {
 
   afterEach(() => {
     localStorage.clear();
+    delete (jsPDF.API as any).save;
+    delete (jsPDF.API as any).text;
   });
 
   it('keeps workflow audit collapsed and does not log report generated on load', async () => {
@@ -325,7 +337,7 @@ describe('ReportingPage audit trail', () => {
   });
 
   it('shows optional cost completeness numerator and denominator in Data Quality Notes', async () => {
-    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+    vi.mocked(loadMetricsOverview).mockResolvedValue({
       summary: {},
       activities: [],
       usageTotals: {
@@ -427,18 +439,18 @@ describe('ReportingPage audit trail', () => {
     const section = await screen.findByRole('region', { name: /Data Quality Notes/i });
     expect(section).toHaveTextContent('Optional Data Completeness');
     expect(section).toHaveTextContent('100%');
-    expect(section).toHaveTextContent('3 of 3 imported records include optional cost data');
+    expect(section).toHaveTextContent('3 of 3 imported activity records include optional cost data');
 
-    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    await downloadTechnicalReviewPackage();
     const dataQualityNotesCall = vi.mocked(autoTable).mock.calls.find(([, options]) =>
       JSON.stringify((options as { body?: unknown[][] }).body).includes('Optional Data Completeness'),
     );
     const dataQualityNotesBody = JSON.stringify(
       (dataQualityNotesCall?.[1] as { body?: unknown[][] } | undefined)?.body,
     );
-    expect(dataQualityNotesBody).toContain(
-      '100% · 3 of 3 imported records include optional cost data',
-    );
+    expect(dataQualityNotesBody).toContain('Optional Data Completeness');
+    expect(dataQualityNotesBody).toContain('100%');
+    expect(dataQualityNotesBody).toContain('3 of 3 imported activity records include optional cost data');
   });
 
   it('shows unresolved source spreadsheet review rows separately from imported report records and PDF totals', async () => {
@@ -528,7 +540,7 @@ describe('ReportingPage audit trail', () => {
       })),
     ];
 
-    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+    vi.mocked(loadMetricsOverview).mockResolvedValue({
       summary: {},
       activities: [],
       usageTotals: {
@@ -602,8 +614,10 @@ describe('ReportingPage audit trail', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryAllByText(/2 calculated/i).length).toBeGreaterThan(0));
+    await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
     const dataQualitySection = screen.getByRole('region', { name: /Data Quality Notes/i });
-    expect(dataQualitySection).toHaveTextContent('Imported Records Requiring Review');
+    expect(dataQualitySection).toHaveTextContent('Imported Activity Records Requiring Review');
     expect(dataQualitySection).toHaveTextContent('Source Rows Still Requiring Review');
     expect(dataQualitySection).toHaveTextContent('6');
 
@@ -616,17 +630,325 @@ describe('ReportingPage audit trail', () => {
     expect(sourceReviewSection).toHaveTextContent('MARCH-AIR-008');
     expect(sourceReviewSection).toHaveTextContent('Quantity is required.');
 
-    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    await downloadTechnicalReviewPackage();
     const pdfBodies = vi.mocked(autoTable).mock.calls.map(([, options]) =>
       JSON.stringify((options as { body?: unknown[][] } | undefined)?.body ?? []),
     );
     expect(pdfBodies.some((body) => body.includes('Source Rows Still Requiring Review') && body.includes('6'))).toBe(true);
+    expect(pdfBodies.join(' ')).not.toContain('No records require review for this report scope');
     const sourceRowsPdfBody = pdfBodies.find((body) => body.includes('MARCH-ELEC-002')) ?? '';
     expect(sourceRowsPdfBody).toContain('MARCH-GAS-003');
     expect(sourceRowsPdfBody).toContain('MARCH-FUEL-004');
     expect(sourceRowsPdfBody).toContain('MARCH-OTHER-005');
     expect(sourceRowsPdfBody).toContain('MARCH-DIESEL-006');
     expect(sourceRowsPdfBody).toContain('MARCH-AIR-008');
+    expect(sourceRowsPdfBody).toContain('Missing Province');
+    expect(sourceRowsPdfBody).toContain('Missing Unit');
+    expect(sourceRowsPdfBody).toContain('Invalid Quantity');
+    expect(sourceRowsPdfBody).toContain('Missing Activity Type');
+    expect(sourceRowsPdfBody).toContain('Unit Mismatch');
+    expect(sourceRowsPdfBody).toContain('Missing Quantity');
+    expect(sourceRowsPdfBody).not.toContain('MISSING_PROVINCE');
+    expect(sourceRowsPdfBody).not.toContain('INVALID_QUANTITY');
+    expect(sourceRowsPdfBody).toContain('Quantity is required.');
+    expect(sourceRowsPdfBody).toContain('Diesel requires liters.');
+
+    const sourceRowsAppendixCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
+      return headers.includes('Issue Type') && headers.includes('Issue') && headers.includes('Action');
+    });
+    const sourceRowsAppendixOptions = sourceRowsAppendixCall?.[1] as {
+      columnStyles?: Record<number, { cellWidth?: number }>;
+      tableWidth?: number;
+      margin?: { left?: number; right?: number };
+    };
+    const sourceRowsColumnWidth = Object.values(sourceRowsAppendixOptions.columnStyles ?? {}).reduce(
+      (total, style) => total + Number(style.cellWidth ?? 0),
+      0,
+    );
+    expect(sourceRowsAppendixOptions.margin).toMatchObject({ left: 14, right: 14 });
+    expect(sourceRowsAppendixOptions.tableWidth).toBe(265);
+    expect(sourceRowsColumnWidth).toBeLessThanOrEqual(265);
+  });
+
+  it('uses compact hotspot rank header and tracked metric wording in the technical PDF', async () => {
+    vi.mocked(loadMetricsOverview).mockResolvedValue({
+      summary: {},
+      activities: [],
+      usageTotals: {
+        fuel: 0,
+        electricity: 980,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      totalRecordsFound: 3,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 2,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 519.4,
+          scope: 'SCOPE_2',
+          sourceReference: 'MARCH-ELEC-001',
+        },
+        {
+          activityDataId: 'activity-march-water-007',
+          activityType: 'WATER',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          status: 'TRACKED_ONLY',
+          calculatedEmissionsKgCO2e: null,
+          sourceReference: 'MARCH-WATER-007',
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 60,
+          scope: 'SCOPE_3',
+          sourceReference: 'MARCH-HOTEL-010',
+        },
+      ],
+      sourceReviewRows: [],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 3,
+      recordsInScope: 3,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await downloadTechnicalReviewPackage();
+
+    const hotspotCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
+      return headers.includes('Focus Message') && headers.includes('Hotspot Level');
+    });
+    expect(hotspotCall).toBeDefined();
+    expect((hotspotCall?.[1] as { head?: string[][] } | undefined)?.head?.[0]?.[0]).toBe('#');
+    expect((hotspotCall?.[1] as { head?: string[][] } | undefined)?.head?.[0]).not.toContain('Rank');
+
+    const allPdfTables = vi.mocked(autoTable).mock.calls.map(([, options]) =>
+      JSON.stringify(options ?? {}),
+    ).join(' ');
+    expect(allPdfTables).toContain('Tracked Metric. Not included in the GHG emissions total.');
+    expect(allPdfTables).not.toContain('Tracked only.');
+  });
+
+  it('fits the record-level source evidence appendix within the landscape printable width', async () => {
+    const splitCalls: Array<{ text: string; width: number }> = [];
+    const originalSplitTextToSize = (jsPDF.API as any).splitTextToSize;
+    (jsPDF.API as any).splitTextToSize = function splitTextToSizeMock(
+      this: any,
+      text: string,
+      width: number,
+    ) {
+      splitCalls.push({ text, width });
+      return [text];
+    };
+
+    vi.mocked(loadMetricsOverview).mockResolvedValue({
+      summary: {},
+      activities: [
+        {
+          id: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          quantity: 980,
+          unit: 'kWh',
+          sourceType: 'SPREADSHEET',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceReference: 'MARCH-ELEC-001',
+          sourceRow: 2,
+        },
+        {
+          id: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          quantity: 18,
+          unit: 'm3',
+          sourceType: 'SPREADSHEET',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceReference: 'MARCH-WATER-007',
+          sourceRow: 8,
+        },
+        {
+          id: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          quantity: 4,
+          unit: 'nights',
+          sourceType: 'SPREADSHEET',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceReference: 'MARCH-HOTEL-010',
+          sourceRow: 11,
+        },
+      ],
+      usageTotals: {
+        fuel: 0,
+        electricity: 0,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      totalRecordsFound: 3,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 2,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 519.4,
+          status: 'CALCULATED',
+          sourceType: 'IMPORT',
+        },
+        {
+          activityDataId: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          factorSource: 'Tracked metric',
+          factorVerified: false,
+          calculatedEmissionsKgCO2e: null,
+          status: 'TRACKED_ONLY',
+          sourceType: 'IMPORT',
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          factorSource: 'System factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 60,
+          status: 'CALCULATED',
+          sourceType: 'IMPORT',
+        },
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 3,
+      recordsInScope: 3,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await downloadTechnicalReviewPackage();
+
+    const appendixAIntro = splitCalls.find((call) =>
+      call.text.includes('Detailed record-level source evidence retained'),
+    );
+    const appendixBIntro = splitCalls.find((call) =>
+      call.text.includes('Source spreadsheet rows that remained unresolved'),
+    );
+    expect(appendixAIntro?.width).toBeGreaterThan(180);
+    expect(appendixBIntro?.width).toBeGreaterThan(180);
+    expect(appendixAIntro?.width).toBeLessThan(265);
+    expect(appendixBIntro?.width).toBeLessThan(265);
+
+    const appendixCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
+      return headers.includes('Source / Import Method') && headers.includes('Review Note');
+    });
+    expect(appendixCall).toBeDefined();
+
+    const appendixOptions = appendixCall?.[1] as {
+      body?: unknown[][];
+      columnStyles?: Record<number, { cellWidth?: number }>;
+      margin?: { left?: number; right?: number };
+      tableWidth?: number;
+      rowPageBreak?: string;
+      showHead?: string;
+    };
+    const totalColumnWidth = Object.values(appendixOptions.columnStyles ?? {}).reduce(
+      (total, style) => total + Number(style.cellWidth ?? 0),
+      0,
+    );
+    expect(appendixOptions.margin).toMatchObject({ left: 14, right: 14 });
+    expect(appendixOptions.tableWidth).toBe(265);
+    expect(totalColumnWidth).toBeLessThanOrEqual(265);
+    expect(appendixOptions.rowPageBreak).toBe('avoid');
+    expect(appendixOptions.showHead).toBe('everyPage');
+
+    const appendixText = JSON.stringify(appendixOptions.body ?? []);
+    expect(appendixText).toContain('Business Travel - Accommodation');
+    expect(appendixText).toContain('carbonlite_needs_review_test.xlsx');
+    expect(appendixText).toContain('MARCH-ELEC-001 · Line item 2');
+    expect(appendixText).toContain('MARCH-WATER-007 · Line item 8');
+    expect(appendixText).toContain('MARCH-HOTEL-010 · Line item 11');
+    expect(appendixText).toContain('Matched');
+    expect(appendixText).toContain('Tracked Metric');
+
+    (jsPDF.API as any).splitTextToSize = originalSplitTextToSize;
   });
 
   it('shows one global expand/collapse control pair that controls report sections', async () => {
@@ -637,6 +959,7 @@ describe('ReportingPage audit trail', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
 
     expect(screen.getAllByRole('button', { name: 'Expand all' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: 'Collapse all' })).toHaveLength(1);
@@ -702,7 +1025,7 @@ describe('ReportingPage audit trail', () => {
 
     const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
     expect(boundarySection).toHaveTextContent(
-      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
+      '2026-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
     );
     const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' });
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
@@ -710,9 +1033,8 @@ describe('ReportingPage audit trail', () => {
     await userEvent.click(boundaryToggle);
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
     expect(boundaryToggle).toHaveTextContent('Collapse');
-    expect(boundarySection).toHaveTextContent(
-      'This reporting boundary is read-only for your account.',
-    );
+    expect(boundarySection).toHaveTextContent(/Pilot review account/i);
+    expect(boundarySection).toHaveTextContent(/Read-only/i);
     expect(within(boundarySection).queryByRole('button', { name: /Edit in Organization & Boundary/i })).not.toBeInTheDocument();
     expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
@@ -738,9 +1060,10 @@ describe('ReportingPage audit trail', () => {
     expect(regulatorySection).toHaveTextContent(/third-party verification/i);
     expect(regulatorySection).toHaveTextContent(/regulatory compliance advice/i);
     expect(regulatorySection).toHaveTextContent(/Federal GHGRP Single Window reporting/i);
-    expect(regulatorySection).toHaveTextContent(/Alberta SGRR \/ SWIM reporting/i);
-    expect(regulatorySection).toHaveTextContent(/Alberta TIER compliance reporting/i);
-    expect(regulatorySection).toHaveTextContent(/CRA fuel charge forms, where applicable/i);
+    expect(regulatorySection).not.toHaveTextContent(/Alberta SGRR \/ SWIM reporting/i);
+    expect(regulatorySection).not.toHaveTextContent(/Alberta TIER compliance reporting/i);
+    expect(regulatorySection).not.toHaveTextContent(/CRA fuel charge forms, where applicable/i);
+    expect(regulatorySection).not.toHaveTextContent(/Historical federal fuel-charge requirements may apply/i);
 
     expect(screen.queryByText(/Workflow history for this workspace/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Recent import and report workflow events/i)).not.toBeInTheDocument();
@@ -793,7 +1116,190 @@ describe('ReportingPage audit trail', () => {
     expect(regulatorySection).toHaveTextContent(/Federal GHGRP Single Window reporting/i);
   });
 
-  it('logs PDF_EXPORTED, not REPORT_GENERATED, when downloading the PDF', async () => {
+  it('does not add Alberta regulatory references from profile province when report records are Ontario-only', async () => {
+    localStorage.removeItem('accessToken');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'ontario@example.com',
+        organizationName: 'Ontario Operator Ltd.',
+        role: 'ADMIN',
+        accountType: 'CUSTOMER',
+      }),
+    );
+    localStorage.setItem(
+      'carbonlite:organization-profile:Ontario Operator Ltd.',
+      JSON.stringify({
+        organizationName: 'Ontario Operator Ltd.',
+        industry: 'Technology',
+        country: 'Canada',
+        provinceOrState: 'Alberta',
+        city: 'Calgary',
+        reportingPeriodStart: '2026-01-01',
+        reportingPeriodEnd: '2026-12-31',
+        geographicBoundary: 'Ontario-only operating sites',
+        includedFacilitiesOrLocations: 'Toronto warehouse',
+        includedScopes: 'Scope 1 and Scope 2',
+      }),
+    );
+    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+      summary: {},
+      activities: [
+        {
+          id: 'activity-ontario-electricity',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-07-20',
+          quantity: 1000,
+          unit: 'kWh',
+          sourceType: 'SPREADSHEET',
+          jurisdictionRegion: 'Ontario',
+          jurisdiction: 'Ontario, Canada',
+        } as any,
+      ],
+      usageTotals: {
+        fuel: 0,
+        electricity: 1000,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 40,
+      totalRecordsFound: 1,
+      recordsIncluded: 1,
+      processedRecords: 1,
+      skippedRecords: 0,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 1,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-ontario-electricity',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-07-20',
+          dateEstimated: false,
+          reportingYear: 2026,
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Ontario',
+          activityQuantity: 1000,
+          activityUnit: 'kWh',
+          factorSource: 'Ontario factor',
+          factorVerified: true,
+          calculatedEmissionsKgCO2e: 40,
+          status: 'CALCULATED',
+          sourceType: 'SPREADSHEET',
+        },
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 1,
+      recordsInScope: 1,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    const regulatorySection = screen.getByRole('region', { name: 'Regulatory Reporting Reference' });
+    await userEvent.click(
+      within(regulatorySection).getByRole('button', {
+        name: 'Expand Regulatory Reporting Reference',
+      }),
+    );
+
+    expect(regulatorySection).toHaveTextContent(/Federal GHGRP Single Window reporting/i);
+    expect(regulatorySection).not.toHaveTextContent(/Alberta SGRR \/ SWIM reporting/i);
+    expect(regulatorySection).not.toHaveTextContent(/Alberta TIER compliance reporting/i);
+    expect(regulatorySection).not.toHaveTextContent(/CRA fuel charge forms, where applicable/i);
+  });
+
+  it('shows historical federal fuel-charge context for pre-April-2025 periods without making it current', async () => {
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+      hasActivityRecords: true,
+    });
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    expect((await screen.findAllByText(/2024-01-01 to 2024-12-31/i)).length).toBeGreaterThan(0);
+
+    const regulatorySection = screen.getByRole('region', { name: 'Regulatory Reporting Reference' });
+    await userEvent.click(
+      within(regulatorySection).getByRole('button', {
+        name: 'Expand Regulatory Reporting Reference',
+      }),
+    );
+
+    expect(regulatorySection).toHaveTextContent(/Current regulatory\/reporting references/i);
+    expect(regulatorySection).toHaveTextContent(/Historical \/ period-specific reference/i);
+    expect(regulatorySection).toHaveTextContent(
+      /Historical federal fuel-charge requirements may be relevant for reporting periods before April 1, 2025/i,
+    );
+    expect(regulatorySection).not.toHaveTextContent(/CRA fuel charge forms, where applicable/i);
+    expect(regulatorySection).not.toHaveTextContent(/required to file/i);
+  });
+
+  it('shows transitional fuel-charge context for periods spanning April 1, 2025', async () => {
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+      hasActivityRecords: true,
+    });
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    expect((await screen.findAllByText(/2025-01-01 to 2025-12-31/i)).length).toBeGreaterThan(0);
+
+    const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
+    expect(boundarySection).toHaveTextContent(
+      '2025-01-01 to 2025-12-31',
+    );
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' }));
+    expect(within(boundarySection).getByText('Reporting period')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('2025-01-01 to 2025-12-31')).toBeInTheDocument();
+    expect(boundarySection).not.toHaveTextContent('2026-01-01 to 2026-12-31');
+
+    const regulatorySection = screen.getByRole('region', { name: 'Regulatory Reporting Reference' });
+    await userEvent.click(
+      within(regulatorySection).getByRole('button', {
+        name: 'Expand Regulatory Reporting Reference',
+      }),
+    );
+
+    expect(regulatorySection).toHaveTextContent(
+      /Historical federal fuel-charge requirements may apply to activities before April 1, 2025/i,
+    );
+    expect(regulatorySection).toHaveTextContent(
+      /The federal fuel charge ceased for activities after March 31, 2025/i,
+    );
+    expect(regulatorySection).not.toHaveTextContent(/CRA fuel charge forms, where applicable/i);
+  });
+
+	  it('logs PDF_EXPORTED, not REPORT_GENERATED, when downloading the PDF', async () => {
     render(
       <MemoryRouter>
         <ReportingPage />
@@ -803,21 +1309,21 @@ describe('ReportingPage audit trail', () => {
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     vi.mocked(trackActivityEvent).mockClear();
 
-    const pdfButton = screen.getByRole('button', { name: /Download PDF/i });
-    await waitFor(() => expect(pdfButton).toBeEnabled());
-    await userEvent.click(pdfButton);
+    const exportButton = screen.getByRole('button', { name: /^Export reports$/i });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    await downloadTechnicalReviewPackage();
 
     await waitFor(() => {
       expect(trackActivityEvent).toHaveBeenCalledWith(
         expect.objectContaining({ eventName: 'PDF_EXPORTED' }),
       );
     });
-    expect(trackActivityEvent).not.toHaveBeenCalledWith(
-      expect.objectContaining({ eventName: 'REPORT_GENERATED' }),
-    );
-  });
+	    expect(trackActivityEvent).not.toHaveBeenCalledWith(
+	      expect.objectContaining({ eventName: 'REPORT_GENERATED' }),
+	    );
+	  });
 
-  it('includes Regulatory Reporting Reference in the PDF export', async () => {
+  it('adds document-control metadata and dynamic footer text to the PDF export', async () => {
     render(
       <MemoryRouter>
         <ReportingPage />
@@ -825,7 +1331,337 @@ describe('ReportingPage audit trail', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    await downloadTechnicalReviewPackage();
+
+    const reportInfoCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) => row[0] === 'Report ID');
+    });
+    expect(reportInfoCall).toBeDefined();
+
+    const reportInfoRows = (reportInfoCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [];
+    const reportInfo = new Map(reportInfoRows.map((row) => [String(row[0]), String(row[1])]));
+    const reportId = reportInfo.get('Report ID') ?? '';
+    expect(reportId).toMatch(/^CL-DRAFT-2026-[0-9A-Z]{7}$/);
+    expect(reportInfo.get('Report Version')).toBe('0.1');
+    expect(reportInfo.get('Report Status')).toBe('Pilot Draft');
+    expect(reportInfo.get('Generated With')).toBe('CarbonLite Pilot Demo v0.1');
+    expect(reportInfo.get('Prepared By')).toBe('CarbonLite');
+    expect(reportInfo.get('Reviewer')).toBe('Not yet assigned');
+    expect(reportInfo.get('Review Status')).toBe('Not reviewed');
+    expect(reportInfo.get('Generated With')).not.toBe(reportInfo.get('Report Version'));
+  });
+
+  it('offers separate Executive Summary and Technical Review Package PDF outputs from the same report snapshot', async () => {
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+
+    const exportButton = screen.getByRole('button', { name: /^Export reports$/i });
+    expect(exportButton).toBeEnabled();
+
+    await openExportMenu();
+    await userEvent.click(screen.getByRole('menuitem', { name: /Executive Summary \(PDF\)/i }));
+    const executiveReportInfoCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) => row[0] === 'Output Profile' && row[1] === 'Executive Summary');
+    });
+    const executiveSnapshotCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) => row[0] === 'Estimated Emissions');
+    });
+    expect(executiveReportInfoCall).toBeDefined();
+    expect(executiveSnapshotCall).toBeDefined();
+
+    const executiveReportInfoRows =
+      (executiveReportInfoCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [];
+    const executiveReportId = String(
+      executiveReportInfoRows.find((row) => row[0] === 'Report ID')?.[1] ?? '',
+    );
+
+    vi.mocked(autoTable).mockClear();
+    await downloadTechnicalReviewPackage();
+    const technicalReportInfoCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) => row[0] === 'Output Profile' && row[1] === 'Technical Review Package');
+    });
+    const traceabilityCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
+      return headers.includes('Calculation') && headers.includes('Review Note');
+    });
+    expect(technicalReportInfoCall).toBeDefined();
+    expect(traceabilityCall).toBeDefined();
+
+    const technicalReportInfoRows =
+      (technicalReportInfoCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [];
+    const technicalReportId = String(
+      technicalReportInfoRows.find((row) => row[0] === 'Report ID')?.[1] ?? '',
+    );
+    expect(technicalReportId).toBe(executiveReportId);
+  });
+
+  it('keeps the golden Executive Summary to two pages with all page-two sections present', async () => {
+    const savedPageCounts: number[] = [];
+    const textCalls: string[] = [];
+    (jsPDF.API as any).save = function saveMock(this: any) {
+      savedPageCounts.push(this.getNumberOfPages());
+      return this;
+    };
+    (jsPDF.API as any).text = function textMock(this: any, text: string | string[]) {
+      textCalls.push(Array.isArray(text) ? text.join(' ') : String(text));
+      return this;
+    };
+
+    vi.mocked(loadMetricsOverview).mockResolvedValue({
+      summary: {},
+      activities: [],
+      usageTotals: {
+        fuel: 0,
+        electricity: 980,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      totalRecordsFound: 3,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+        trackedOnly: 1,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 2,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [
+        {
+          activityType: 'ELECTRICITY',
+          factorName: 'Electricity - Alberta',
+          factorValue: 0.53,
+          inputUnit: 'kWh',
+          resultUnit: 'kgCO2e',
+          jurisdiction: 'Alberta, Canada',
+          factorYear: 2025,
+          factorVerified: false,
+        },
+        {
+          activityType: 'HOTEL',
+          factorName: 'Hotel stays',
+          factorValue: 15,
+          inputUnit: 'night',
+          resultUnit: 'kgCO2e',
+          jurisdiction: 'Canada (Generic)',
+          factorYear: 2025,
+          factorVerified: false,
+        },
+      ],
+      calculationDetails: [
+        {
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 519.4,
+          scope: 'SCOPE_2',
+          sourceReference: 'MARCH-ELEC-001',
+          costCad: 214.55,
+        },
+        {
+          activityDataId: 'activity-march-water-007',
+          activityType: 'WATER',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          status: 'TRACKED_ONLY',
+          calculatedEmissionsKgCO2e: null,
+          sourceReference: 'MARCH-WATER-007',
+          costCad: 64,
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 60,
+          scope: 'SCOPE_3',
+          sourceReference: 'MARCH-HOTEL-010',
+          costCad: 720,
+        },
+      ],
+      sourceReviewRows: [
+        ...Array.from({ length: 3 }, (_, index) => ({
+          id: `ready-${index}`,
+          sourceDocumentId: 'doc-march',
+          rowId: `ready-${index}`,
+          status: index === 2 ? 'TRACKED_ONLY' : 'READY',
+          sourceReference: `READY-${index}`,
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        })),
+        ...Array.from({ length: 6 }, (_, index) => ({
+          id: `review-${index}`,
+          sourceDocumentId: 'doc-march',
+          rowId: `review-${index}`,
+          status: 'NEEDS_REVIEW',
+          sourceReference: `REVIEW-${index}`,
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          issues: [{ code: 'MISSING_FIELD', message: 'Source row requires review.' }],
+        })),
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 3,
+      recordsInScope: 3,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await openExportMenu();
+    await userEvent.click(screen.getByRole('menuitem', { name: /Executive Summary \(PDF\)/i }));
+
+    expect(savedPageCounts).toEqual([2]);
+    const tableBodies = vi.mocked(autoTable).mock.calls.map(([, options]) =>
+      JSON.stringify((options as { head?: unknown[][]; body?: unknown[][] } | undefined) ?? {}),
+    );
+    const renderedText = textCalls.join(' ');
+    expect(renderedText).toContain('Executive Snapshot');
+    expect(tableBodies.join(' ')).toContain('Top Estimated Contributors');
+    expect(renderedText).toContain('Emissions Overview');
+    expect(renderedText).toContain('Reporting Readiness');
+    expect(renderedText).toContain('Key Review Priorities');
+    expect(tableBodies.join(' ')).toContain('Assign a reviewer and complete report review before formal use.');
+    expect(tableBodies.join(' ')).not.toContain('Complete reviewer review before formal use.');
+    expect(renderedText).toContain('Limitations');
+    expect(tableBodies.join(' ')).toContain('579.40 kg CO2e');
+    expect(tableBodies.join(' ')).toContain('6 require review');
+
+    delete (jsPDF.API as any).save;
+    delete (jsPDF.API as any).text;
+  });
+
+  it('renders continued Factor Details headings before carried-over factor blocks', async () => {
+    const textCalls: string[] = [];
+    (jsPDF.API as any).text = function textMock(this: any, text: string | string[]) {
+      textCalls.push(Array.isArray(text) ? text.join(' ') : String(text));
+      return this;
+    };
+    const longAssumption =
+      'Pilot-stage factor assumption retained for layout pagination review. '.repeat(12);
+
+    vi.mocked(loadMetricsOverview).mockResolvedValue({
+      summary: {},
+      activities: [],
+      usageTotals: {
+        fuel: 0,
+        electricity: 100,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 579.4,
+      totalRecordsFound: 3,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+        trackedOnly: 1,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 10,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: Array.from({ length: 10 }, (_, index) => ({
+        activityType: index % 2 === 0 ? 'ELECTRICITY' : 'HOTEL',
+        factorName: `Layout Test Factor ${index + 1}`,
+        factorValue: index % 2 === 0 ? 0.53 : 15,
+        inputUnit: index % 2 === 0 ? 'kWh' : 'night',
+        resultUnit: 'kgCO2e',
+        jurisdiction: index % 2 === 0 ? 'Alberta, Canada' : 'Canada (Generic)',
+        factorYear: 2025,
+        factorVerified: false,
+        assumptions: longAssumption,
+      })),
+      calculationDetails: [
+        {
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 519.4,
+          scope: 'SCOPE_2',
+          sourceReference: 'MARCH-ELEC-001',
+          costCad: 214.55,
+        },
+        {
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 60,
+          scope: 'SCOPE_3',
+          sourceReference: 'MARCH-HOTEL-010',
+          costCad: 720,
+        },
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 2,
+      recordsInScope: 2,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await downloadTechnicalReviewPackage();
+
+    const renderedText = textCalls.join(' ');
+    expect(renderedText).toContain('Factor Details / Assumptions');
+    expect(renderedText).toContain('Factor Details / Assumptions (continued)');
+    expect(renderedText).toContain('Factor: Layout Test Factor 10');
+    expect(renderedText.indexOf('Calculation Traceability')).toBeGreaterThan(
+      renderedText.indexOf('Factor: Layout Test Factor 10'),
+    );
+
+    delete (jsPDF.API as any).text;
+  });
+
+		  it('includes Regulatory Reporting Reference in the PDF export', async () => {
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await downloadTechnicalReviewPackage();
 
     const regulatoryPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
@@ -837,10 +1673,28 @@ describe('ReportingPage audit trail', () => {
     expect(regulatoryPdfCall).toBeDefined();
     const regulatoryBody = (regulatoryPdfCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [];
     expect(String(regulatoryBody.flat().join('\n'))).toContain('Federal GHGRP Single Window reporting');
+    expect(String(regulatoryBody.flat().join('\n'))).toContain('Current regulatory/reporting references');
+    expect(String(regulatoryBody.flat().join('\n'))).toContain('Regulatory threshold provenance');
+    expect(String(regulatoryBody.flat().join('\n'))).toContain(
+      'Regulatory threshold screening is not yet configured with reviewed source provenance for this jurisdiction.',
+    );
+    expect(String(regulatoryBody.flat().join('\n'))).not.toContain('CRA fuel charge forms, where applicable');
+    expect(String(regulatoryBody.flat().join('\n'))).not.toContain('Historical federal fuel-charge requirements');
     expect(String(regulatoryBody.flat().join('\n'))).not.toContain('Alberta TIER compliance reporting');
+
+    const calculationQualityCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
+      const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
+      return body.some((row) => row.includes('Imported Activity Review Reasons'));
+    });
+    expect(calculationQualityCall).toBeDefined();
+    const calculationQualityBody = JSON.stringify(
+      (calculationQualityCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [],
+    );
+    expect(calculationQualityBody).toContain('Imported Activity Review Reasons');
+    expect(calculationQualityBody).not.toContain('"Review Reasons"');
   });
 
-  it('opens Export Review Package menu and downloads calculation traceability CSV', async () => {
+  it('opens the unified Export menu and downloads the report CSV export', async () => {
     const exportedBlobs: Blob[] = [];
     vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
       exportedBlobs.push(blob as Blob);
@@ -856,24 +1710,120 @@ describe('ReportingPage audit trail', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-    await userEvent.click(screen.getByRole('button', { name: /Export Review Package/i }));
+    await openExportMenu();
 
-    expect(screen.getByRole('menu', { name: /Export review package/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Export Data Records CSV/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Export Site \/ Facility Breakdown/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Export Factor Source Summary/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Export Calculation Traceability/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Export Records Requiring Review/i })).toBeInTheDocument();
-    expect(screen.getByText(/not official regulatory submissions/i)).toBeInTheDocument();
+    expect(screen.getByRole('menu', { name: /Export report/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Executive Summary \(PDF\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Data Export \(CSV\)/i })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('menuitem', { name: /Export Calculation Traceability/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /Data Export \(CSV\)/i }));
 
     const csv = await readBlobAsText(exportedBlobs[0]);
-    expect(csv).toContain('Record Date,Activity Year Used For Matching,Activity Type,Quantity,Unit,Site / Facility');
+    expect(csv).toContain('Record No.,Activity Type,Record Date,Quantity');
     expect(csv).toContain('Natural Gas');
     expect(csv).toContain('Calculated Emissions kgCO2e');
     expect(csv).not.toContain('activity-1');
     expect(csv).not.toContain('organizationId');
+  });
+
+  it('downloads ENMAX CSV rows with missing Cost CAD as blank cells', async () => {
+    const exportedBlobs: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exportedBlobs.push(blob as Blob);
+      return 'blob:enmax-csv';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+      summary: {},
+      activities: [],
+      usageTotals: {
+        fuel: 0,
+        electricity: 0,
+        fuelUnitLabel: 'Grouped by type and unit',
+        electricityUnitLabel: 'kWh',
+        fuelUsageBreakdown: [],
+        invalidFuelRecordCount: 0,
+        invalidElectricityRecordCount: 0,
+      },
+      totalEstimatedEmissionsKgCO2e: 338.06,
+      totalRecordsFound: 3,
+      recordsIncluded: 2,
+      processedRecords: 2,
+      skippedRecords: 1,
+      skippedReasons: {
+        missingFactor: 0,
+        outsideDateRange: 0,
+        outsideScope: 0,
+        invalidData: 0,
+      },
+      missingFactorRecords: 0,
+      matchedFactorsCount: 2,
+      missingFactors: [],
+      matchedActivityEmissions: [],
+      conversionFactorsUsed: [],
+      calculationDetails: [
+        {
+          activityDataId: 'enmax-electricity',
+          activityType: 'ELECTRICITY',
+          recordDate: '2025-08-01',
+          activityQuantity: 358,
+          activityUnit: 'kWh',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 189.74,
+          calculationStatus: 'CALCULATED',
+          matchingStatus: 'MATCHED',
+          sourceReference: 'ENMAX electricity',
+          costCad: null,
+        },
+        {
+          activityDataId: 'enmax-natural-gas',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2025-08-01',
+          activityQuantity: 3,
+          activityUnit: 'GJ',
+          status: 'CALCULATED',
+          calculatedEmissionsKgCO2e: 148.32,
+          calculationStatus: 'CALCULATED',
+          matchingStatus: 'MATCHED',
+          sourceReference: 'ENMAX natural gas',
+          costCad: null,
+        },
+        {
+          activityDataId: 'enmax-water',
+          activityType: 'WATER',
+          recordDate: '2025-08-01',
+          activityQuantity: 6,
+          activityUnit: 'm3',
+          status: 'TRACKED_ONLY',
+          calculatedEmissionsKgCO2e: null,
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          sourceReference: 'ENMAX water',
+          costCad: null,
+        },
+      ],
+      invalidRecordCount: 0,
+      dataQualityCoverage: 100,
+      totalRecords: 3,
+      recordsInScope: 3,
+    } as Awaited<ReturnType<typeof loadMetricsOverview>>);
+
+    render(
+      <MemoryRouter>
+        <ReportingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await openExportMenu();
+    await userEvent.click(screen.getByRole('menuitem', { name: /Data Export \(CSV\)/i }));
+
+    const csv = await readBlobAsText(exportedBlobs[0]);
+    expect(csv).toContain('\n1,Electricity,2025-08-01,358,358 kWh,kWh,,');
+    expect(csv).toContain('\n2,Natural Gas,2025-08-01,3,3 GJ,GJ,,');
+    expect(csv).toContain('\n3,Water,2025-08-01,6,6 m3,m3,,');
   });
 
   it('hides carbon credit readiness notes from the standard web report by default', async () => {
@@ -939,7 +1889,7 @@ describe('ReportingPage audit trail', () => {
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
     expect(boundarySection).toHaveTextContent(
-      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Saved Calgary and Ontario reporting boundary',
+      '2026-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Saved Calgary and Ontario reporting boundary',
     );
     await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' }));
 
@@ -959,7 +1909,7 @@ describe('ReportingPage audit trail', () => {
     expect(within(boundarySection).getByText('Scope 1, Scope 2, selected Scope 3')).toBeInTheDocument();
     expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    await downloadTechnicalReviewPackage();
     const inventoryBoundaryPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
       return body.some((row) => row.includes('Saved Calgary and Ontario reporting boundary'));
@@ -1019,10 +1969,10 @@ describe('ReportingPage audit trail', () => {
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
     expect(boundarySection).toHaveTextContent(
-      '2026 reporting period · Boundary not fully specified',
+      '2026-01-01 to 2026-12-31 · Boundary not fully specified',
     );
     expect(boundarySection).not.toHaveTextContent(
-      '2026 reporting period · Scope 1, Scope 2, selected Scope 3',
+      '2026-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3',
     );
     await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' }));
 
@@ -1044,7 +1994,7 @@ describe('ReportingPage audit trail', () => {
   });
 
   it('shows emissions by site/facility and includes the breakdown in PDF export', async () => {
-    vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
+    vi.mocked(loadMetricsOverview).mockResolvedValue({
       summary: {},
       activities: [],
       usageTotals: {
@@ -1217,6 +2167,7 @@ describe('ReportingPage audit trail', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
     const siteSection = screen.getByRole('region', { name: 'Emissions by Site / Facility' });
     expect(siteSection).toHaveTextContent('Organization total: 9,240 kg CO₂e');
     expect(siteSection).toHaveTextContent('2 site/facility groups');
@@ -1238,8 +2189,7 @@ describe('ReportingPage audit trail', () => {
     const thresholdSection = screen.getByRole('region', {
       name: 'Facility-Level Reporting Threshold Reference',
     });
-    expect(thresholdSection).toHaveTextContent('10,000 t CO₂e/year Canada / federal context');
-    expect(thresholdSection).toHaveTextContent('Alberta rows only use 100,000 t CO₂e/year Alberta TIER reference');
+    expect(thresholdSection).toHaveTextContent('Regulatory threshold screening provenance not configured');
 
     await userEvent.click(
       within(thresholdSection).getByRole('button', {
@@ -1250,18 +2200,22 @@ describe('ReportingPage audit trail', () => {
     expect(thresholdSection).toHaveTextContent(
       'Threshold screening only. This does not constitute regulatory compliance advice.',
     );
+    expect(thresholdSection).toHaveTextContent(
+      'Regulatory threshold screening is not yet configured with reviewed source provenance for this jurisdiction.',
+    );
     expect(within(thresholdSection).getByText('Calgary Shop')).toBeInTheDocument();
     expect(within(thresholdSection).getByText('8,665 kg CO₂e (8.7 t CO₂e)')).toBeInTheDocument();
     expect(thresholdSection).toHaveTextContent('Alberta, Canada');
-    expect(thresholdSection).toHaveTextContent('Alberta TIER pilot screening reference');
-    expect(thresholdSection).toHaveTextContent('Below threshold / informational only');
+    expect(thresholdSection).toHaveTextContent('Reviewed regulatory source provenance is required before threshold screening.');
+    expect(thresholdSection).not.toHaveTextContent('Alberta TIER pilot screening reference');
+    expect(thresholdSection).not.toHaveTextContent('100,000');
     const torontoThresholdRow = within(thresholdSection)
       .getByText('Toronto Client Visit')
       .closest('tr');
     expect(torontoThresholdRow).toBeTruthy();
     expect(torontoThresholdRow).toHaveTextContent('Ontario, Canada');
     expect(torontoThresholdRow).toHaveTextContent('Not configured');
-    expect(torontoThresholdRow).toHaveTextContent('—');
+    expect(torontoThresholdRow).toHaveTextContent('Not evaluated');
     expect(torontoThresholdRow).toHaveTextContent('Not evaluated');
     expect(torontoThresholdRow).toHaveTextContent(
       'Jurisdiction-specific threshold screening is not currently configured for Ontario.',
@@ -1271,7 +2225,7 @@ describe('ReportingPage audit trail', () => {
     expect(torontoThresholdRow).not.toHaveTextContent('100,000');
     expect(thresholdSection).not.toHaveTextContent(/\bcompliant\b|\bnon-compliant\b/i);
 
-    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    await downloadTechnicalReviewPackage();
     const sitePdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
       return body.some((row) => row.includes('Calgary Shop') && row.includes('8,665 kg CO2e'));
@@ -1282,14 +2236,15 @@ describe('ReportingPage audit trail', () => {
       vi.mocked(autoTable).mock.calls.map(([, options]) => (options as { body?: unknown[][] }).body ?? []),
     );
     expect(pdfText).toContain('8,665 kg CO2e');
-    expect(pdfText).toContain('100,000 t CO2e/year');
+    expect(pdfText).toContain('Regulatory threshold screening is not yet configured with reviewed source provenance for this jurisdiction.');
+    expect(pdfText).not.toContain('100,000 t CO2e/year');
     expect(pdfText).not.toContain('CO ‚e');
     expect(pdfText).not.toContain('CO,e');
     expect(pdfText).not.toContain('�');
 
     const thresholdPdfCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return body.some((row) => row.includes('Calgary Shop') && row.includes('Alberta TIER pilot screening reference'));
+      return body.some((row) => row.includes('Calgary Shop') && row.includes('Not configured'));
     });
 
     expect(thresholdPdfCall).toBeDefined();
@@ -1297,7 +2252,6 @@ describe('ReportingPage audit trail', () => {
     const torontoPdfRow = thresholdPdfBody.find((row) => row.includes('Toronto Client Visit')) ?? [];
     expect(String(torontoPdfRow.join('\n'))).toContain('Ontario, Canada');
     expect(String(torontoPdfRow.join('\n'))).toContain('Not configured');
-    expect(String(torontoPdfRow.join('\n'))).toContain('—');
     expect(String(torontoPdfRow.join('\n'))).toContain('Not evaluated');
     expect(String(torontoPdfRow.join('\n'))).toContain(
       'Jurisdiction-specific threshold screening is not currently configured for Ontario.',
@@ -1328,7 +2282,7 @@ describe('ReportingPage audit trail', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
 
-    await userEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+    await downloadTechnicalReviewPackage();
 
     const traceabilityCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
@@ -1341,10 +2295,10 @@ describe('ReportingPage audit trail', () => {
     const sourceEvidenceSummaryCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
       return (
-        headers.includes('Source File') &&
-        headers.includes('Included GHG Records') &&
-        headers.includes('Review Records') &&
-        !headers.includes('Review Note')
+	        headers.includes('Source File') &&
+	        headers.includes('Included GHG Records') &&
+	        headers.includes('Imported Review Records') &&
+	        !headers.includes('Review Note')
       );
     });
     const factorSummaryCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
@@ -1354,7 +2308,7 @@ describe('ReportingPage audit trail', () => {
     const dataQualityNotesCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return headers.includes('Readiness Signal') && body.some((row) => row[0] === 'Emissions Workflow Readiness');
+      return headers.includes('Item') && headers.includes('Status') && body.some((row) => row[0] === 'Calculation Coverage');
     });
     const carbonCreditReadinessCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
@@ -1374,11 +2328,14 @@ describe('ReportingPage audit trail', () => {
     expect(sourceEvidenceCall?.[1]).toMatchObject({
       rowPageBreak: 'avoid',
       showHead: 'everyPage',
-      styles: expect.objectContaining({ fontSize: 7 }),
+      tableWidth: 265,
+      margin: expect.objectContaining({ left: 14, right: 14 }),
+      styles: expect.objectContaining({ fontSize: 7.2, overflow: 'linebreak' }),
       columnStyles: expect.objectContaining({
         4: expect.objectContaining({ cellWidth: 36 }),
-        7: expect.objectContaining({ cellWidth: 40 }),
-        10: expect.objectContaining({ cellWidth: 36 }),
+        6: expect.objectContaining({ cellWidth: 42 }),
+        7: expect.objectContaining({ cellWidth: 23 }),
+        9: expect.objectContaining({ cellWidth: 47 }),
       }),
     });
     expect(sourceEvidenceSummaryCall?.[1]).toMatchObject({
@@ -1392,7 +2349,7 @@ describe('ReportingPage audit trail', () => {
       'Record-Level References',
       'Included GHG Records',
       'Tracked Metrics',
-      'Review Records',
+      'Imported Review Records',
     ]);
     expect(factorSummaryCall?.[1]).toMatchObject({
       rowPageBreak: 'avoid',
@@ -1410,19 +2367,18 @@ describe('ReportingPage audit trail', () => {
     const dataQualityNotesBody = JSON.stringify(
       (dataQualityNotesCall?.[1] as { body?: unknown[][] } | undefined)?.body,
     );
-    expect(dataQualityNotesBody).toContain('Calculation Coverage Meaning');
+    expect(dataQualityNotesBody).toContain('Calculation Coverage');
     expect(dataQualityNotesBody).toContain('eligible emission-bearing records were calculated as GHG emissions records');
-    expect(dataQualityNotesBody).toContain('Emissions Workflow Readiness Meaning');
-    expect(dataQualityNotesBody).toContain('complete enough to calculate, trace, and report without manual correction');
+    expect(dataQualityNotesBody).toContain('Reporting boundary defined');
+    expect(dataQualityNotesBody).toContain('Reviewer approval');
     expect(dataQualityNotesBody).toContain('Optional Data Completeness');
-    expect(dataQualityNotesBody).toContain('Coverage vs Readiness');
-    expect(dataQualityNotesBody).toContain('may differ');
     expect(dataQualityNotesCall?.[1]).toMatchObject({
       rowPageBreak: 'avoid',
       showHead: 'everyPage',
       columnStyles: {
-        0: { cellWidth: 58 },
-        1: { cellWidth: 122 },
+        0: { cellWidth: 50 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 92 },
       },
     });
     expect(carbonCreditReadinessCall).toBeUndefined();

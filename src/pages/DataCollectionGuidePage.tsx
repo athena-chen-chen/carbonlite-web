@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { CARBONLITE_WORKFLOW, formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
 
 const dataCategories = [
   {
@@ -64,7 +65,7 @@ const checklist = [
   },
   {
     label: 'Quantity is present',
-    why: 'Emissions calculations multiply quantity by a conversion factor.',
+    why: 'Emissions calculations multiply quantity by an emission factor.',
   },
   {
     label: 'Unit is present and supported',
@@ -75,7 +76,7 @@ const checklist = [
     why: 'Dates help select the correct factor year and report period.',
   },
   {
-    label: 'Matching conversion factor exists',
+    label: 'Matching emission factor exists',
     why: 'Records without a matching factor are saved for review, but excluded from emissions totals.',
   },
   {
@@ -103,7 +104,7 @@ const reviewIssues = [
   },
   {
     label: 'Missing Factor',
-    description: 'The record is retained for review when no compatible conversion factor is available.',
+    description: 'The record is retained for review when no compatible emission factor is available.',
   },
   {
     label: 'Unit Mismatch',
@@ -114,19 +115,12 @@ const reviewIssues = [
     description: 'A quantity, unit, date, or activity type may need review before import.',
   },
   {
-    label: 'Tracked Only',
+    label: 'Tracked Metric',
     description: 'The record can be tracked as operational data without being included in the current emissions total.',
   },
 ];
 
-const workflowSteps = [
-  'Collect',
-  'Upload / Import',
-  'Review',
-  'Match Factors',
-  'Calculation Review',
-  'Export Review Package',
-];
+const dataCollectionStage = getWorkflowStage('SOURCE_DATA');
 
 const templateRows = [
   ['Electricity', '1000', 'kWh', '2026-01-01', 'Canada', 'British Columbia', 'Vancouver Office', 'Electricity bill', 'BC electricity example'],
@@ -240,15 +234,18 @@ export default function DataCollectionGuidePage() {
       <section style={sectionStyle}>
         <h2 style={sectionTitleStyle}>Uploading Documents</h2>
         <p style={bodyTextStyle}>
+          {formatWorkflowStageLabel(dataCollectionStage)} focuses on collecting and uploading source data. It is not a separate reporting methodology.
+        </p>
+        <p style={bodyTextStyle}>
           CarbonLite extracts supported activity information and presents it for review before it becomes an
           Activity Record. Utility bills, fuel invoices, travel records, PDFs, and spreadsheets should still be
           checked in Review Data before import.
         </p>
-        <div style={workflowStyle} aria-label="CarbonLite data review workflow">
-          {workflowSteps.map((step, index) => (
-            <div key={step} style={workflowStepStyle}>
-              <span style={workflowNumberStyle}>{index + 1}</span>
-              <span>{step}</span>
+        <div style={workflowStyle} aria-label="CarbonLite canonical workflow">
+          {CARBONLITE_WORKFLOW.map((step) => (
+            <div key={step.id} style={workflowStepStyle}>
+              <span style={workflowNumberStyle}>{step.step}</span>
+              <span>{step.shortTitle}</span>
             </div>
           ))}
         </div>
@@ -293,7 +290,7 @@ export default function DataCollectionGuidePage() {
         </p>
         <div style={actionRowStyle}>
           <Link to="/activity-records" style={primaryLinkStyle}>Review Activity Records</Link>
-          <Link to="/conversion-factors" style={secondaryLinkStyle}>Review Conversion Factors</Link>
+          <Link to="/conversion-factors" style={secondaryLinkStyle}>Review Emission Factors</Link>
         </div>
       </section>
     </div>

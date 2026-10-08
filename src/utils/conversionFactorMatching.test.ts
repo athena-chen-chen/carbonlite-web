@@ -245,7 +245,7 @@ describe('findBestConversionFactorMatch', () => {
       activityType: 'NATURAL_GAS',
       inputUnit: 'GJ',
       availableUnits: ['m3'],
-    })).toBe('Natural gas usage is in GJ, but the available factor uses m3.');
+    })).toBe('Natural Gas is recorded in GJ, but the available emission factor requires m3. No approved conversion path is available.');
   });
 
   it('matches Natural Gas GJ records when a GJ factor exists', () => {
@@ -274,6 +274,342 @@ describe('findBestConversionFactorMatch', () => {
 
     expect(match?.factor.id).toBe('natural-gas-gj');
     expect(match?.factor.factorValue).toBe(49.87);
+  });
+
+  it('uses an approved provenance-backed conversion only after no direct factor exists', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      quantity: 3,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-m3-ab-2026',
+          organizationId: null,
+          name: 'Natural Gas - Alberta m3 - 2026',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          isSystemDefault: true,
+        },
+      ],
+      unitConversions: [
+        {
+          id: 'conversion-natural-gas-gj-m3-ab-2026',
+          activityType: 'NATURAL_GAS',
+          fromUnit: 'GJ',
+          toUnit: 'm3',
+          conversionValue: 25,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceAuthority: 'Test authority',
+          sourceDocument: 'Test heating value schedule',
+          sourceUrl: 'https://example.test/heating-values',
+          sourceYear: 2026,
+          verificationStatus: 'REVIEWED',
+          confidenceLevel: 'HIGH',
+          lifecycleStatus: 'ACTIVE',
+          isActive: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('natural-gas-m3-ab-2026');
+    expect(match?.isConversionAssisted).toBe(true);
+    expect(match?.conversion).toMatchObject({
+      conversionValue: 25,
+      convertedQuantity: 75,
+      fromUnit: 'GJ',
+      toUnit: 'm3',
+      sourceAuthority: 'Test authority',
+      selectionReason: 'EXACT_CONVERSION_MATCH',
+    });
+  });
+
+  it('does not use a conversion record with missing provenance', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      quantity: 3,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-m3-ab-2026',
+          organizationId: null,
+          name: 'Natural Gas - Alberta m3 - 2026',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          isSystemDefault: true,
+        },
+      ],
+      unitConversions: [
+        {
+          id: 'conversion-natural-gas-gj-m3-ab-2026',
+          activityType: 'NATURAL_GAS',
+          fromUnit: 'GJ',
+          toUnit: 'm3',
+          conversionValue: 25,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          verificationStatus: 'REVIEWED',
+        },
+      ],
+    });
+
+    expect(match).toBeUndefined();
+  });
+
+  it('prefers a direct GJ factor over a conversion-assisted m3 path', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      quantity: 3,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-gj-ab-2025',
+          organizationId: null,
+          name: 'Natural Gas - Alberta GJ - 2025',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'GJ',
+          factorValue: 49.87,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2025,
+          isSystemDefault: true,
+        },
+        {
+          id: 'natural-gas-m3-ab-2026',
+          organizationId: null,
+          name: 'Natural Gas - Alberta m3 - 2026',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          isSystemDefault: true,
+        },
+      ],
+      unitConversions: [
+        {
+          id: 'conversion-natural-gas-gj-m3-ab-2026',
+          activityType: 'NATURAL_GAS',
+          fromUnit: 'GJ',
+          toUnit: 'm3',
+          conversionValue: 25,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceAuthority: 'Test authority',
+          sourceDocument: 'Test heating value schedule',
+          sourceYear: 2026,
+          verificationStatus: 'REVIEWED',
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('natural-gas-gj-ab-2025');
+    expect(match?.isConversionAssisted).toBe(false);
+    expect(match?.conversion).toBeUndefined();
+  });
+
+  it('prefers a direct unit-compatible prior-year factor over an exact-year incompatible unit factor', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-m3-ab-2026',
+          organizationId: null,
+          name: 'Natural Gas - Alberta m3 - 2026',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          isSystemDefault: true,
+        },
+        {
+          id: 'natural-gas-gj-ab-2025',
+          organizationId: null,
+          name: 'Natural Gas - Alberta GJ - 2025',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'GJ',
+          factorValue: 49.87,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2025,
+          isSystemDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('natural-gas-gj-ab-2025');
+    expect(match?.factorYear).toBe(2025);
+    expect(match?.usedPriorYearFallback).toBe(true);
+    expect(match?.selectionReason).toBe('PRIOR_YEAR_FALLBACK');
+  });
+
+  it('prefers a direct unit-compatible generic factor over a more specific incompatible unit factor', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-m3-ab-2026',
+          organizationId: null,
+          name: 'Natural Gas - Alberta m3 - 2026',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          isSystemDefault: true,
+        },
+        {
+          id: 'natural-gas-gj-canada-2026',
+          organizationId: null,
+          name: 'Natural Gas - Canada GJ - 2026',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'GJ',
+          factorValue: 49.87,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Canada',
+          sourceYear: 2026,
+          isSystemDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('natural-gas-gj-canada-2026');
+    expect(match?.usedGenericJurisdictionFallback).toBe(true);
+    expect(match?.selectionReason).toBe('GENERIC_JURISDICTION_FALLBACK');
+    expect(match?.selectionExplanation).toContain('Unit matched GJ.');
+    expect(match?.selectionExplanation).toContain('Activity jurisdiction is Alberta, Canada.');
+    expect(match?.selectionExplanation).toContain('No Alberta-specific direct GJ factor was available');
+    expect(match?.selectionExplanation).toContain('2026 Canada-generic factor was selected.');
+    expect(match?.selectionExplanation).not.toContain('Jurisdiction matched Canada, Canada');
+    expect(match?.selectionExplanation).not.toContain('m3');
+  });
+
+  it('matches Alberta Natural Gas GJ records to the ECCC Canada-generic direct factor without conversion', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'NATURAL_GAS',
+      inputUnit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2025,
+      quantity: 3,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'natural-gas-m3-ab-2025',
+          organizationId: null,
+          name: 'Natural Gas - Alberta m3 - 2025',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'm3',
+          factorValue: 1.89,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2025,
+          isSystemDefault: true,
+        },
+        {
+          id: 'eccc-natural-gas-canada-generic-gj-2025',
+          organizationId: null,
+          name: 'Natural Gas - Canada Generic',
+          type: 'EMISSION',
+          activityType: 'NATURAL_GAS',
+          inputUnit: 'GJ',
+          factorValue: 49.44,
+          resultUnit: 'kgCO2e',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Canada',
+          sourceAuthority: 'Environment and Climate Change Canada',
+          sourceDocument: 'Greenhouse gas and air pollutant emissions projections – 2025',
+          sourceYear: 2025,
+          isSystemDefault: true,
+          verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+          confidenceLevel: 'HIGH',
+        },
+      ],
+      unitConversions: [
+        {
+          id: 'conversion-natural-gas-gj-m3-ab-2025',
+          activityType: 'NATURAL_GAS',
+          fromUnit: 'GJ',
+          toUnit: 'm3',
+          conversionValue: 25,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceAuthority: 'Test authority',
+          sourceDocument: 'Test heating value schedule',
+          sourceUrl: 'https://example.test/heating-values',
+          sourceYear: 2025,
+          verificationStatus: 'REVIEWED',
+          confidenceLevel: 'HIGH',
+          lifecycleStatus: 'ACTIVE',
+          isActive: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('eccc-natural-gas-canada-generic-gj-2025');
+    expect(match?.factor.factorValue).toBe(49.44);
+    expect(match?.isConversionAssisted).toBe(false);
+    expect(match?.conversion).toBeUndefined();
+    expect(match?.selectionReason).toBe('GENERIC_JURISDICTION_FALLBACK');
+    expect(match?.selectionExplanation).toContain('Activity jurisdiction is Alberta, Canada.');
+    expect(match?.selectionExplanation).toContain('No Alberta-specific direct GJ factor was available');
+    expect(match?.selectionExplanation).toContain('2025 Canada-generic factor was selected.');
+    expect(match?.selectionExplanation).not.toContain('Jurisdiction matched Canada, Canada');
+    expect(match?.reviewRecommended).toBe(true);
+    expect(Number(match?.factor.factorValue) * 3).toBe(148.32);
   });
 
   it.each([
@@ -330,6 +666,9 @@ describe('findBestConversionFactorMatch', () => {
     });
 
     expect(match?.factor.id).toBe('factor-electricity-ab');
+    expect(match?.selectionExplanation).toContain('Jurisdiction matched Alberta, Canada.');
+    expect(match?.selectionExplanation).not.toContain('Alberta, Alberta');
+    expect(match?.selectionExplanation).not.toContain('Canada, Canada');
   });
 
   it('uses the latest available prior-year electricity factor when exact year is unavailable', () => {
@@ -369,6 +708,53 @@ describe('findBestConversionFactorMatch', () => {
           jurisdictionRegion: 'AB',
           sourceYear: 2025,
           verified: false,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('factor-electricity-ab-2025');
+    expect(match?.factorYear).toBe(2025);
+    expect(match?.usedPriorYearFallback).toBe(true);
+  });
+
+  it('ignores unusable exact-year electricity factors before applying prior-year fallback', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'Electricity',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'factor-electricity-ab-2026-empty',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2026 Empty',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          factorValue: null,
+          resultUnit: 'kgCO2e/kWh',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2026,
+          isSystemDefault: true,
+          isDefault: true,
+        },
+        {
+          id: 'factor-electricity-ab-2025',
+          organizationId: null,
+          name: 'Electricity - Alberta - 2025',
+          type: 'EMISSION',
+          activityType: 'ELECTRICITY',
+          inputUnit: 'kWh',
+          factorValue: 0.53,
+          resultUnit: 'kgCO2e/kWh',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          sourceYear: 2025,
           isSystemDefault: true,
           isDefault: true,
         },
@@ -455,6 +841,61 @@ describe('findBestConversionFactorMatch', () => {
     expect(match?.factor.id).toBe('cmr75gv6l0007gdjbs0bz4d3j');
     expect(match?.factorYear).toBe(2025);
     expect(match?.usedPriorYearFallback).toBe(usedFallback);
+  });
+
+  it('does not treat placeholder wording in confidence as factor eligibility', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'electricity-ab-low-placeholder-label',
+          name: 'Electricity - Alberta',
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          jurisdiction: 'Alberta',
+          sourceYear: 2025,
+          factorValue: 0.53,
+          isSystemDefault: true,
+          sourceAuthority: 'CarbonLite',
+          confidenceLevel: 'Low (Placeholder)',
+          verificationStatus: 'Internal Review',
+        },
+      ],
+    });
+
+    expect(match?.factor.id).toBe('electricity-ab-low-placeholder-label');
+    expect(match?.selectionReason).toBe('PILOT_DEFAULT_FALLBACK');
+  });
+
+  it('keeps province-required electricity placeholders ineligible for matching', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: [
+        {
+          id: 'electricity-province-required',
+          name: 'Electricity - Province Required',
+          activityType: 'ELECTRICITY',
+          unit: 'kWh',
+          jurisdiction: 'Province Required',
+          sourceYear: 2025,
+          factorValue: 0.53,
+          isSystemDefault: true,
+          confidenceLevel: 'Low',
+        },
+      ],
+    });
+
+    expect(match).toBeUndefined();
   });
 
   it.each([
@@ -594,7 +1035,7 @@ describe('findBestConversionFactorMatch', () => {
     },
   );
 
-  it('keeps official ECCC reference electricity factors versioned separately from pilot defaults', () => {
+  it('keeps ECCC reference electricity factors versioned separately and prefers them over pilot defaults when equally applicable', () => {
     expect(ecccReferenceElectricityFactors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -625,9 +1066,29 @@ describe('findBestConversionFactorMatch', () => {
       factors: pilotConversionFactors,
     });
 
-    expect(match?.factor.id).toBe('factor-electricity-ab');
-    expect(match?.factor.factorValue).toBe(0.53);
-    expect(match?.factor.factorSet).toBe('PILOT_DEFAULT_V0_1');
+    expect(match?.factor.id).toBe('eccc-electricity-ab-2026');
+    expect(match?.factor.factorValue).toBe(0.438);
+    expect(match?.factor.factorSet).toBe('ECCC_REFERENCE_2026');
+    expect(match?.selectionReason).toBe('EXACT_MATCH');
+    expect(match?.selectionExplanation).toContain('Factor year matched activity year 2026');
+  });
+
+  it('marks prior-year and pilot default fallback selection metadata', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'GROUND_TRANSPORT',
+      inputUnit: 'km',
+      jurisdictionCountry: 'Canada',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      factors: pilotConversionFactors,
+    });
+
+    expect(match?.factor.id).toBe('pilot-ground-transport-canada-2025');
+    expect(match?.usedPriorYearFallback).toBe(true);
+    expect(match?.usedGenericJurisdictionFallback).toBe(true);
+    expect(match?.usedPilotDefaultFallback).toBe(true);
+    expect(match?.selectionReason).toBe('PILOT_DEFAULT_FALLBACK');
+    expect(match?.selectionExplanation).toContain('CarbonLite pilot/default factor');
   });
 
   it('uses the exact activity year factor when 2025 and 2026 factors are available', () => {

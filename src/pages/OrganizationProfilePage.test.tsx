@@ -4,6 +4,7 @@ import { OrganizationProfilePage } from './OrganizationProfilePage';
 import {
   isValidPrimaryContactEmail,
   loadOrganizationProfile,
+  reviewOrganizationBoundary,
   saveOrganizationProfile,
 } from '../services/organizationProfile';
 
@@ -571,6 +572,45 @@ describe('OrganizationProfilePage', () => {
     expect(() => saveOrganizationProfile(loadOrganizationProfile(reviewer), reviewer)).toThrow(
       'You do not have permission to perform this action.',
     );
+  });
+
+  it('records boundary reviewer identity and invalidates review after material boundary edits', async () => {
+    setAdminUser();
+    const savedProfile = saveOrganizationProfile({
+      ...loadOrganizationProfile(),
+      organizationName: 'Admin Workspace',
+      industry: 'Technology',
+      country: 'Canada',
+      provinceOrState: 'Alberta',
+      reportingPeriodStart: '2026-01-01',
+      reportingPeriodEnd: '2026-12-31',
+      geographicBoundary: 'Canadian operations',
+      includedFacilitiesOrLocations: 'All Canadian facilities',
+      includedScopes: 'Scope 1, Scope 2, selected Scope 3',
+      exclusionsAndLimitations: 'None',
+    });
+
+    const reviewedProfile = await reviewOrganizationBoundary({
+      profile: savedProfile,
+      reviewNote: 'Reviewed for pilot reporting.',
+    });
+
+    expect(reviewedProfile.boundaryStatus).toBe('REVIEWED');
+    expect(reviewedProfile.boundaryReviewedBy).toBe('admin@example.com');
+    expect(reviewedProfile.boundaryReviewedAt).toBeTruthy();
+    expect(reviewedProfile.boundaryReviewNote).toBe('Reviewed for pilot reporting.');
+    expect(reviewedProfile.boundaryVersion).toBe(1);
+
+    const changedProfile = saveOrganizationProfile({
+      ...reviewedProfile,
+      geographicBoundary: 'Canadian warehouse and fleet operations',
+    });
+
+    expect(changedProfile.boundaryStatus).toBe('DRAFT');
+    expect(changedProfile.boundaryReviewedBy).toBe('');
+    expect(changedProfile.boundaryReviewedAt).toBe('');
+    expect(changedProfile.boundaryReviewNote).toBe('');
+    expect(changedProfile.boundaryVersion).toBe(2);
   });
 
   it('rejects reporting periods where the end date is not after the start date', () => {

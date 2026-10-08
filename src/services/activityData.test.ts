@@ -160,6 +160,48 @@ describe('createActivityData', () => {
     });
   });
 
+  it('preserves source sheet and factor-selection metadata for spreadsheet imports', async () => {
+    setMemberUser();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-march-elec-001' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await createActivityData({
+      activityType: 'ELECTRICITY',
+      recordDate: '2026-03-01',
+      quantity: 980,
+      unit: 'kWh',
+      sourceType: 'EXCEL',
+      sourceReference: 'MARCH-ELEC-001',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceSheetName: 'Messy_Operations',
+      sourceRow: 2,
+      costCad: 214.55,
+      costCurrency: 'CAD',
+      matchingStatus: 'MATCHED',
+      factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
+      factorSelectionExplanation: 'No exact 2026 factor was available.',
+    });
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody).toMatchObject({
+      sourceType: 'IMPORT',
+      sourceReference: 'MARCH-ELEC-001',
+      sourceFileName: 'carbonlite_needs_review_test.xlsx',
+      sourceSheetName: 'Messy_Operations',
+      sourceRow: 2,
+      costCad: 214.55,
+      costCurrency: 'CAD',
+      factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
+      factorSelectionExplanation: 'No exact 2026 factor was available.',
+    });
+  });
+
   it('preserves Ontario jurisdiction for the golden accommodation spreadsheet row', async () => {
     setMemberUser();
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -195,6 +237,42 @@ describe('createActivityData', () => {
       sourceReference: 'MARCH-HOTEL-010',
       sourceFileName: 'carbonlite_needs_review_test.xlsx',
       sourceRow: 11,
+    });
+  });
+
+  it('submits Natural Gas GJ records without client-side unit rejection', async () => {
+    setMemberUser();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-natural-gas-gj', activityType: 'NATURAL_GAS' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await createActivityData({
+      activityType: 'NATURAL_GAS',
+      recordDate: '2026-03-01',
+      quantity: 3,
+      unit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      sourceType: 'MANUAL',
+      calculationStatus: 'NEEDS_REVIEW',
+      calculationMessage:
+        'Natural Gas is recorded in GJ, but the available emission factor requires m3. No approved conversion path is available.',
+    });
+
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls[0][1] as RequestInit).body),
+    );
+    expect(requestBody).toMatchObject({
+      activityType: 'NATURAL_GAS',
+      quantity: 3,
+      unit: 'GJ',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      sourceType: 'MANUAL',
+      calculationStatus: 'NEEDS_REVIEW',
     });
   });
 
@@ -284,6 +362,9 @@ describe('createActivityData', () => {
       calculatedEmissionsKgCO2e: 2,
       calculationMessage: 'Matched factor. Using latest available factor year: 2025.',
     });
+    expect(requestBody).not.toHaveProperty('matchedFactorSourceUrl');
+    expect(requestBody).not.toHaveProperty('factorSelectionReason');
+    expect(requestBody).not.toHaveProperty('factorSelectionExplanation');
   });
 
   it('saves manual-entry selected dates as date-only payload values', async () => {

@@ -229,7 +229,7 @@ export function FactorSourcesPage() {
                     </td>
                     <td style={tdStyle}>
                       <span style={badgeStyle(source)}>
-                        {source.isOfficial ? 'Official' : 'Unverified'}
+                        {source.isOfficial ? 'Official' : 'Internal Review Required'}
                       </span>
                     </td>
                     <td style={tdStyle}>{source.isActive ? 'Active' : 'Archived'}</td>

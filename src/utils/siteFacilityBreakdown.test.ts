@@ -8,6 +8,19 @@ import {
   FACILITY_REPORTING_THRESHOLD_TCO2E,
 } from './siteFacilityBreakdown';
 
+const REVIEWED_ALBERTA_THRESHOLD_REFERENCE = {
+  authority: 'Reviewed Authority',
+  programName: 'Alberta TIER screening reference',
+  jurisdictionCountry: 'Canada',
+  jurisdictionRegion: 'Alberta',
+  thresholdValue: ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E,
+  thresholdUnit: 't CO₂e/year',
+  effectiveDate: '2026-01-01',
+  checkedDate: '2026-09-15',
+  sourceUrl: 'https://example.test/alberta-tier-reference',
+  notes: 'Reviewed threshold reference for test coverage.',
+};
+
 function detail(overrides: Partial<CalculationAuditDetail>): CalculationAuditDetail {
   return {
     activityDataId: 'activity-1',
@@ -153,44 +166,47 @@ describe('buildSiteFacilityBreakdown', () => {
   });
 
   it('builds facility threshold reference rows from calculated site totals', () => {
-    const rows = buildFacilityThresholdReferenceRows([
-      {
-        siteFacility: 'Small Facility',
-        jurisdictionCountry: 'Canada',
-        jurisdictionRegion: 'Alberta',
-        jurisdictionSource: 'record',
-        scope1KgCO2e: 1000000,
-        scope2KgCO2e: 0,
-        scope3KgCO2e: 0,
-        totalKgCO2e: 1000000,
-        includedRecords: 1,
-        activityBreakdown: [],
-      },
-      {
-        siteFacility: 'Approaching Facility',
-        jurisdictionCountry: 'Canada',
-        jurisdictionRegion: 'Alberta',
-        jurisdictionSource: 'record',
-        scope1KgCO2e: 85000000,
-        scope2KgCO2e: 0,
-        scope3KgCO2e: 0,
-        totalKgCO2e: 85000000,
-        includedRecords: 1,
-        activityBreakdown: [],
-      },
-      {
-        siteFacility: 'Above Facility',
-        jurisdictionCountry: 'Canada',
-        jurisdictionRegion: 'Alberta',
-        jurisdictionSource: 'record',
-        scope1KgCO2e: 120000000,
-        scope2KgCO2e: 0,
-        scope3KgCO2e: 0,
-        totalKgCO2e: 120000000,
-        includedRecords: 1,
-        activityBreakdown: [],
-      },
-    ]);
+    const rows = buildFacilityThresholdReferenceRows(
+      [
+        {
+          siteFacility: 'Small Facility',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
+          scope1KgCO2e: 1000000,
+          scope2KgCO2e: 0,
+          scope3KgCO2e: 0,
+          totalKgCO2e: 1000000,
+          includedRecords: 1,
+          activityBreakdown: [],
+        },
+        {
+          siteFacility: 'Approaching Facility',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
+          scope1KgCO2e: 85000000,
+          scope2KgCO2e: 0,
+          scope3KgCO2e: 0,
+          totalKgCO2e: 85000000,
+          includedRecords: 1,
+          activityBreakdown: [],
+        },
+        {
+          siteFacility: 'Above Facility',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
+          jurisdictionSource: 'record',
+          scope1KgCO2e: 120000000,
+          scope2KgCO2e: 0,
+          scope3KgCO2e: 0,
+          totalKgCO2e: 120000000,
+          includedRecords: 1,
+          activityBreakdown: [],
+        },
+      ],
+      [REVIEWED_ALBERTA_THRESHOLD_REFERENCE],
+    );
 
     expect(FACILITY_REPORTING_THRESHOLD_TCO2E).toBe(10000);
     expect(ALBERTA_TIER_LARGE_EMITTER_THRESHOLD_TCO2E).toBe(100000);
@@ -199,8 +215,11 @@ describe('buildSiteFacilityBreakdown', () => {
         siteFacility: 'Small Facility',
         totalTCO2e: 1000,
         jurisdictionLabel: 'Alberta, Canada',
-        regulatoryReference: 'Alberta TIER pilot screening reference',
+        regulatoryReference: 'Alberta TIER screening reference',
         thresholdTCO2e: 100000,
+        authority: 'Reviewed Authority',
+        checkedDate: '2026-09-15',
+        sourceUrl: 'https://example.test/alberta-tier-reference',
         percentOfThreshold: 1,
         status: 'Below threshold / informational only',
         screeningNote: 'Below threshold / informational only',
@@ -218,6 +237,39 @@ describe('buildSiteFacilityBreakdown', () => {
         screeningNote: 'Above threshold reference — professional review recommended',
       },
     ]);
+  });
+
+  it('does not synthesize threshold provenance when canonical metadata is absent', () => {
+    const rows = buildFacilityThresholdReferenceRows([
+      {
+        siteFacility: 'Calgary HQ',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        jurisdictionSource: 'record',
+        scope1KgCO2e: 1000000,
+        scope2KgCO2e: 0,
+        scope3KgCO2e: 0,
+        totalKgCO2e: 1000000,
+        includedRecords: 1,
+        activityBreakdown: [],
+      },
+    ]);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        siteFacility: 'Calgary HQ',
+        jurisdictionLabel: 'Alberta, Canada',
+        regulatoryReference: 'Not configured',
+        thresholdLabel: 'Not evaluated',
+        thresholdTCO2e: null,
+        percentOfThreshold: null,
+        status: 'Not evaluated',
+        screeningNote: 'Reviewed regulatory source provenance is required before threshold screening.',
+      }),
+    ]);
+    expect(rows[0]).not.toHaveProperty('authority');
+    expect(rows[0]).not.toHaveProperty('checkedDate');
+    expect(rows[0]).not.toHaveProperty('sourceUrl');
   });
 
   it('does not apply Alberta threshold screening to Ontario facilities', () => {
@@ -242,6 +294,7 @@ describe('buildSiteFacilityBreakdown', () => {
           calculatedEmissionsKgCO2e: 60,
         }),
       ]),
+      [REVIEWED_ALBERTA_THRESHOLD_REFERENCE],
     );
 
     expect(rows).toEqual(
@@ -249,7 +302,7 @@ describe('buildSiteFacilityBreakdown', () => {
         expect.objectContaining({
           siteFacility: 'Calgary HQ',
           jurisdictionLabel: 'Alberta, Canada',
-          regulatoryReference: 'Alberta TIER pilot screening reference',
+          regulatoryReference: 'Alberta TIER screening reference',
           thresholdLabel: '100,000 t CO₂e/year',
           status: 'Below threshold / informational only',
         }),
@@ -257,7 +310,7 @@ describe('buildSiteFacilityBreakdown', () => {
           siteFacility: 'Toronto Client Visit',
           jurisdictionLabel: 'Ontario, Canada',
           regulatoryReference: 'Not configured',
-          thresholdLabel: '—',
+          thresholdLabel: 'Not evaluated',
           thresholdTCO2e: null,
           percentOfThreshold: null,
           status: 'Not evaluated',
@@ -307,7 +360,7 @@ describe('buildSiteFacilityBreakdown', () => {
         expect.objectContaining({
           siteFacility: 'Toronto Client Visit',
           jurisdictionLabel: 'Ontario, Canada',
-          thresholdLabel: '—',
+          thresholdLabel: 'Not evaluated',
           screeningNote:
             'Jurisdiction-specific threshold screening is not currently configured for Ontario.',
         }),

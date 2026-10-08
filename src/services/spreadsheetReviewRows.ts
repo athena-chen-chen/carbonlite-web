@@ -45,9 +45,12 @@ export type SpreadsheetReviewRowInput = {
   matchedFactorVersion?: string;
   matchedFactorSourceAuthority?: string;
   matchedFactorSourceDocument?: string;
+  matchedFactorSourceUrl?: string;
   matchedFactorVerificationStatus?: string;
   matchedFactorConfidenceLevel?: string;
   matchedFactorAssumptions?: string;
+  factorSelectionReason?: string;
+  factorSelectionExplanation?: string;
   calculatedEmissionsKgCO2e?: number | null;
 };
 
@@ -81,6 +84,20 @@ export type SpreadsheetReviewRowItem = {
   scope?: string | null;
   calculationStatus?: string | null;
   calculationMessage?: string | null;
+  matchedFactorId?: string | null;
+  matchedFactorName?: string | null;
+  matchedFactorSourceYear?: number | null;
+  matchedFactorValue?: number | null;
+  matchedFactorUnit?: string | null;
+  matchedFactorVersion?: string | null;
+  matchedFactorSourceAuthority?: string | null;
+  matchedFactorSourceDocument?: string | null;
+  matchedFactorSourceUrl?: string | null;
+  matchedFactorVerificationStatus?: string | null;
+  matchedFactorConfidenceLevel?: string | null;
+  matchedFactorAssumptions?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
   calculatedEmissionsKgCO2e?: number | null;
   createdAt?: string;
   updatedAt?: string;
@@ -115,10 +132,24 @@ export type SaveSpreadsheetReviewRowsResponse = {
 export async function saveSpreadsheetReviewRows(input: SaveSpreadsheetReviewRowsInput) {
   requirePermission(canImportDraftRows(getCurrentUser()));
 
+  const payload: SaveSpreadsheetReviewRowsInput = {
+    ...input,
+    rows: input.rows.map(stripDerivedFactorSelectionFields),
+  };
+
   return apiFetch<SaveSpreadsheetReviewRowsResponse>('/spreadsheet-import/review-rows', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(payload),
   });
+}
+
+function stripDerivedFactorSelectionFields(row: SpreadsheetReviewRowInput): SpreadsheetReviewRowInput {
+  const {
+    matchedFactorSourceUrl: _matchedFactorSourceUrl,
+    ...editableRow
+  } = row;
+
+  return editableRow;
 }
 
 export async function getSpreadsheetReviewRows(params?: {

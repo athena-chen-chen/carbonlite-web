@@ -116,6 +116,84 @@ describe('conversion factor traceability API payloads', () => {
     expect(response.items.some((item) => item.name === 'Electricity - Province Required')).toBe(false);
   });
 
+  it('adds the ECCC Canada-generic Natural Gas GJ factor when the API response omits it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({
+        items: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 1,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ));
+
+    const response = await getConversionFactors({ activityType: 'NATURAL_GAS' });
+
+    expect(response.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'eccc-natural-gas-canada-generic-gj-2025',
+          name: 'Natural Gas - Canada Generic',
+          activityType: 'NATURAL_GAS',
+          jurisdiction: 'Canada (Generic)',
+          region: 'Canada',
+          country: 'Canada',
+          inputUnit: 'GJ',
+          unit: 'GJ',
+          factorValue: 49.44,
+          resultUnit: 'kgCO2e',
+          sourceAuthority: 'Environment and Climate Change Canada',
+          sourceDocument: 'Greenhouse gas and air pollutant emissions projections – 2025',
+          sourceYear: 2025,
+          sourceUrl: 'https://www.canada.ca/en/environment-climate-change/services/climate-change/greenhouse-gas-emissions/projections/2025-report.html',
+          confidenceLevel: 'HIGH',
+          verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+          consultantReviewRecommended: true,
+          verified: false,
+          defaultScope: 'SCOPE_1',
+        }),
+      ]),
+    );
+  });
+
+  it('filters the ECCC Natural Gas GJ factor by national jurisdiction, source year, and search text', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({
+        items: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 1,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ));
+
+    const national = await getConversionFactors({
+      activityType: 'NATURAL_GAS',
+      jurisdiction: 'Canada',
+      sourceYear: 2025,
+      search: 'Table A8',
+    });
+    expect(national.items.map((item) => item.name)).toEqual(['Natural Gas - Canada Generic']);
+
+    const provincial = await getConversionFactors({
+      activityType: 'NATURAL_GAS',
+      jurisdiction: 'Alberta',
+    });
+    expect(provincial.items).toHaveLength(0);
+
+    const wrongYear = await getConversionFactors({
+      activityType: 'NATURAL_GAS',
+      sourceYear: 2026,
+    });
+    expect(wrongYear.items).toHaveLength(0);
+  });
+
   it('filters pilot electricity factors by activity type, year, and jurisdiction aliases', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(
       new Response(JSON.stringify({

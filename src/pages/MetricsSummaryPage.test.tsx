@@ -506,9 +506,84 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getByText('No calculated emissions yet.')).toBeInTheDocument();
-    expect(screen.getByText('Tracked Metrics')).toBeInTheDocument();
+    expect(screen.getAllByText('Tracked Metrics').length).toBeGreaterThan(0);
     expect(screen.getByText('Water / m3 — 1 record')).toBeInTheDocument();
     expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
+  });
+
+  it('describes calculated records and emission-factor provenance without conversion-factor wording', () => {
+    const calculatedDetail = (overrides: Partial<any>) =>
+      goldenTrailDetail({
+        factorValue: 49.44,
+        factorYear: 2025,
+        sourceAuthority: 'Environment and Climate Change Canada',
+        sourceDocument: 'Greenhouse gas and air pollutant emissions projections – 2025',
+        factorJurisdictionCountry: 'Canada',
+        factorJurisdictionRegion: 'Canada',
+        factorConfidenceLevel: 'HIGH',
+        factorVerificationStatus: 'REVIEWED',
+        sourceReference: 'ENMAX bill',
+        ...overrides,
+      });
+
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 3,
+            electricity: 358,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [{ activityType: 'NATURAL_GAS', total: 3, unit: 'GJ' }],
+          }}
+          totalEstimatedEmissionsKgCO2e={338.06}
+          countSummary={{
+            totalRecordsFound: 3,
+            processedRecords: 2,
+            skippedRecords: 1,
+            missingFactorRecords: 0,
+            skippedReasons: {
+              missingFactor: 0,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          calculationDetails={[
+            calculatedDetail({
+              activityDataId: 'electricity',
+              activityType: 'ELECTRICITY',
+              activityQuantity: 358,
+              activityUnit: 'kWh',
+              calculatedEmissionsKgCO2e: 189.74,
+            }),
+            calculatedDetail({
+              activityDataId: 'natural-gas',
+              activityType: 'NATURAL_GAS',
+              activityQuantity: 3,
+              activityUnit: 'GJ',
+              calculatedEmissionsKgCO2e: 148.32,
+            }),
+            calculatedDetail({
+              activityDataId: 'water',
+              activityType: 'WATER',
+              activityQuantity: 6,
+              activityUnit: 'm3',
+              calculatedEmissionsKgCO2e: null,
+              status: 'TRACKED_ONLY',
+              scopeOverride: 'TRACKED_METRIC',
+            }),
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    const readinessSection = screen.getByRole('heading', { name: /Reporting Readiness Checklist/i }).closest('section');
+    expect(readinessSection).toHaveTextContent('2 calculated records');
+    expect(readinessSection).toHaveTextContent('0 records require review');
+    expect(readinessSection).toHaveTextContent('1 tracked metric');
+    expect(screen.queryByText(/2 records ready for calculation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Conversion factors are traceable/i)).not.toBeInTheDocument();
   });
 
   it('groups missing conversion factors by activity type and unit', () => {
@@ -711,6 +786,140 @@ describe('buildMetricsSummaryTableRows', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps March pilot calculation review semantics separate for activity, factors, and tracked metrics', () => {
+    const marchDetails = [
+      goldenTrailDetail({
+        activityDataId: 'MARCH-ELEC-001',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-03-01T00:00:00.000Z',
+        jurisdiction: 'Alberta, Canada',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        activityQuantity: 980,
+        activityUnit: 'kWh',
+        normalizedUnit: 'kWh',
+        factorInputUnit: 'kWh',
+        factorValue: 0.53,
+        calculatedEmissionsKgCO2e: 519.4,
+        factorDefaultScope: 'SCOPE_2',
+        factorSet: 'Source review required',
+        notes: 'Imported from March operations sheet.',
+      }),
+      goldenTrailDetail({
+        activityDataId: 'MARCH-WATER-007',
+        activityType: 'WATER',
+        recordDate: '2026-03-01T00:00:00.000Z',
+        jurisdiction: 'Alberta, Canada',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Alberta',
+        activityQuantity: 18,
+        activityUnit: 'm3',
+        normalizedUnit: 'm3',
+        factorId: null,
+        factorValue: null,
+        calculatedEmissionsKgCO2e: null,
+        calculatedEmission: null,
+        status: 'TRACKED_ONLY',
+      }),
+      goldenTrailDetail({
+        activityDataId: 'MARCH-HOTEL-010',
+        activityType: 'HOTEL',
+        recordDate: '2026-03-01T00:00:00.000Z',
+        jurisdiction: 'Ontario, Canada',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'Ontario',
+        factorJurisdictionCountry: 'Canada',
+        factorJurisdictionRegion: 'Canada Generic',
+        activityQuantity: 4,
+        activityUnit: 'nights',
+        normalizedUnit: 'nights',
+        factorInputUnit: 'nights',
+        factorValue: 15,
+        calculatedEmissionsKgCO2e: 60,
+        factorDefaultScope: 'SCOPE_3',
+        factorSet: null,
+      }),
+    ];
+
+    render(
+      <MemoryRouter>
+        <MetricsSummarySection
+          usageTotals={{
+            fuel: 0,
+            electricity: 980,
+            fuelUnitLabel: 'Grouped by type and unit',
+            electricityUnitLabel: 'kWh',
+            fuelUsageBreakdown: [],
+            activityUsageBreakdown: [
+              { activityType: 'ELECTRICITY', total: 980, unit: 'kWh' },
+              { activityType: 'WATER', total: 18, unit: 'm3', trackedOnly: true },
+              { activityType: 'HOTEL', total: 4, unit: 'nights' },
+            ],
+          }}
+          totalEstimatedEmissionsKgCO2e={579.4}
+          countSummary={{
+            totalRecordsFound: 3,
+            processedRecords: 2,
+            skippedRecords: 1,
+            missingFactorRecords: 0,
+            skippedReasons: {
+              missingFactor: 0,
+              outsideDateRange: 0,
+              outsideScope: 0,
+              invalidData: 0,
+            },
+          }}
+          calculationDetails={marchDetails as any}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Records Included in GHG Total')).toBeInTheDocument();
+    expect(screen.getAllByText('Tracked Metrics')[0].parentElement).toHaveTextContent('1');
+    expect(
+      screen.getByText((_, element) => element?.textContent === '2 Calculated Emissions Records'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText((_, element) => element?.textContent === '1 Tracked Metric').length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((_, element) => element?.textContent === '0 records requiring review').length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((_, element) => element?.textContent === '0 Excluded Due to Calculation Issues').length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText('No records require calculation review')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Calculation details and traceability (3 records)'));
+    const detailsRegion = screen.getByText('Calculation details and traceability (3 records)').closest('details')!;
+    expect(within(detailsRegion).getByRole('columnheader', { name: 'Activity Jurisdiction' })).toBeInTheDocument();
+    expect(within(detailsRegion).getAllByText('Tracked Metric').length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(within(detailsRegion).getByRole('button', { name: /View calculation details for Business Travel - Accommodation/i }));
+    let dialog = screen.getByRole('dialog', { name: /Calculation detail/i });
+    expect(within(dialog).getByText('Activity Jurisdiction')).toBeInTheDocument();
+    expect(within(dialog).getByText('Ontario, Canada')).toBeInTheDocument();
+    expect(within(dialog).getByText('Factor Jurisdiction')).toBeInTheDocument();
+    expect(within(dialog).getByText('Canada (Generic)')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByLabelText('Close calculation detail'));
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
+    dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    expect(within(dialog).getByText('579.40 kg CO₂e')).toBeInTheDocument();
+    expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('2');
+    expect(within(dialog).getByText('Tracked metrics').parentElement).toHaveTextContent('1');
+    expect(within(dialog).getByText('Records requiring review').parentElement).toHaveTextContent('0');
+    expect(dialog).toHaveTextContent('2026-03-01 · Alberta, Canada');
+    expect(dialog).not.toHaveTextContent('2026-03-01T00:00:00.000Z');
+    expect(within(dialog).getAllByText('No conversion required').length).toBeGreaterThan(0);
+    expect(dialog).not.toHaveTextContent('980 kWh converted for factor unit kWh');
+    expect(within(dialog).getAllByText('Factor set')[0].parentElement).toHaveTextContent('Not specified');
+    expect(within(dialog).getAllByText('Source Note').length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('Factor Assumptions').length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('Review Recommendation').length).toBeGreaterThan(0);
+    expect(dialog).not.toHaveTextContent('Assumptions / review notes');
   });
 
   it('shows draft-stored pilot electricity verification as internal review in detail modals', () => {
@@ -1257,7 +1466,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getByText('Data Quality & Tracked Metrics')).toBeInTheDocument();
     expect(screen.queryByText('Calculation Issues')).not.toBeInTheDocument();
     expect(screen.getByText('Informational')).toBeInTheDocument();
-    expect(screen.getByText('Water / m3 — tracked only')).toBeInTheDocument();
+    expect(screen.getByText('Water / m3 — tracked metric')).toBeInTheDocument();
     expect(screen.getByText('Tracked metric only. No emission factor required.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Create Factor/i })).not.toBeInTheDocument();
   });
@@ -1290,7 +1499,7 @@ describe('buildMetricsSummaryTableRows', () => {
 
     expect(screen.getByText('Data Quality & Tracked Metrics')).toBeInTheDocument();
     expect(screen.queryByText('Calculation Issues')).not.toBeInTheDocument();
-    expect(screen.getByText('Water / m3 — tracked only')).toBeInTheDocument();
+    expect(screen.getByText('Water / m3 — tracked metric')).toBeInTheDocument();
     expect(screen.getAllByText(/2 records/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Informational')).toHaveLength(1);
   });
@@ -1319,11 +1528,14 @@ describe('buildMetricsSummaryTableRows', () => {
 
     expect(screen.getByText('Record Reconciliation')).toBeInTheDocument();
     expect(screen.getByText('15')).toBeInTheDocument();
-    expect(screen.getByText(/total activity records found/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByText((_, element) => element?.textContent === '15 Imported Activity Records').length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText('9').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/records included in summary/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Calculated Emissions Records/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('6').length).toBeGreaterThan(0);
-    expect(screen.getByText(/records skipped/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/records requiring review/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Excluded Due to Calculation Issues/i)).toBeInTheDocument();
     expect(screen.getByText('Calculation issues')).toBeInTheDocument();
     expect(screen.getByText('Outside selected date range')).toBeInTheDocument();
     expect(screen.getByText('Outside selected report scope')).toBeInTheDocument();
@@ -1351,7 +1563,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('All records included')).toBeInTheDocument();
+    expect(screen.getByText('No records require calculation review')).toBeInTheDocument();
   });
 });
 
@@ -1389,6 +1601,105 @@ describe('buildHotspotAnalysis', () => {
         percentageOfTotal: 50,
         hotspotLevel: 'HIGH',
       }),
+	    );
+	  });
+
+  it('marks pilot and prior-year hotspot factors as validation-first before reduction planning', () => {
+    const analysis = buildHotspotAnalysis([
+      detail({
+        activityType: 'ELECTRICITY',
+        calculatedEmissionsKgCO2e: 519.4,
+        factorVerified: false,
+        factorConfidenceLevel: 'PILOT_ESTIMATE',
+        factorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+        factorAssumptions:
+          'Pilot-stage default electricity factor. Uses the latest available prior-year factor. Replace with reviewed official factor before formal reporting.',
+        sourceYear: 2025,
+        reportingYear: 2026,
+      }),
+      detail({
+        activityType: 'HOTEL',
+        calculatedEmissionsKgCO2e: 60,
+        factorVerified: false,
+        factorConfidenceLevel: 'Medium (Engineering Estimate)',
+        factorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+        factorAssumptions:
+          'Used for pilot validation. Intended for demonstration workflows only. Replace with official/reviewed factor before production reporting.',
+        sourceYear: 2025,
+        reportingYear: 2026,
+      }),
+    ]);
+
+    expect(analysis.categoryHotspots[0]).toEqual(
+      expect.objectContaining({
+        activityType: 'ELECTRICITY',
+        estimateConfidence: 'Pilot-stage / prior-year estimate',
+        decisionReadiness: 'Validate before reduction planning',
+      }),
+    );
+    expect(analysis.categoryHotspots[0].focusMessage).toContain(
+      'Electricity represents 89.64% of the current estimated emissions total',
+    );
+    expect(analysis.categoryHotspots[0].focusMessage).toContain(
+      'validate the factor before using this hotspot for reduction planning',
+    );
+    expect(analysis.categoryHotspots[0].focusMessage).not.toMatch(/reduction opportunities/i);
+
+    expect(analysis.categoryHotspots[1]).toEqual(
+      expect.objectContaining({
+        activityType: 'HOTEL',
+        estimateConfidence: 'Engineering estimate / review required',
+        decisionReadiness: 'Validate before reduction planning',
+      }),
+    );
+    expect(analysis.focusRecommendations[0]).toEqual(
+      expect.objectContaining({
+        priority: 'HIGH',
+        title: 'Validate Electricity before reduction planning',
+      }),
+    );
+    expect(analysis.focusRecommendations[0].message).toBe(
+      'Review this hotspot first for factor validation and data-quality checks. If the estimate is confirmed, Electricity may become a priority for reduction planning.',
+    );
+  });
+
+  it('allows reduction-planning wording when hotspot factors are verified production quality', () => {
+    const analysis = buildHotspotAnalysis([
+      detail({
+        activityType: 'NATURAL_GAS',
+        calculatedEmissionsKgCO2e: 900,
+        factorVerified: true,
+        factorConfidenceLevel: 'OFFICIAL_SOURCE',
+        factorVerificationStatus: 'VERIFIED',
+        factorAssumptions: 'Reviewed official factor.',
+        sourceYear: 2026,
+        reportingYear: 2026,
+      }),
+      detail({
+        activityType: 'DIESEL',
+        calculatedEmissionsKgCO2e: 100,
+        factorVerified: true,
+        factorConfidenceLevel: 'OFFICIAL_SOURCE',
+        factorVerificationStatus: 'VERIFIED',
+        factorAssumptions: 'Reviewed official factor.',
+        sourceYear: 2026,
+        reportingYear: 2026,
+      }),
+    ]);
+
+    expect(analysis.categoryHotspots[0]).toEqual(
+      expect.objectContaining({
+        estimateConfidence: 'Reviewed / production-quality',
+        decisionReadiness: 'Ready for reduction planning',
+      }),
+    );
+    expect(analysis.categoryHotspots[0].focusMessage).toContain(
+      'Consider this category for reduction planning',
+    );
+    expect(analysis.focusRecommendations[0]).toEqual(
+      expect.objectContaining({
+        title: 'Focus first on Natural Gas',
+      }),
     );
   });
 
@@ -1423,7 +1734,16 @@ describe('buildHotspotAnalysis', () => {
     ]);
 
     expect(formatHotspotExclusionNote(analysis)).toBe(
-      '1 tracked operational metric was excluded from the calculated GHG emissions total. No records require review for this report scope.',
+      '1 tracked operational metric is excluded from the calculated GHG emissions total. No imported activity records require review.',
+    );
+    expect(formatHotspotExclusionNote({
+      ...analysis,
+      sourceReviewSummary: {
+        available: true,
+        needsReviewCount: 6,
+      },
+    })).toBe(
+      '1 tracked operational metric is excluded from the calculated GHG emissions total. No imported activity records require review. 6 unresolved source rows remain in Input Review.',
     );
     expect(formatHotspotExclusionNote(analysis)).not.toMatch(/1 records|missing factor|invalid unit|requiring review/i);
     expect(analysis.focusRecommendations.map((item) => item.message).join(' ')).not.toMatch(/1 records were excluded/i);
@@ -1437,7 +1757,7 @@ describe('buildHotspotAnalysis', () => {
     ]);
 
     expect(formatHotspotExclusionNote(analysis)).toBe(
-      'Tracked operational metrics are excluded from the calculated GHG emissions total by design. Some additional records require review before they can be included.',
+      'Tracked operational metrics are excluded from the calculated GHG emissions total by design. 1 imported activity record requires review before inclusion.',
     );
   });
 
@@ -1489,7 +1809,7 @@ describe('buildDataReadinessSummary', () => {
     expect(Number.isNaN(summary.score)).toBe(false);
   });
 
-  it('keeps emissions workflow readiness at 100 when optional cost data is missing', () => {
+  it('keeps required calculation readiness complete when optional cost data is missing', () => {
     const summary = buildDataReadinessSummary([
       detail({ activityType: 'ELECTRICITY', activityUnit: 'kWh', sourceReference: 'MARCH-ELEC-001' }),
       detail({ activityType: 'HOTEL', activityUnit: 'nights', sourceReference: 'MARCH-HOTEL-010' }),
@@ -1497,7 +1817,7 @@ describe('buildDataReadinessSummary', () => {
 
     expect(summary.score).toBe(100);
     expect(summary.level).toBe('Good');
-    expect(summary.message).toContain('Emissions workflow readiness is 100%');
+    expect(summary.message).toContain('Most emissions-bearing records are calculated with traceability available for review.');
     expect(summary.message).not.toMatch(/optional cost|remaining readiness gap/i);
     expect(summary.optionalDataCompleteness).toEqual(
       expect.objectContaining({
@@ -1509,7 +1829,7 @@ describe('buildDataReadinessSummary', () => {
     );
   });
 
-  it('keeps emissions workflow readiness at 100 when optional cost data is populated', () => {
+  it('keeps required calculation readiness complete when optional cost data is populated', () => {
     const summary = buildDataReadinessSummary([
       detail({
         activityType: 'ELECTRICITY',
@@ -1621,7 +1941,7 @@ describe('buildDataReadinessSummary', () => {
     expect(summary.trackedOnlyCount).toBe(1);
   });
 
-  it('reduces emissions workflow readiness when a required unit is missing or invalid', () => {
+  it('reduces required calculation readiness when a required unit is missing or invalid', () => {
     const summary = buildDataReadinessSummary([
       detail({ activityType: 'DIESEL', status: 'INVALID_UNIT', activityUnit: '', calculatedEmissionsKgCO2e: null }),
       detail({ activityType: 'HOTEL', activityUnit: 'nights', status: 'CALCULATED' }),
@@ -1632,7 +1952,7 @@ describe('buildDataReadinessSummary', () => {
     expect(summary.invalidUnitCount).toBe(1);
   });
 
-  it('reduces emissions workflow readiness when electricity province is missing', () => {
+  it('reduces required calculation readiness when electricity province is missing', () => {
     const summary = buildDataReadinessSummary([
       detail({
         activityType: 'ELECTRICITY',
@@ -1649,7 +1969,7 @@ describe('buildDataReadinessSummary', () => {
     expect(summary.missingJurisdictionCount).toBe(1);
   });
 
-  it('reduces emissions workflow readiness for missing factors on emissions-bearing records', () => {
+  it('reduces required calculation readiness for missing factors on emissions-bearing records', () => {
     const summary = buildDataReadinessSummary([
       detail({ activityType: 'HOTEL', activityUnit: 'nights', status: 'MISSING_FACTOR', calculatedEmissionsKgCO2e: null }),
       detail({ activityType: 'ELECTRICITY', activityUnit: 'kWh', status: 'CALCULATED' }),
@@ -1764,6 +2084,31 @@ describe('buildCarbonCreditReadinessAssessment', () => {
     expect(assessment.summary.toLowerCase()).not.toContain('eligible');
   });
 
+  it('labels traceable factor metadata as emission-factor provenance', () => {
+    const details = [
+      detail({
+        factorConfidenceLevel: 'HIGH',
+        factorVerificationStatus: 'REVIEWED',
+        factorJurisdictionCountry: 'Canada',
+        factorJurisdictionRegion: 'Alberta',
+      }),
+    ];
+    const assessment = buildCarbonCreditReadinessAssessment(
+      details,
+      buildDataReadinessSummary(details),
+    );
+    const factorTraceability = assessment.checklist.find((item) => item.key === 'factor-traceability');
+
+    expect(factorTraceability).toEqual(
+      expect.objectContaining({
+        label: 'Emission factor provenance',
+        status: 'PASS',
+        message: 'Emission factor provenance is traceable.',
+      }),
+    );
+    expect(factorTraceability?.label).not.toBe('Conversion factors are traceable');
+  });
+
   it('reduces readiness when many records require review', () => {
     const details = [
       detail({ recordYear: 2025, calculatedEmissionsKgCO2e: 500 }),
@@ -1855,6 +2200,29 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
   });
 
+  it('uses the selected non-current report period in the Inventory Boundary', async () => {
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+      hasActivityRecords: true,
+    });
+
+    render(
+      <MemoryRouter>
+        <MetricsSummaryPage />
+      </MemoryRouter>,
+    );
+
+    const boundarySection = await screen.findByRole('region', { name: 'Inventory Boundary' });
+    expect(boundarySection).toHaveTextContent(
+      '2024-01-01 to 2024-12-31',
+    );
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
+    expect(within(boundarySection).getByText('Reporting period')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('2024-01-01 to 2024-12-31')).toBeInTheDocument();
+    expect(boundarySection).not.toHaveTextContent('2026-01-01 to 2026-12-31');
+  });
+
   it('loads Calculation Review for the selected imported document when route state provides a document scope', async () => {
     render(
       <MemoryRouter
@@ -1911,7 +2279,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
     const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
     expect(boundarySection).toHaveTextContent(
-      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Calgary office and Ontario distribution activity records',
+      '2025-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Calgary office and Ontario distribution activity records',
     );
     await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
 
@@ -1974,7 +2342,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
     await waitFor(() => {
       expect(boundarySection).toHaveTextContent(
-        '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Kach Canadian operations in Alberta',
+        '2025-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Kach Canadian operations in Alberta',
       );
     });
     await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
@@ -2122,7 +2490,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
     expect(boundarySection).toBeInTheDocument();
     expect(boundarySection).toHaveTextContent(
-      '2026 reporting period · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
+      '2025-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
     );
     const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' });
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');

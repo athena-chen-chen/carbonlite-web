@@ -35,6 +35,7 @@ import { useToast } from '../components/Toast';
 import {
   activityTypes,
   getDefaultUnitForActivityType,
+  getSupportedUnitsForActivityType,
 } from '../constants/activityTypes';
 import {
   CANADIAN_PROVINCE_OPTIONS,
@@ -70,6 +71,7 @@ import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { invalidateDemoDataQueries } from '../queryClient';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
+import { formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
 import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
 import {
   buildDataRecordsCsv,
@@ -128,6 +130,7 @@ type ActivityDataItem = {
   sourceReference?: string | null;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
+  sourceReviewStatus?: string | null;
   sourceTextSnippet?: string | null;
   importBatchId?: string | null;
   dateEstimated?: boolean | null;
@@ -150,13 +153,25 @@ type ActivityDataItem = {
   matchedFactorVersion?: string | null;
   matchedFactorSourceAuthority?: string | null;
   matchedFactorSourceDocument?: string | null;
+  matchedFactorSourceUrl?: string | null;
   matchedFactorVerificationStatus?: string | null;
   matchedFactorConfidenceLevel?: string | null;
   matchedFactorAssumptions?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
   calculatedEmissionsKgCO2e?: number | string | null;
   calculatedEmission?: number | string | null;
   calculationStatus?: string | null;
   calculationMessage?: string | null;
+};
+
+type ActivityDataRouteState = {
+  flashMessage?: string | null;
+  sourceDocumentIds?: string[];
+  importedActivityIds?: string[];
+  importedCount?: number;
+  trackedMetricCount?: number;
+  rowsLeftForReview?: number;
 };
 
 export function ActivityDataPage() {
@@ -183,6 +198,8 @@ const [bulkFacility, setBulkFacility] = useState('');
 const [bulkApplyingFacility, setBulkApplyingFacility] = useState(false);
 const [bulkProvince, setBulkProvince] = useState('');
 const [bulkApplyingProvince, setBulkApplyingProvince] = useState(false);
+const [activeBulkAction, setActiveBulkAction] = useState<null | 'site' | 'province'>(null);
+const [isBulkMoreMenuOpen, setIsBulkMoreMenuOpen] = useState(false);
 const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; left: number } | null>(null);
 const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
@@ -208,12 +225,15 @@ const [visibleColumns, setVisibleColumns] = useState<Record<ActivityTableColumnK
 const tableScrollRef = useRef<HTMLDivElement | null>(null);
 const columnMenuRef = useRef<HTMLDivElement | null>(null);
 const exportMenuRef = useRef<HTMLDivElement | null>(null);
+const bulkMoreMenuRef = useRef<HTMLDivElement | null>(null);
+const bulkMoreButtonRef = useRef<HTMLButtonElement | null>(null);
 const actionMenuRef = useRef<HTMLDivElement | null>(null);
 const actionMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const documentFilterId = searchParams.get('documentId');
 const recordFilterId = searchParams.get('recordId');
 const previousDocumentFilterRef = useRef<string | null>(documentFilterId);
 const previousRecordFilterRef = useRef<string | null>(recordFilterId);
+const routeState = location.state as ActivityDataRouteState | null;
 const sourceDocumentNameFromState =
   (location.state as { sourceDocumentName?: string } | null)?.sourceDocumentName;
 const scopeFilteredItems = recordFilterId
@@ -282,6 +302,21 @@ const setProvinceDisabledReason = getSetProvinceDisabledReason({
 const normalizedSelectedProvince = normalizeSetProvince(bulkProvince);
 const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
 const summaryCardPlaceholder = loading ? '—' : null;
+
+useEffect(() => {
+  const flashMessage = routeState?.flashMessage?.trim();
+  if (!flashMessage) return;
+
+  setSuccessMessage(flashMessage);
+  toast.success(flashMessage);
+
+  const stateWithoutFlash = { ...routeState };
+  delete stateWithoutFlash.flashMessage;
+  navigate(`${location.pathname}${location.search}`, {
+    replace: true,
+    state: Object.keys(stateWithoutFlash).length > 0 ? stateWithoutFlash : null,
+  });
+}, [location.key]);
 
 useEffect(() => {
   if (!import.meta.env.DEV) return;
@@ -449,7 +484,7 @@ useEffect(() => {
       `${summary.missingFactorRecords} missing factor`,
       `${summary.missingProvinceRecords} missing province`,
       `${summary.unitMismatchRecords} unit mismatch`,
-      `${summary.trackedOnlyRecords} tracked only`,
+      `${summary.trackedOnlyRecords} tracked metrics`,
       `${summary.errors} error${summary.errors === 1 ? '' : 's'}`,
     ].join(', ') + '.';
   }
@@ -497,6 +532,8 @@ useEffect(() => {
 
     setCurrentPage(1);
     setSelectedIds([]);
+    setActiveBulkAction(null);
+    setIsBulkMoreMenuOpen(false);
   }, [documentFilterId, recordFilterId]);
 
   useEffect(() => {
@@ -587,6 +624,36 @@ useEffect(() => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isExportMenuOpen]);
+
+  useEffect(() => {
+    if (!isBulkMoreMenuOpen) return;
+
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (target && bulkMoreMenuRef.current?.contains(target)) return;
+      setIsBulkMoreMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsBulkMoreMenuOpen(false);
+        bulkMoreButtonRef.current?.focus();
+      }
+    }
+
+    document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isBulkMoreMenuOpen]);
+
+  useEffect(() => {
+    if (selectedIds.length > 0) return;
+    setActiveBulkAction(null);
+    setIsBulkMoreMenuOpen(false);
+  }, [selectedIds.length]);
 
   useEffect(() => {
     if (!openActionMenuId) return;
@@ -1012,10 +1079,10 @@ function buildMatchedActivityRecordNote(
     : '';
 
   return [
-    row.notes && !/missing factor|no conversion factor/i.test(row.notes)
+    row.notes && !/missing factor|no conversion factor|no emission factor/i.test(row.notes)
       ? row.notes
       : '',
-    `Calculation status: Matched.${fallbackText}`,
+    `Calculation status: Calculated.${fallbackText}`,
     `Matched factor: ${getShortFactorName(match)} (${getFactorValue(match.factor)}).`,
     `Calculated emissions: ${emissionsText} kgCO2e.`,
   ].filter(Boolean).join(' ');
@@ -1025,13 +1092,13 @@ function buildUnmatchedActivityRecordNote(
   row: ActivityDataItem,
   label: 'Missing Province' | 'Missing Factor' | 'Invalid Unit' | 'Unit Mismatch' | 'Tracked Metric' | 'Requires Review',
 ) {
-  const retainedNotes = row.notes && !/missing factor|no conversion factor|calculation status/i.test(row.notes)
+  const retainedNotes = row.notes && !/missing factor|no conversion factor|no emission factor|calculation status/i.test(row.notes)
     ? row.notes
     : '';
 
   const details: Record<typeof label, string> = {
     'Missing Province': 'Electricity requires province before factor matching.',
-    'Missing Factor': 'No matching conversion factor is available for this record.',
+    'Missing Factor': 'No matching emission factor is available for this record.',
     'Invalid Unit': 'Unit must be normalized before calculation.',
     'Unit Mismatch': 'A matching activity factor exists, but it uses a different unit.',
     'Tracked Metric': 'Tracked only and excluded from GHG totals.',
@@ -1132,7 +1199,7 @@ function buildRecalculatedActivityPayload(
         matchingStatus: 'TRACKED_ONLY',
         reportTreatment: 'TRACKED_ONLY',
         calculationStatus: 'TRACKED_ONLY',
-        calculationMessage: 'Water usage is tracked only and excluded from GHG emissions totals.',
+        calculationMessage: 'Water usage is a tracked metric and excluded from GHG emissions totals.',
         notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Tracked Metric') : row.notes ?? '',
       },
       status: 'tracked' as const,
@@ -1194,7 +1261,7 @@ function buildRecalculatedActivityPayload(
       matchingStatus: 'MISSING_FACTOR',
       reportTreatment: 'EXCLUDED',
       calculationStatus: 'MISSING_FACTOR',
-      calculationMessage: 'No matching conversion factor is available for this record.',
+      calculationMessage: 'No matching emission factor is available for this record.',
       notes: updateNotes ? buildUnmatchedActivityRecordNote(row, 'Missing Factor') : row.notes ?? '',
     },
     status: 'missingFactor' as const,
@@ -1267,7 +1334,7 @@ function getActivityRecordQuality(
 
   if (hasStoredMatchedStatus(row)) {
     return {
-      label: 'Ready',
+      label: 'Calculated',
       filterKey: 'ready',
       tone: 'success' as const,
       title: row.matchedFactorName
@@ -1281,7 +1348,7 @@ function getActivityRecordQuality(
       label: 'Missing Factor',
       filterKey: 'missing-factor',
       tone: 'warning' as const,
-      title: 'No matching conversion factor is available yet.',
+      title: 'No matching emission factor is available yet.',
     };
   }
 
@@ -1302,7 +1369,7 @@ function getActivityRecordQuality(
       : '';
 
     return {
-      label: 'Ready',
+      label: 'Calculated',
       filterKey: 'ready',
       tone: 'success' as const,
       title: emissions === null
@@ -1339,12 +1406,12 @@ function getActivityRecordQuality(
       label: 'Missing Factor',
       filterKey: 'missing-factor',
       tone: 'warning' as const,
-      title: 'No matching conversion factor is available yet.',
+      title: 'No matching emission factor is available yet.',
     };
   }
 
   return {
-    label: 'Ready',
+    label: 'Ready for Calculation',
     filterKey: 'ready',
     tone: 'success' as const,
     title: 'This record has the required fields for calculation review.',
@@ -1404,13 +1471,41 @@ function formatActivitySourceReference(row: ActivityDataItem) {
   if (row.sourceType === 'MANUAL') return 'Manual Entry';
 
   const parts = [
-    row.sourceFileName,
-    row.sourceReference,
+    normalizeSourceReferenceValue(row.sourceReference, row.sourceFileName),
     row.sourcePage ? `Page ${row.sourcePage}` : '',
     row.sourceRow ? `Line item ${row.sourceRow}` : '',
   ].filter((part) => !isMissingRecordValue(part));
 
-  return parts.length ? parts.join(' · ') : 'Source unavailable';
+  return parts.length ? parts.join(' · ') : row.sourceFileName || 'Source unavailable';
+}
+
+function formatActivitySourceFile(row: ActivityDataItem) {
+  return row.sourceFileName || 'Source file unavailable';
+}
+
+function normalizeSourceReferenceValue(
+  sourceReference?: string | null,
+  sourceFileName?: string | null,
+) {
+  const value = String(sourceReference ?? '').trim();
+  if (!value) return '';
+  if (/^source review required$/i.test(value)) return '';
+  if (sourceFileName && value.toLowerCase() === sourceFileName.trim().toLowerCase()) return '';
+  return value;
+}
+
+function formatActivitySourceReviewStatus(row: ActivityDataItem) {
+  const rawStatus = String(row.sourceReviewStatus ?? '').trim();
+  if (!rawStatus) return '';
+
+  const normalized = rawStatus.replace(/[_-]+/g, ' ').trim().toLowerCase();
+  if (normalized === 'review required' || normalized === 'source review required') {
+    return 'Review required';
+  }
+  if (normalized === 'needs review') return 'Needs review';
+  if (normalized === 'reviewed' || normalized === 'complete') return 'Reviewed';
+
+  return normalized.replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function formatOptionalRecordValue(value: unknown) {
@@ -1472,12 +1567,16 @@ function formatCalculatedEmissionValue(value: unknown) {
 
   const selectedCount = selectedIds.length;
   const shouldDelete = await confirm({
-    title: 'Delete data records?',
-    message:
+    title:
       selectedCount === 1
-        ? 'Are you sure you want to delete 1 selected data record?'
-        : `Are you sure you want to delete ${selectedCount} selected data records?`,
-    confirmLabel: 'Delete',
+        ? 'Delete 1 activity record?'
+        : `Delete ${selectedCount} activity records?`,
+    message:
+      'This action cannot be undone.',
+    confirmLabel:
+      selectedCount === 1
+        ? 'Delete record'
+        : `Delete ${selectedCount} records`,
     cancelLabel: 'Cancel',
     variant: 'danger',
   });
@@ -1594,6 +1693,7 @@ async function handleBulkApplyFacility() {
 
     await loadItems();
     setBulkFacility('');
+    setActiveBulkAction(null);
     setSuccessMessage(
       `Site / Facility updated for ${updatedCount} record${updatedCount === 1 ? '' : 's'}.`,
     );
@@ -1697,6 +1797,7 @@ async function handleBulkApplyProvince() {
 
     await loadItems();
     setBulkProvince('');
+    setActiveBulkAction(null);
     setSuccessMessage(`Province updated for ${updatedCount} electricity record${updatedCount === 1 ? '' : 's'}.`);
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
@@ -1908,7 +2009,7 @@ function updateEditField(key: string, value: any) {
   setEditRow((prev: any) => ({
     ...prev,
     [key]: value,
-    ...(key === 'activityType' ? { unit: getDefaultUnitForActivityType(value) } : {}),
+    ...(key === 'activityType' ? { unit: getUnitForActivityTypeChange(prev?.unit, value) } : {}),
   }));
 
   setEditErrors((prev) => {
@@ -1916,6 +2017,23 @@ function updateEditField(key: string, value: any) {
     delete next[key];
     return next;
   });
+}
+
+function getUnitForActivityTypeChange(currentUnit: string | undefined, nextActivityType: string) {
+  const supportedUnits = getSupportedUnitsForActivityType(nextActivityType);
+  const normalizedCurrentUnit = normalizeUnitForDisplay(currentUnit);
+
+  if (
+    normalizedCurrentUnit.status === 'valid' &&
+    supportedUnits.some((unit) => {
+      const normalizedSupportedUnit = normalizeUnitForDisplay(unit);
+      return normalizedSupportedUnit.status === 'valid' && normalizedSupportedUnit.value === normalizedCurrentUnit.value;
+    })
+  ) {
+    return currentUnit ?? '';
+  }
+
+  return getDefaultUnitForActivityType(nextActivityType);
 }
 
 async function handleUndoDelete() {
@@ -2139,11 +2257,18 @@ function renderViewedRecordModal() {
             />
             <DetailsField label="Site / Facility" value={formatSiteFacilityValue(viewedRecord)} />
             <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord)} />
+            <DetailsField label="Source File" value={formatActivitySourceFile(viewedRecord)} />
             <DetailsField
               label="Source Reference"
               value={formatActivitySourceReference(viewedRecord)}
               fullWidth
             />
+            {formatActivitySourceReviewStatus(viewedRecord) ? (
+              <DetailsField
+                label="Source Review"
+                value={formatActivitySourceReviewStatus(viewedRecord)}
+              />
+            ) : null}
             <DetailsField label="Matched Factor Name" value={formatOptionalRecordValue(getFactorDisplayName(viewedRecord.matchedFactorName) || (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
             <DetailsField label="Matched Factor Value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
             <DetailsField label="Matched Factor Unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
@@ -2151,10 +2276,13 @@ function renderViewedRecordModal() {
             <DetailsField label="Matched Factor Version" value={formatOptionalRecordValue(viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion)} />
             <DetailsField label="Source Authority" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceAuthority ?? matchedFactorSnapshot.matchedFactorSourceAuthority)} />
             <DetailsField label="Source Document" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument)} />
+            <DetailsField label="Source URL" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceUrl ?? matchedFactorSnapshot.matchedFactorSourceUrl)} fullWidth />
             <DetailsField label="Verification" value={formatOptionalRecordValue(formatCredibilityLabel(factorVerificationStatus))} />
             <DetailsField label="Confidence" value={formatOptionalRecordValue(formatCredibilityLabel(factorConfidenceLevel))} />
             <DetailsField label="Credibility Notes" value={formatOptionalRecordValue(credibilityBadges.join(' · '))} fullWidth />
             <DetailsField label="Assumptions" value={formatOptionalRecordValue(factorAssumptions)} fullWidth />
+            <DetailsField label="Factor Selection Reason" value={formatOptionalRecordValue(viewedRecord.factorSelectionReason ?? matchedFactorSnapshot.factorSelectionReason)} />
+            <DetailsField label="Factor Selection Explanation" value={formatOptionalRecordValue(viewedRecord.factorSelectionExplanation ?? matchedFactorSnapshot.factorSelectionExplanation)} fullWidth />
             <DetailsField label="Calculated Emissions" value={formatCalculatedEmissionValue(calculatedEmission)} />
             <DetailsField label="Calculation Message" value={formatOptionalRecordValue(viewedRecord.calculationMessage)} fullWidth />
             <DetailsField label="Created At" value={formatOptionalRecordValue(viewedRecord.createdAt)} />
@@ -2299,6 +2427,23 @@ function handleRetryLoad() {
   void loadItems();
 }
 
+function getSelectionSummary() {
+  const selectedLabel = `${selectedRecords.length} record${selectedRecords.length === 1 ? '' : 's'} selected`;
+  if (selectedRecords.length === 0) return '';
+  return `${selectedLabel} · ${selectedElectricityRows.length} electricity record${selectedElectricityRows.length === 1 ? '' : 's'} eligible`;
+}
+
+function openBulkEditor(action: 'site' | 'province') {
+  setActiveBulkAction(action);
+  setIsBulkMoreMenuOpen(false);
+}
+
+function handleBulkDeleteFromMenu() {
+  setIsBulkMoreMenuOpen(false);
+  bulkMoreButtonRef.current?.focus();
+  void handleBulkDelete();
+}
+
 if (import.meta.env.DEV) {
   console.debug('Set Province render snapshot', {
     timestamp: Date.now(),
@@ -2323,7 +2468,7 @@ if (import.meta.env.DEV) {
       <h1 style={pageTitleStyle}>Data Records</h1>
 
       <p style={pageSubtitleStyle}>
-        Data Records shows saved activity records. To add new data, go to Input Data.
+        {formatWorkflowStageLabel(getWorkflowStage('DATA_ISSUES'))}. Data Records shows saved activity records and source-data issues. Data contributors correct missing fields, quantities, units, jurisdiction, and source references here; factor methodology review happens in Calculation Review.
       </p>
       {canEditActivityRecords ? (
         <button
@@ -2427,7 +2572,7 @@ if (import.meta.env.DEV) {
                   style={qualityFilterSelectStyle}
                 >
                   <option value="all">All records</option>
-                  <option value="ready">Ready records</option>
+                  <option value="ready">Calculated records</option>
                   <option value="requires-review">Records requiring review</option>
                   <option value="tracked-metric">Tracked metrics</option>
                   <option value="missing-factor">Missing factor records</option>
@@ -2537,17 +2682,79 @@ if (import.meta.env.DEV) {
             </div>
           </div>
 
-          {canSetFacilityOnActivityRecords || canSetProvinceOnActivityRecords ? (
-            <div style={bulkProvinceRowStyle}>
-              <div style={bulkProvinceToolbarWrapperStyle}>
+          {canSelectActivityRecords && selectedIds.length > 0 ? (
+            <div style={bulkSelectionAreaStyle}>
+              <div role="toolbar" aria-label="Selected records actions" style={bulkSelectionToolbarStyle}>
+                <span style={bulkSelectionSummaryStyle}>{getSelectionSummary()}</span>
                 {canSetFacilityOnActivityRecords ? (
-                  <div style={bulkFacilityToolbarStyle}>
+                  <button
+                    type="button"
+                    onClick={() => openBulkEditor('site')}
+                    aria-pressed={activeBulkAction === 'site'}
+                    style={bulkToolbarButtonStyle(activeBulkAction === 'site')}
+                  >
+                    Set Site / Facility
+                  </button>
+                ) : null}
+                {canSetProvinceOnActivityRecords ? (
+                  <button
+                    type="button"
+                    onClick={() => openBulkEditor('province')}
+                    disabled={selectedElectricityRows.length === 0}
+                    title={
+                      selectedElectricityRows.length === 0
+                        ? 'No selected electricity records.'
+                        : undefined
+                    }
+                    aria-pressed={activeBulkAction === 'province'}
+                    style={bulkToolbarButtonStyle(activeBulkAction === 'province', selectedElectricityRows.length === 0)}
+                  >
+                    Set Province
+                  </button>
+                ) : null}
+                {canEditActivityRecords ? (
+                  <div ref={bulkMoreMenuRef} style={bulkMoreMenuWrapperStyle}>
+                    <button
+                      ref={bulkMoreButtonRef}
+                      type="button"
+                      onClick={() => setIsBulkMoreMenuOpen((open) => !open)}
+                      aria-haspopup="menu"
+                      aria-expanded={isBulkMoreMenuOpen}
+                      aria-controls="bulk-record-actions-menu"
+                      style={bulkToolbarButtonStyle(false)}
+                    >
+                      More ▾
+                    </button>
+                    {isBulkMoreMenuOpen ? (
+                      <div
+                        id="bulk-record-actions-menu"
+                        role="menu"
+                        aria-label="More selected record actions"
+                        style={bulkMoreMenuStyle}
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={handleBulkDeleteFromMenu}
+                          disabled={bulkDeleting}
+                          style={bulkMoreDangerItemStyle(bulkDeleting)}
+                        >
+                          {bulkDeleting ? 'Deleting...' : 'Delete selected...'}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              {activeBulkAction === 'site' && canSetFacilityOnActivityRecords ? (
+                <div style={bulkActionPanelStyle}>
                     <div style={bulkFacilityLabelGroupStyle}>
-                      <span style={bulkFacilityLabelStyle}>Set site / facility for selected records</span>
+                      <span style={bulkFacilityLabelStyle}>Site / Facility</span>
                       <span style={bulkFacilityHelperTextStyle}>
                         {setFacilityDisabledReason && selectedIds.length > 0
                           ? setFacilityDisabledReason
-                          : 'Apply a site or facility to selected records.'}
+                          : 'Apply to selected records.'}
                       </span>
                     </div>
                     <label style={bulkFacilityInputLabelStyle}>
@@ -2575,16 +2782,19 @@ if (import.meta.env.DEV) {
                       title={setFacilityDisabledReason ?? undefined}
                       style={bulkFieldActionButtonStyle(!setFacilityDisabledReason)}
                     >
-                      {bulkApplyingFacility ? 'Setting site / facility...' : 'Set Site / Facility'}
+                      {bulkApplyingFacility ? 'Applying...' : 'Apply'}
                     </button>
-                    <span style={bulkFacilityCountStyle}>
-                      {selectedIds.length === 0
-                        ? 'No records selected.'
-                        : `${selectedRecords.length} record${selectedRecords.length === 1 ? '' : 's'} selected.`}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveBulkAction(null)}
+                      disabled={bulkApplyingFacility}
+                      style={bulkCancelButtonStyle}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 ) : null}
-                {canSetProvinceOnActivityRecords ? (
+                {activeBulkAction === 'province' && canSetProvinceOnActivityRecords ? (
                   <>
                     {import.meta.env.DEV
                       ? console.debug('BulkProvinceToolbar caller values', {
@@ -2617,15 +2827,26 @@ if (import.meta.env.DEV) {
                       provinceOptions={ELECTRICITY_FACTOR_PROVINCE_OPTIONS}
                       onApply={handleBulkApplyProvince}
                       isApplying={bulkApplyingProvince}
-                      label="Set province for selected electricity records"
-                      applyLabel="Set province"
-                      applyingLabel="Setting province..."
+                      label="Province"
+                      applyLabel="Apply"
+                      applyingLabel="Applying..."
                       disabledReason={setProvinceDisabledReason}
-                      helperText="Apply a province to selected electricity records. Non-electricity records will be ignored."
+                      helperText={
+                        selectedElectricityRows.length === 0
+                          ? 'No selected electricity records.'
+                          : 'Applies to selected electricity records only.'
+                      }
                     />
+                    <button
+                      type="button"
+                      onClick={() => setActiveBulkAction(null)}
+                      disabled={bulkApplyingProvince}
+                      style={bulkCancelButtonStyle}
+                    >
+                      Cancel
+                    </button>
                   </>
                 ) : null}
-              </div>
             </div>
           ) : null}
 
@@ -2683,20 +2904,6 @@ if (import.meta.env.DEV) {
           </div>
         ) : (
           <>
-            {canEditActivityRecords && selectedIds.length > 0 ? (
-              <div style={deleteSelectedActionBarStyle}>
-                <button
-                  type="button"
-                  onClick={handleBulkDelete}
-                  disabled={bulkDeleting}
-                  style={bulkDeleteButtonStyle(selectedIds.length, bulkDeleting)}
-                >
-                  {bulkDeleting
-                    ? 'Deleting...'
-                    : `Delete selected (${selectedIds.length})`}
-                </button>
-              </div>
-            ) : null}
             <div style={scrollHintStyle}>Scroll horizontally to view all columns →</div>
             <div ref={tableScrollRef} style={tableScrollContainerStyle}>
             <table style={activityRecordsTableStyle}>
@@ -3008,6 +3215,60 @@ const bulkFacilityToolbarStyle: React.CSSProperties = {
   background: activityRecordsPalette.subtleBackground,
 };
 
+const bulkSelectionAreaStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  width: '100%',
+  minWidth: 0,
+};
+
+const bulkSelectionToolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.subtleBackground,
+};
+
+const bulkSelectionSummaryStyle: React.CSSProperties = {
+  color: activityRecordsPalette.primaryText,
+  fontSize: 13,
+  fontWeight: 800,
+  marginRight: 4,
+};
+
+const bulkActionPanelStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  flexWrap: 'wrap',
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+};
+
+const bulkMoreMenuWrapperStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+};
+
+const bulkMoreMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 8px)',
+  right: 0,
+  zIndex: 30,
+  minWidth: 180,
+  padding: 6,
+  borderRadius: 10,
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+  boxShadow: '0 16px 36px rgba(15, 23, 42, 0.14)',
+};
+
 const bulkFacilityLabelGroupStyle: React.CSSProperties = {
   display: 'grid',
   gap: 2,
@@ -3075,6 +3336,50 @@ function bulkFieldActionButtonStyle(enabled: boolean): React.CSSProperties {
     cursor: enabled ? 'pointer' : 'not-allowed',
     fontWeight: 700,
     whiteSpace: 'nowrap',
+  };
+}
+
+function bulkToolbarButtonStyle(active = false, disabled = false): React.CSSProperties {
+  return {
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: active
+      ? `1px solid ${activityRecordsPalette.primaryGreen}`
+      : `1px solid ${activityRecordsPalette.border}`,
+    background: disabled
+      ? activityRecordsPalette.disabledBackground
+      : active
+      ? activityRecordsPalette.successBackground
+      : activityRecordsPalette.white,
+    color: disabled ? activityRecordsPalette.mutedText : activityRecordsPalette.primaryText,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+  };
+}
+
+const bulkCancelButtonStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: `1px solid ${activityRecordsPalette.border}`,
+  background: activityRecordsPalette.white,
+  color: activityRecordsPalette.primaryText,
+  cursor: 'pointer',
+  fontWeight: 700,
+  whiteSpace: 'nowrap',
+};
+
+function bulkMoreDangerItemStyle(disabled = false): React.CSSProperties {
+  return {
+    width: '100%',
+    padding: '8px 10px',
+    borderRadius: 8,
+    border: 0,
+    background: 'transparent',
+    color: disabled ? activityRecordsPalette.mutedText : activityRecordsPalette.errorText,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontWeight: 700,
+    textAlign: 'left',
   };
 }
 

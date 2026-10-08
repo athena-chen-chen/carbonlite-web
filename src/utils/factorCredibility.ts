@@ -23,8 +23,8 @@ const FRIENDLY_LABELS: Record<string, string> = {
   DEMO_FACTOR: 'Pilot Estimate',
   PILOT_DEMO: 'Pilot Estimate',
   MISSING_SOURCE: 'Missing Source',
-  TRACKED_ONLY: 'Tracked Only',
-  NOT_EMISSIONS_FACTOR_REQUIRED: 'Tracked Only',
+  TRACKED_ONLY: 'Tracked Metric',
+  NOT_EMISSIONS_FACTOR_REQUIRED: 'Tracked Metric',
   HIGH: 'High',
   MEDIUM: 'Medium',
   LOW: 'Low',
@@ -47,9 +47,12 @@ export type FactorSnapshotFields = {
   matchedFactorVersion?: string;
   matchedFactorSourceAuthority?: string;
   matchedFactorSourceDocument?: string;
+  matchedFactorSourceUrl?: string;
   matchedFactorVerificationStatus?: string;
   matchedFactorConfidenceLevel?: string;
   matchedFactorAssumptions?: string;
+  factorSelectionReason?: string;
+  factorSelectionExplanation?: string;
 };
 
 function normalizeLabelKey(value?: string | null) {
@@ -93,6 +96,17 @@ export function getFactorSourceDocument(factor?: MatchableConversionFactor | nul
       version?.sourceDocument ??
       version?.sourceReference ??
       version?.source?.sourceDocument ??
+      '',
+  ).trim();
+}
+
+export function getFactorSourceUrl(factor?: MatchableConversionFactor | null) {
+  if (!factor) return '';
+  const version = getVersionObject(factor) as Record<string, any> | null;
+  return String(
+    factor.sourceUrl ??
+      version?.sourceUrl ??
+      version?.source?.sourceUrl ??
       '',
   ).trim();
 }
@@ -217,9 +231,12 @@ export function buildMatchedFactorSnapshot(match?: ConversionFactorMatch | null)
     matchedFactorVersion: getFactorVersionLabel(match.factor) || undefined,
     matchedFactorSourceAuthority: getFactorSourceAuthority(match.factor) || undefined,
     matchedFactorSourceDocument: getFactorSourceDocument(match.factor) || undefined,
+    matchedFactorSourceUrl: getFactorSourceUrl(match.factor) || undefined,
     matchedFactorVerificationStatus: getFactorVerificationStatus(match.factor) || undefined,
     matchedFactorConfidenceLevel: getFactorConfidenceLevel(match.factor) || undefined,
     matchedFactorAssumptions: getFactorAssumptionDisclosure(match.factor.activityType, match.factor) || undefined,
+    factorSelectionReason: match.selectionReason,
+    factorSelectionExplanation: match.selectionExplanation,
   };
 }
 

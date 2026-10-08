@@ -183,7 +183,7 @@ export default function Factors() {
                   <th className="py-2 px-4 whitespace-nowrap">Jurisdiction / Region</th>
                   <th className="py-2 px-4 whitespace-nowrap">Source Authority</th>
                   <th className="py-2 px-4 whitespace-nowrap">Source Year</th>
-                  <th className="py-2 px-4 whitespace-nowrap">Verified</th>
+                  <th className="py-2 px-4 whitespace-nowrap">Reviewed</th>
                   <th className="py-2 px-4 whitespace-nowrap text-right">Updated</th>
                   <th className="py-2 px-4 whitespace-nowrap text-right">Actions</th>
                 </tr>
@@ -324,7 +324,7 @@ export default function Factors() {
                         )}
                       </td>
 
-                      {/* Verified */}
+                      {/* Reviewed */}
                       <td className="py-3 px-4">
                         {isEditing ? (
                           <label className="inline-flex items-center gap-2 text-xs">
@@ -333,7 +333,7 @@ export default function Factors() {
                               checked={Boolean(draft.verified)}
                               onChange={(e) => updateDraft("verified", e.target.checked)}
                             />
-                            Verified
+                            Reviewed
                           </label>
                         ) : (
                           <div>
@@ -344,7 +344,7 @@ export default function Factors() {
                                   : "inline-flex rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-800"
                               }
                             >
-                              {f.verified ? "Verified" : "Unverified"}
+                              {f.verified ? "Reviewed" : "Internal Review Required"}
                             </span>
                             {f.notes ? (
                               <div className="mt-2 max-w-64 text-[10px] leading-snug text-[rgb(var(--muted))]">

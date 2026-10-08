@@ -22,7 +22,7 @@ export function ActivityBreakdownSection({
         'Estimated Emissions',
         'Source Reference',
       ]}
-      emptyMessage="No activity records with matching conversion factors."
+      emptyMessage="No activity records with matching emission factors."
       rows={matchedActivityEmissions.map((item) => [
         getActivityTypeLabel(item.activityType),
         formatDisplayNumber(item.quantity),

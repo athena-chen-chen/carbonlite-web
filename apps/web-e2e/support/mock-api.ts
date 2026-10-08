@@ -70,6 +70,7 @@ export type CarbonLiteApiState = {
   activities: TestActivity[];
   conversionFactors: TestConversionFactor[];
   extractionResults: Record<string, unknown>;
+  calculationSummaryOverride?: unknown;
   uploadRequests: number;
   extractionRequests: number;
   importRequests: number;
@@ -95,6 +96,7 @@ export function createCarbonLiteApiState(): CarbonLiteApiState {
     activities: [],
     conversionFactors: buildSystemConversionFactors(),
     extractionResults: {},
+    calculationSummaryOverride: undefined,
     uploadRequests: 0,
     extractionRequests: 0,
     importRequests: 0,
@@ -127,6 +129,16 @@ export async function installCarbonLiteApiMock(
 
     if (method === 'GET' && path === '/documents') {
       await fulfillJson(route, paginated(state.documents));
+      return;
+    }
+
+    if (method === 'GET' && path === '/activity-events') {
+      await fulfillJson(route, paginated([]));
+      return;
+    }
+
+    if (method === 'GET' && path === '/organization-profile') {
+      await fulfillJson(route, {});
       return;
     }
 
@@ -342,6 +354,11 @@ export async function installCarbonLiteApiMock(
       return;
     }
 
+    if (method === 'GET' && path === '/spreadsheet-import/review-rows') {
+      await fulfillJson(route, { items: [] });
+      return;
+    }
+
     if (method === 'DELETE' && path.startsWith('/activity-data/')) {
       state.activityDeleteRequests += 1;
       const activityId = path.split('/').pop();
@@ -365,9 +382,15 @@ export async function installCarbonLiteApiMock(
       return;
     }
 
-    if (method === 'GET' && path === '/metrics/calculation-summary') {
+    if (
+      method === 'GET' &&
+      (path === '/metrics/summary' || path === '/metrics/calculation-summary')
+    ) {
       state.summaryRequests += 1;
-      await fulfillJson(route, buildCalculationSummary(state.activities, url.searchParams));
+      await fulfillJson(
+        route,
+        state.calculationSummaryOverride ?? buildCalculationSummary(state.activities, url.searchParams),
+      );
       return;
     }
 
@@ -462,6 +485,160 @@ function buildImportedActivity(): TestActivity {
     notes: 'Imported from document extraction.',
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+function buildEnmaxActivity(
+  id: string,
+  activityType: string,
+  quantity: number,
+  unit: string,
+): TestActivity {
+  return {
+    id,
+    organizationId: 'organization-1',
+    documentId: 'document-enmax',
+    sourceDocumentId: 'document-enmax',
+    sourceFileName: 'enmax-utility-bill.csv',
+    importBatchId: 'document-document-enmax',
+    activityType,
+    recordDate: '2025-08-01',
+    quantity,
+    unit,
+    jurisdictionCountry: 'Canada',
+    jurisdictionRegion: 'Alberta',
+    sourceType: 'AI_EXTRACTION',
+    sourceReference: `ENMAX ${activityType.toLowerCase().replace(/_/g, ' ')}`,
+    sourceRow: null,
+    notes: 'Imported from ENMAX document extraction.',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function buildEnmaxMissingCostSummary() {
+  const activities = [
+    buildEnmaxActivity('enmax-electricity', 'ELECTRICITY', 358, 'kWh'),
+    buildEnmaxActivity('enmax-natural-gas', 'NATURAL_GAS', 3, 'GJ'),
+    buildEnmaxActivity('enmax-water', 'WATER', 6, 'm3'),
+  ];
+  const calculationDetails = [
+    buildEnmaxCalculationDetail({
+      activityDataId: 'enmax-electricity',
+      activityType: 'ELECTRICITY',
+      quantity: 358,
+      unit: 'kWh',
+      emissions: 189.74,
+      status: 'CALCULATED',
+      costCad: 0,
+    }),
+    buildEnmaxCalculationDetail({
+      activityDataId: 'enmax-natural-gas',
+      activityType: 'NATURAL_GAS',
+      quantity: 3,
+      unit: 'GJ',
+      emissions: 148.32,
+      status: 'CALCULATED',
+      costCad: 0,
+    }),
+    buildEnmaxCalculationDetail({
+      activityDataId: 'enmax-water',
+      activityType: 'WATER',
+      quantity: 6,
+      unit: 'm3',
+      emissions: null,
+      status: 'TRACKED_ONLY',
+      costCad: 0,
+    }),
+  ];
+
+  return {
+    totalsByMetric: [
+      {
+        metricType: 'CARBON_EMISSION',
+        unit: 'kgCO2e',
+        totalValue: '338.06',
+        count: 2,
+      },
+    ],
+    totalsByFacility: [],
+    totalEstimatedEmissionsKgCO2e: 338.06,
+    totalRecordsFound: 3,
+    recordsInScope: 3,
+    recordsCalculated: 2,
+    recordsIncluded: 2,
+    processedRecords: 2,
+    skippedRecords: 1,
+    missingFactorCount: 0,
+    missingFactorRecords: 0,
+    invalidRecordCount: 0,
+    dataQualityCoverage: 100,
+    skippedReasons: {
+      missingFactor: 0,
+      invalidQuantity: 0,
+      invalidUnit: 0,
+      outsideScope: 0,
+      outsideDateRange: 0,
+      invalidData: 0,
+    },
+    usageTotals: {
+      fuel: 3,
+      electricity: 358,
+      fuelUnitLabel: 'Grouped by type and unit',
+      electricityUnitLabel: 'kWh',
+      fuelUsageBreakdown: [
+        { activityType: 'NATURAL_GAS', total: 3, unit: 'GJ' },
+      ],
+    },
+    missingFactors: [],
+    activities: activities.map((activity) => ({
+      ...activity,
+      costCad: null,
+      costCurrency: null,
+    })),
+    matchedActivityEmissions: [],
+    conversionFactorsUsed: [],
+    calculationDetails,
+    records: calculationDetails,
+  };
+}
+
+function buildEnmaxCalculationDetail(input: {
+  activityDataId: string;
+  activityType: string;
+  quantity: number;
+  unit: string;
+  emissions: number | null;
+  status: 'CALCULATED' | 'TRACKED_ONLY';
+  costCad: number;
+}) {
+  const trackedOnly = input.status === 'TRACKED_ONLY';
+  return {
+    activityDataId: input.activityDataId,
+    activityType: input.activityType,
+    recordDate: '2025-08-01',
+    dateEstimated: false,
+    reportingYear: 2025,
+    jurisdiction: 'Alberta, Canada',
+    jurisdictionCountry: 'Canada',
+    jurisdictionRegion: 'Alberta',
+    activityQuantity: input.quantity,
+    activityUnit: input.unit,
+    factorId: trackedOnly ? null : `factor-${input.activityType.toLowerCase()}`,
+    factorName: trackedOnly ? 'Water usage tracked only' : `${input.activityType} factor`,
+    factorValue: trackedOnly ? null : input.emissions && input.quantity ? input.emissions / input.quantity : null,
+    factorInputUnit: trackedOnly ? null : input.unit,
+    factorResultUnit: trackedOnly ? null : `kgCO2e/${input.unit}`,
+    calculatedEmissionsKgCO2e: input.emissions,
+    calculationStatus: input.status,
+    matchingStatus: trackedOnly ? 'TRACKED_ONLY' : 'MATCHED',
+    status: input.status,
+    sourceType: 'AI_EXTRACTION',
+    sourceReference: `ENMAX ${input.activityType.toLowerCase().replace(/_/g, ' ')}`,
+    sourceFileName: 'enmax-utility-bill.csv',
+    sourceDocumentId: 'document-enmax',
+    costCad: input.costCad,
+    costCurrency: null,
   };
 }
 
@@ -593,6 +770,28 @@ export function seedImportedDocument(state: CarbonLiteApiState) {
     },
   ];
   state.activities = [buildImportedActivity()];
+}
+
+export function seedEnmaxMissingCostReport(state: CarbonLiteApiState) {
+  state.documents = [
+    {
+      id: 'document-enmax',
+      fileName: 'enmax-utility-bill.csv',
+      fileUrl: '/storage/enmax-utility-bill.csv',
+      mimeType: 'text/csv',
+      fileSize: 512,
+      type: 'SPREADSHEET',
+      status: 'IMPORTED',
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+  state.activities = [
+    buildEnmaxActivity('enmax-electricity', 'ELECTRICITY', 358, 'kWh'),
+    buildEnmaxActivity('enmax-natural-gas', 'NATURAL_GAS', 3, 'GJ'),
+    buildEnmaxActivity('enmax-water', 'WATER', 6, 'm3'),
+  ];
+  state.calculationSummaryOverride = buildEnmaxMissingCostSummary();
 }
 
 export function seedFailedDocument(state: CarbonLiteApiState) {

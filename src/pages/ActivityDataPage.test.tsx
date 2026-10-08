@@ -145,6 +145,7 @@ describe('ActivityDataPage delete flows', () => {
     });
     vi.mocked(deleteActivityData).mockResolvedValue({ deletedCount: 1 });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -214,9 +215,14 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));
   }
 
+  async function clickBulkDeleteAction() {
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i }));
+  }
+
   async function confirmDangerDialog(title: RegExp | string) {
     const dialog = await screen.findByRole('dialog', { name: title });
-    await userEvent.click(within(dialog).getByRole('button', { name: /^Delete$/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Delete/i }));
   }
 
   it('navigates Add data to Input Data with manual entry focused', async () => {
@@ -324,13 +330,20 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
   });
 
-  it('shows no selected rows in the Set Province panel before selection', async () => {
+  it('hides bulk action controls before selection', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getAllByText('No records selected.')).toHaveLength(2);
+      expect(screen.getByText('Diesel')).toBeInTheDocument();
     });
-    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
+    expect(screen.queryByRole('toolbar', { name: /Selected records actions/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Set Site \/ Facility$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Set Province$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^More ▾$/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('requires admins to type RESET DEMO DATA before confirming demo data reset', async () => {
@@ -389,26 +402,29 @@ describe('ActivityDataPage delete flows', () => {
     window.removeEventListener('carbonlite:demo-data-reset', resetEventListener);
   });
 
-  it('shows restrained danger styling for Delete selected after selection', async () => {
+  it('moves Delete selected into the More menu after selection', async () => {
     renderPage();
 
     await screen.findByText('Diesel');
-    expect(screen.queryByRole('button', { name: /^Delete selected/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /^Delete selected/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
 
+    expect(screen.getByText('1 record selected · 0 electricity records eligible')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Delete selected/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
     expect(
-      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
+      screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i }),
     ).toBeEnabled();
     expect(
-      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
+      screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i }),
     ).toHaveStyle({
-      background: '#ffffff',
+      background: 'transparent',
       color: '#b91c1c',
     });
   });
 
-  it('shows Delete selected for legacy USER role selections', async () => {
+  it('shows Delete selected in the More menu for legacy USER role selections', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({ email: 'user@example.com', role: 'USER', organizationId: 'org-1' }),
@@ -418,17 +434,18 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
 
-    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i })).toBeVisible();
   });
 
-  it('updates Delete selected count when select-all selects visible rows', async () => {
+  it('updates the selected count when select-all selects visible rows', async () => {
     renderPage();
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
 
-    expect(screen.getByRole('button', { name: /Delete selected \(2\)/i })).toBeVisible();
+    expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeVisible();
   });
 
   it('sets province for selected electricity records and ignores non-electricity records', async () => {
@@ -488,19 +505,22 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(within(naturalGasRow).getByRole('checkbox'));
     await userEvent.click(within(existingProvinceRow).getByRole('checkbox'));
 
-    expect(screen.getByText('4 records selected · 3 electricity records selected.')).toBeInTheDocument();
+    expect(screen.getByText('4 records selected · 3 electricity records eligible')).toBeInTheDocument();
 
-    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
-    expect(setProvinceButton).toBeDisabled();
+    const openProvinceButton = screen.getByRole('button', { name: /^Set Province$/i });
+    expect(openProvinceButton).toBeEnabled();
+    await userEvent.click(openProvinceButton);
+    const applyProvinceButton = screen.getByRole('button', { name: /^Apply$/i });
+    expect(applyProvinceButton).toBeDisabled();
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'British Columbia',
     );
 
-    expect(setProvinceButton).toBeEnabled();
+    expect(applyProvinceButton).toBeEnabled();
 
-    await userEvent.click(setProvinceButton);
+    await userEvent.click(applyProvinceButton);
     await userEvent.click(screen.getByRole('button', { name: /^Update Province$/i }));
 
     await waitFor(() => {
@@ -579,13 +599,16 @@ describe('ActivityDataPage delete flows', () => {
     await screen.findByTestId('activity-row-electricity-site');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
 
-    expect(screen.getByText('5 records selected.')).toBeInTheDocument();
-    expect(screen.getByText('5 records selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByText('5 records selected · 1 electricity record eligible')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
+    expect(
+      screen.queryByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+    ).not.toBeInTheDocument();
 
     const facilityInput = screen.getByLabelText(/Site \/ Facility to apply to selected records/i);
     await userEvent.type(facilityInput, 'Calgary Office');
 
-    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Apply$/i }));
 
     await waitFor(() => {
       expect(bulkUpdateActivityFacility).toHaveBeenCalledWith(
@@ -595,8 +618,8 @@ describe('ActivityDataPage delete flows', () => {
     });
 
     expect(await screen.findByText('Site / Facility updated for 5 records.')).toBeInTheDocument();
-    expect(facilityInput).toHaveValue('');
-    expect(screen.getByText('5 records selected.')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
+    expect(screen.getByText('5 records selected · 1 electricity record eligible')).toBeInTheDocument();
 
     for (const record of refreshedRecords) {
       const row = await screen.findByTestId(`activity-row-${record.id}`);
@@ -640,11 +663,12 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByTestId('activity-row-facility-calgary');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
     await userEvent.type(
       screen.getByLabelText(/Site \/ Facility to apply to selected records/i),
       'Edmonton Factory',
     );
-    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Apply$/i }));
 
     expect(await screen.findByRole('dialog', { name: /Update site \/ facility/i })).toBeInTheDocument();
     expect(screen.getByText(/2 selected records already have a site or facility/i)).toBeInTheDocument();
@@ -685,12 +709,13 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByTestId('activity-row-facility-same-1');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
     await userEvent.clear(screen.getByLabelText(/Site \/ Facility to apply to selected records/i));
     await userEvent.type(
       screen.getByLabelText(/Site \/ Facility to apply to selected records/i),
       'Calgary Office',
     );
-    await userEvent.click(screen.getByRole('button', { name: /^Set Site \/ Facility$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Apply$/i }));
 
     expect(bulkUpdateActivityFacility).not.toHaveBeenCalled();
     expect(
@@ -773,17 +798,22 @@ describe('ActivityDataPage delete flows', () => {
     const britishColumbiaRow = await screen.findByTestId('activity-row-electricity-existing-bc');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
 
-    expect(screen.getByText('15 records selected · 3 electricity records selected.')).toBeInTheDocument();
+    expect(screen.getByText('15 records selected · 3 electricity records eligible')).toBeInTheDocument();
+
+    const openProvinceButton = screen.getByRole('button', { name: /^Set Province$/i });
+    expect(openProvinceButton).toBeEnabled();
+    await userEvent.click(openProvinceButton);
+    expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
     );
 
-    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
-    expect(setProvinceButton).toBeEnabled();
+    const applyProvinceButton = screen.getByRole('button', { name: /^Apply$/i });
+    expect(applyProvinceButton).toBeEnabled();
 
-    await userEvent.click(setProvinceButton);
+    await userEvent.click(applyProvinceButton);
     await userEvent.click(screen.getByRole('button', { name: /^Update Province$/i }));
 
     await waitFor(() => {
@@ -794,11 +824,10 @@ describe('ActivityDataPage delete flows', () => {
     });
 
     expect(await screen.findByText('Province updated for 3 electricity records.')).toBeInTheDocument();
-    expect(screen.getByText('15 records selected · 3 electricity records selected.')).toBeInTheDocument();
+    expect(screen.getByText('15 records selected · 3 electricity records eligible')).toBeInTheDocument();
     expect(
-      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
-    ).toHaveValue('');
-    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
+      screen.queryByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+    ).not.toBeInTheDocument();
 
     for (const rowId of [
       'electricity-existing-bc',
@@ -820,26 +849,28 @@ describe('ActivityDataPage delete flows', () => {
     await screen.findByText('Diesel');
     await user.click(screen.getAllByRole('checkbox')[0]);
 
-    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Set Province$/i }));
 
     await user.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
     );
 
-    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeEnabled();
+    expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Apply$/i })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: /^Columns$/i }));
     await user.click(screen.getByRole('checkbox', { name: /Source Reference/i }));
 
-    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeEnabled();
+    expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Apply$/i })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
 
-    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeEnabled();
+    expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Apply$/i })).toBeEnabled();
   });
 
   it('clears selected activity records when the document filter context actually changes', async () => {
@@ -858,12 +889,12 @@ describe('ActivityDataPage delete flows', () => {
     await screen.findByText('Diesel');
     await user.click(screen.getAllByRole('checkbox')[0]);
 
-    expect(screen.getByText('2 records selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Apply document filter/i }));
 
     await waitFor(() => {
-      expect(screen.getAllByText('No records selected.')).toHaveLength(2);
+      expect(screen.queryByRole('toolbar', { name: /Selected records actions/i })).not.toBeInTheDocument();
     });
     await waitFor(() => {
       expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
@@ -901,14 +932,12 @@ describe('ActivityDataPage delete flows', () => {
     const dieselRow = await screen.findByTestId('activity-row-diesel-selected');
     await userEvent.click(within(naturalGasRow).getByRole('checkbox'));
     await userEvent.click(within(dieselRow).getByRole('checkbox'));
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
-      'Alberta',
-    );
 
-    expect(screen.getByText('2 records selected · 0 electricity records selected.')).toBeInTheDocument();
-    expect(screen.getByText('No selected electricity records.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
+    expect(screen.getByText('2 records selected · 0 electricity records eligible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Set Province$/i })).toBeDisabled();
+    expect(
+      screen.queryByRole('combobox', { name: /Province to apply to selected electricity records/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('sets province for a selected electricity record with no province', async () => {
@@ -932,17 +961,19 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-electricity-missing-province-1');
     await userEvent.click(within(row).getByRole('checkbox'));
 
-    expect(screen.getByText('1 record selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByText('1 record selected · 1 electricity record eligible')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
     );
 
-    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
-    expect(setProvinceButton).toBeEnabled();
+    const applyProvinceButton = screen.getByRole('button', { name: /^Apply$/i });
+    expect(applyProvinceButton).toBeEnabled();
 
-    await userEvent.click(setProvinceButton);
+    await userEvent.click(applyProvinceButton);
 
     await waitFor(() => {
       expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(
@@ -973,17 +1004,19 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-electricity-has-province-1');
     await userEvent.click(within(row).getByRole('checkbox'));
 
-    expect(screen.getByText('1 record selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByText('1 record selected · 1 electricity record eligible')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
     );
 
-    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
-    expect(setProvinceButton).toBeEnabled();
+    const applyProvinceButton = screen.getByRole('button', { name: /^Apply$/i });
+    expect(applyProvinceButton).toBeEnabled();
 
-    await userEvent.click(setProvinceButton);
+    await userEvent.click(applyProvinceButton);
 
     expect(await screen.findByRole('dialog', { name: /Update province/i })).toBeInTheDocument();
     expect(
@@ -1016,13 +1049,15 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-electricity-has-province-cancel');
     await userEvent.click(within(row).getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
     );
 
-    await userEvent.click(screen.getByRole('button', { name: /^Set province$/i }));
-    await userEvent.click(screen.getByRole('button', { name: /^Cancel$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Apply$/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Update province/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Cancel$/i }));
 
     expect(bulkUpdateActivityProvince).not.toHaveBeenCalled();
   });
@@ -1047,17 +1082,19 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-12345');
     await userEvent.click(within(row).getByRole('checkbox'));
 
-    expect(screen.getByText('1 record selected · 1 electricity record selected.')).toBeInTheDocument();
+    expect(screen.getByText('1 record selected · 1 electricity record eligible')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
     );
 
-    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
-    expect(setProvinceButton).toBeEnabled();
+    const applyProvinceButton = screen.getByRole('button', { name: /^Apply$/i });
+    expect(applyProvinceButton).toBeEnabled();
 
-    await userEvent.click(setProvinceButton);
+    await userEvent.click(applyProvinceButton);
 
     await waitFor(() => {
       expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(['12345'], 'AB');
@@ -1095,16 +1132,19 @@ describe('ActivityDataPage delete flows', () => {
     expect(screen.getByLabelText(/More actions for/i)).toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('checkbox'));
-    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
+    expect(screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i })).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
     );
 
-    const setProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
-    expect(setProvinceButton).toBeEnabled();
+    const applyProvinceButton = screen.getByRole('button', { name: /^Apply$/i });
+    expect(applyProvinceButton).toBeEnabled();
 
-    await userEvent.click(setProvinceButton);
+    await userEvent.click(applyProvinceButton);
 
     await waitFor(() => {
       expect(bulkUpdateActivityProvince).toHaveBeenCalledWith(
@@ -1126,15 +1166,13 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
-    await userEvent.click(
-      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
-    );
+    await clickBulkDeleteAction();
     expect(
       await screen.findByText(
-        'Are you sure you want to delete 1 selected data record?',
+        'This action cannot be undone.',
       ),
     ).toBeInTheDocument();
-    await confirmDangerDialog(/Delete data records\?/i);
+    await confirmDangerDialog(/Delete 1 activity record\?/i);
 
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
@@ -1153,16 +1191,15 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
-    await userEvent.click(
-      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
-    );
+    await clickBulkDeleteAction();
 
-    const dialog = await screen.findByRole('dialog', { name: /Delete data records\?/i });
+    const dialog = await screen.findByRole('dialog', { name: /Delete 1 activity record\?/i });
     await userEvent.click(within(dialog).getByRole('button', { name: /^Cancel$/i }));
 
     expect(bulkDeleteActivityData).not.toHaveBeenCalled();
     expect(screen.getByText('Diesel')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
+    expect(screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i })).toBeEnabled();
   });
 
   it('shows a warning and refetches when backend reports zero deleted records', async () => {
@@ -1172,14 +1209,13 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
-    await userEvent.click(
-      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
-    );
-    await confirmDangerDialog(/Delete data records\?/i);
+    await clickBulkDeleteAction();
+    await confirmDangerDialog(/Delete 1 activity record\?/i);
 
     expect(await screen.findByText(/No records were deleted/i)).toBeInTheDocument();
     expect(screen.getByText('Diesel')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
+    expect(screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i })).toBeEnabled();
   });
 
   it('deletes one record from the row action and removes it from the UI after backend refresh', async () => {
@@ -1205,15 +1241,13 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[0]);
-    await userEvent.click(
-      screen.getByRole('button', { name: /Delete selected \(2\)/i }),
-    );
+    await clickBulkDeleteAction();
     expect(
       await screen.findByText(
-        'Are you sure you want to delete 2 selected data records?',
+        'This action cannot be undone.',
       ),
     ).toBeInTheDocument();
-    await confirmDangerDialog(/Delete data records\?/i);
+    await confirmDangerDialog(/Delete 2 activity records\?/i);
 
     expect(bulkDeleteActivityData).toHaveBeenCalledWith(['activity-1', 'activity-2']);
     expect(getAllActivityData).toHaveBeenCalledTimes(2);
@@ -1233,10 +1267,8 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await userEvent.click(screen.getAllByRole('checkbox')[1]);
-    await userEvent.click(
-      screen.getByRole('button', { name: /Delete selected \(1\)/i }),
-    );
-    await confirmDangerDialog(/Delete data records\?/i);
+    await clickBulkDeleteAction();
+    await confirmDangerDialog(/Delete 1 activity record\?/i);
 
     expect(await screen.findByText('You do not have permission to perform this action.')).toBeInTheDocument();
     expect(await screen.findByText('Unable to delete data records.')).toBeInTheDocument();
@@ -1245,7 +1277,8 @@ describe('ActivityDataPage delete flows', () => {
       expect.objectContaining({ ids: ['activity-1'] }),
     );
     expect(screen.getByText('Diesel')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete selected \(1\)/i })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
+    expect(screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i })).toBeEnabled();
   });
 
   it('keeps row visible when single delete is unauthorized', async () => {
@@ -1277,8 +1310,53 @@ describe('ActivityDataPage delete flows', () => {
     expect(screen.getAllByText('Manual Entry').length).toBeGreaterThan(0);
     expect(screen.getByText('PDF Extraction')).toBeInTheDocument();
     expect(
-      screen.getByText('utility.pdf · Utility bill usage · Page 1 · Line item 3'),
+      screen.getByText('Utility bill usage · Page 1 · Line item 3'),
     ).toBeInTheDocument();
+  });
+
+  it('separates source provenance from source review status in activity details', async () => {
+    mockActivityRecords([
+      {
+        id: 'activity-bc-hydro',
+        activityType: 'ELECTRICITY',
+        recordDate: '2026-07-01',
+        quantity: 389,
+        unit: 'kWh',
+        jurisdictionCountry: 'Canada',
+        jurisdictionRegion: 'British Columbia',
+        facilityName: null,
+        sourceType: 'AI_EXTRACTION',
+        sourceFileName: 'bc hydro.pdf',
+        sourceReference: 'Source review required',
+        sourceReviewStatus: 'REVIEW_REQUIRED',
+        sourceDocumentId: 'doc-bc-hydro',
+        calculationStatus: 'CALCULATED',
+        matchingStatus: 'MATCHED',
+      } as any,
+    ]);
+
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-bc-hydro');
+    expect(within(row).getByText('bc hydro.pdf')).toBeInTheDocument();
+    expect(within(row).queryByText(/Source review required/i)).not.toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('button', { name: 'View' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
+    expect(within(dialog).getByText('Calculated')).toBeInTheDocument();
+    expect(within(dialog).getByText('Electricity')).toBeInTheDocument();
+    expect(within(dialog).getByText('389')).toBeInTheDocument();
+    expect(within(dialog).getByText('kWh')).toBeInTheDocument();
+    expect(within(dialog).getByText('Canada')).toBeInTheDocument();
+    expect(within(dialog).getByText('British Columbia')).toBeInTheDocument();
+    expect(within(dialog).getByText('Unassigned')).toBeInTheDocument();
+    expect(within(dialog).getByText('PDF Extraction')).toBeInTheDocument();
+    expect(within(dialog).getByText('Source File')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('bc hydro.pdf').length).toBeGreaterThan(0);
+    expect(within(dialog).getByText('Source Review')).toBeInTheDocument();
+    expect(within(dialog).getByText('Review required')).toBeInTheDocument();
+    expect(within(dialog).queryByText('bc hydro.pdf · Source review required')).not.toBeInTheDocument();
   });
 
   it('exports selected data records as user-facing CSV without internal ids', async () => {
@@ -1354,7 +1432,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const csv = await readBlobAsText(exportedBlobs[0]);
     expect(csv).toContain('Water');
-    expect(csv).toContain('Tracked Only');
+    expect(csv).toContain('Tracked Metric');
     expect(csv).not.toContain('Diesel');
   });
 
@@ -1483,11 +1561,11 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     expect(await screen.findByText('Electricity')).toBeInTheDocument();
-    expect(screen.getByText('Ready')).toBeInTheDocument();
+    expect(screen.getByText('Calculated')).toBeInTheDocument();
     expect(screen.queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
-  it('does not mark Diesel 240 kg as Ready when the available Diesel factor expects liters', async () => {
+  it('does not mark Diesel 240 kg as calculated when the available Diesel factor expects liters', async () => {
     mockActivityRecords([
       {
         id: 'activity-diesel-kg',
@@ -1509,7 +1587,7 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-activity-diesel-kg');
     expect(within(row).getByText('Diesel')).toBeInTheDocument();
     expect(within(row).getByText('Unit Mismatch')).toBeInTheDocument();
-    expect(within(row).queryByText('Ready')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Calculated')).not.toBeInTheDocument();
   });
 
   it('uses canonical matched fields instead of stale missing factor notes', async () => {
@@ -1541,7 +1619,7 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     const row = await screen.findByTestId('activity-row-activity-bc-electricity-canonical');
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
@@ -1634,8 +1712,8 @@ describe('ActivityDataPage delete flows', () => {
     const oldRow = await screen.findByTestId('activity-row-activity-bc-electricity-old');
     const newRow = await screen.findByTestId('activity-row-activity-bc-electricity-new');
 
-    expect(within(oldRow).getByText('Ready')).toBeInTheDocument();
-    expect(within(newRow).getByText('Ready')).toBeInTheDocument();
+    expect(within(oldRow).getByText('Calculated')).toBeInTheDocument();
+    expect(within(newRow).getByText('Calculated')).toBeInTheDocument();
     expect(within(oldRow).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(newRow).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
@@ -1788,8 +1866,8 @@ describe('ActivityDataPage delete flows', () => {
       within(row).getByText('37_mixed_utility_report_missing_units.pdf'),
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByText('37_mixed_utility_report_missing_units.pdf'),
-    ).toBeInTheDocument();
+      within(dialog).getAllByText('37_mixed_utility_report_missing_units.pdf').length,
+    ).toBeGreaterThan(0);
   });
 
   it('shows source unavailable when imported source metadata is missing', async () => {

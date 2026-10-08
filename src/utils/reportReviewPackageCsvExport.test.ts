@@ -1,6 +1,7 @@
 import type { CalculationAuditDetail } from '../services/metrics';
 import {
   buildReviewPackageCalculationTraceabilityCsv,
+  buildReviewPackageAuditEvidenceCsv,
   buildReviewPackageDataRecordsCsv,
   buildReviewPackageFactorSourceSummaryCsv,
   buildReviewPackageRecordsRequiringReviewCsv,
@@ -75,7 +76,7 @@ describe('report review package CSV exports', () => {
     expect(csv).toContain('Business Travel - Accommodation');
     expect(csv).toContain('Calgary Office');
     expect(csv).toContain('Unassigned');
-    expect(csv).toContain('Tracked Only');
+    expect(csv).toContain('Tracked Metric');
     expect(csv).not.toContain('activity-internal-id');
     expect(csv).not.toContain('facility-internal-id');
     expect(csv).not.toContain('factor-internal-id');
@@ -196,9 +197,56 @@ describe('report review package CSV exports', () => {
     expect(reviewCsv).not.toContain('missing-province-id');
   });
 
+  it('exports audit evidence with source, version, calculation, and report identifiers', () => {
+    const csv = buildReviewPackageAuditEvidenceCsv(
+      [
+        {
+          ...baseDetail,
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          jurisdictionRegion: 'Alberta',
+          factorId: 'factor-electricity-ab-2025',
+          factorVersionId: 'factor-version-electricity-ab-2025-v1',
+          factorVersion: 'v1.0',
+          factorName: 'Electricity - Alberta',
+          factorValue: 0.53,
+          factorInputUnit: 'kWh',
+          factorResultUnit: 'kgCO2e/kWh',
+          factorDefaultScope: 'SCOPE_2',
+          calculatedEmission: 519.4,
+          calculatedEmissionsKgCO2e: 519.4,
+          calculationFormula: '980 kWh x 0.53 kgCO2e/kWh = 519.40 kgCO2e',
+          sourceDocumentId: 'doc-carbonlite-needs-review',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceSheetName: 'Messy_Operations',
+          sourceRow: 2,
+          sourceReference: 'MARCH-ELEC-001',
+          status: 'CALCULATED',
+        },
+      ],
+      {
+        reportId: 'CL-DRAFT-2026-AB12CD3',
+        reportVersion: 'Pilot Draft',
+      },
+    );
+
+    expect(csv).toContain('Source Document ID,Source File,Source Sheet,Source Row,Source Reference');
+    expect(csv).toContain('doc-carbonlite-needs-review');
+    expect(csv).toContain('MARCH-ELEC-001');
+    expect(csv).toContain('activity-march-elec-001');
+    expect(csv).toContain('factor-version-electricity-ab-2025-v1');
+    expect(csv).toContain('calc:activity-march-elec-001:v1');
+    expect(csv).toContain('CL-DRAFT-2026-AB12CD3');
+  });
+
   it('builds review package filenames', () => {
     expect(
       getReviewPackageCsvFileName('calculation-traceability', new Date('2026-09-16T12:00:00Z')),
     ).toBe('carbonlite-calculation-traceability-2026-09-16.csv');
+    expect(
+      getReviewPackageCsvFileName('audit-evidence', new Date('2026-09-16T12:00:00Z')),
+    ).toBe('carbonlite-audit-evidence-2026-09-16.csv');
   });
 });

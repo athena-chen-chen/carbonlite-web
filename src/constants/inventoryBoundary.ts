@@ -13,6 +13,11 @@ export type InventoryBoundary = {
   scope3CoverageNote: string;
   exclusionsLimitations: string;
   boundaryNotes?: string;
+  boundaryStatus?: 'NOT_DEFINED' | 'DRAFT' | 'REVIEWED';
+  boundaryReviewedBy?: string;
+  boundaryReviewedAt?: string;
+  boundaryVersion?: number;
+  boundaryReviewNote?: string;
 };
 
 export const DEFAULT_INVENTORY_BOUNDARY: InventoryBoundary = {

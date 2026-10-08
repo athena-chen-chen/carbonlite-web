@@ -12,6 +12,7 @@ import {
   confirmDocumentImport,
   extractDocument,
   getDocumentExtraction,
+  type ConfirmImportResponse,
   type ParsedActivity,
 } from '../services/documentExtraction';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -32,20 +33,20 @@ import {
   defaultActivityType,
 } from '../constants/activityTypes';
 import {
+  CARBONLITE_WORKFLOW,
+  CARBONLITE_WORKFLOW_STAGE_COUNT,
+  formatWorkflowStageLabel,
+  getWorkflowStage,
+} from '../constants/carbonliteWorkflow';
+import {
   getActivityTypeLabel,
   normalizeActivityType as normalizeCanonicalActivityType,
 } from '../utils/activityType';
 import {
-  buildFactorUnitMismatchMessage,
-  findBestConversionFactorMatch,
-  getCompatibleFactorUnitLabels,
-  getFactorSourceYear,
-  getFactorValue,
   resolveActivityYear,
   type MatchableConversionFactor,
   normalizeJurisdictionCountry,
 } from '../utils/conversionFactorMatching';
-import { buildMatchedFactorSnapshot } from '../utils/factorCredibility';
 import { getDateOnlyYear, getTodayDateOnly, isValidDateOnly } from '../utils/dateOnly';
 import { buildApiUrl } from '../config/api';
 import { ApiError } from '../services/api';
@@ -67,10 +68,14 @@ import {
   sampleParsedActivities,
 } from '../demo/demoData';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
-import { inferDefaultScope } from '../utils/scopeClassification';
-import { ExcelInputTable } from '../components/ExcelInputTable';
+import { evaluateActivityRecord } from '../utils/canonicalRecordEvaluation';
+import {
+  ExcelInputTable,
+  type ExcelInputTableSaveResult,
+} from '../components/ExcelInputTable';
 import { useAppDialog } from '../components/AppDialog';
 import {
+  CANADIAN_PROVINCE_OPTIONS,
   ELECTRICITY_FACTOR_PROVINCE_OPTIONS,
   UNSUPPORTED_PILOT_ELECTRICITY_PROVINCE_MESSAGE,
   isSupportedPilotProvince,
@@ -83,6 +88,8 @@ import {
   DATA_RECORDS_ROUTE,
   REPORTS_ROUTE,
 } from '../constants/routes';
+import { queryClient } from '../queryClient';
+import type { SpreadsheetReviewRowInput } from '../services/spreadsheetReviewRows';
 
 
 type DocumentItem = {
@@ -122,9 +129,12 @@ type EditableParsedActivity = {
   jurisdictionRegion: EditableConfidenceField<string>;
   facilityName: EditableConfidenceField<string>;
   sourceReference: EditableConfidenceField<string>;
+  sourceSheetName?: string | null;
   sourcePage?: string | number | null;
   sourceRow?: string | number | null;
   sourceTextSnippet?: string | null;
+  costCad?: number | string | null;
+  costCurrency?: string | null;
   matchingStatus?: string | null;
   reportTreatment?: string | null;
   scope?: string | null;
@@ -134,6 +144,16 @@ type EditableParsedActivity = {
   matchedFactorName?: string | null;
   matchedFactorSourceYear?: number | null;
   matchedFactorValue?: number | null;
+  matchedFactorUnit?: string | null;
+  matchedFactorVersion?: string | null;
+  matchedFactorSourceAuthority?: string | null;
+  matchedFactorSourceDocument?: string | null;
+  matchedFactorSourceUrl?: string | null;
+  matchedFactorVerificationStatus?: string | null;
+  matchedFactorConfidenceLevel?: string | null;
+  matchedFactorAssumptions?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
   calculatedEmissionsKgCO2e?: number | null;
   notes: EditableConfidenceField<string>;
 };
@@ -257,6 +277,29 @@ const SOURCE_REFERENCE_ALIASES = [
   'source document',
 ] as const;
 
+const ADDRESS_ALIASES = [
+  'serviceAddress',
+  'Service Address',
+  'service address',
+  'billingAddress',
+  'Billing Address',
+  'billing address',
+  'address',
+  'Address',
+  'customerAddress',
+  'Customer Address',
+  'customer address',
+  'siteAddress',
+  'Site Address',
+  'site address',
+  'facilityAddress',
+  'Facility Address',
+  'facility address',
+  'locationAddress',
+  'Location Address',
+  'location address',
+] as const;
+
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const DOCUMENT_UPLOAD_ACCEPT =
   '.pdf,.jpg,.jpeg,.png,.heic,application/pdf,image/jpeg,image/png,image/heic';
@@ -265,16 +308,6 @@ const SPREADSHEET_UPLOAD_ACCEPT =
 const DOCUMENT_UPLOAD_FORMAT_LABEL = 'PDF, JPG, PNG, or HEIC';
 const DOCUMENT_UPLOAD_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'heic'] as const;
 const SPREADSHEET_UPLOAD_EXTENSIONS = ['csv', 'xlsx', 'xls'] as const;
-const UPLOAD_DOCUMENT_TYPE_OPTIONS = [
-  { value: 'UTILITY_BILL', label: 'Utility Bill' },
-  { value: 'FUEL_INVOICE', label: 'Fuel Invoice' },
-  { value: 'WATER_BILL', label: 'Water Bill' },
-  { value: 'TRAVEL_DOCUMENT', label: 'Travel Document' },
-  { value: 'HOTEL_INVOICE', label: 'Hotel Invoice' },
-  { value: 'PDF', label: 'PDF Document' },
-  { value: 'IMAGE', label: 'Image Document' },
-  { value: 'OTHER', label: 'Other Document' },
-] as const;
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
 const ACTIVITY_DATA_SAVED_SUCCESS_MESSAGE =
   'Activity data saved. Review saved records in Data Records, Calculation Review, or Reports.';
@@ -284,14 +317,15 @@ export const FILE_MISSING_TOOLTIP =
   'The original uploaded file is no longer available. Please upload it again.';
 const UNSUPPORTED_ACTIVITY_TYPE_MESSAGE =
   'Unsupported Activity Type: This activity type is not supported in the current CarbonLite pilot.';
-const inputWorkflowSteps = [
-  { title: 'Input Data', detail: 'Add source activity data' },
-  { title: 'Review extracted rows', detail: 'Check draft rows before import' },
-  { title: 'Confirm activity records', detail: 'Save clean records' },
-  { title: 'Match emission factors', detail: 'Apply traceable factors' },
-  { title: 'Review calculations', detail: 'Inspect totals and trail' },
-  { title: 'Generate report', detail: 'Export pilot-stage outputs' },
-];
+const inputDataStage = getWorkflowStage('SOURCE_DATA');
+
+function getConfirmedImportCreatedCount(result: ConfirmImportResponse) {
+  if (Number.isFinite(result.count)) {
+    return Math.max(0, result.count);
+  }
+
+  return result.createdIds?.length ?? 0;
+}
 
 function getRouteInputMethod(state: unknown): InputMethod | null {
   const focusInputMethod = (state as UploadRouteState | null)?.focusInputMethod;
@@ -772,6 +806,22 @@ function formatOptionalExtractionField(value: RawExtractionField) {
   return '';
 }
 
+function normalizeOptionalImportString(value: unknown) {
+  const normalized = formatOptionalExtractionField(value).trim();
+  return normalized ? normalized : undefined;
+}
+
+function normalizeOptionalImportCost(value: unknown) {
+  if (value === null || value === undefined || value === '') return undefined;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+
+  const normalized = formatOptionalExtractionField(value).replace(/[$,\s]/g, '');
+  if (!normalized) return undefined;
+  const numericValue = Number(normalized);
+
+  return Number.isFinite(numericValue) ? numericValue : undefined;
+}
+
 export function formatSourceReference(
   value: RawExtractionField,
   documentFileName = '',
@@ -797,10 +847,10 @@ export function formatSourceReference(
       fileLabel || (typeof value.value === 'string' ? value.value : ''),
     ),
     page ? `Page ${page}` : '',
-    sourceLabel,
+    /^source review required$/i.test(sourceLabel) ? '' : sourceLabel,
   ].filter((part) => String(part).trim());
 
-  return parts.join(' - ') || 'Source review required';
+  return parts.join(' - ') || documentFileName;
 }
 
 function getSourceFileExtension(value?: string | null) {
@@ -969,6 +1019,35 @@ function normalizePreviewProvince(value: RawExtractionField) {
   return normalizeProvince(formatOptionalExtractionField(value)) ?? '';
 }
 
+function isKnownCanadianProvince(value?: string | null): value is string {
+  return CANADIAN_PROVINCE_OPTIONS.includes(value as (typeof CANADIAN_PROVINCE_OPTIONS)[number]);
+}
+
+export function extractProvinceFromAddress(value: RawExtractionField) {
+  const text = formatOptionalExtractionField(value);
+  if (!text.trim()) return '';
+
+  const directProvince = normalizeProvince(text);
+  if (isKnownCanadianProvince(directProvince)) return directProvince;
+
+  const tokens = text
+    .split(/[^A-Za-z]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  for (const token of tokens) {
+    const province = normalizeProvince(token);
+    if (isKnownCanadianProvince(province)) return province;
+  }
+
+  const normalizedText = text.toLowerCase().replace(/\s+/g, ' ');
+  for (const province of CANADIAN_PROVINCE_OPTIONS) {
+    if (normalizedText.includes(province.toLowerCase())) return province;
+  }
+
+  return '';
+}
+
 function normalizePreviewSiteFacility(value: RawExtractionField) {
   return formatOptionalExtractionField(value);
 }
@@ -1058,7 +1137,6 @@ export function buildDocumentImportActivityPayload(input: {
     String(item.activityType.value ?? '').trim();
   const country = item.jurisdictionCountry.value || 'Canada';
   const province = item.jurisdictionRegion.value || undefined;
-  const normalizedUnit = normalizeUnitForDisplay(item.unit.value);
   const quantity = Number(item.quantity.value);
   const activityYear = resolveActivityYear({
     servicePeriodEndDate: item.periodEndDate,
@@ -1084,9 +1162,12 @@ export function buildDocumentImportActivityPayload(input: {
     documentId,
     sourceDocumentId: documentId,
     sourceFileName,
+    sourceSheetName: item.sourceSheetName ?? undefined,
     sourcePage: item.sourcePage ?? undefined,
     sourceRow: item.sourceRow ?? undefined,
     sourceTextSnippet: item.sourceTextSnippet ?? undefined,
+    costCad: normalizeOptionalImportCost(item.costCad),
+    costCurrency: normalizeOptionalImportString(item.costCurrency),
     importBatchId,
     dateEstimated: item.dateEstimated,
   };
@@ -1099,55 +1180,32 @@ export function buildDocumentImportActivityPayload(input: {
     matchedFactorId?: string;
     matchedFactorName?: string;
     matchedFactorSourceYear?: number;
+    matchedFactorValue?: number;
+    matchedFactorUnit?: string;
+    matchedFactorVersion?: string;
+    matchedFactorSourceAuthority?: string;
+    matchedFactorSourceDocument?: string;
+    matchedFactorSourceUrl?: string;
+    matchedFactorVerificationStatus?: string;
+    matchedFactorConfidenceLevel?: string;
+    matchedFactorAssumptions?: string;
+    factorSelectionReason?: string;
+    factorSelectionExplanation?: string;
     calculatedEmissionsKgCO2e?: number;
+    scope?: string;
   }) {
     return {
       ...basePayload,
       ...calculation,
-      scope: inferDefaultScope(activityType),
+      scope: calculation.scope,
       notes: [baseNotes, activityYear.reviewNote, calculation.calculationMessage].filter(Boolean).join(' '),
     };
   }
 
-  if (activityType === 'ELECTRICITY' && !normalizeProvince(province)) {
-    return withCalculation({
-      matchingStatus: 'MISSING_PROVINCE',
-      reportTreatment: 'EXCLUDED',
-      calculationStatus: 'MISSING_PROVINCE',
-      calculationMessage: 'Electricity records require province before factor matching.',
-    });
-  }
-
-  if (normalizedUnit.status === 'invalid') {
-    return withCalculation({
-      matchingStatus: 'UNIT_MISMATCH',
-      reportTreatment: 'EXCLUDED',
-      calculationStatus: 'UNIT_MISMATCH',
-      calculationMessage: 'Unit mismatch. This record is excluded from emissions totals.',
-    });
-  }
-
-  if (!activityType || !item.recordDate.value || !Number.isFinite(quantity) || quantity <= 0 || normalizedUnit.status === 'missing') {
-    return withCalculation({
-      matchingStatus: 'REQUIRES_REVIEW',
-      reportTreatment: 'EXCLUDED',
-      calculationStatus: 'REQUIRES_REVIEW',
-      calculationMessage: 'Required fields must be completed before calculation.',
-    });
-  }
-
-  if (activityType === 'WATER') {
-    return withCalculation({
-      matchingStatus: 'TRACKED_ONLY',
-      reportTreatment: 'TRACKED_ONLY',
-      calculationStatus: 'TRACKED_ONLY',
-      calculationMessage: 'Water usage is tracked only and excluded from GHG emissions totals.',
-    });
-  }
-
-  const match = findBestConversionFactorMatch({
+  const evaluation = evaluateActivityRecord({
     activityType,
-    inputUnit: normalizedUnit.value,
+    quantity,
+    unit: item.unit.value,
     jurisdictionCountry: country,
     jurisdictionRegion: province,
     recordYear,
@@ -1155,56 +1213,17 @@ export function buildDocumentImportActivityPayload(input: {
     factors: conversionFactors as MatchableConversionFactor[],
   });
 
-  if (!match) {
-    const compatibleUnits = getCompatibleFactorUnitLabels({
-      activityType,
-      inputUnit: normalizedUnit.value,
-      jurisdictionCountry: country,
-      jurisdictionRegion: province,
-      recordYear,
-      organizationId,
-      factors: conversionFactors as MatchableConversionFactor[],
-    }).filter((unit) => unit.toLowerCase() !== normalizedUnit.value.toLowerCase());
-
-    if (compatibleUnits.length > 0) {
-      return withCalculation({
-        matchingStatus: 'UNIT_MISMATCH',
-        reportTreatment: 'EXCLUDED',
-        calculationStatus: 'UNIT_MISMATCH',
-        calculationMessage: buildFactorUnitMismatchMessage({
-          activityType,
-          inputUnit: normalizedUnit.value,
-          availableUnits: compatibleUnits,
-        }),
-      });
-    }
-
-    return withCalculation({
-      matchingStatus: 'MISSING_FACTOR',
-      reportTreatment: 'EXCLUDED',
-      calculationStatus: 'MISSING_FACTOR',
-      calculationMessage: 'No matching conversion factor is available for this record.',
-    });
-  }
-
-  const factorValue = Number(getFactorValue(match.factor));
-  const calculatedEmissionsKgCO2e = quantity * factorValue;
-  const factorYear = getFactorSourceYear(match.factor) ?? match.factorYear ?? undefined;
-
   return withCalculation({
-    matchingStatus: 'MATCHED',
-    reportTreatment: 'INCLUDED',
-    calculationStatus: 'CALCULATED',
-    calculationMessage: match.usedProxyFactor && match.proxyReason
-      ? `Proxy factor · Review recommended. ${match.proxyReason}`
-      : match.usedPriorYearFallback && factorYear
-      ? `Matched factor. Using latest available factor year: ${factorYear}.`
-      : 'Matched factor. This record is included in emissions totals.',
-    matchedFactorId: match.factor.id,
-    matchedFactorName: match.factor.name,
-    matchedFactorSourceYear: factorYear ?? undefined,
-    ...buildMatchedFactorSnapshot(match),
-    calculatedEmissionsKgCO2e,
+    matchingStatus: evaluation.matchingStatus,
+    reportTreatment: evaluation.reportTreatment,
+    calculationStatus: evaluation.calculationStatus,
+    calculationMessage: evaluation.calculationMessage,
+    matchedFactorId: evaluation.matchedFactorId,
+    matchedFactorName: evaluation.matchedFactorName,
+    matchedFactorSourceYear: evaluation.matchedFactorSourceYear,
+    ...evaluation.factorSnapshot,
+    calculatedEmissionsKgCO2e: evaluation.calculatedEmissionsKgCO2e ?? undefined,
+    scope: evaluation.scope,
   });
 }
 
@@ -1467,7 +1486,6 @@ export function UploadPage() {
     () => getRouteInputMethod(location.state) ?? 'documents',
   );
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [documentType, setDocumentType] = useState('');
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -1516,7 +1534,6 @@ export function UploadPage() {
   const uploadDragDepthRef = useRef(0);
   const documentMenuRef = useRef<HTMLDivElement | null>(null);
   const documentMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const importRedirectTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
   const isSpreadsheetReplacement = Boolean(
     replacementSourceDocument &&
@@ -1686,12 +1703,6 @@ export function UploadPage() {
 
     focusReviewSection();
   }, [location.search]);
-
-  useEffect(() => () => {
-    if (importRedirectTimerRef.current) {
-      window.clearTimeout(importRedirectTimerRef.current);
-    }
-  }, []);
 
   useEffect(() => {
     function handleDemoDataReset() {
@@ -1906,11 +1917,17 @@ export function UploadPage() {
       for (const documentId of input.documentIds) {
         const document = documents.find((item) => item.id === documentId);
         const result = await getDocumentExtraction(documentId);
-        const sourceRows = buildEditableParsedActivities(result.parsedActivities ?? [], {
-          id: documentId,
-          fileName: document?.fileName ?? documentId,
-          createdAt: document?.createdAt,
-        });
+        const sourceRows = buildEditableParsedActivities(
+          result.parsedActivities ?? [],
+          {
+            id: documentId,
+            fileName: document?.fileName ?? documentId,
+            createdAt: document?.createdAt,
+          },
+          {
+            preserveRows: isSpreadsheetFileName(document?.fileName ?? documentId),
+          },
+        );
 
         reloadedRows.push(
           ...filterUnimportedDraftRows(sourceRows, importedKeys),
@@ -1969,11 +1986,161 @@ export function UploadPage() {
     return (value ?? fallback) as T;
   }
 
+  function filterCurrentPeriodParsedActivities(
+    extractedActivities: Array<ParsedActivity | any>,
+    document?: { id: string; fileName: string },
+  ) {
+    const currentPeriodCandidates = extractedActivities.filter(
+      (item) => !isHistoricalComparisonActivity(item),
+    );
+    const bestByLogicalActivity = new Map<string, ParsedActivity | any>();
+
+    currentPeriodCandidates.forEach((item) => {
+      const key = buildLogicalActivityCandidateKey(item, document);
+      if (!key) return;
+
+      const existing = bestByLogicalActivity.get(key);
+      if (!existing || getCurrentPeriodEvidenceScore(item) > getCurrentPeriodEvidenceScore(existing)) {
+        bestByLogicalActivity.set(key, item);
+      }
+    });
+
+    const seenKeys = new Set<string>();
+    return currentPeriodCandidates.filter((item) => {
+      const key = buildLogicalActivityCandidateKey(item, document);
+      if (!key) return true;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return bestByLogicalActivity.get(key) === item;
+    });
+  }
+
+  function isHistoricalComparisonActivity(item: ParsedActivity | any) {
+    const periodRole = normalizeExtractionRole(item.periodRole);
+    const comparisonType = normalizeExtractionRole(item.comparisonType);
+    const usageType = normalizeExtractionRole(item.usageType);
+
+    if (['PREVIOUS_PERIOD', 'PRIOR_YEAR', 'HISTORICAL_COMPARISON'].includes(periodRole)) {
+      return true;
+    }
+
+    if (
+      ['PREVIOUS_PERIOD', 'PRIOR_YEAR', 'HISTORICAL_COMPARISON'].includes(comparisonType) ||
+      ['PREVIOUS_PERIOD', 'PRIOR_YEAR', 'HISTORICAL_COMPARISON'].includes(usageType)
+    ) {
+      return true;
+    }
+
+    if (periodRole === 'CURRENT') return false;
+
+    const context = getParsedActivityContextText(item);
+    if (!context) return false;
+
+    const hasHistoricalContext =
+      /\b(last|previous|prior)\s+(bill|billing period|month|period|year)\b/i.test(context) ||
+      /\bsame\s+period\s+last\s+year\b/i.test(context) ||
+      /\bhistorical\b|\bcomparison\b|\bcompare\b|\busage\s+chart\b|\bchart\s+value\b/i.test(context);
+    if (!hasHistoricalContext) return false;
+
+    const hasCurrentContext =
+      /\bthis\s+bill\b|\bcurrent\s+(bill|billing period|period|usage|charges?)\b/i.test(context) ||
+      /\bgas\s+charges?\b|\bdelivery\s*\(/i.test(context);
+
+    return !hasCurrentContext || /\b(last|previous|prior)\s+(bill|billing period|month|period|year)\b/i.test(context);
+  }
+
+  function getParsedActivityContextText(item: ParsedActivity | any) {
+    return [
+      item.periodRole,
+      item.sourceReference,
+      item.sourceTextSnippet,
+      item.notes,
+      item.label,
+      item.sourceLabel,
+      item.context,
+      item.sourceContext,
+      item.periodLabel,
+      item.rowLabel,
+      item.section,
+      item.description,
+      item.usageType,
+      item.comparisonType,
+    ]
+      .map((value) => formatOptionalExtractionField(value))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function normalizeExtractionRole(value: RawExtractionField) {
+    return formatOptionalExtractionField(value)
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+  }
+
+  function buildLogicalActivityCandidateKey(
+    item: ParsedActivity | any,
+    document?: { id: string; fileName: string },
+  ) {
+    const activityType = normalizePreviewActivityType(
+      getAliasedExtractionField(item, ['activityType', 'activity_type', 'type', 'category']),
+    );
+    const unit = String(getFieldValue(getAliasedExtractionField(item, ['unit', 'uom', 'measurement']), '')).trim().toUpperCase();
+    const recordDate = formatDateValue(
+      getAliasedExtractionField(item, ['recordDate', 'date', 'startDate', 'periodStart', 'fromDate']),
+    );
+    const endDate = formatDateValue(getAliasedExtractionField(item, ['endDate', 'periodEnd', 'toDate']));
+    const country = normalizeJurisdictionCountry(
+      getFieldValue(getAliasedExtractionField(item, ['jurisdictionCountry', 'country', 'countryCode']), 'Canada'),
+    );
+    const region = normalizePreviewProvince(
+      getAliasedExtractionField(item, ['jurisdictionRegion', 'province', 'region', 'state', 'stateProvince']),
+    );
+    const facility = normalizePreviewSiteFacility(
+      getAliasedExtractionField(item, ['facilityName', 'facility', 'site', 'siteName', 'location', 'branch', 'factory']),
+    );
+    const sourceDocument = formatOptionalExtractionField(item.sourceDocumentId) ||
+      document?.id ||
+      formatOptionalExtractionField(item.sourceFileName) ||
+      document?.fileName ||
+      '';
+
+    if (!activityType || !unit) return '';
+
+    return [
+      sourceDocument,
+      activityType.toUpperCase(),
+      unit,
+      endDate || recordDate,
+      country,
+      region,
+      facility,
+    ].join('::');
+  }
+
+  function getCurrentPeriodEvidenceScore(item: ParsedActivity | any) {
+    const context = getParsedActivityContextText(item);
+    let score = 0;
+    const periodRole = normalizeExtractionRole(item.periodRole);
+    if (periodRole === 'CURRENT') score += 10;
+    if (/\bthis\s+bill\b|\bcurrent\s+(bill|billing period|period|usage|charges?)\b/i.test(context)) score += 4;
+    if (/\bgas\s+charges?\b|\bdelivery\s*\(/i.test(context)) score += 3;
+    if (/\bmeter\b|\bread(ing)?\b|\bbilling\s+period\b/i.test(context)) score += 2;
+    if (item.sourcePage !== undefined && item.sourcePage !== null) score += 1;
+    return score;
+  }
+
   function buildEditableParsedActivities(
     extractedActivities: Array<ParsedActivity | any>,
     document: { id: string; fileName: string; createdAt?: string | null },
+    options: { preserveRows?: boolean } = {},
   ): EditableParsedActivity[] {
-    return extractedActivities.map((item) => {
+    const reviewActivities = options.preserveRows
+      ? extractedActivities
+      : filterCurrentPeriodParsedActivities(extractedActivities, document);
+
+    return reviewActivities.map((item) => {
       const activityTypeField = getAliasedExtractionField(item, [
         'activityType',
         'activity_type',
@@ -2011,6 +2178,7 @@ export function UploadPage() {
         'state',
         'stateProvince',
       ]);
+      const addressField = getAliasedExtractionField(item, ADDRESS_ALIASES);
       const facilityField = getAliasedExtractionField(item, SITE_FACILITY_ALIASES);
       const sourceReferenceField = getAliasedExtractionField(item, SOURCE_REFERENCE_ALIASES);
       const documentUploadDate =
@@ -2026,8 +2194,11 @@ export function UploadPage() {
       const quantityValue = Number(getFieldValue(quantityField, 0));
       const normalizedActivityType = normalizePreviewActivityType(activityTypeField);
       const normalizedCountry = normalizePreviewCountry(countryField);
-      const normalizedProvince = normalizePreviewProvince(provinceField);
-      const normalizedFacility = normalizePreviewSiteFacility(facilityField);
+      const normalizedProvince =
+        normalizePreviewProvince(provinceField) || extractProvinceFromAddress(addressField);
+      const normalizedFacility = isSpreadsheetFileName(document.fileName)
+        ? normalizePreviewSiteFacility(facilityField)
+        : '';
       const rawSourceReferenceValue = formatSourceReference(sourceReferenceField, document.fileName);
       const sourceReferenceLooksLikeFacility =
         !normalizedFacility &&
@@ -2084,9 +2255,12 @@ export function UploadPage() {
           value: sourceReferenceValue,
           confidence: extractFieldConfidence(sourceReferenceField),
         },
+        sourceSheetName: formatOptionalExtractionField(item.sourceSheetName) || null,
         sourcePage: getFieldValue(item.sourcePage, null) as string | number | null,
         sourceRow: getFieldValue(item.sourceRow, null) as string | number | null,
         sourceTextSnippet: formatOptionalExtractionField(item.sourceTextSnippet),
+        costCad: normalizeOptionalImportCost(item.costCad) ?? null,
+        costCurrency: normalizeOptionalImportString(item.costCurrency) ?? null,
         matchingStatus: item.matchingStatus ?? null,
         reportTreatment: item.reportTreatment ?? null,
         scope: item.scope ?? null,
@@ -2100,6 +2274,16 @@ export function UploadPage() {
         matchedFactorValue: Number.isFinite(Number(item.matchedFactorValue))
           ? Number(item.matchedFactorValue)
           : null,
+        matchedFactorUnit: item.matchedFactorUnit ?? null,
+        matchedFactorVersion: item.matchedFactorVersion ?? null,
+        matchedFactorSourceAuthority: item.matchedFactorSourceAuthority ?? null,
+        matchedFactorSourceDocument: item.matchedFactorSourceDocument ?? null,
+        matchedFactorSourceUrl: item.matchedFactorSourceUrl ?? null,
+        matchedFactorVerificationStatus: item.matchedFactorVerificationStatus ?? null,
+        matchedFactorConfidenceLevel: item.matchedFactorConfidenceLevel ?? null,
+        matchedFactorAssumptions: item.matchedFactorAssumptions ?? null,
+        factorSelectionReason: item.factorSelectionReason ?? null,
+        factorSelectionExplanation: item.factorSelectionExplanation ?? null,
         calculatedEmissionsKgCO2e: Number.isFinite(Number(item.calculatedEmissionsKgCO2e))
           ? Number(item.calculatedEmissionsKgCO2e)
           : null,
@@ -2116,6 +2300,37 @@ export function UploadPage() {
         ),
       };
     });
+  }
+
+  async function buildSpreadsheetDraftRowsFromSavedReviewRows(
+    rows: SpreadsheetReviewRowInput[],
+    document: { id: string; fileName: string; createdAt?: string | null },
+  ) {
+    return buildEditableParsedActivities(
+      rows.map((row) => ({
+        ...row,
+        country: row.jurisdictionCountry,
+        province: row.jurisdictionRegion,
+        date: row.recordDate,
+        amount: row.quantity,
+        sourceTextSnippet:
+          row.notes ||
+          row.sourceReference ||
+          row.sourceSheetName ||
+          row.sourceFileName ||
+          '',
+      })),
+      document,
+      { preserveRows: true },
+    );
+  }
+
+  function getSpreadsheetSaveReviewMessage(rows: EditableParsedActivity[]) {
+    const summary = buildDraftRowAuditSummary(rows);
+    const importableLabel = summary.importableCount === 1 ? 'record' : 'records';
+    const reviewLabel = summary.requiresReviewCount === 1 ? 'row' : 'rows';
+
+    return `Spreadsheet rows saved for review. ${summary.importableCount} ${importableLabel} ready to import; ${summary.requiresReviewCount} source ${reviewLabel} remain in Input Review.`;
   }
 
   function loadSampleWorkspace() {
@@ -2217,9 +2432,6 @@ export function UploadPage() {
     setSuccessMessage(null);
     setError(null);
 
-    if (files[0]) {
-      setDocumentType(expectsSpreadsheet ? 'SPREADSHEET' : getDocumentTypeFromFile(files[0]));
-    }
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -2312,7 +2524,6 @@ ${sampleRows.join('\n')}`,
     });
 
     setSelectedFiles([file]);
-    setDocumentType('SPREADSHEET');
     setReplacementSourceDocument(null);
     setError(null);
     setSuccessMessage('Sample CSV loaded. Click Extract Data.');
@@ -2361,7 +2572,6 @@ ${sampleRows.join('\n')}`,
     );
 
     setSelectedFiles([file]);
-    setDocumentType('SPREADSHEET');
     setReplacementSourceDocument(null);
     setError(null);
     setSuccessMessage('Sample JSON loaded. Click Extract Data.');
@@ -2394,27 +2604,48 @@ ${sampleRows.join('\n')}`,
     URL.revokeObjectURL(url);
   }
 
-  async function handleManualOrSpreadsheetSave(result?: {
-    source: 'manual' | 'spreadsheet';
-    sourceDocumentId?: string;
-  }) {
+  async function handleManualOrSpreadsheetSave(result?: ExcelInputTableSaveResult) {
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
 
     if (result?.source === 'spreadsheet') {
       try {
         const data = await getDocuments();
-        setDocuments(data.items ?? []);
+        const refreshedDocuments = data.items ?? [];
+        setDocuments(refreshedDocuments);
         if (result.sourceDocumentId) {
+          const sourceDocument =
+            refreshedDocuments.find((document) => document.id === result.sourceDocumentId) ?? {
+              id: result.sourceDocumentId,
+              fileName:
+                result.sourceDocumentFileName ??
+                result.savedReviewRows?.find((row) => row.sourceFileName)?.sourceFileName ??
+                'Spreadsheet import',
+              createdAt: null,
+            };
           setLatestDocumentId(result.sourceDocumentId);
           setLastSavedSpreadsheetDocumentId(result.sourceDocumentId);
           setLastImportedDocumentIds([result.sourceDocumentId]);
           setSelectedDocumentIds([result.sourceDocumentId]);
-          setPreviewDocumentId(null);
-          setPreviewDocumentIds([]);
-          setParsedActivities([]);
+
+          if (result.savedReviewRows?.length) {
+            const draftRows = await buildSpreadsheetDraftRowsFromSavedReviewRows(
+              result.savedReviewRows,
+              sourceDocument,
+            );
+            setParsedActivities(draftRows);
+            setPreviewDocumentId(result.sourceDocumentId);
+            setPreviewDocumentIds([result.sourceDocumentId]);
+            setSuccessMessage(getSpreadsheetSaveReviewMessage(draftRows));
+          } else {
+            setPreviewDocumentId(null);
+            setPreviewDocumentIds([]);
+            setParsedActivities([]);
+            setSuccessMessage('Spreadsheet rows saved for review.');
+          }
+        } else {
+          setSuccessMessage('Spreadsheet rows saved for review.');
         }
-        setSuccessMessage('Spreadsheet rows saved for review.');
         setError(null);
         focusReviewSection();
       } catch {
@@ -2438,12 +2669,6 @@ ${sampleRows.join('\n')}`,
       return;
     }
 
-    if (!documentType) {
-      setError('Please select a document type before extracting data.');
-      setSuccessMessage(null);
-      return;
-    }
-
     const shouldExtractAfterUpload = options?.extractAfterUpload ?? false;
 
     setUploading(true);
@@ -2463,7 +2688,7 @@ ${sampleRows.join('\n')}`,
         try {
           const uploadedDocument = await uploadDocument({
             file,
-            type: selectedFiles.length > 1 ? getDocumentTypeFromFile(file) : documentType,
+            type: getDocumentTypeFromFile(file),
           });
           uploadedDocuments.push(uploadedDocument);
           trackWorkflowEvent({
@@ -2757,7 +2982,6 @@ ${sampleRows.join('\n')}`,
       case 'uploadAgain':
         setActiveInputMethod('documents');
         setReplacementSourceDocument(doc);
-        setDocumentType(isSpreadsheetSourceDocument(doc) ? 'SPREADSHEET' : doc.type);
         setSuccessMessage(`Select a replacement file for ${doc.fileName}, then click Extract Data.`);
         setError(null);
         window.setTimeout(() => fileInputRef.current?.click(), 0);
@@ -2823,6 +3047,7 @@ ${sampleRows.join('\n')}`,
           fileName: doc.fileName,
           createdAt: doc.createdAt,
         },
+        { preserveRows: isSpreadsheetFileName(doc.fileName) },
       ));
 
       if (extractedRows.length === 0) {
@@ -3281,7 +3506,7 @@ ${sampleRows.join('\n')}`,
       const firstSelectedIssue = getImportValidationIssues(rowsForConfirm).find(
         (issue) => rowsForConfirm[issue.rowIndex]?.selected,
       );
-      setError('Selected rows contain blocking errors. Select Ready rows or fix errors.');
+      setError('Selected rows contain blocking errors. Select calculated rows or fix errors.');
       setSuccessMessage(null);
       scrollToImportValidation(firstSelectedIssue);
       return;
@@ -3346,14 +3571,11 @@ ${sampleRows.join('\n')}`,
               : document,
           ),
         );
-        setSuccessMessage(
+        const importSuccessMessage =
           rowsLeftForReview > 0
             ? `Imported ${importedCount} sample activity record(s). ${rowsLeftForReview} row${rowsLeftForReview === 1 ? '' : 's'} were left in draft because they require review.`
-            : getImportCompletedMessage(importedCount, selectedImportSummary.trackedMetricCount),
-        );
-        if (rowsLeftForReview === 0) {
-          scheduleCalculationReviewRedirect(activeDocumentIds);
-        }
+            : getImportCompletedMessage(importedCount, selectedImportSummary.trackedMetricCount);
+        setSuccessMessage(importSuccessMessage);
         const auditSummary = buildConfirmImportAuditSummary({
           rowsForConfirm,
           importedRows: selectedActivities,
@@ -3386,6 +3608,13 @@ ${sampleRows.join('\n')}`,
             recordsRequiringReview: auditSummary.needsReviewSkipped,
             importStatus: 'IMPORTED',
           },
+        });
+        await navigateToDataRecordsAfterConfirm({
+          documentIds: activeDocumentIds,
+          importedCount,
+          trackedMetricCount: selectedImportSummary.trackedMetricCount,
+          rowsLeftForReview,
+          message: importSuccessMessage,
         });
         return;
       }
@@ -3442,7 +3671,8 @@ ${sampleRows.join('\n')}`,
           normalizedActivities,
           importBatchId,
         );
-        importedCount += result.count;
+        const createdCount = getConfirmedImportCreatedCount(result);
+        importedCount += createdCount;
         createdActivityIds.push(...(result.createdIds ?? []));
         const createdRecordKeys = new Set(result.createdRecordKeys ?? []);
         if (createdRecordKeys.size > 0) {
@@ -3456,7 +3686,7 @@ ${sampleRows.join('\n')}`,
           );
         } else {
           importedSourceActivities.push(
-            ...importablePairs.slice(0, result.count).map(({ item }) => item),
+            ...importablePairs.slice(0, createdCount).map(({ item }) => item),
           );
         }
       }
@@ -3472,7 +3702,7 @@ ${sampleRows.join('\n')}`,
             ),
           );
         }
-        setSuccessMessage('No new Ready records to import.');
+        setSuccessMessage('No new records were imported.');
         setConfirmingId(null);
         return;
       }
@@ -3540,8 +3770,19 @@ ${sampleRows.join('\n')}`,
           setPreviewDocumentId(null);
           setPreviewDocumentIds([]);
           setParsedActivities([]);
-          setSuccessMessage(getImportCompletedMessage(importedCount, selectedImportSummary.trackedMetricCount));
-          scheduleCalculationReviewRedirect(activeDocumentIds);
+          const importSuccessMessage = getImportCompletedMessage(
+            importedCount,
+            selectedImportSummary.trackedMetricCount,
+          );
+          setSuccessMessage(importSuccessMessage);
+          await navigateToDataRecordsAfterConfirm({
+            documentIds: activeDocumentIds,
+            importedCount,
+            trackedMetricCount: selectedImportSummary.trackedMetricCount,
+            rowsLeftForReview,
+            createdActivityIds,
+            message: importSuccessMessage,
+          });
         } else {
           setParsedActivities(remainingRows);
           setPreviewDocumentIds(remainingDocumentIds);
@@ -3552,13 +3793,21 @@ ${sampleRows.join('\n')}`,
               ? remainingDocumentIds[0]
               : 'MULTIPLE',
           );
-          setSuccessMessage(
+          const importSuccessMessage =
             `Imported ${importedCount} activity record(s). ${rowsLeftForReview} row${rowsLeftForReview === 1 ? '' : 's'} were left in draft because they require review. Generated emissions metrics.${
               estimatedDateCount > 0
                 ? ` ${estimatedDateCount} imported row${estimatedDateCount === 1 ? ' used an' : 's used'} estimated date.`
                 : ''
-            }`,
-          );
+            }`;
+          setSuccessMessage(importSuccessMessage);
+          await navigateToDataRecordsAfterConfirm({
+            documentIds: activeDocumentIds,
+            importedCount,
+            trackedMetricCount: selectedImportSummary.trackedMetricCount,
+            rowsLeftForReview,
+            createdActivityIds,
+            message: importSuccessMessage,
+          });
         }
       } catch {
         if (remainingRows.length > 0) {
@@ -3574,16 +3823,25 @@ ${sampleRows.join('\n')}`,
           setError(
             `Imported ${importedCount} activity record(s), but emissions metrics could not be generated automatically. ${rowsLeftForReview} row${rowsLeftForReview === 1 ? '' : 's'} were left in draft because they require review.`,
           );
+          await navigateToDataRecordsAfterConfirm({
+            documentIds: activeDocumentIds,
+            importedCount,
+            trackedMetricCount: selectedImportSummary.trackedMetricCount,
+            rowsLeftForReview,
+            createdActivityIds,
+            message: `Imported ${importedCount} activity record(s), but emissions metrics could not be generated automatically.`,
+          });
         } else {
-          setError(
-            'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
-          );
-          navigate('/metrics-summary', {
-            state: {
-              ...buildImportReviewRouteState(activeDocumentIds),
-              metricsError:
-                'Imported activity records, but emissions metrics could not be generated automatically. Calculation Review will retry automatically, or you can use Refresh.',
-            },
+          const metricsErrorMessage =
+            'Imported activity records, but emissions metrics could not be generated automatically.';
+          setError(metricsErrorMessage);
+          await navigateToDataRecordsAfterConfirm({
+            documentIds: activeDocumentIds,
+            importedCount,
+            trackedMetricCount: selectedImportSummary.trackedMetricCount,
+            rowsLeftForReview,
+            createdActivityIds,
+            message: metricsErrorMessage,
           });
         }
       } finally {
@@ -3633,6 +3891,18 @@ ${sampleRows.join('\n')}`,
       matchedFactorName: payload.matchedFactorName ?? item.matchedFactorName,
       matchedFactorSourceYear: payload.matchedFactorSourceYear ?? item.matchedFactorSourceYear,
       matchedFactorValue: payload.matchedFactorValue ?? item.matchedFactorValue,
+      matchedFactorUnit: payload.matchedFactorUnit ?? item.matchedFactorUnit,
+      matchedFactorVersion: payload.matchedFactorVersion ?? item.matchedFactorVersion,
+      matchedFactorSourceAuthority: payload.matchedFactorSourceAuthority ?? item.matchedFactorSourceAuthority,
+      matchedFactorSourceDocument: payload.matchedFactorSourceDocument ?? item.matchedFactorSourceDocument,
+      matchedFactorSourceUrl: payload.matchedFactorSourceUrl ?? item.matchedFactorSourceUrl,
+      matchedFactorVerificationStatus:
+        payload.matchedFactorVerificationStatus ?? item.matchedFactorVerificationStatus,
+      matchedFactorConfidenceLevel:
+        payload.matchedFactorConfidenceLevel ?? item.matchedFactorConfidenceLevel,
+      matchedFactorAssumptions: payload.matchedFactorAssumptions ?? item.matchedFactorAssumptions,
+      factorSelectionReason: payload.factorSelectionReason ?? item.factorSelectionReason,
+      factorSelectionExplanation: payload.factorSelectionExplanation ?? item.factorSelectionExplanation,
       calculatedEmissionsKgCO2e: payload.calculatedEmissionsKgCO2e ?? item.calculatedEmissionsKgCO2e,
     };
   }
@@ -3695,7 +3965,7 @@ ${sampleRows.join('\n')}`,
       skippedCount: skippedIds.size,
       message:
         createdIds.length === 0
-          ? 'No new Ready records to import.'
+          ? 'No new calculated records to import.'
           : undefined,
     };
   }
@@ -3827,7 +4097,7 @@ ${sampleRows.join('\n')}`,
     const explicitStatus = getExplicitReviewStatus(item);
 
     if (isUntouchedDefaultParsedActivity(item)) return 'Draft';
-    if (explicitStatus === 'READY') return 'Ready';
+    if (explicitStatus === 'READY') return 'Calculated';
     if (explicitStatus === 'TRACKED_ONLY') return 'Tracked Metric';
     if (classification === 'TRACKED_METRIC') return 'Tracked Metric';
     if (
@@ -3852,9 +4122,9 @@ ${sampleRows.join('\n')}`,
     }
     if (issues.some((issue) => issue.field === 'jurisdictionRegion')) return 'Missing Province';
     if (issues.some((issue) => issue.field === 'unit')) return 'Unit Mismatch';
-    if (isCanonicalReadyReviewRow(item)) return 'Ready';
+    if (isCanonicalReadyReviewRow(item)) return 'Calculated';
     if (storedReviewLabel) return storedReviewLabel;
-    return issues.length > 0 ? 'Needs Review' : 'Ready';
+    return issues.length > 0 ? 'Needs Review' : 'Ready for Calculation';
   }
 
   function getRowIssueText(rowIndex: number) {
@@ -3881,8 +4151,8 @@ ${sampleRows.join('\n')}`,
   function getRowReportTreatment(rowIndex: number, item: EditableParsedActivity) {
     if (isUntouchedDefaultParsedActivity(item)) return '-';
     const classification = classifyDraftRow(item, getRowValidationIssues(rowIndex));
-    if (classification === 'TRACKED_METRIC') return 'Tracked Only';
-    if (classification === 'READY') return 'Included';
+    if (classification === 'TRACKED_METRIC') return 'Tracked Metric';
+    if (classification === 'READY') return 'Included in GHG Total';
     return 'Excluded';
   }
 
@@ -3915,7 +4185,7 @@ ${sampleRows.join('\n')}`,
 
     const label = getStoredReviewLabel(item);
     if (label === 'Unit Mismatch') return 'A matching activity factor exists, but it uses a different unit.';
-    if (label === 'Missing Factor') return 'No matching conversion factor is available for this record.';
+    if (label === 'Missing Factor') return 'No matching emission factor is available for this record.';
     if (label === 'Missing Province') return 'Electricity records require province before factor matching.';
     if (label === 'Needs Review') return 'This row must be reviewed before import.';
 
@@ -3941,11 +4211,11 @@ ${sampleRows.join('\n')}`,
     if (parsedActivities.length === 0) return 'No importable records found.';
     if (selectedParsedActivitiesCount === 0) {
       return importableParsedActivities.length > 0
-        ? 'Select at least one Ready record or tracked metric to import.'
+        ? 'Select at least one calculated record or tracked metric to import.'
         : 'No importable records found.';
     }
     if (selectedImportableActivitiesCount === 0) {
-      return 'Selected rows contain blocking errors. Select Ready rows or fix errors.';
+      return 'Selected rows contain blocking errors. Select calculated rows or fix errors.';
     }
 
     return undefined;
@@ -4060,7 +4330,7 @@ ${sampleRows.join('\n')}`,
 
     return `Import completed successfully. The selected records have been saved as Data Records. ${detailParts.join(
       '. ',
-    )}. Redirecting to Calculation Review...`;
+    )}. Opening Data Records...`;
   }
 
   function renderSuccessMessage(message: string) {
@@ -4098,16 +4368,48 @@ ${sampleRows.join('\n')}`,
       : undefined;
   }
 
-  function scheduleCalculationReviewRedirect(documentIds = lastImportedDocumentIds) {
-    if (importRedirectTimerRef.current) {
-      window.clearTimeout(importRedirectTimerRef.current);
-    }
+  async function invalidatePostConfirmImportQueries() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['activity-data'] }),
+      queryClient.invalidateQueries({ queryKey: ['documents'] }),
+      queryClient.invalidateQueries({ queryKey: ['document-extraction'] }),
+      queryClient.invalidateQueries({ queryKey: ['input-review'] }),
+      queryClient.invalidateQueries({ queryKey: ['upload'] }),
+      queryClient.invalidateQueries({ queryKey: ['import'] }),
+      queryClient.invalidateQueries({ queryKey: ['metrics'] }),
+      queryClient.invalidateQueries({ queryKey: ['reports'] }),
+      queryClient.invalidateQueries({ queryKey: ['home', 'emissions'] }),
+    ]);
+  }
 
-    importRedirectTimerRef.current = window.setTimeout(() => {
-      navigate('/calculation-review', {
-        state: buildImportReviewRouteState(documentIds),
-      });
-    }, 1200);
+  async function navigateToDataRecordsAfterConfirm({
+    documentIds,
+    importedCount,
+    trackedMetricCount,
+    rowsLeftForReview,
+    createdActivityIds = [],
+    message,
+  }: {
+    documentIds: string[];
+    importedCount: number;
+    trackedMetricCount: number;
+    rowsLeftForReview: number;
+    createdActivityIds?: string[];
+    message: string;
+  }) {
+    if (importedCount <= 0) return;
+
+    await invalidatePostConfirmImportQueries();
+    navigate(DATA_RECORDS_ROUTE, {
+      state: {
+        flashMessage: message,
+        sourceDocumentIds: Array.from(new Set(documentIds)),
+        importedActivityIds: createdActivityIds,
+        importedCount,
+        trackedMetricCount,
+        rowsLeftForReview,
+      },
+    });
   }
 
   function isUnsupportedPilotProvinceIssue(message?: string) {
@@ -4341,13 +4643,12 @@ ${sampleRows.join('\n')}`,
 
       <section
         style={workflowCardStyle}
-        aria-label="CarbonLite input workflow: Input Data to Review Data to Save Records to Data Records to Calculation Review to Reports"
+        aria-label={`CarbonLite workflow: ${CARBONLITE_WORKFLOW_STAGE_COUNT} canonical stages`}
       >
         <div style={workflowHeaderStyle}>
-          <h2 style={workflowTitleStyle}>How activity data moves through CarbonLite</h2>
+          <h2 style={workflowTitleStyle}>{formatWorkflowStageLabel(inputDataStage)}</h2>
           <p style={workflowTextStyle}>
-            CarbonLite helps organize activity data, review records, match emission factors,
-            trace calculations, and generate pilot-stage reports.
+            Input Data is the upload and entry workspace for the canonical CarbonLite workflow. Data contributors upload source data here; CarbonLite extracts and stages rows for review before records feed factor validation, calculation review, results review, and reports.
           </p>
           {pilotReviewerReadOnly ? (
             <p style={workflowReviewerNoteStyle}>
@@ -4356,12 +4657,12 @@ ${sampleRows.join('\n')}`,
           ) : null}
         </div>
         <ol style={workflowStepsStyle}>
-          {inputWorkflowSteps.map((step, index) => (
+          {CARBONLITE_WORKFLOW.map((step) => (
             <li key={step.title} style={workflowStepStyle}>
-              <span style={workflowStepNumberStyle}>{index + 1}</span>
+              <span style={workflowStepNumberStyle}>{step.step}</span>
               <span style={workflowStepContentStyle}>
                 <strong>{step.title}</strong>
-                <span>{step.detail}</span>
+                <span>{step.primaryRole}</span>
               </span>
             </li>
           ))}
@@ -4430,6 +4731,18 @@ ${sampleRows.join('\n')}`,
         ))}
       </div> : null}
 
+      {!pilotReviewerReadOnly ? (
+        <div style={dataHandlingNoticeStyle}>
+          <strong>Data handling notice</strong>
+          <span>
+            Upload only information you are authorized to provide. CarbonLite processes source files to
+            extract operational rows, calculate emissions, and prepare review outputs. Workspace access is
+            controlled by organization membership and role; avoid unnecessary personal or sensitive
+            information in uploaded files.
+          </span>
+        </div>
+      ) : null}
+
       {!pilotReviewerReadOnly ? <div style={sampleBannerStyle}>
         <div>
           <strong>{sampleWorkspaceLoaded ? 'Example workspace loaded' : 'Try sample data'}</strong>
@@ -4484,28 +4797,6 @@ ${sampleRows.join('\n')}`,
             </span>
           </div>
 
-          <div>
-            <label style={documentTypeLabelStyle}>
-              Document Type
-            </label>
-            <div style={documentTypeSelectWrapStyle}>
-              <select
-                value={documentType}
-                onChange={(e) => setDocumentType(e.target.value)}
-                aria-label="Document Type"
-                style={documentTypeSelectStyle}
-              >
-                <option value="">Select document type</option>
-                {UPLOAD_DOCUMENT_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <span aria-hidden="true" style={documentTypeSelectArrowStyle} />
-            </div>
-          </div>
-
            <input
             ref={fileInputRef}
             id="document-upload-input"
@@ -4531,8 +4822,8 @@ ${sampleRows.join('\n')}`,
             </div>
           ) : null}
 
-          <div style={uploadWorkflowStyle}>
-            {['Select document', 'Extract data', 'Review results', 'Import records', 'Generate reports'].map((step, index) => (
+          <div style={uploadWorkflowStyle} aria-label="Input Data local steps">
+            {['Select source document', 'Extract activity data', 'Review parser results', 'Save rows for review'].map((step, index) => (
               <div key={step} style={uploadWorkflowStepStyle}>
                 <span style={uploadWorkflowNumberStyle}>{index + 1}</span>
                 <span>{step}</span>
@@ -4544,13 +4835,11 @@ ${sampleRows.join('\n')}`,
             <button
               type="button"
               onClick={handleUploadAndExtract}
-              disabled={isProcessing || selectedFiles.length === 0 || !documentType || !canUploadData}
-              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0 || !documentType || !canUploadData)}
+              disabled={isProcessing || selectedFiles.length === 0 || !canUploadData}
+              style={primaryButtonStyle(isProcessing || selectedFiles.length === 0 || !canUploadData)}
               title={
                 !canUploadData
                   ? getUploadPermissionDeniedReason(currentUser)
-                  : !documentType
-                  ? 'Select a document type before extracting data.'
                   : selectedFiles.length === 0
                   ? 'Select a document before extracting data.'
                   : 'Upload the selected document and extract activity data.'
@@ -4914,7 +5203,7 @@ ${sampleRows.join('\n')}`,
                 Extracted rows: {parsedActivities.length}
               </p>
               <p style={importReviewCountsStyle}>
-                Ready: {readyImportableCount} · Tracked metrics: {trackedImportableCount} · Requires review: {rowsRequiringReviewCount} · Selected for import: {selectedImportableActivitiesCount}
+          Calculated: {readyImportableCount} · Tracked metrics: {trackedImportableCount} · Requires review: {rowsRequiringReviewCount} · Selected for import: {selectedImportableActivitiesCount}
               </p>
               <p style={{ marginTop: 8, color: '#999' }}>
                 {previewSourceSummary}
@@ -5358,9 +5647,9 @@ ${sampleRows.join('\n')}`,
                     <td style={previewTdStyle}>
                       <span
                         style={
-                          rowReportTreatment === 'Included'
+                          rowReportTreatment === 'Included in GHG Total'
                             ? includedTreatmentStyle
-                            : rowReportTreatment === 'Tracked Only'
+                            : rowReportTreatment === 'Tracked Metric'
                             ? trackedTreatmentStyle
                             : excludedTreatmentStyle
                         }
@@ -5603,6 +5892,17 @@ const sampleBannerStyle: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
+const dataHandlingNoticeStyle: React.CSSProperties = {
+  ...sampleBannerStyle,
+  alignItems: 'flex-start',
+  justifyContent: 'flex-start',
+  gap: 8,
+  marginBottom: 20,
+  flexDirection: 'column',
+  fontSize: 13,
+  lineHeight: 1.5,
+};
+
 const methodTabsStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
@@ -5779,47 +6079,6 @@ function linkButtonStyle(disabled: boolean): React.CSSProperties {
     textUnderlineOffset: 3,
   };
 }
-
-const documentTypeLabelStyle: React.CSSProperties = {
-  display: 'block',
-  marginBottom: 8,
-  color: '#0f172a',
-  fontSize: 14,
-  fontWeight: 700,
-};
-
-const documentTypeSelectWrapStyle: React.CSSProperties = {
-  position: 'relative',
-  maxWidth: 420,
-};
-
-const documentTypeSelectStyle: React.CSSProperties = {
-  width: '100%',
-  minHeight: 46,
-  padding: '10px 44px 10px 14px',
-  borderRadius: 10,
-  border: `1px solid ${inputReviewPalette.border}`,
-  background: inputReviewPalette.white,
-  color: inputReviewPalette.primaryText,
-  fontSize: 15,
-  fontWeight: 700,
-  cursor: 'pointer',
-  appearance: 'none',
-  outlineColor: inputReviewPalette.primaryGreen,
-};
-
-const documentTypeSelectArrowStyle: React.CSSProperties = {
-  position: 'absolute',
-  right: 16,
-  top: '50%',
-  width: 0,
-  height: 0,
-  borderLeft: '6px solid transparent',
-  borderRight: '6px solid transparent',
-  borderTop: '7px solid #0f172a',
-  transform: 'translateY(-35%)',
-  pointerEvents: 'none',
-};
 
 const uploadDropzoneStyle = (
   isDragging: boolean,
@@ -6180,7 +6439,7 @@ const useSuggestionButtonStyle: React.CSSProperties = {
 };
 
 function rowStatusBadgeStyle(status: string): React.CSSProperties {
-  const isReady = status === 'Ready';
+  const isReady = status === 'Calculated' || status === 'Ready for Calculation';
   const isTrackedMetric = status === 'Tracked Metric';
   const isReview = ['Needs Review', 'Missing Province', 'Missing Factor'].includes(status);
 
