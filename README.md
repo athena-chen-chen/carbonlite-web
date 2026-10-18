@@ -65,7 +65,7 @@ The test starts from the login page and uses local demo credentials from:
 
 ```bash
 CARBONLITE_DEMO_EMAIL=pilot@carbonliteapp.ca
-CARBONLITE_DEMO_PASSWORD=password123
+CARBONLITE_DEMO_PASSWORD=REPLACE_WITH_DEDICATED_DEMO_PASSWORD
 ```
 
 The smoke test uses a deterministic Playwright API mock. It does not call AI

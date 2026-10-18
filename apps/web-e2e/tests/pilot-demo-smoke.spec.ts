@@ -14,7 +14,7 @@ const fixturePath = path.resolve(
 );
 
 const demoEmail = process.env.CARBONLITE_DEMO_EMAIL ?? 'pilot@carbonliteapp.ca';
-const demoPassword = process.env.CARBONLITE_DEMO_PASSWORD ?? 'password123';
+const demoPassword = process.env.CARBONLITE_DEMO_PASSWORD ?? 'mock-only-pilot-password';
 
 test('@pilot-daily CarbonLite Pilot Demo v0.1 golden smoke workflow', async ({ page }) => {
   const api = createPilotDemoApiState();
