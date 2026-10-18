@@ -665,7 +665,7 @@ describe('pilot CSV export', () => {
       'Factor Jurisdiction': 'Canada (Generic)',
       'Factor Source Authority': 'Environment and Climate Change Canada',
       'Factor Source Year': 2025,
-      'Factor Version': 'ECCC_EPR_2025_TABLE_A8',
+      'Factor Version': '',
       'Factor Selection Reason': 'GENERIC_JURISDICTION_FALLBACK',
       'Factor Selection Explanation':
         'Natural Gas and GJ matched directly. No Alberta-specific direct GJ factor was available, so the 2025 Canada-generic factor was selected.',
@@ -770,5 +770,27 @@ describe('pilot CSV export', () => {
     expect(scope2).toBe(33247);
     expect(scope3).toBe(725);
     expect(total).toBe(37285);
+  });
+
+  it('accepts the canonical report snapshot as the CSV export input', () => {
+    const report = { calculationDetails: goldenDetails };
+
+    expect(buildPilotCsvRows(report)).toEqual(buildPilotCsvRows(goldenDetails));
+    expect(buildPilotCsv(report)).toBe(buildPilotCsv(goldenDetails));
+  });
+});
+
+
+describe('CSV factor version semantics', () => {
+  it.each(['demo-2025-kwh-alberta', 'ECCC_EPR_2025_TABLE_A8', 'cmv8vg8eu0009gd3sxfn0w9z7'])('leaves audited keys and opaque IDs blank: %s', factorVersion => {
+    const rows = buildPilotCsvRows([calculatedDetail({ factorVersion, factorProvenance: { factorVersion, sourceVersion: 'v1.0', factorYear: 2025 } })]);
+    expect(rows[0]['Factor Version']).toBe('');
+  });
+  it('keeps factor identifiers and document versions out of the Factor Version column', () => {
+    const detail = calculatedDetail({ activityDataId: 'manual-version', activityType: 'ELECTRICITY', activityQuantity: 980, activityUnit: 'kWh', factorName: 'Electricity - Alberta', factorValue: .53, calculatedEmissionsKgCO2e: 519.4 });
+    const rows = buildPilotCsvRows([{ ...detail, factorId: 'demo-2025-kwh-alberta', factorVersion: null, sourceDocument: 'Default Factors v1.0', factorProvenance: { sourceVersion: 'v1.0' } }]);
+    expect(rows[0]['Factor Version']).toBe('');
+    const versioned = buildPilotCsvRows([{ ...detail, factorVersion: '2.1', factorProvenance: { sourceVersion: '3.2' } }]);
+    expect(versioned[0]['Factor Version']).toBe('2.1');
   });
 });

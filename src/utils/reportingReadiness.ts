@@ -163,9 +163,9 @@ function buildSourceDataReviewedItem(summary?: SourceReviewReadinessSummary | nu
 
   return withWorkflowStage('SOURCE_DATA', {
     code: 'SOURCE_REVIEW_COMPLETE',
-    label: 'Source data reviewed',
+    label: 'Structured source rows reviewed',
     status: 'COMPLETE',
-    evidence: `${summary.totalRows} source ${summary.totalRows === 1 ? 'row was' : 'rows were'} reviewed.`,
+    evidence: `${summary.totalRows} structured source ${summary.totalRows === 1 ? 'row was' : 'rows were'} reviewed.`,
     critical: false,
   });
 }
@@ -273,13 +273,11 @@ function buildFactorsReviewedItem(calculationDetails: CalculationAuditDetail[]):
     label: 'Emission factors reviewed',
     status: requiringReview.length === 0 ? 'COMPLETE' : 'NEEDS_ATTENTION',
     evidence: requiringReview.length === 0
-      ? `All ${usedFactors.length} used ${usedFactors.length === 1 ? 'factor has' : 'factors have'} reviewed or verified status.`
-      : `${usedFactors.length} ${usedFactors.length === 1 ? 'factor is' : 'factors are'} used; ${requiringReview.length} ${requiringReview.length === 1 ? 'requires' : 'require'} review before formal use.`,
+      ? `All ${usedFactors.length} record-level factor usages have reviewed or verified status.`
+      : `${usedFactors.length} calculated ${usedFactors.length === 1 ? 'record uses an emission factor' : 'records use emission factors'}; ${requiringReview.length} record-level factor ${requiringReview.length === 1 ? 'usage requires' : 'usages require'} review before formal use.`,
     action: requiringReview.length === 0
       ? undefined
-      : requiringReview.length === 1
-        ? 'Review or replace the pilot-stage emission factor.'
-        : `Review or replace ${requiringReview.length} pilot or unreviewed factors.`,
+      : 'Review all factors and replace pilot-stage factors where appropriate.',
     critical: true,
   });
 }
@@ -333,7 +331,7 @@ function buildTraceabilityItem(calculationDetails: CalculationAuditDetail[]): Re
       : `${calculatedDetails.length - incomplete.length} of ${calculatedDetails.length} calculated emissions ${calculatedDetails.length === 1 ? 'record has' : 'records have'} required source, factor, and result lineage.`,
     action: incomplete.length === 0
       ? undefined
-      : `Add missing source, factor, or calculation lineage for ${incomplete.length} calculated ${incomplete.length === 1 ? 'record' : 'records'}.`,
+      : `Add missing lineage: ${incomplete.map((detail) => `${detail.activityDataId}: ${getCalculationTraceabilityGaps(detail).join(', ')}`).join('; ')}.`,
     critical: true,
   });
 }
@@ -433,24 +431,33 @@ function factorRequiresReview(detail: CalculationAuditDetail) {
   return !detail.factorVerified && !['REVIEWED', 'VERIFIED', 'OFFICIAL_SOURCE', 'OFFICIAL'].includes(verification);
 }
 
-function hasCalculationTraceability(detail: CalculationAuditDetail) {
-  const hasSource = Boolean(
-    detail.sourceReference ||
-      detail.sourceFileName ||
-      detail.sourceDocumentId ||
-      detail.sourceTextSnippet,
-  );
-  const hasFactorIdentity = Boolean(detail.factorId || detail.factorVersionId || detail.factorName);
-  const hasFactorProvenance = Boolean(
-    detail.factorValue !== null &&
-      detail.factorValue !== undefined &&
-      (detail.factorVersion || detail.sourceAuthority || detail.sourceDocument || detail.sourceYear),
-  );
-  const hasResult = Number.isFinite(
-    Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission),
-  );
+export function getCalculationTraceabilityGaps(detail: CalculationAuditDetail): string[] {
+  const gaps: string[] = [];
+  const sourceType = String(detail.sourceType ?? '').trim().toUpperCase();
+  if (sourceType === 'MANUAL') {
+    const origin = detail.manualSourceProvenance;
+    if (!origin?.auditId || origin.activityDataId !== detail.activityDataId) gaps.push('manual creation audit');
+    if (!origin?.actorId) gaps.push('manual creation actor');
+    if (!origin?.createdAt || !Number.isFinite(Date.parse(origin.createdAt))) gaps.push('manual creation timestamp');
+    if (!origin?.activityType || !origin.unit || !origin.recordDate ||
+        !Number.isFinite(Date.parse(origin.recordDate)) || !Number.isFinite(origin.quantity) || origin.quantity <= 0) {
+      gaps.push('original manual activity values');
+    }
+  } else if (!detail.sourceDocumentId && !detail.sourceFileName) {
+    gaps.push('source document identity');
+  }
+  if (!detail.activityDataId || !detail.activityType || !detail.recordDate || !detail.activityUnit ||
+      !Number.isFinite(Number(detail.activityQuantity)) || Number(detail.activityQuantity) <= 0) gaps.push('activity values');
+  if (!detail.factorId && !detail.factorVersionId && !detail.factorName) gaps.push('factor identity');
+  if (detail.factorValue === null || detail.factorValue === undefined || !Number.isFinite(Number(detail.factorValue)) ||
+      !(detail.factorVersion || detail.sourceAuthority || detail.sourceDocument || detail.sourceYear)) gaps.push('factor snapshot');
+  const result = detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission;
+  if (result === null || result === undefined || !Number.isFinite(Number(result))) gaps.push('calculation result');
+  return gaps;
+}
 
-  return hasSource && hasFactorIdentity && hasFactorProvenance && hasResult;
+function hasCalculationTraceability(detail: CalculationAuditDetail) {
+  return getCalculationTraceabilityGaps(detail).length === 0;
 }
 
 function normalizeGovernanceText(value?: string | null) {

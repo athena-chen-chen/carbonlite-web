@@ -1,3 +1,4 @@
+import { buildSourceEvidenceCounts, formatSourceEvidenceCounts } from '../../../reports/domain/reportSemantics';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   buildSourceEvidenceSummaryRows,
@@ -13,6 +14,7 @@ export function SourceEvidenceSection({
   sourceEvidenceRows,
 }: SourceEvidenceSectionProps) {
   const [showRecordLevelEvidence, setShowRecordLevelEvidence] = useState(false);
+  const counts = buildSourceEvidenceCounts(sourceEvidenceRows);
   const summaryRows = buildSourceEvidenceSummaryRows(sourceEvidenceRows);
   const includedCount = summaryRows.reduce((total, item) => total + item.includedRecords, 0);
   const trackedCount = summaryRows.reduce((total, item) => total + item.trackedMetrics, 0);
@@ -21,18 +23,19 @@ export function SourceEvidenceSection({
   return (
     <div style={sectionGridStyle}>
       <p style={introStyle}>
-        This section summarizes the source files and import methods used to create the activity records included in this pilot report. Detailed record-level source evidence is provided in the appendix.
+        This section summarizes the source inputs and entry/import methods used to create the activity records included in this pilot report. Detailed record-level source evidence is provided in the appendix.
       </p>
       <div style={summaryGridStyle}>
-        <SummaryItem label="Source files" value={summaryRows.length} />
+        <SummaryItem label="Source inputs" value={counts.sourceInputCount} />
         <SummaryItem label="Included GHG records" value={includedCount} />
         <SummaryItem label="Tracked operational metrics" value={trackedCount} />
         <SummaryItem label="Records requiring review" value={reviewCount} />
       </div>
+      <p style={introStyle}>{formatSourceEvidenceCounts(counts)}</p>
       <SimpleTable
         minWidth="900px"
         headers={[
-          'Source File',
+          'Source Input',
           'Source Type',
           'Import Method',
           'Record-Level References',
@@ -73,7 +76,7 @@ export function SourceEvidenceSection({
             'Quantity',
             'Unit',
             'Record Date',
-            'Source File',
+            'Source Input',
             'Source Type',
             'Import Method',
             'Source Reference',

@@ -1,3 +1,4 @@
+import type { FactorGovernance } from '../utils/factorGovernance';
 import { apiFetch } from './api';
 import { clampApiPageSize } from '../config/api';
 import {
@@ -12,7 +13,7 @@ import {
   getOrganizationId,
 } from './auth';
 
-export type ConversionFactorInput = {
+export type ConversionFactorInput = FactorGovernance & {
   name: string;
   type: string;
   factorType?: 'SYSTEM' | 'CUSTOM';
@@ -49,7 +50,7 @@ export type ConversionFactorInput = {
   isDefault?: boolean;
 };
 
-export type ConversionFactorItem = {
+export type ConversionFactorItem = FactorGovernance & {
   id: string;
   organizationId?: string | null;
   factorType?: 'SYSTEM' | 'CUSTOM' | string | null;

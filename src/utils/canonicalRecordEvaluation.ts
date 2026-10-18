@@ -111,7 +111,7 @@ function buildNeedsReviewEvaluation(input: {
   return {
     status: 'NEEDS_REVIEW',
     issues: input.issues,
-    matchingStatus: input.matchingStatus ?? status,
+    matchingStatus: input.matchingStatus ?? (status === 'CALCULATED' ? 'MATCHED' : status),
     calculationStatus: status,
     reportTreatment: 'EXCLUDED',
     importEligible: false,

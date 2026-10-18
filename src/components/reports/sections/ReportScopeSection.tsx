@@ -9,12 +9,12 @@ type ReportScopeSectionProps = {
   draftPeriodStart: string;
   draftPeriodEnd: string;
   loading: boolean;
-  fullYearShortcutYears: number[];
+  fullYearShortcutYears: string[];
   onReportScopeChange: (scope: ReportScope) => void;
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
   onCommitDateRange: () => void;
-  onFullYear: (year: number) => void;
+  onFullYear: (year: string) => void;
   styles: {
     filterCard: CSSProperties;
     label: CSSProperties;

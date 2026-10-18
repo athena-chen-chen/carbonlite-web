@@ -1,3 +1,4 @@
+import { getDisplayFactorVersionLines } from '../../../utils/factorProvenanceDisplay';
 import type { CSSProperties, ReactNode } from 'react';
 import type { FormalConversionFactorUsed } from '../../FormalReportPreview';
 import {
@@ -10,7 +11,6 @@ import {
   formatReportFactorSource,
   formatReportFactorSummaryVerification,
   formatReportFactorUnit,
-  formatReportFactorVersion,
   formatReportVerification,
 } from '../../../utils/reportCredibility';
 
@@ -56,7 +56,7 @@ export function EmissionFactorsUsedSection({
           <h4 style={subsectionTitleStyle}>Factor Details / Assumptions</h4>
           <div style={factorDetailsGridStyle}>
             {conversionFactorsUsed.map((factor) => (
-              <section key={factor.factorId || factor.factorName} style={factorDetailBlockStyle}>
+              <section key={factor.factorVersionId || `${factor.factorId || factor.factorName}::${factor.factorVersion || ""}`} style={factorDetailBlockStyle}>
                 <div style={factorDetailTitleStyle}>
                   {getFactorDisplayName(factor.factorName) || getActivityTypeLabel(factor.activityType)}
                 </div>
@@ -64,7 +64,10 @@ export function EmissionFactorsUsedSection({
                   <Detail label="Value" value={`${formatFactorValue(factor.factorValue)} ${formatReportFactorUnit(factor.resultUnit, factor.inputUnit)}`} />
                   <Detail label="Source" value={formatReportFactorSource(factor)} />
                   <Detail label="Source URL" value={factor.sourceUrl || 'Not specified'} />
-                  <Detail label="Version" value={formatReportFactorVersion(factor)} />
+                  {getDisplayFactorVersionLines(factor).map(line => {
+                    const separator = line.indexOf(': ');
+                    return <Detail key={line} label={line.slice(0, separator)} value={line.slice(separator + 2)} />;
+                  })}
                   <Detail label="Verification" value={formatReportVerification(factor)} />
                   <Detail label="Confidence" value={formatCredibilityLabel(factor.confidenceLevel) || 'Not specified'} />
                   <Detail label="Selection" value={factor.factorSelectionReason || factor.matchingMethod || 'Not specified'} />

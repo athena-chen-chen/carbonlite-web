@@ -338,6 +338,9 @@ function getFactor(detail: CalculationAuditDetail): EvidenceChain['factor'] {
     versionId: clean(detail.factorVersionId) || null,
     version: formatReportFactorVersion({
       factorVersion: detail.factorVersion,
+      factorId: detail.factorId,
+      factorVersionId: detail.factorVersionId,
+      factorProvenance: detail.factorProvenance,
       sourceDocument: detail.sourceDocument,
       sourceReference: detail.sourceUrl,
       sourceAuthority: detail.sourceAuthority || detail.factorSource,

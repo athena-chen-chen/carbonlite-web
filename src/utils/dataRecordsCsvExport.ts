@@ -11,6 +11,7 @@ import {
   TERMINOLOGY,
 } from './terminology';
 import { normalizeUnitForDisplay } from './unitNormalization';
+import { getDisplayFactorVersion } from './reportCredibility';
 
 export type DataRecordCsvExportItem = {
   activityType?: string | null;
@@ -33,6 +34,7 @@ export type DataRecordCsvExportItem = {
   matchingStatus?: string | null;
   reportTreatment?: string | null;
   scope?: string | null;
+  matchedFactorId?: string | null;
   matchedFactorName?: string | null;
   matchedFactorValue?: number | string | null;
   matchedFactorUnit?: string | null;
@@ -228,7 +230,11 @@ function buildDataRecordsCsvRows(records: DataRecordCsvExportItem[]): DataRecord
         formatNumberValue(record.matchedFactorValue),
     'Factor Unit': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorUnit),
     'Factor Source Year': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceYear),
-    'Factor Version': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorVersion),
+    'Factor Version': isTrackedMetricRecord(record) ? '' : getDisplayFactorVersion({
+      factorId: record.matchedFactorId,
+      factorVersion: record.matchedFactorVersion,
+      sourceDocument: record.matchedFactorSourceDocument,
+    }),
     'Factor Source Authority': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceAuthority),
     'Factor Source Document': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceDocument),
     'Factor Source URL': isTrackedMetricRecord(record) ? '' : formatOptionalValue(record.matchedFactorSourceUrl),

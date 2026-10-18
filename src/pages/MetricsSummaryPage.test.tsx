@@ -1,3 +1,4 @@
+import { goldenReport } from '../reports/pdf/__tests__/goldenFixtures';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -741,6 +742,33 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('100 liters × 2.31 kg CO₂e/liter = 231 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Matching Explanation')).toBeInTheDocument();
     expect(within(dialog).getByText('Matched factor')).toBeInTheDocument();
+  });
+
+  it.each([
+    { factorVersion: null, factorProvenance: { sourceVersion: 'v1.0' }, expectedFactorVersion: null },
+    { factorVersion: 'v2.1', factorProvenance: { sourceVersion: '3.2' }, expectedFactorVersion: 'v2.1' },
+  ])('shows unambiguous provenance in the matched-factor card: $expectedFactorVersion', ({ factorVersion, factorProvenance, expectedFactorVersion }) => {
+    const internalId = 'cmv8vg8eu0009gd3sxfn0w9z7';
+    const calculationDetails = [
+      goldenTrailDetail({ activityType: 'ELECTRICITY', factorName: 'Electricity - Alberta', factorVersionId: internalId,
+        factorVersion, factorProvenance, factorJurisdictionRegion: 'Alberta', factorJurisdictionCountry: 'Canada' }),
+      goldenTrailDetail({ activityDataId: 'diesel', activityType: 'DIESEL', factorName: 'Diesel combustion',
+        factorVersion: null, factorJurisdictionRegion: 'Canada (Generic)', factorJurisdictionCountry: 'Canada' }),
+      goldenTrailDetail({ activityDataId: 'diesel-missing', activityType: 'DIESEL', factorName: 'Diesel missing provenance',
+        factorVersion: null, factorJurisdictionRegion: null, factorJurisdictionCountry: null }),
+    ];
+    render(<MemoryRouter><MetricsSummarySection usageTotals={goldenTrailUsageTotals}
+      totalEstimatedEmissionsKgCO2e={300} countSummary={goldenTrailCountSummary} calculationDetails={calculationDetails} /></MemoryRouter>);
+    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
+    const dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    expect(within(dialog).getByText('Electricity · Alberta, Canada')).toBeInTheDocument();
+    expect(within(dialog).getByText('Diesel · Canada (Generic)')).toBeInTheDocument();
+    expect(within(dialog).getByText('Diesel · Not specified')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent(internalId);
+    const electricityCard = within(dialog).getByText('Electricity - Alberta').parentElement!;
+    expect(within(electricityCard).getByText(`Source Document Version: ${factorProvenance.sourceVersion}`)).toBeInTheDocument();
+    if (expectedFactorVersion) expect(within(dialog).getByText(`Factor Version: ${expectedFactorVersion}`)).toBeInTheDocument();
+    else expect(within(dialog).queryByText(/^Factor Version:/)).not.toBeInTheDocument();
   });
 
   it('opens the Total calculation trail with included records, tracked metrics, factors, and no raw ids', () => {
@@ -1841,6 +1869,8 @@ describe('buildDataReadinessSummary', () => {
         activityType: 'HOTEL',
         activityUnit: 'nights',
         sourceReference: 'MARCH-HOTEL-010',
+        costCad: 900,
+        costCurrency: 'CAD',
         sourceTextSnippet: 'Cost CAD 900',
       }),
     ]);
@@ -2450,7 +2480,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     const siteSection = screen.getByRole('region', { name: 'Site / Facility Breakdown' });
-    expect(siteSection).toHaveTextContent('Organization total: 9,240 kg CO₂e');
+    await waitFor(() => expect(siteSection).toHaveTextContent('Organization total: 9,240 kg CO₂e'));
     expect(siteSection).toHaveTextContent('2 site/facility groups');
     expect(within(siteSection).queryByText('Calgary Shop')).not.toBeInTheDocument();
 
@@ -2697,3 +2727,20 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
 function waitForDateDebounce() {
   return new Promise((resolve) => window.setTimeout(resolve, 550));
 }
+
+it('retains selected-document context and unresolved rows in Calculation Review', async () => {
+  const { input } = goldenReport('messy');
+  vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({ startDate: '2026-01-01', endDate: '2026-12-31', hasActivityRecords: true });
+  vi.mocked(loadMetricsOverview).mockResolvedValue({
+    summary: {}, activities: input.activities, calculationDetails: input.calculationDetails,
+    sourceReviewRows: input.reviewRows, usageTotals: input.usageTotals,
+    totalEstimatedEmissionsKgCO2e: 579.4, totalRecordsFound: 3, processedRecords: 2,
+    skippedRecords: 0, missingFactorRecords: 0, missingFactors: [],
+    skippedReasons: { missingFactor: 0, outsideDateRange: 0, outsideScope: 0, invalidData: 0 },
+  } as any);
+  render(<MemoryRouter initialEntries={[{ pathname: '/metrics-summary', state: { selectedDocumentIds: ['doc-partial'] } }]}><MetricsSummaryPage /></MemoryRouter>);
+  const context = screen.getByRole('region', { name: 'Document review scope' });
+  await waitFor(() => expect(context).toHaveTextContent('Imported records: 3 · Unresolved source rows: 6'));
+  expect(within(context).getByRole('link', { name: 'Generate Report' })).toHaveAttribute('href', '/reports');
+  expect(loadMetricsOverview).toHaveBeenCalledWith({ recalculate: true, selectedDocumentIds: ['doc-partial'] });
+});

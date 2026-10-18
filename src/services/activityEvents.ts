@@ -127,6 +127,11 @@ export function getActivityEvents(query: ActivityEventQuery = {}) {
   return apiFetch<ActivityEventListResponse>(`/activity-events${buildQuery(query)}`);
 }
 
+// Workspace workflow history is filtered and tenant-scoped by the backend before pagination.
+export function getWorkflowActivityEvents(query: Pick<ActivityEventQuery, 'page' | 'pageSize'> = {}) {
+  return apiFetch<ActivityEventListResponse>(`/activity-events/workflow${buildQuery(query)}`);
+}
+
 export function getActivityEventSummary(query: ActivityEventQuery = {}) {
   return apiFetch<ActivityEventSummary>(`/activity-events/summary${buildQuery(query)}`);
 }

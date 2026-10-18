@@ -59,6 +59,11 @@ const sections = [
           workflow and are not sold.
         </p>
         <p>
+          When you request AI-assisted extraction, document content may be sent to
+          OpenAI to process that request. Review your organization's permission to
+          share the source information before uploading it.
+        </p>
+        <p>
           Documents may be processed to identify relevant activity records such as
           fuel, electricity, water, waste, travel, or other operational data. Users
           should review extracted information before relying on it. Please avoid
@@ -110,7 +115,8 @@ const sections = [
         <p>
           Information may be processed by service providers that help operate
           CarbonLite, including Vercel for frontend hosting, Render for backend hosting,
-          managed PostgreSQL database hosting such as Neon, Sentry for error
+          managed PostgreSQL database hosting such as Neon, OpenAI for AI-assisted
+          document extraction, Sentry for error
           monitoring, and PostHog or Google Analytics when configured. We may also
           disclose information when reasonably required by law, to protect the service,
           or as part of a business transaction subject to appropriate safeguards.

@@ -1,3 +1,4 @@
+import { isInventoryFactorEligible, type FactorGovernance } from './factorGovernance';
 import { normalizeUnitKey } from './unitNormalization';
 import {
   getActivityTypeLabel,
@@ -5,7 +6,7 @@ import {
 } from './activityType';
 import { normalizeUnitForDisplay } from './unitNormalization';
 
-export type MatchableConversionFactor = {
+export type MatchableConversionFactor = FactorGovernance & {
   id: string;
   organizationId?: string | null;
   factorType?: string | null;
@@ -725,6 +726,7 @@ function normalizeStatus(value?: string | null) {
 
 function isUsableFactor(factor: MatchableConversionFactor) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
+  if (!isInventoryFactorEligible(factor) || (currentVersion && !isInventoryFactorEligible(currentVersion))) return false;
   const status = String(
     currentVersion?.factorStatus ??
       currentVersion?.status ??

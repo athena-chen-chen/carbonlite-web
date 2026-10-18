@@ -14,16 +14,16 @@ import {
 
 const navItems = [
   { to: '/', label: 'Home' },
+  { to: '/organization-profile', label: 'Organization & Boundary' },
   { to: INPUT_DATA_ROUTE, label: 'Input Data', activePaths: [LEGACY_UPLOAD_ROUTE] },
-  { to: '/data-collection-guide', label: 'Data Guide' },
   { to: DATA_RECORDS_ROUTE, label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
-  { to: '/conversion-factors', label: 'Factors' },
   { to: CALCULATION_REVIEW_ROUTE, label: 'Calculation Review', activePaths: ['/calculation-review'] },
   { to: REPORTS_ROUTE, label: 'Reports' },
 ] as const;
 
 const settingsNavItems = [
-  { to: '/organization-profile', label: 'Organization & Boundary' },
+  { to: '/data-collection-guide', label: 'Data Collection Guide' },
+  { to: '/conversion-factors', label: 'Emission Factors' },
 ] as const;
 
 const adminNavItems = [
@@ -73,7 +73,7 @@ const workspaceStyle: React.CSSProperties = {
 const navStyle: React.CSSProperties = {
   display: 'flex',
   gap: 6,
-  flexWrap: 'nowrap',
+  flexWrap: 'wrap',
   alignItems: 'center',
   minWidth: 0,
   overflow: 'visible',
@@ -194,6 +194,23 @@ export function AppNav() {
     setIsUserMenuOpen(false);
   }
 
+  function getNavTarget(item: (typeof navItems)[number]) {
+    if (item.to !== INPUT_DATA_ROUTE) return item.to;
+
+    const routeState = location.state as {
+      inputReviewPath?: string;
+      inputReviewDocumentId?: string;
+      sourceDocumentIds?: string[];
+    } | null;
+
+    if (routeState?.inputReviewPath) return routeState.inputReviewPath;
+
+    const documentId = routeState?.inputReviewDocumentId ?? routeState?.sourceDocumentIds?.[0];
+    return documentId
+      ? `${INPUT_DATA_ROUTE}?documentId=${encodeURIComponent(documentId)}&view=review`
+      : item.to;
+  }
+
   return (
     <header style={headerStyle}>
       <div>
@@ -210,7 +227,7 @@ export function AppNav() {
               {visibleNavItems.map((item) => (
                 <NavLink
                   key={item.to}
-                  to={item.to}
+                  to={getNavTarget(item)}
                   style={({ isActive }) =>
                     getLinkStyle(
                       isActive || isNavItemActive(item, location.pathname),

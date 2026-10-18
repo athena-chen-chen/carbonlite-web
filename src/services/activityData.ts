@@ -63,7 +63,7 @@ export type ActivityDataInput = {
   matchedFactorAssumptions?: string;
   factorSelectionReason?: string;
   factorSelectionExplanation?: string;
-  calculatedEmissionsKgCO2e?: number;
+  calculatedEmissionsKgCO2e?: number | null;
   calculationStatus?: string;
   calculationMessage?: string;
 };
@@ -95,6 +95,8 @@ export type ActivityDataItem = {
   unit: string;
   jurisdictionCountry?: string | null;
   jurisdictionRegion?: string | null;
+  jurisdictionSource?: string | null;
+  jurisdictionAssumed?: boolean;
   recordYear?: number | null;
   sourceType: string;
   sourceReference?: string | null;
@@ -104,7 +106,7 @@ export type ActivityDataItem = {
   scope?: string | null;
   matchedFactorId?: string | null;
   matchedFactorName?: string | null;
-  matchedFactorSourceYear?: number | string | null;
+  matchedFactorSourceYear?: number | null;
   matchedFactorValue?: number | string | null;
   matchedFactorUnit?: string | null;
   matchedFactorVersion?: string | null;

@@ -168,7 +168,9 @@ export async function persistOrganizationProfile(
   validateOrganizationProfile(profileWithBoundaryReview);
   const saved = await apiFetch<Partial<OrganizationProfile>>('/organization-profile', {
     method: 'PATCH',
-    body: JSON.stringify(profileWithBoundaryReview),
+    // The persisted profile contract does not yet include review attestations.
+    // Sending UI-only review fields makes the strict API reject ordinary saves.
+    body: JSON.stringify(toPersistedOrganizationProfile(profileWithBoundaryReview)),
   });
   const normalizedSaved = normalizeOrganizationProfile({
     ...profileWithBoundaryReview,
@@ -178,6 +180,20 @@ export async function persistOrganizationProfile(
   dispatchOrganizationProfileUpdated(normalizedSaved);
   void trackOrganizationBoundaryAuditEvent('BOUNDARY_UPDATED', previous, normalizedSaved, user);
   return normalizedSaved;
+}
+
+function toPersistedOrganizationProfile(profile: OrganizationProfile) {
+  const {
+    boundaryStatus: _status,
+    boundaryReviewedBy: _reviewer,
+    boundaryReviewedByUserId: _reviewerId,
+    boundaryReviewedAt: _reviewedAt,
+    boundaryVersion: _version,
+    boundaryReviewNote: _reviewNote,
+    boundaryReviewFingerprint: _fingerprint,
+    ...persistedProfile
+  } = profile;
+  return persistedProfile;
 }
 
 export async function reviewOrganizationBoundary(input: {
@@ -229,7 +245,7 @@ export function profileToInventoryBoundary(
     excludedFacilitiesOrLocations:
       getBoundaryProfileValue(
         profile.excludedFacilitiesOrLocations,
-        DEFAULT_INVENTORY_BOUNDARY.excludedFacilitiesOrLocations,
+        DEFAULT_INVENTORY_BOUNDARY.excludedFacilitiesOrLocations ?? '',
         isSampleWorkspace,
       ),
     includedScopes: getBoundaryProfileValue(
@@ -250,7 +266,7 @@ export function profileToInventoryBoundary(
       ),
     boundaryNotes: getBoundaryProfileValue(
       profile.boundaryNotes,
-      DEFAULT_INVENTORY_BOUNDARY.boundaryNotes,
+      DEFAULT_INVENTORY_BOUNDARY.boundaryNotes ?? '',
       isSampleWorkspace,
     ),
     boundaryStatus: profile.boundaryStatus,

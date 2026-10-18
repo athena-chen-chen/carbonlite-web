@@ -292,7 +292,7 @@ function findRegulatoryThresholdReference(
 ) {
   if (!jurisdictionRegion) return null;
 
-  return references.find((reference) => {
+  return references.find((reference): reference is ReviewedThresholdReference => {
     if (!hasCompleteRegulatoryThresholdProvenance(reference)) return false;
     const referenceRegion = normalizeJurisdictionRegion(reference.jurisdictionRegion);
     const referenceCountry = normalizeJurisdictionCountry(reference.jurisdictionCountry);
@@ -304,14 +304,13 @@ function findRegulatoryThresholdReference(
   }) ?? null;
 }
 
+type ReviewedThresholdReference = FacilityRegulatoryThresholdReference & {
+  authority: string; programName: string; jurisdictionRegion: string; thresholdValue: number;
+  thresholdUnit: string; checkedDate: string; sourceUrl: string;
+};
 function hasCompleteRegulatoryThresholdProvenance(
   reference: FacilityRegulatoryThresholdReference,
-): reference is Required<
-  Pick<
-    FacilityRegulatoryThresholdReference,
-    'authority' | 'programName' | 'jurisdictionRegion' | 'thresholdValue' | 'thresholdUnit' | 'checkedDate' | 'sourceUrl'
-  >
-> & FacilityRegulatoryThresholdReference {
+): reference is ReviewedThresholdReference {
   return Boolean(
     clean(reference.authority) &&
       clean(reference.programName) &&

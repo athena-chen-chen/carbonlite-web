@@ -87,7 +87,7 @@ describe('AppNav logout flow', () => {
     [
       'Input Data',
       'Data Records',
-      'Factors',
+      'Organization & Boundary',
       'Calculation Review',
       'Reports',
     ].forEach((label) => {
@@ -147,7 +147,7 @@ describe('AppNav logout flow', () => {
     expect(screen.queryByRole('link', { name: 'Input Review' })).not.toBeInTheDocument();
   });
 
-  it('places Organization & Boundary under Settings instead of Admin user management', async () => {
+  it('promotes the five workflow pages and keeps supporting tools under Settings', async () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
       'currentUser',
@@ -166,20 +166,57 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('link', { name: 'Organization & Boundary' })).not.toBeInTheDocument();
+    const workflowLabels = ['Organization & Boundary', 'Input Data', 'Data Records', 'Calculation Review', 'Reports'];
+    const links = screen.getAllByRole('link').map((link) => link.textContent);
+    expect(links.filter((label) => workflowLabels.includes(label ?? ''))).toEqual(workflowLabels);
+    expect(screen.queryByRole('link', { name: 'Emission Factors' })).not.toBeInTheDocument();
 
     const settingsButton = screen.getByRole('button', { name: /^Settings\s*▾?$/i });
     await userEvent.click(settingsButton);
 
-    expect(screen.getByRole('menuitem', { name: 'Organization & Boundary' })).toHaveAttribute(
+    expect(screen.getByRole('menuitem', { name: 'Data Collection Guide' })).toHaveAttribute(
       'href',
-      '/organization-profile',
+      '/data-collection-guide',
     );
+    expect(screen.getByRole('menuitem', { name: 'Emission Factors' })).toHaveAttribute('href', '/conversion-factors');
 
     await userEvent.click(screen.getByRole('button', { name: /^Admin\s*▾?$/i }));
 
     expect(screen.queryByRole('menuitem', { name: 'Organization & Boundary' })).not.toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Pilot Reviewers' })).toBeInTheDocument();
+  });
+
+  it('preserves active Input Review document context from Data Records', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'user@example.com',
+        role: 'USER',
+      }),
+    );
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/data-records',
+            state: {
+              inputReviewPath: '/input-data?documentId=document-a&view=review',
+            },
+          },
+        ]}
+      >
+        <AuthProvider>
+          <AppNav />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Input Data' })).toHaveAttribute(
+      'href',
+      '/input-data?documentId=document-a&view=review',
+    );
   });
 
   it('hides internal navigation from normal users', () => {

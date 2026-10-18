@@ -1,0 +1,600 @@
+{
+  "checkedAt": "2026-10-18T06:26:45.671Z",
+  "environment": "operator-confirmed Neon development / localhost API and web",
+  "neonMainModified": false,
+  "schemaChanges": false,
+  "reportSemanticsChanged": false,
+  "goldenValuesChanged": false,
+  "originalWorkbookSha256": "d72851e703b3f1ffbf5b07c4212c044ddc88b53944811d8c1b7fb2def3010dc5",
+  "olderAutomatedWorkbookSha256": "843b0fabbcbf574e5b7ebdc7480d81702f983be042879e6266742db1a7b856d2",
+  "needsReviewWorkbookSha256": "7178fc1924db6ba142bf9853654db51f201f8adfd88306b887fc7259f63f410f",
+  "reproducedBefore": [
+    {
+      "workbook": "NeedsReview",
+      "extractedRows": 6,
+      "activities": [
+        "ELECTRICITY",
+        "ELECTRICITY",
+        "NATURAL_GAS",
+        "DIESEL",
+        "WATER",
+        "HOTEL"
+      ]
+    },
+    {
+      "workbook": "FieldMapping",
+      "extractedRows": 4,
+      "activities": [
+        "ELECTRICITY",
+        "NATURAL_GAS",
+        "HOTEL",
+        "AIR_TRAVEL"
+      ]
+    }
+  ],
+  "sourceHashes": {
+    "../carbonlite-api/src/document-extraction/document-extraction.service.ts": "d1fd01fcc6d97e7bf283106502d68fa9c8a7707360f8b6a4b7261c57c2b05125",
+    "../carbonlite-api/src/document-extraction/spreadsheet-activity-rows.ts": "be3e38c869bd907740cdeaad94b1bf0a788294154a44dc6bd19b638ed6ecf9fa",
+    "../carbonlite-api/src/document-extraction/spreadsheet-activity-rows.spec.ts": "c12d82f57ed3f7c9caf36e47cec72c2bf6023376cc97c6be26dff495d837472c",
+    "../carbonlite-api/src/document-extraction/document-extraction.lineage.spec.ts": "93f170739fed4ea16414fb7251bc662a1bed95655efaf41cec8e9f5b190fbe97",
+    "../carbonlite-api/package.json": "e364d0520769e857f75d49e076592d99d3837c141c13926e4c57913fdedb3cf6",
+    "../carbonlite-api/pnpm-lock.yaml": "2356cc01821726736b0e805ff0f57d3da35a1ca9f5eadba044d723ca95372c48",
+    "apps/web-e2e/tests/real-api/field-mapping-import-regression.spec.ts": "acc5070ac4a3a443e2b4486fe8fc6cf2c3c3839769725a025b5b77ee7342b76e"
+  },
+  "cases": [
+    {
+      "filenameVariant": "Renamed",
+      "stages": [
+        {
+          "stage": "extracted-response",
+          "workbook": "NeedsReview",
+          "extractedRows": 9,
+          "sourceRows": 9
+        },
+        {
+          "stage": "confirmation-response",
+          "workbook": "NeedsReview",
+          "imported": 3
+        },
+        {
+          "stage": "persisted",
+          "workbook": "NeedsReview",
+          "total": 579.4,
+          "records": 3,
+          "calculated": 2
+        },
+        {
+          "stage": "extracted-response",
+          "workbook": "FieldMapping",
+          "extractedRows": 5,
+          "sourceRows": 5
+        },
+        {
+          "stage": "confirmation-response",
+          "workbook": "FieldMapping",
+          "imported": 5
+        },
+        {
+          "stage": "persisted",
+          "workbook": "FieldMapping",
+          "total": 3007.84,
+          "records": 8,
+          "calculated": 7
+        }
+      ],
+      "confirmGasoline": [
+        {
+          "activity": "GASOLINE",
+          "quantity": 350,
+          "unit": "L",
+          "country": "Canada",
+          "province": "British Columbia",
+          "facility": "Vancouver Fleet",
+          "reference": "fuel_card_feb.csv",
+          "sourceRow": 4,
+          "sourceSheet": "Operations_2026",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "factorValue": 2.31
+        }
+      ],
+      "persistedGasoline": {
+        "activity": "GASOLINE",
+        "quantity": 350,
+        "unit": "L",
+        "country": "Canada",
+        "province": "British Columbia",
+        "facility": "Vancouver Fleet",
+        "reference": "fuel_card_feb.csv",
+        "sheet": "Operations_2026",
+        "row": "4",
+        "status": "CALCULATED",
+        "matchingStatus": "MATCHED",
+        "treatment": "INCLUDED",
+        "scope": "SCOPE_1",
+        "factor": 2.31,
+        "emissionsKgCO2e": 808.5
+      },
+      "snapshot": {
+        "input": {
+          "unit": "L",
+          "region": "British Columbia",
+          "country": "Canada",
+          "quantity": 350,
+          "recordDate": "2026-02-05T00:00:00.000Z",
+          "activityType": "GASOLINE"
+        },
+        "factor": {
+          "value": 2.31,
+          "inputUnit": "liters",
+          "resultUnit": "kgCO2e"
+        },
+        "result": {
+          "unit": "kgCO2e",
+          "scope": "SCOPE_1",
+          "value": 808.5
+        },
+        "conversion": {
+          "inputUnit": "L",
+          "inputQuantity": 350,
+          "factorInputUnit": "liters",
+          "calculationQuantity": 350
+        },
+        "version": 2,
+        "actorRecorded": true,
+        "calculatedAt": "2026-10-18T06:23:36.894Z"
+      },
+      "dedupe": {
+        "primary": "<documentId>::row:4",
+        "repeatedConfirmation": 0
+      },
+      "totals": {
+        "records": 8,
+        "calculated": 7,
+        "tracked": 1,
+        "totalKgCO2e": 3007.84,
+        "fieldMappingRecords": 5,
+        "fieldMappingKgCO2e": 2428.44,
+        "scopes": {
+          "SCOPE_3": 597.2,
+          "SCOPE_2": 1181.9,
+          "SCOPE_1": 1228.74
+        },
+        "facilities": {
+          "Toronto Client Visit": 60,
+          "Calgary HQ": 1602.14,
+          "Corporate Travel": 492.2,
+          "Toronto Sales Trip": 45,
+          "Vancouver Fleet": 808.5
+        }
+      },
+      "sourceRows": [
+        {
+          "activity": "HOTEL",
+          "quantity": 4,
+          "unit": "nights",
+          "country": "Canada",
+          "province": "Ontario",
+          "facility": "Toronto Client Visit",
+          "reference": "MARCH-HOTEL-010",
+          "sheet": "Messy_Operations",
+          "row": "11",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_3",
+          "factor": 15,
+          "emissionsKgCO2e": 60
+        },
+        {
+          "activity": "WATER",
+          "quantity": 18,
+          "unit": "m3",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "MARCH-WATER-007",
+          "sheet": "Messy_Operations",
+          "row": "8",
+          "status": "TRACKED_ONLY",
+          "matchingStatus": "TRACKED_ONLY",
+          "treatment": "TRACKED_ONLY",
+          "scope": "TRACKED_METRIC",
+          "factor": null,
+          "emissionsKgCO2e": null
+        },
+        {
+          "activity": "ELECTRICITY",
+          "quantity": 980,
+          "unit": "kWh",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "MARCH-ELEC-001",
+          "sheet": "Messy_Operations",
+          "row": "2",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_2",
+          "factor": 0.53,
+          "emissionsKgCO2e": 519.4
+        },
+        {
+          "activity": "AIR_TRAVEL",
+          "quantity": 4280,
+          "unit": "km",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Corporate Travel",
+          "reference": "flight_YVR_YYZ_0218.pdf",
+          "sheet": "Operations_2026",
+          "row": "6",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_3",
+          "factor": 0.115,
+          "emissionsKgCO2e": 492.2
+        },
+        {
+          "activity": "HOTEL",
+          "quantity": 3,
+          "unit": "nights",
+          "country": "Canada",
+          "province": "Ontario",
+          "facility": "Toronto Sales Trip",
+          "reference": "hotel_invoice_0210.pdf",
+          "sheet": "Operations_2026",
+          "row": "5",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_3",
+          "factor": 15,
+          "emissionsKgCO2e": 45
+        },
+        {
+          "activity": "GASOLINE",
+          "quantity": 350,
+          "unit": "L",
+          "country": "Canada",
+          "province": "British Columbia",
+          "facility": "Vancouver Fleet",
+          "reference": "fuel_card_feb.csv",
+          "sheet": "Operations_2026",
+          "row": "4",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_1",
+          "factor": 2.31,
+          "emissionsKgCO2e": 808.5
+        },
+        {
+          "activity": "NATURAL_GAS",
+          "quantity": 8.5,
+          "unit": "GJ",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "ATCO_Jan_2026.pdf",
+          "sheet": "Operations_2026",
+          "row": "3",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_1",
+          "factor": 49.44,
+          "emissionsKgCO2e": 420.24
+        },
+        {
+          "activity": "ELECTRICITY",
+          "quantity": 1250,
+          "unit": "kWh",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "ENMAX_Jan_2026.pdf",
+          "sheet": "Operations_2026",
+          "row": "2",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_2",
+          "factor": 0.53,
+          "emissionsKgCO2e": 662.5
+        }
+      ]
+    },
+    {
+      "filenameVariant": "Original",
+      "stages": [
+        {
+          "stage": "extracted-response",
+          "workbook": "NeedsReview",
+          "extractedRows": 9,
+          "sourceRows": 9
+        },
+        {
+          "stage": "confirmation-response",
+          "workbook": "NeedsReview",
+          "imported": 3
+        },
+        {
+          "stage": "persisted",
+          "workbook": "NeedsReview",
+          "total": 579.4,
+          "records": 3,
+          "calculated": 2
+        },
+        {
+          "stage": "extracted-response",
+          "workbook": "FieldMapping",
+          "extractedRows": 5,
+          "sourceRows": 5
+        },
+        {
+          "stage": "confirmation-response",
+          "workbook": "FieldMapping",
+          "imported": 5
+        },
+        {
+          "stage": "persisted",
+          "workbook": "FieldMapping",
+          "total": 3007.84,
+          "records": 8,
+          "calculated": 7
+        }
+      ],
+      "confirmGasoline": [
+        {
+          "activity": "GASOLINE",
+          "quantity": 350,
+          "unit": "L",
+          "country": "Canada",
+          "province": "British Columbia",
+          "facility": "Vancouver Fleet",
+          "reference": "fuel_card_feb.csv",
+          "sourceRow": 4,
+          "sourceSheet": "Operations_2026",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "factorValue": 2.31
+        }
+      ],
+      "persistedGasoline": {
+        "activity": "GASOLINE",
+        "quantity": 350,
+        "unit": "L",
+        "country": "Canada",
+        "province": "British Columbia",
+        "facility": "Vancouver Fleet",
+        "reference": "fuel_card_feb.csv",
+        "sheet": "Operations_2026",
+        "row": "4",
+        "status": "CALCULATED",
+        "matchingStatus": "MATCHED",
+        "treatment": "INCLUDED",
+        "scope": "SCOPE_1",
+        "factor": 2.31,
+        "emissionsKgCO2e": 808.5
+      },
+      "snapshot": {
+        "input": {
+          "unit": "L",
+          "region": "British Columbia",
+          "country": "Canada",
+          "quantity": 350,
+          "recordDate": "2026-02-05T00:00:00.000Z",
+          "activityType": "GASOLINE"
+        },
+        "factor": {
+          "value": 2.31,
+          "inputUnit": "liters",
+          "resultUnit": "kgCO2e"
+        },
+        "result": {
+          "unit": "kgCO2e",
+          "scope": "SCOPE_1",
+          "value": 808.5
+        },
+        "conversion": {
+          "inputUnit": "L",
+          "inputQuantity": 350,
+          "factorInputUnit": "liters",
+          "calculationQuantity": 350
+        },
+        "version": 2,
+        "actorRecorded": true,
+        "calculatedAt": "2026-10-18T06:22:53.710Z"
+      },
+      "dedupe": {
+        "primary": "<documentId>::row:4",
+        "repeatedConfirmation": 0
+      },
+      "totals": {
+        "records": 8,
+        "calculated": 7,
+        "tracked": 1,
+        "totalKgCO2e": 3007.84,
+        "fieldMappingRecords": 5,
+        "fieldMappingKgCO2e": 2428.44,
+        "scopes": {
+          "SCOPE_3": 597.2,
+          "SCOPE_2": 1181.9,
+          "SCOPE_1": 1228.74
+        },
+        "facilities": {
+          "Toronto Client Visit": 60,
+          "Calgary HQ": 1602.14,
+          "Corporate Travel": 492.2,
+          "Toronto Sales Trip": 45,
+          "Vancouver Fleet": 808.5
+        }
+      },
+      "sourceRows": [
+        {
+          "activity": "HOTEL",
+          "quantity": 4,
+          "unit": "nights",
+          "country": "Canada",
+          "province": "Ontario",
+          "facility": "Toronto Client Visit",
+          "reference": "MARCH-HOTEL-010",
+          "sheet": "Messy_Operations",
+          "row": "11",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_3",
+          "factor": 15,
+          "emissionsKgCO2e": 60
+        },
+        {
+          "activity": "WATER",
+          "quantity": 18,
+          "unit": "m3",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "MARCH-WATER-007",
+          "sheet": "Messy_Operations",
+          "row": "8",
+          "status": "TRACKED_ONLY",
+          "matchingStatus": "TRACKED_ONLY",
+          "treatment": "TRACKED_ONLY",
+          "scope": "TRACKED_METRIC",
+          "factor": null,
+          "emissionsKgCO2e": null
+        },
+        {
+          "activity": "ELECTRICITY",
+          "quantity": 980,
+          "unit": "kWh",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "MARCH-ELEC-001",
+          "sheet": "Messy_Operations",
+          "row": "2",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_2",
+          "factor": 0.53,
+          "emissionsKgCO2e": 519.4
+        },
+        {
+          "activity": "AIR_TRAVEL",
+          "quantity": 4280,
+          "unit": "km",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Corporate Travel",
+          "reference": "flight_YVR_YYZ_0218.pdf",
+          "sheet": "Operations_2026",
+          "row": "6",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_3",
+          "factor": 0.115,
+          "emissionsKgCO2e": 492.2
+        },
+        {
+          "activity": "HOTEL",
+          "quantity": 3,
+          "unit": "nights",
+          "country": "Canada",
+          "province": "Ontario",
+          "facility": "Toronto Sales Trip",
+          "reference": "hotel_invoice_0210.pdf",
+          "sheet": "Operations_2026",
+          "row": "5",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_3",
+          "factor": 15,
+          "emissionsKgCO2e": 45
+        },
+        {
+          "activity": "GASOLINE",
+          "quantity": 350,
+          "unit": "L",
+          "country": "Canada",
+          "province": "British Columbia",
+          "facility": "Vancouver Fleet",
+          "reference": "fuel_card_feb.csv",
+          "sheet": "Operations_2026",
+          "row": "4",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_1",
+          "factor": 2.31,
+          "emissionsKgCO2e": 808.5
+        },
+        {
+          "activity": "NATURAL_GAS",
+          "quantity": 8.5,
+          "unit": "GJ",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "ATCO_Jan_2026.pdf",
+          "sheet": "Operations_2026",
+          "row": "3",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_1",
+          "factor": 49.44,
+          "emissionsKgCO2e": 420.24
+        },
+        {
+          "activity": "ELECTRICITY",
+          "quantity": 1250,
+          "unit": "kWh",
+          "country": "Canada",
+          "province": "Alberta",
+          "facility": "Calgary HQ",
+          "reference": "ENMAX_Jan_2026.pdf",
+          "sheet": "Operations_2026",
+          "row": "2",
+          "status": "CALCULATED",
+          "matchingStatus": "MATCHED",
+          "treatment": "INCLUDED",
+          "scope": "SCOPE_2",
+          "factor": 0.53,
+          "emissionsKgCO2e": 662.5
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "browserRequestedRegressions": "4/4 PASS",
+    "backendUnit": "251/251 PASS; 24 suites",
+    "frontendGoldenAndTask7And8": "155/155 PASS; 9 files",
+    "backendTypecheck": "PASS",
+    "backendBuild": "PASS",
+    "goldenA": 579.4,
+    "goldenC": 2428.44,
+    "combined": 3285.9,
+    "partialConfirm": [
+      3,
+      1,
+      0
+    ],
+    "browserSourceEvidenceCounters": "2/2 PASS; 5 references and 5 included GHG records for both filenames"
+  },
+  "cleanup": {
+    "retiredSyntheticAccounts": 26,
+    "storedSessionsRejected": true,
+    "sourceAndCalculationEvidenceRetained": true,
+    "originalManualImportsModified": false
+  }
+}

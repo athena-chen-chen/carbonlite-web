@@ -7,8 +7,12 @@ import {
   loadDefaultMetricsDateRange,
   loadMetricsOverview,
 } from './metricsOverview';
+import type { CalculationAuditDetail } from './metrics';
 import { buildPilotCsv, buildPilotCsvRows } from '../utils/reportCsvExport';
 import { buildDataReadinessSummary } from '../components/MetricsSummarySection';
+import { getCalculationTraceabilityGaps } from '../utils/reportingReadiness';
+import { buildSiteFacilityRollup } from '../utils/siteFacilityBreakdown';
+import { formatScopeClassification, resolveScopeClassification } from '../utils/scopeClassification';
 
 vi.mock('./activityData', () => ({
   getAllActivityData: vi.fn(),
@@ -143,11 +147,115 @@ function backendSummary() {
   };
 }
 
+function goldenDetail(input: Partial<CalculationAuditDetail>): CalculationAuditDetail {
+  const emissions = input.calculatedEmissionsKgCO2e ?? input.calculatedEmission ?? null;
+
+  return {
+    activityDataId: input.activityDataId ?? 'activity-golden',
+    activityType: input.activityType ?? 'ELECTRICITY',
+    recordDate: input.recordDate ?? '2026-01-31',
+    dateEstimated: input.dateEstimated ?? false,
+    reportingYear: input.reportingYear ?? 2026,
+    jurisdiction: input.jurisdiction ?? 'Canada',
+    jurisdictionCountry: input.jurisdictionCountry ?? 'Canada',
+    jurisdictionRegion: input.jurisdictionRegion ?? null,
+    facilityName: input.facilityName ?? null,
+    activityQuantity: input.activityQuantity ?? 1,
+    activityUnit: input.activityUnit ?? 'kWh',
+    factorName: input.factorName ?? 'Golden factor',
+    factorValue: input.factorValue ?? 1,
+    factorInputUnit: input.factorInputUnit ?? input.activityUnit ?? 'kWh',
+    factorResultUnit: input.factorResultUnit ?? 'kgCO2e',
+    factorSource: input.factorSource ?? 'Test Authority',
+    sourceAuthority: input.sourceAuthority ?? input.factorSource ?? 'Test Authority',
+    sourceDocument: input.sourceDocument ?? 'Test source',
+    sourceYear: input.sourceYear ?? 2025,
+    factorVerified: input.factorVerified ?? true,
+    factorSelectionReason: input.factorSelectionReason ?? null,
+    factorSelectionExplanation: input.factorSelectionExplanation ?? null,
+    calculatedEmission: emissions,
+    calculatedEmissionsKgCO2e: emissions,
+    status: input.status ?? 'CALCULATED',
+    calculationStatus: input.calculationStatus ?? input.status ?? 'CALCULATED',
+    matchingStatus: input.matchingStatus ?? 'MATCHED',
+    sourceType: input.sourceType ?? 'SPREADSHEET',
+    sourceReference: input.sourceReference ?? null,
+    sourceFileName: input.sourceFileName ?? null,
+    sourceSheetName: input.sourceSheetName ?? null,
+    sourceRow: input.sourceRow ?? null,
+    sourceDocumentId: input.sourceDocumentId ?? null,
+    costCad: input.costCad ?? null,
+    costCurrency: input.costCurrency ?? null,
+    scopeOverride: input.scopeOverride ?? null,
+    factorDefaultScope: input.factorDefaultScope ?? null,
+    factorScope: input.factorScope ?? null,
+  };
+}
+
+function summarizeGoldenReport(details: CalculationAuditDetail[]) {
+  const scopeTotals = {
+    'Scope 1': 0,
+    'Scope 2': 0,
+    'Scope 3': 0,
+  };
+  let total = 0;
+
+  details.forEach((detail) => {
+    if (detail.status !== 'CALCULATED') return;
+    const emissions = Number(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0);
+    const scope = formatScopeClassification(
+      resolveScopeClassification({
+        activityType: detail.activityType,
+        scopeOverride: detail.scopeOverride,
+        factorDefaultScope: detail.factorDefaultScope,
+        factorScope: detail.factorScope,
+      }).scope,
+    );
+    if (scope === 'Scope 1' || scope === 'Scope 2' || scope === 'Scope 3') {
+      scopeTotals[scope] += emissions;
+      total += emissions;
+    }
+  });
+
+  const emissionBearingDetails = details.filter((detail) => detail.status !== 'TRACKED_ONLY');
+  const calculatedEmissionBearing = emissionBearingDetails.filter((detail) => detail.status === 'CALCULATED');
+
+  return {
+    imported: details.length,
+    included: details.filter((detail) => detail.status === 'CALCULATED').length,
+    tracked: details.filter((detail) => detail.status === 'TRACKED_ONLY').length,
+    needsReview: details.filter((detail) => detail.status !== 'CALCULATED' && detail.status !== 'TRACKED_ONLY').length,
+    scopeTotals,
+    total: Math.round(total * 100) / 100,
+    calculationCoverage: {
+      calculated: calculatedEmissionBearing.length,
+      eligible: emissionBearingDetails.length,
+      score: emissionBearingDetails.length
+        ? Math.round((calculatedEmissionBearing.length / emissionBearingDetails.length) * 100)
+        : 100,
+    },
+    readiness: buildDataReadinessSummary(details),
+    csvRows: buildPilotCsvRows(details),
+    siteFacilityRollup: buildSiteFacilityRollup(details),
+  };
+}
+
 describe('loadMetricsOverview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getCalculationSummary).mockResolvedValue(backendSummary());
     vi.mocked(getAllConversionFactors).mockResolvedValue([]);
+  });
+
+  it.each(['Canada (Generic)', null])('preserves factor jurisdiction %s when rebuilding matched emissions', async jurisdiction => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({ ...summary, calculationDetails: [],
+      conversionFactorsUsed: [{ ...summary.conversionFactorsUsed[0], jurisdiction }] });
+    const overview = await loadMetricsOverview({ dateFrom: '2025-01-01', dateTo: '2025-12-31' });
+    const diesel = overview.calculationDetails.find(detail => detail.activityDataId === 'activity-1');
+    expect(diesel?.factorJurisdictionRegion).toBe(jurisdiction);
+    expect(diesel?.factorJurisdictionCountry).toBeNull();
+    expect(diesel?.calculatedEmissionsKgCO2e).toBe(268);
   });
 
   it('uses the backend calculation summary as the single source of truth', async () => {
@@ -849,6 +957,7 @@ describe('loadMetricsOverview', () => {
           calculationStatus: 'CALCULATED',
           matchingStatus: 'MATCHED',
           sourceReference: 'ENMAX electricity',
+          sourceTextSnippet: 'Electricity delivery and usage total amount $214.55',
           costCad: 0,
           costCurrency: null,
         },
@@ -865,6 +974,7 @@ describe('loadMetricsOverview', () => {
           calculationStatus: 'CALCULATED',
           matchingStatus: 'MATCHED',
           sourceReference: 'ENMAX natural gas',
+          sourceTextSnippet: 'Natural gas bill total amount $64.00',
           costCad: 0,
           costCurrency: null,
         },
@@ -881,6 +991,7 @@ describe('loadMetricsOverview', () => {
           calculationStatus: 'TRACKED_ONLY',
           matchingStatus: 'TRACKED_ONLY',
           sourceReference: 'ENMAX water',
+          sourceTextSnippet: 'Water charges total $18.00',
           costCad: 0,
           costCurrency: null,
         },
@@ -949,6 +1060,465 @@ describe('loadMetricsOverview', () => {
         score: 0,
       }),
     );
+  });
+
+  it('preserves null, zero, and positive costs through canonical report CSV construction', async () => {
+    const summary = backendSummary();
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...summary,
+      totalRecordsFound: 3,
+      recordsInScope: 3,
+      recordsCalculated: 3,
+      recordsIncluded: 3,
+      processedRecords: 3,
+      skippedRecords: 0,
+      totalEstimatedEmissionsKgCO2e: 402.06,
+      calculationDetails: [
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'missing-cost',
+          activityType: 'ELECTRICITY',
+          recordDate: '2025-08-01',
+          activityQuantity: 358,
+          activityUnit: 'kWh',
+          sourceReference: 'missing cost',
+          costCad: null,
+          costCurrency: null,
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'zero-cost',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2025-08-01',
+          activityQuantity: 3,
+          activityUnit: 'GJ',
+          sourceReference: 'zero cost',
+          costCad: 0,
+          costCurrency: 'CAD',
+        },
+        {
+          ...summary.calculationDetails[0],
+          activityDataId: 'positive-cost',
+          activityType: 'DIESEL',
+          recordDate: '2025-08-01',
+          activityQuantity: 24,
+          activityUnit: 'L',
+          sourceReference: 'positive cost',
+          costCad: 214.55,
+          costCurrency: 'CAD',
+        },
+      ],
+      matchedActivityEmissions: [],
+      records: [],
+      activities: [
+        {
+          id: 'missing-cost',
+          activityType: 'ELECTRICITY',
+          recordDate: '2025-08-01',
+          quantity: 358,
+          unit: 'kWh',
+          sourceReference: 'missing cost',
+          costCad: null,
+          costCurrency: null,
+        },
+        {
+          id: 'zero-cost',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2025-08-01',
+          quantity: 3,
+          unit: 'GJ',
+          sourceReference: 'zero cost',
+          costCad: 0,
+          costCurrency: 'CAD',
+        },
+        {
+          id: 'positive-cost',
+          activityType: 'DIESEL',
+          recordDate: '2025-08-01',
+          quantity: 24,
+          unit: 'L',
+          sourceReference: 'positive cost',
+          costCad: 214.55,
+          costCurrency: 'CAD',
+        },
+      ],
+    } as any);
+
+    const overview = await loadMetricsOverview();
+    const csvRows = buildPilotCsvRows(overview.calculationDetails);
+    const csv = buildPilotCsv(overview.calculationDetails);
+    const readiness = buildDataReadinessSummary(overview.calculationDetails);
+
+    expect(
+      overview.calculationDetails.map((detail) => [detail.activityDataId, detail.costCad]),
+    ).toEqual([
+      ['missing-cost', null],
+      ['zero-cost', 0],
+      ['positive-cost', 214.55],
+    ]);
+    expect(csvRows.map((row) => [row['Source Reference'], row['Cost CAD']])).toEqual([
+      ['missing cost', ''],
+      ['zero cost', '0'],
+      ['positive cost', '214.55'],
+    ]);
+    expect(csv).toContain('\n1,Electricity,2025-08-01,358,358 kWh,kWh,,');
+    expect(csv).toContain('\n2,Natural Gas,2025-08-01,3,3 GJ,GJ,0,');
+    expect(csv).toContain('\n3,Diesel,2025-08-01,24,24 L,L,214.55,');
+    expect(readiness.optionalDataCompleteness).toEqual(
+      expect.objectContaining({
+        costDataCount: 2,
+        totalRecords: 3,
+        missingCostDataCount: 1,
+        score: 66.67,
+      }),
+    );
+  });
+
+  describe('Task 0 report golden contracts', () => {
+    it('freezes carbonlite_needs_review_test.xlsx totals, costs, coverage, and facilities', () => {
+      const details = [
+        goldenDetail({
+          activityDataId: 'activity-march-elec-001',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-03-01',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionRegion: 'Alberta',
+          facilityName: 'Calgary HQ',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          factorName: 'Electricity - Alberta',
+          factorValue: 0.53,
+          calculatedEmissionsKgCO2e: 519.4,
+          sourceReference: 'MARCH-ELEC-001',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceSheetName: 'Messy_Operations',
+          sourceRow: 2,
+          sourceDocumentId: 'doc-messy-ops',
+          costCad: 214.55,
+          costCurrency: 'CAD',
+        }),
+        goldenDetail({
+          activityDataId: 'activity-march-water-007',
+          activityType: 'WATER',
+          recordDate: '2026-03-07',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionRegion: 'Alberta',
+          facilityName: 'Calgary HQ',
+          activityQuantity: 18,
+          activityUnit: 'm3',
+          calculatedEmissionsKgCO2e: null,
+          status: 'TRACKED_ONLY',
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          sourceReference: 'MARCH-WATER-007',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceSheetName: 'Messy_Operations',
+          sourceRow: 8,
+          sourceDocumentId: 'doc-messy-ops',
+          costCad: 64,
+          costCurrency: 'CAD',
+        }),
+        goldenDetail({
+          activityDataId: 'activity-march-hotel-010',
+          activityType: 'HOTEL',
+          recordDate: '2026-03-10',
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionRegion: 'Ontario',
+          facilityName: 'Toronto Client Visit',
+          activityQuantity: 4,
+          activityUnit: 'nights',
+          factorName: 'Hotel Accommodation - Canada Generic',
+          factorValue: 15,
+          calculatedEmissionsKgCO2e: 60,
+          sourceReference: 'MARCH-HOTEL-010',
+          sourceFileName: 'carbonlite_needs_review_test.xlsx',
+          sourceSheetName: 'Messy_Operations',
+          sourceRow: 11,
+          sourceDocumentId: 'doc-messy-ops',
+          costCad: 720,
+          costCurrency: 'CAD',
+        }),
+      ];
+      const summary = summarizeGoldenReport(details);
+
+      expect(summary).toMatchObject({
+        imported: 3,
+        included: 2,
+        tracked: 1,
+        needsReview: 0,
+        scopeTotals: {
+          'Scope 1': 0,
+          'Scope 2': 519.4,
+          'Scope 3': 60,
+        },
+        total: 579.4,
+        calculationCoverage: {
+          calculated: 2,
+          eligible: 2,
+          score: 100,
+        },
+      });
+      expect(summary.readiness.optionalDataCompleteness).toMatchObject({
+        costDataCount: 3,
+        totalRecords: 3,
+        missingCostDataCount: 0,
+        score: 100,
+      });
+      expect(summary.csvRows.map((row) => [row['Source Reference'], row['Cost CAD']])).toEqual([
+        ['MARCH-ELEC-001', '214.55'],
+        ['MARCH-WATER-007', '64'],
+        ['MARCH-HOTEL-010', '720'],
+      ]);
+      expect(summary.siteFacilityRollup.rows.map((row) => [row.siteFacility, row.totalKgCO2e])).toEqual([
+        ['Calgary HQ', 519.4],
+        ['Toronto Client Visit', 60],
+      ]);
+    });
+
+    it('freezes sanitized ENMAX calculations, missing costs, factor provenance, and CSV semantics', () => {
+      const details = [
+        goldenDetail({
+          activityDataId: 'enmax-electricity',
+          activityType: 'ELECTRICITY',
+          recordDate: '2025-08-01',
+          reportingYear: 2025,
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionRegion: 'Alberta',
+          activityQuantity: 358,
+          activityUnit: 'kWh',
+          factorName: 'Electricity - Alberta',
+          factorValue: 0.53,
+          calculatedEmissionsKgCO2e: 189.74,
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'ENMAX electricity',
+          sourceFileName: 'sanitized-enmax.pdf',
+          sourceDocumentId: 'doc-enmax',
+          costCad: null,
+          costCurrency: null,
+        }),
+        goldenDetail({
+          activityDataId: 'enmax-natural-gas',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2025-08-01',
+          reportingYear: 2025,
+          jurisdiction: 'Canada',
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: null,
+          activityQuantity: 3,
+          activityUnit: 'GJ',
+          factorName: 'Natural Gas - Canada Generic',
+          factorValue: 49.44,
+          factorInputUnit: 'GJ',
+          factorResultUnit: 'kgCO2e',
+          factorSource: 'Environment and Climate Change Canada',
+          sourceAuthority: 'Environment and Climate Change Canada',
+          sourceDocument: 'Canada National Inventory Report',
+          sourceYear: 2025,
+          factorSelectionReason: 'GENERIC_JURISDICTION_FALLBACK',
+          calculatedEmissionsKgCO2e: 148.32,
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'ENMAX natural gas',
+          sourceFileName: 'sanitized-enmax.pdf',
+          sourceDocumentId: 'doc-enmax',
+          costCad: null,
+          costCurrency: null,
+        }),
+        goldenDetail({
+          activityDataId: 'enmax-water',
+          activityType: 'WATER',
+          recordDate: '2025-08-01',
+          reportingYear: 2025,
+          activityQuantity: 6,
+          activityUnit: 'm3',
+          calculatedEmissionsKgCO2e: null,
+          status: 'TRACKED_ONLY',
+          calculationStatus: 'TRACKED_ONLY',
+          matchingStatus: 'TRACKED_ONLY',
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'ENMAX water',
+          sourceFileName: 'sanitized-enmax.pdf',
+          sourceDocumentId: 'doc-enmax',
+          costCad: null,
+          costCurrency: null,
+        }),
+      ];
+      const summary = summarizeGoldenReport(details);
+      const naturalGasCsv = summary.csvRows.find((row) => row['Activity Type'] === 'Natural Gas');
+
+      expect(summary).toMatchObject({
+        imported: 3,
+        included: 2,
+        tracked: 1,
+        scopeTotals: {
+          'Scope 1': 148.32,
+          'Scope 2': 189.74,
+          'Scope 3': 0,
+        },
+        total: 338.06,
+        calculationCoverage: {
+          calculated: 2,
+          eligible: 2,
+          score: 100,
+        },
+      });
+      expect(summary.readiness.optionalDataCompleteness).toMatchObject({
+        costDataCount: 0,
+        totalRecords: 3,
+        missingCostDataCount: 3,
+        score: 0,
+      });
+      expect(summary.csvRows.map((row) => [row['Activity Type'], row['Cost CAD']])).toEqual([
+        ['Electricity', ''],
+        ['Natural Gas', ''],
+        ['Water', ''],
+      ]);
+      expect(naturalGasCsv).toMatchObject({
+        'Matched Factor Name': 'Natural Gas - Canada Generic',
+        'Matched Factor Value': '49.44',
+        'Matched Factor Unit': 'kgCO2e/GJ',
+        'Factor Jurisdiction': 'Canada (Generic)',
+        'Factor Source Authority': 'Environment and Climate Change Canada',
+        'Factor Source Year': 2025,
+        'Factor Selection Reason': 'GENERIC_JURISDICTION_FALLBACK',
+      });
+      expect(naturalGasCsv?.['Review Note']).toContain('Canada-generic ECCC factor');
+      expect(naturalGasCsv?.['Review Note']).not.toContain('CarbonLite system-default factor');
+    });
+
+    it('freezes carbonlite_field_mapping_test.xlsx facility, source, missing-cost, and total contracts', () => {
+      const details = [
+        goldenDetail({
+          activityDataId: 'field-mapping-electricity',
+          activityType: 'ELECTRICITY',
+          recordDate: '2026-01-31',
+          jurisdiction: 'Alberta, Canada',
+          jurisdictionRegion: 'Alberta',
+          facilityName: 'Calgary HQ',
+          activityQuantity: 1250,
+          activityUnit: 'kWh',
+          factorValue: 0.53,
+          calculatedEmissionsKgCO2e: 662.5,
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'ENMAX_Jan_2026.pdf',
+          sourceFileName: 'carbonlite_field_mapping_test.xlsx',
+          sourceSheetName: 'Operations_2026',
+          sourceRow: 2,
+          sourceDocumentId: 'doc-field-mapping',
+        }),
+        goldenDetail({
+          activityDataId: 'field-mapping-natural-gas',
+          activityType: 'NATURAL_GAS',
+          recordDate: '2026-01-31',
+          jurisdiction: 'Canada',
+          jurisdictionRegion: null,
+          facilityName: 'Calgary HQ',
+          activityQuantity: 8.5,
+          activityUnit: 'GJ',
+          factorName: 'Natural Gas - Canada Generic',
+          factorValue: 49.44,
+          factorInputUnit: 'GJ',
+          calculatedEmissionsKgCO2e: 420.24,
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'ATCO_Jan_2026.pdf',
+          sourceFileName: 'carbonlite_field_mapping_test.xlsx',
+          sourceSheetName: 'Operations_2026',
+          sourceRow: 3,
+          sourceDocumentId: 'doc-field-mapping',
+        }),
+        goldenDetail({
+          activityDataId: 'field-mapping-gasoline',
+          activityType: 'GASOLINE',
+          recordDate: '2026-02-05',
+          facilityName: 'Vancouver Fleet',
+          activityQuantity: 350,
+          activityUnit: 'L',
+          factorValue: 2.31,
+          calculatedEmissionsKgCO2e: 808.5,
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'fuel_card_feb.csv',
+          sourceFileName: 'carbonlite_field_mapping_test.xlsx',
+          sourceSheetName: 'Operations_2026',
+          sourceRow: 4,
+          sourceDocumentId: 'doc-field-mapping',
+        }),
+        goldenDetail({
+          activityDataId: 'field-mapping-hotel',
+          activityType: 'HOTEL',
+          recordDate: '2026-02-10',
+          jurisdiction: 'Ontario, Canada',
+          jurisdictionRegion: 'Ontario',
+          facilityName: 'Toronto Sales Trip',
+          activityQuantity: 3,
+          activityUnit: 'nights',
+          factorValue: 15,
+          calculatedEmissionsKgCO2e: 45,
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'hotel_invoice_0210.pdf',
+          sourceFileName: 'carbonlite_field_mapping_test.xlsx',
+          sourceSheetName: 'Operations_2026',
+          sourceRow: 5,
+          sourceDocumentId: 'doc-field-mapping',
+        }),
+        goldenDetail({
+          activityDataId: 'field-mapping-air-travel',
+          activityType: 'AIR_TRAVEL',
+          recordDate: '2026-02-18',
+          facilityName: 'Corporate Travel',
+          activityQuantity: 4280,
+          activityUnit: 'km',
+          factorValue: 0.115,
+          calculatedEmissionsKgCO2e: 492.2,
+          sourceType: 'DOCUMENT_AI',
+          sourceReference: 'flight_YVR_YYZ_0218.pdf',
+          sourceFileName: 'carbonlite_field_mapping_test.xlsx',
+          sourceSheetName: 'Operations_2026',
+          sourceRow: 6,
+          sourceDocumentId: 'doc-field-mapping',
+        }),
+      ];
+      const summary = summarizeGoldenReport(details);
+
+      expect(summary).toMatchObject({
+        imported: 5,
+        included: 5,
+        tracked: 0,
+        needsReview: 0,
+        scopeTotals: {
+          'Scope 1': 1228.74,
+          'Scope 2': 662.5,
+          'Scope 3': 537.2,
+        },
+        total: 2428.44,
+        calculationCoverage: {
+          calculated: 5,
+          eligible: 5,
+          score: 100,
+        },
+      });
+      expect(summary.readiness.optionalDataCompleteness).toMatchObject({
+        costDataCount: 0,
+        totalRecords: 5,
+        missingCostDataCount: 5,
+        score: 0,
+      });
+      expect(summary.siteFacilityRollup.rows.map((row) => [row.siteFacility, row.totalKgCO2e])).toEqual([
+        ['Calgary HQ', 1082.74],
+        ['Vancouver Fleet', 808.5],
+        ['Corporate Travel', 492.2],
+        ['Toronto Sales Trip', 45],
+      ]);
+      expect(summary.csvRows.map((row) => [row['Source Reference'], row['Cost CAD'], row['Source Type']])).toEqual([
+        ['ENMAX_Jan_2026.pdf', '', 'Spreadsheet'],
+        ['ATCO_Jan_2026.pdf', '', 'Spreadsheet'],
+        ['fuel_card_feb.csv', '', 'Spreadsheet'],
+        ['hotel_invoice_0210.pdf', '', 'Spreadsheet'],
+        ['flight_YVR_YYZ_0218.pdf', '', 'Spreadsheet'],
+      ]);
+      expect(new Set(summary.csvRows.map((row) => row['Source Row']))).toEqual(
+        new Set(['2', '3', '4', '5', '6']),
+      );
+      expect(summary.siteFacilityRollup.rows.map((row) => row.siteFacility)).not.toContain('Unassigned');
+    });
   });
 
   it('accepts refactored summary count fields when recordsCalculated is absent', async () => {
@@ -1380,35 +1950,30 @@ describe('loadMetricsOverview', () => {
     ['GASOLINE', 'L', 'Gasoline', 'liters', 2.31, 231],
     ['NATURAL_GAS', 'm³', 'Natural Gas', 'm3', 1.89, 189],
   ])(
-    'uses visible factor library fallback for %s / %s',
+    'uses persisted backend results despite a changed current factor for %s / %s',
     async (activityType, unit, factorName, factorUnit, factorValue, expectedEmissions) => {
       vi.mocked(getCalculationSummary).mockResolvedValue({
         ...backendSummary(),
         totalsByMetric: [],
-        totalEstimatedEmissionsKgCO2e: 0,
+        totalEstimatedEmissionsKgCO2e: expectedEmissions,
         totalRecordsFound: 1,
         recordsInScope: 1,
-        recordsCalculated: 0,
-        recordsIncluded: 0,
-        processedRecords: 0,
-        skippedRecords: 1,
-        missingFactorCount: 1,
-        missingFactorRecords: 1,
-        missingFactors: [
-          {
-            activityDataId: 'activity-1',
-            activityType,
-            unit,
-            availableUnitsForActivityType: [],
-          },
-        ],
+        recordsCalculated: 1,
+        recordsIncluded: 1,
+        processedRecords: 1,
+        skippedRecords: 0,
+        missingFactorCount: 0,
+        missingFactorRecords: 0,
+        missingFactors: [],
         calculationDetails: [
           {
             ...backendSummary().calculationDetails[0],
             activityType,
             activityUnit: unit,
-            status: 'MISSING_FACTOR',
-            calculatedEmissionsKgCO2e: null,
+            status: 'CALCULATED',
+            factorId: 'factor-visible', factorValue, factorName, factorInputUnit: factorUnit,
+            matchingMessage: 'Historical calculation retained from persisted evidence.',
+            calculatedEmissionsKgCO2e: expectedEmissions,
           },
         ],
         matchedActivityEmissions: [],
@@ -1434,7 +1999,7 @@ describe('loadMetricsOverview', () => {
           activityType: null,
           inputUnit: factorUnit,
           unit: factorUnit,
-          factorValue,
+          factorValue: factorValue + 1,
           resultUnit: 'kgCO2e',
           sourceAuthority: 'CarbonLite system defaults',
           sourceYear: 2025,
@@ -1451,6 +2016,7 @@ describe('loadMetricsOverview', () => {
         dateTo: '2025-12-31',
       });
 
+      expect(getAllConversionFactors).not.toHaveBeenCalled();
       expect(overview.processedRecords).toBe(1);
       expect(overview.skippedRecords).toBe(0);
       expect(overview.missingFactorRecords).toBe(0);
@@ -1458,12 +2024,31 @@ describe('loadMetricsOverview', () => {
       expect(overview.calculationDetails[0]).toMatchObject({
         status: 'CALCULATED',
         factorId: 'factor-visible',
-        matchingMessage: 'Matched to a factor provided by CarbonLite.',
+        matchingMessage: 'Historical calculation retained from persisted evidence.',
         calculatedEmissionsKgCO2e: expectedEmissions,
       });
       expect(overview.calculationDetails[0].matchingMessage).not.toMatch(/backend factor matching/i);
     },
   );
+
+  it.each([true, false])('preserves real manual creation evidence through persisted backend calculations (evidence=%s)', async hasOrigin => {
+    const origin = { auditId: 'creation-audit', actorId: 'creator', createdAt: '2026-10-14T12:00:00Z', activityDataId: 'activity-1', activityType: 'ELECTRICITY', recordDate: '2026-10-14', quantity: 980, unit: 'kWh', jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', facilityName: 'Main Office' };
+    const activity = { id: 'activity-1', sourceType: 'MANUAL', activityType: 'ELECTRICITY', recordDate: '2026-10-14', quantity: 980, unit: 'kWh', jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta' };
+    vi.mocked(getCalculationSummary).mockResolvedValue({
+      ...backendSummary(), totalRecordsFound: 1, recordsInScope: 1, recordsCalculated: 1, processedRecords: 1,
+      missingFactorCount: 0, missingFactors: [], totalEstimatedEmissionsKgCO2e: 519.4, skippedRecords: 0, missingFactorRecords: 0,
+      activities: [activity], matchedActivityEmissions: [], conversionFactorsUsed: [], records: [],
+      calculationDetails: [{ ...backendSummary().calculationDetails[0], activityDataId: 'activity-1', sourceType: 'MANUAL', activityType: 'ELECTRICITY', activityQuantity: 980, activityUnit: 'kWh', recordDate: '2026-10-14', jurisdictionRegion: 'Alberta', factorId: 'electricity-ab', factorValue: .53, factorName: 'Electricity - Alberta', factorInputUnit: 'kWh', calculatedEmission: 519.4, calculatedEmissionsKgCO2e: 519.4, status: 'CALCULATED', calculationStatus: 'CALCULATED', manualSourceProvenance: hasOrigin ? origin : null }],
+    } as any);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([{ id: 'electricity-ab', activityType: 'ELECTRICITY', name: 'Electricity - Alberta', type: 'EMISSION', unit: 'kWh', inputUnit: 'kWh', factorValue: .53, resultUnit: 'kgCO2e', jurisdiction: 'Alberta, Canada', region: 'Alberta', country: 'Canada', sourceYear: 2025, sourceAuthority: 'CarbonLite', sourceDocument: 'Default Factors v1.0', isSystemDefault: true, isDefault: true }] as any);
+    const overview = await loadMetricsOverview();
+    const detail = overview.calculationDetails[0];
+    expect(detail.status).toBe('CALCULATED');
+    expect(detail.calculatedEmissionsKgCO2e).toBe(519.4);
+    expect(detail.manualSourceProvenance).toEqual(hasOrigin ? origin : null);
+    if (hasOrigin) expect(getCalculationTraceabilityGaps(detail)).toEqual([]);
+    else expect(getCalculationTraceabilityGaps(detail)).toContain('manual creation audit');
+  });
 
   it('does not use generic visible factor library fallback for electricity without province', async () => {
     vi.mocked(getCalculationSummary).mockResolvedValue({
@@ -1617,6 +2202,19 @@ describe('metrics date range', () => {
       endDate: '2025-12-31',
       hasActivityRecords: true,
     });
+  });
+
+  it.each([
+    [{ name: 'Calgary Main Office' }, 'Calgary HQ', 'Calgary Main Office'],
+    [null, 'Calgary HQ', 'Calgary HQ'],
+    [null, null, null],
+  ])('uses canonical facility entity before source text (%p)', async (facility, facilityName, expected) => {
+    const summary = backendSummary();
+    const activity = { id: 'activity-1', activityType: 'DIESEL', recordDate: '2025-06-30', quantity: 100, unit: 'L', facility, facilityName, costCad: null };
+    vi.mocked(getCalculationSummary).mockResolvedValue({ ...summary, activities: [activity], calculationDetails: [{ ...summary.calculationDetails[0], facilityName }] } as any);
+    const overview = await loadMetricsOverview({ periodStart: '2025-01-01', periodEnd: '2025-12-31' });
+    expect(overview.calculationDetails[0].facilityName).toBe(expected);
+    expect(buildSiteFacilityRollup(overview.calculationDetails).rows[0].siteFacility).toBe(expected ?? 'Unassigned');
   });
 
   it('loads activity dates only for initial date range discovery', async () => {

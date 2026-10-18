@@ -24,6 +24,7 @@ describe('PrivacyPolicyPage', () => {
       screen.getByText(/uploaded files and extracted data are used/i),
     ).toHaveTextContent(/are not sold/i);
     expect(screen.getByText(/Vercel for frontend hosting/i)).toBeInTheDocument();
+    expect(screen.getByText(/document content may be sent to/i)).toHaveTextContent(/OpenAI/);
     expect(screen.getByText('carbonliteai@gmail.com')).toBeInTheDocument();
   });
 

@@ -68,7 +68,7 @@ export function aggregateActivityUsage(
 
       if (FUEL_ACTIVITY_TYPES.has(activityType)) {
         if (!hasValidUnit) {
-          totals.invalidFuelRecordCount += 1;
+          totals.invalidFuelRecordCount = (totals.invalidFuelRecordCount ?? 0) + 1;
           return totals;
         }
 
@@ -91,13 +91,13 @@ export function aggregateActivityUsage(
 
       if (activityType === 'ELECTRICITY') {
         if (!hasValidUnit) {
-          totals.invalidElectricityRecordCount += 1;
+          totals.invalidElectricityRecordCount = (totals.invalidElectricityRecordCount ?? 0) + 1;
           return totals;
         }
 
         const conversionFactor = ELECTRICITY_UNIT_TO_KWH[normalizedUnit.value];
         if (!conversionFactor) {
-          totals.invalidElectricityRecordCount += 1;
+          totals.invalidElectricityRecordCount = (totals.invalidElectricityRecordCount ?? 0) + 1;
           return totals;
         }
 

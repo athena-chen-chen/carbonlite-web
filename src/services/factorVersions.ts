@@ -1,3 +1,4 @@
+import type { FactorGovernance } from '../utils/factorGovernance';
 import { apiFetch } from './api';
 
 export type FactorVersionStatus =
@@ -7,10 +8,11 @@ export type FactorVersionStatus =
   | 'DEPRECATED'
   | 'ARCHIVED';
 
-export type FactorVersion = {
+export type FactorVersion = FactorGovernance & {
   id: string;
   factorId: string;
   displayName?: string | null;
+  activityType?: string | null;
   isSystem?: boolean | null;
   version: string;
   factorValue: number;

@@ -1,8 +1,10 @@
+import { factorProvenanceLines } from './factorGovernance';
 import type { CalculationAuditDetail } from '../services/metrics';
+import type { CanonicalReportData } from '../reports/domain/reportTypes';
 import { getActivityTypeLabel, getFactorDisplayName } from './activityType';
 import { formatCredibilityLabel } from './factorCredibility';
 import {
-  formatReportFactorVersion,
+  getDisplayFactorVersion,
   formatReportImportMethod,
   formatReportJurisdiction,
   formatReportSourceReference,
@@ -62,6 +64,12 @@ export const PILOT_CSV_HEADERS = [
 ] as const;
 
 export type PilotCsvRow = Record<(typeof PILOT_CSV_HEADERS)[number], string | number>;
+
+type CsvInput = CalculationAuditDetail[] | Pick<CanonicalReportData, 'calculationDetails'>;
+
+function getCalculationDetailsForCsv(input: CsvInput) {
+  return Array.isArray(input) ? input : input.calculationDetails;
+}
 
 function normalizeStatus(value?: string | null) {
   return String(value ?? '')
@@ -323,8 +331,8 @@ function getActivityJurisdictionRegion(detail: CalculationAuditDetail) {
   return String(detail.jurisdictionRegion ?? '').trim();
 }
 
-export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]): PilotCsvRow[] {
-  return calculationDetails.map((detail, index) => {
+export function buildPilotCsvRows(input: CsvInput): PilotCsvRow[] {
+  return getCalculationDetailsForCsv(input).map((detail, index) => {
     const sourceType = formatReportSourceType(detail.sourceType, detail.sourceFileName, detail.sourceReference);
     const importMethod = formatReportImportMethod(detail.sourceType, detail.sourceFileName, detail.sourceReference);
     const sourceReference = String(detail.sourceReference ?? '').trim() || formatReportSourceReference({
@@ -354,8 +362,11 @@ export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]):
       'Matched Factor Unit': formatCsvFactorUnit(detail),
       'Factor Jurisdiction': formatCsvFactorJurisdiction(detail),
       'Factor Source Year': isTrackedMetricDetail(detail) ? '' : detail.factorYear || detail.sourceYear || 'Not specified',
-      'Factor Version': isTrackedMetricDetail(detail) ? '' : formatReportFactorVersion({
+      'Factor Version': isTrackedMetricDetail(detail) ? '' : getDisplayFactorVersion({
         factorVersion: detail.factorVersion,
+        factorId: detail.factorId,
+        factorVersionId: detail.factorVersionId,
+        factorProvenance: detail.factorProvenance,
         sourceDocument: detail.sourceDocument,
         sourceAuthority: detail.sourceAuthority,
       }),
@@ -387,7 +398,7 @@ export function buildPilotCsvRows(calculationDetails: CalculationAuditDetail[]):
       'Source Type': sourceType,
       'Import Method': importMethod,
       'Source Reference': sourceReference,
-      'Review Note': buildCsvReviewNote(detail),
+      'Review Note': [buildCsvReviewNote(detail), ...factorProvenanceLines(detail.factorProvenance)].filter(Boolean).join('; '),
     };
   });
 }
@@ -400,8 +411,8 @@ export function escapeCsvValue(value: unknown) {
   return text;
 }
 
-export function buildPilotCsv(calculationDetails: CalculationAuditDetail[]) {
-  const rows = buildPilotCsvRows(calculationDetails);
+export function buildPilotCsv(input: CsvInput) {
+  const rows = buildPilotCsvRows(input);
   return [
     PILOT_CSV_HEADERS.join(','),
     ...rows.map((row) => PILOT_CSV_HEADERS.map((header) => escapeCsvValue(row[header])).join(',')),

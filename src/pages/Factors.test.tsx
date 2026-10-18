@@ -8,7 +8,7 @@ describe('Factors demo page', () => {
     expect(
       screen.getByText(/Demo factors are provided for workflow validation only/i),
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Unverified')).toHaveLength(demoFactors.length);
+    expect(screen.getAllByText('Internal Review Required')).toHaveLength(demoFactors.length);
     expect(screen.getAllByText('Demo / Placeholder')).toHaveLength(
       demoFactors.length,
     );

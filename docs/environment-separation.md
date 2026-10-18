@@ -1,5 +1,8 @@
 # CarbonLite Environment Separation Plan
 
+For explicit Neon DEVELOPMENT and local Docker startup commands, see
+[Developer databases](developer-databases.md). Production remains separate.
+
 CarbonLite is currently pilot-demo ready, not production-ready. This plan keeps
 daily development away from the stable Pilot Demo v0.1 workspace while preparing
 safe production configuration.

@@ -1,3 +1,4 @@
+import { getDisplayFactorProvenanceLines, getDisplayFactorJurisdiction } from '../utils/factorProvenanceDisplay';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -39,7 +40,6 @@ import {
   isRecordRequiringCorrection,
   isTrackedMetricDetail,
 } from '../utils/reportCredibility';
-import { formatJurisdictionDisplayLabel } from '../utils/terminology';
 import {
   buildReportingReadinessAssessment,
   formatReadinessStatus,
@@ -863,7 +863,10 @@ function CalculationDetailModal({
             value={formatDetailFactorUsed(detail)}
           />
           <CalculationDetailField label="Factor Source" value={formatTraceabilitySource(detail)} />
-          <CalculationDetailField label="Factor Version" value={detail.factorVersion || detail.factorVersionId || 'Not specified'} />
+          {getDisplayFactorProvenanceLines(detail).map(line => {
+            const separator = line.indexOf(': ');
+            return <CalculationDetailField key={line} label={line.slice(0, separator)} value={line.slice(separator + 2)} />;
+          })}
           <CalculationDetailField
             label="Verification"
             value={formatReportVerification({
@@ -1054,9 +1057,9 @@ function CalculationTrailModal({
                     <span>{factor.activityType} · {factor.jurisdiction}</span>
                     <small>Value: {factor.value}</small>
                     <small>Source year: {factor.sourceYear}</small>
-                    <small>Version: {factor.version}</small>
                     <small>Source: {factor.sourceAuthority}</small>
                     <small>Source document: {factor.sourceDocument}</small>
+                    {factor.provenanceLines.map((line) => <small key={line}>{line}</small>)}
                     <small>Confidence: {factor.confidence}</small>
                     <small>Verification: {factor.verification}</small>
                     {factor.consultantReviewRecommended ? (
@@ -1285,9 +1288,9 @@ function buildTrailFactorSummary(detail: CalculationAuditDetail) {
             detail.factorInputUnit || detail.normalizedUnit || detail.activityUnit,
           )}`,
     sourceYear: formatSafeValue(sourceYear),
-    version: formatSafeValue(detail.factorVersion || detail.factorVersionId, 'CarbonLite MVP Default Factors v1.0'),
     sourceAuthority: formatSafeValue(detail.sourceAuthority || detail.factorSource, 'Source review required'),
     sourceDocument: formatSafeValue(detail.sourceDocument, 'Source review required'),
+    provenanceLines: getDisplayFactorProvenanceLines(detail),
     confidence: formatCredibilityLabel(detail.factorConfidenceLevel) || 'Pilot Estimate',
     verification: formatReportVerification({
       activityType: detail.activityType,
@@ -1301,12 +1304,7 @@ function buildTrailFactorSummary(detail: CalculationAuditDetail) {
 }
 
 function formatFactorJurisdiction(detail: CalculationAuditDetail) {
-  return (
-    formatJurisdictionDisplayLabel(
-      detail.factorJurisdictionRegion,
-      detail.factorJurisdictionCountry,
-    ) || 'Not specified'
-  );
+  return getDisplayFactorJurisdiction(detail);
 }
 
 function formatSafeValue(value: unknown, fallback = 'Source review required') {
@@ -1336,11 +1334,11 @@ function formatConvertedQuantity(detail: CalculationAuditDetail) {
   const activityUnit = normalizeUnitForDisplay(detail.activityUnit);
   const factorUnit = normalizeUnitForDisplay(normalizedUnit);
   const activityUnitLabel =
-    activityUnit.status === 'valid' || activityUnit.status === 'ambiguous'
+    activityUnit.status === 'valid'
       ? activityUnit.value
       : String(detail.activityUnit ?? '').trim();
   const factorUnitLabel =
-    factorUnit.status === 'valid' || factorUnit.status === 'ambiguous'
+    factorUnit.status === 'valid'
       ? factorUnit.value
       : String(normalizedUnit ?? '').trim();
 
@@ -1939,28 +1937,7 @@ function hasOptionalCostData(detail: CalculationAuditDetail) {
     candidate.currencyAmount,
   ];
 
-  if (
-    explicitCostFields.some((value) => {
-      const normalized = String(value ?? '').trim();
-      return normalized.length > 0 && /(\d|\$|\bcad\b|\busd\b)/i.test(normalized);
-    })
-  ) {
-    return true;
-  }
-
-  return [
-    candidate.sourceTextSnippet,
-    candidate.sourceText,
-    candidate.notes,
-    candidate.description,
-  ].some(hasCostEvidenceText);
-}
-
-function hasCostEvidenceText(value: unknown) {
-  const text = String(value ?? '').trim();
-  if (!text) return false;
-
-  return /(?:cost|amount|spend|total)\s*(?:[:=-]\s*)?(?:\$|cad|usd)?\s*\d/i.test(text);
+  return explicitCostFields.some((value) => value !== null && value !== undefined && String(value).trim() !== '');
 }
 
 function percentage(count: number, total: number) {

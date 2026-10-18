@@ -13,6 +13,12 @@ import {
   monitorCriticalFailures,
 } from '../support/smoke-test';
 
+function countPdfPages(buffer: Buffer) {
+  const text = buffer.toString('latin1');
+  const matches = text.match(/\/Type\s*\/Page\b/g);
+  return matches?.length ?? 0;
+}
+
 test('@smoke retry extraction restores a failed document to review', async ({ page }) => {
   const api = createCarbonLiteApiState();
   seedFailedDocument(api);
@@ -34,9 +40,15 @@ test('@smoke retry extraction restores a failed document to review', async ({ pa
   api.releaseExtraction();
 
   await expect(page.getByRole('heading', {
-    name: 'Review & Edit Data Before Import',
+    name: 'Draft Records Review',
   })).toBeVisible();
-  await expect(documentRow).toContainText('Ready for Review');
+  await expect(page.getByText('Detected Source Items Not Used in Emissions Calculation')).toBeVisible();
+  await expect(page.getByText('Waste & Recycling')).toBeVisible();
+  await expect(page.getByText('Service Days: 30')).toBeVisible();
+  await expect(page.getByText('Source Cost: $19.54')).toBeVisible();
+  await expect(page.getByText('Blue Cart: $2.17; Black Cart: $7.39; Green Cart: $9.98')).toBeVisible();
+  await expect(page.getByText('Reason: No supported waste quantity was provided.')).toBeVisible();
+  await expect(documentRow).toContainText('Needs Review');
   failures.assertClean(api.unexpectedRequests);
 });
 
@@ -213,6 +225,22 @@ test('@smoke ENMAX report CSV keeps missing Cost CAD cells blank', async ({ page
   expect(csv).toContain('\n1,Electricity,2025-08-01,358,358 kWh,kWh,,');
   expect(csv).toContain('\n2,Natural Gas,2025-08-01,3,3 GJ,GJ,,');
   expect(csv).toContain('\n3,Water,2025-08-01,6,6 m3,m3,,');
+
+  const executiveDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: /^Export reports$/i }).click();
+  await page.getByRole('menuitem', { name: /Executive Summary \(PDF\)/i }).click();
+  const executivePath = await (await executiveDownloadPromise).path();
+  expect(executivePath).toBeTruthy();
+  expect(countPdfPages(await fs.readFile(executivePath ?? ''))).toBe(2);
+
+  const technicalDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: /^Export reports$/i }).click();
+  await page.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/i }).click();
+  const technicalPath = await (await technicalDownloadPromise).path();
+  expect(technicalPath).toBeTruthy();
+  expect(countPdfPages(await fs.readFile(technicalPath ?? ''))).toBe(9);
+  await expect(page.getByRole('button', { name: /^Export reports$/i })).toBeEnabled();
+  await expect(page).toHaveURL(/\/reports$/);
   failures.assertClean(api.unexpectedRequests);
 });
 

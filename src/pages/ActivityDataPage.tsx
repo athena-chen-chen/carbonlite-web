@@ -1,3 +1,5 @@
+import { PageHeader } from '../components/PageHeader';
+import { getDisplayFactorVersion } from '../utils/factorProvenanceDisplay';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -71,7 +73,6 @@ import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { invalidateDemoDataQueries } from '../queryClient';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
-import { formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
 import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
 import {
   buildDataRecordsCsv,
@@ -110,6 +111,7 @@ type ActivityTableColumnKey = (typeof ACTIVITY_TABLE_COLUMNS)[number]['key'];
 
 type ActivityDataItem = {
   id: string;
+  assetId?: string | null;
   organizationId?: string | null;
   activityType?: string | null;
   recordDate?: string | null;
@@ -664,7 +666,7 @@ useEffect(() => {
     }
 
     function isInsideActiveActionMenu(target: Node | null) {
-      const activeButton = actionMenuButtonRefs.current[openActionMenuId];
+      const activeButton = actionMenuButtonRefs.current[openActionMenuId ?? ''];
 
       return Boolean(
         target &&
@@ -2066,7 +2068,7 @@ async function handleUndoDelete() {
   }
 }
 
-function renderNormalRow(row){
+function renderNormalRow(row: ActivityDataItem){
   const quality = getActivityRecordQuality(row, conversionFactors);
 
   return (
@@ -2156,7 +2158,7 @@ function getEditRowColSpan() {
   return Object.values(visibleColumns).filter(Boolean).length + 2;
 }
 
-function renderEditRow(row){
+function renderEditRow(row: ActivityDataItem){
   return (
     <tr key={`${row.id}-edit`}>
       <td colSpan={getEditRowColSpan()} style={expandedEditCellStyle}>
@@ -2273,7 +2275,7 @@ function renderViewedRecordModal() {
             <DetailsField label="Matched Factor Value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
             <DetailsField label="Matched Factor Unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
             <DetailsField label="Matched Factor Source Year" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceYear ?? matchedFactor?.factorYear)} />
-            <DetailsField label="Matched Factor Version" value={formatOptionalRecordValue(viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion)} />
+            <DetailsField label="Matched Factor Version" value={formatOptionalRecordValue(getDisplayFactorVersion({ factorVersion: viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion, sourceDocument: viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument }))} />
             <DetailsField label="Source Authority" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceAuthority ?? matchedFactorSnapshot.matchedFactorSourceAuthority)} />
             <DetailsField label="Source Document" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument)} />
             <DetailsField label="Source URL" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceUrl ?? matchedFactorSnapshot.matchedFactorSourceUrl)} fullWidth />
@@ -2464,12 +2466,7 @@ if (import.meta.env.DEV) {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      {/* ⭐ 标题区 */}
-      <h1 style={pageTitleStyle}>Data Records</h1>
-
-      <p style={pageSubtitleStyle}>
-        {formatWorkflowStageLabel(getWorkflowStage('DATA_ISSUES'))}. Data Records shows saved activity records and source-data issues. Data contributors correct missing fields, quantities, units, jurisdiction, and source references here; factor methodology review happens in Calculation Review.
-      </p>
+      <PageHeader title="Data Records" />
       {canEditActivityRecords ? (
         <button
           type="button"
@@ -3089,16 +3086,6 @@ const activityRecordsPalette = {
   errorBackground: '#FEF2F2',
   errorText: '#B91C1C',
   infoText: '#475569',
-};
-
-const pageTitleStyle: React.CSSProperties = {
-  marginBottom: 8,
-  color: activityRecordsPalette.primaryText,
-};
-
-const pageSubtitleStyle: React.CSSProperties = {
-  color: activityRecordsPalette.secondaryText,
-  marginBottom: 24,
 };
 
 const card: React.CSSProperties = {

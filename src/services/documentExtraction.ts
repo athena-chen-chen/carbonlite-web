@@ -52,11 +52,40 @@ export type ParsedActivity = {
   calculationMessage?: string | null;
 };
 
+export type DetectedSourceItem = {
+  id?: string | null;
+  type: string;
+  label?: string | null;
+  classification?: string | null;
+  importEligibility?: string | null;
+  reason?: string | null;
+  reasonDetail?: string | null;
+  sourceFileName?: string | null;
+  sourceDocumentId?: string | null;
+  sourceReference?: string | null;
+  sourcePage?: string | number | null;
+  sourceTextSnippet?: string | null;
+  servicePeriodStart?: string | null;
+  servicePeriodEnd?: string | null;
+  serviceDays?: number | string | null;
+  sourceQuantity?: number | string | null;
+  sourceUnit?: string | null;
+  sourceCostCad?: number | string | null;
+  sourceCostCurrency?: string | null;
+  potentialCategory?: string | null;
+  sourceDetails?: Array<{
+    label: string;
+    amountCad?: number | string | null;
+    value?: string | number | null;
+  }>;
+};
+
 export type ExtractResponse = {
   documentId: string;
   status: string;
   openaiFileId?: string;
   parsedActivities: ParsedActivity[];
+  detectedSourceItems?: DetectedSourceItem[];
   sourceRowCount: number;
   extractedRowCount: number;
   possibleMissingRows: boolean;

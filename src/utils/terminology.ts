@@ -155,7 +155,7 @@ export function formatJurisdictionDisplayLabel(region?: string | null, country?:
 
   const cleanRegion = String(region ?? '').trim();
   const cleanCountry = String(country ?? '').trim();
-  if (cleanRegion && cleanCountry && cleanRegion.toLowerCase() !== cleanCountry.toLowerCase()) {
+  if (cleanRegion && cleanCountry && !cleanRegion.toLowerCase().includes(cleanCountry.toLowerCase())) {
     return `${cleanRegion}, ${cleanCountry}`;
   }
   return cleanRegion || cleanCountry || '';

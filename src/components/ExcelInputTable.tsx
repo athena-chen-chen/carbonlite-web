@@ -129,6 +129,8 @@ const SITE_FACILITY_ALIASES = [
   'Site Name',
   'location',
   'Location',
+  'locationName',
+  'Location Name',
   'branch',
   'Branch',
   'factory',
@@ -228,6 +230,7 @@ function createSpreadsheetImportBatchId(fileName: string) {
 const SPREADSHEET_HEADER_ALIASES = [
   'activityType',
   'Activity Type',
+  'Record Category',
   'type',
   'activity',
   'recordDate',
@@ -236,6 +239,7 @@ const SPREADSHEET_HEADER_ALIASES = [
   'Date',
   'quantity',
   'Quantity',
+  'Consumption',
   'qty',
   'amount',
   'usage',
@@ -247,6 +251,7 @@ const SPREADSHEET_HEADER_ALIASES = [
   'Province',
   'sourceReference',
   'Source Reference',
+  'Original Document',
   'costCad',
   'Cost CAD',
   'cost',
@@ -257,11 +262,15 @@ const SPREADSHEET_HEADER_ALIASES = [
   'Site',
   'facility',
   'Facility',
+  'location',
+  'Location',
+  'locationName',
+  'Location Name',
 ];
 
 function getSpreadsheetHeaderScore(row: unknown[]) {
   const normalizedKnownHeaders = new Set(SPREADSHEET_HEADER_ALIASES.map(normalizeHeader));
-  return row.reduce((score, cell) => {
+  return row.reduce<number>((score, cell) => {
     const text = String(cell ?? '').trim();
     return text && normalizedKnownHeaders.has(normalizeHeader(text)) ? score + 1 : score;
   }, 0);
@@ -323,9 +332,11 @@ export type ExcelInputTableSaveResult = {
 export function ExcelInputTable({
   onSuccess,
   mode = 'manual',
+  onSourceChange,
 }: {
   onSuccess: (result?: ExcelInputTableSaveResult) => void | Promise<void>;
   mode?: ExcelInputTableMode;
+  onSourceChange?: () => void;
 }) {
   const canImportRows = canImportActivityRecords(getCurrentUser());
   const toast = useToast();
@@ -333,8 +344,9 @@ export function ExcelInputTable({
   const [rows, setRows] = useState<Row[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
+  const importSessionRef = useRef(0);
   const spreadsheetFileInputRef = useRef<HTMLInputElement>(null);
-  const [entrySourceType, setEntrySourceType] = useState<'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE'>('MANUAL');
+  const [entrySourceType, setEntrySourceType] = useState<'MANUAL' | 'CSV' | 'EXCEL' | 'PASTE' | 'AI_EXTRACTION'>('MANUAL');
   const [bulkProvince, setBulkProvince] = useState('');
   const [bulkProvinceMessage, setBulkProvinceMessage] = useState('');
   const [facilities, setFacilities] = useState<FacilityItem[]>([]);
@@ -398,21 +410,44 @@ function importFile(file: File) {
   }
 
   const fileName = file.name.toLowerCase();
+  const supportedSource =
+    fileName.endsWith('.csv') ||
+    fileName.endsWith('.xlsx') ||
+    fileName.endsWith('.xls');
+
+  if (!supportedSource) {
+    showError({
+      title: 'Unsupported file type',
+      message: 'Please drop or select a CSV or Excel file.',
+    });
+    return;
+  }
+
+  const importSessionId = beginSpreadsheetImportSession();
 
   if (fileName.endsWith('.csv')) {
-    importCSVFile(file);
+    importCSVFile(file, importSessionId);
     return;
   }
 
   if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-    importExcelFile(file);
+    importExcelFile(file, importSessionId);
     return;
   }
+}
 
-  showError({
-    title: 'Unsupported file type',
-    message: 'Please drop or select a CSV or Excel file.',
-  });
+function beginSpreadsheetImportSession() {
+  importSessionRef.current += 1;
+  setRows([]);
+  setBulkProvince('');
+  setBulkProvinceMessage('');
+  setIsSavingAll(false);
+  onSourceChange?.();
+  return importSessionRef.current;
+}
+
+function isCurrentSpreadsheetImportSession(importSessionId: number) {
+  return importSessionId === importSessionRef.current;
 }
 
 function handleDragEnter(event: React.DragEvent<HTMLDivElement>) {
@@ -459,12 +494,13 @@ function handleDrop(event: React.DragEvent<HTMLDivElement>) {
   const sourceType = getSourceTypeFromFile(file);
 setEntrySourceType(sourceType);
 }
-function importCSVFile(file: File) {
+function importCSVFile(file: File, importSessionId = importSessionRef.current) {
   const reader = new FileReader();
 
   reader.onload = () => {
+    if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
     const text = String(reader.result ?? '');
-    parseCSVText(text);
+    parseCSVText(text, importSessionId, file.name);
   };
 
   reader.readAsText(file);
@@ -686,7 +722,7 @@ function applyFactorToRow(row: Row): Row {
     ...normalizedRow,
     factorId: factor.id,
     factorName: factor.name,
-    factorValue: getFactorValue(factor),
+    factorValue: getFactorValue(factor) ?? undefined,
     factorSourceLabel: match.sourceLabel,
     factorSourceAuthority: getFactorSourceAuthority(factor),
     factorSourceDocument: factorSnapshot.matchedFactorSourceDocument,
@@ -711,10 +747,11 @@ function applyFactorToRow(row: Row): Row {
     supportedUnits: getSupportedUnitsForActivityType(row.activityType),
   };
 }
-function importExcelFile(file: File) {
+function importExcelFile(file: File, importSessionId = importSessionRef.current) {
   const importBatchId = createSpreadsheetImportBatchId(file.name);
 
   function importWorkbookData(result: ArrayBuffer) {
+    if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
     const data = new Uint8Array(result);
     const workbook = XLSX.read(data, { type: 'array', cellDates: false });
 
@@ -725,8 +762,8 @@ function importExcelFile(file: File) {
 
     const importedRows = workbookRows.map(({ row, sourceRow }) => {
       const activityType =
-        normalizeActivityType(readAliasedField(row, ['activityType', 'Activity Type', 'type', 'activity'])) || '';
-      const rawActivityType = readAliasedField(row, ['activityType', 'Activity Type', 'type', 'activity']);
+        normalizeActivityType(readAliasedField(row, ['activityType', 'Activity Type', 'Record Category', 'type', 'activity'])) || '';
+      const rawActivityType = readAliasedField(row, ['activityType', 'Activity Type', 'Record Category', 'type', 'activity']);
       const rawRecordDate = readAliasedRawField(row, [
         'recordDate',
         'Record Date',
@@ -737,8 +774,8 @@ function importExcelFile(file: File) {
         'Reporting Date',
       ]);
       const recordDate = normalizeSpreadsheetDate(rawRecordDate);
-      const rawQuantity = readAliasedField(row, ['quantity', 'Quantity', 'qty', 'amount', 'usage']);
-      const sourceReference = readAliasedField(row, ['Source Reference', 'sourceReference', 'reference']);
+      const rawQuantity = readAliasedField(row, ['quantity', 'Quantity', 'Consumption', 'qty', 'amount', 'usage']);
+      const sourceReference = readAliasedField(row, ['Source Reference', 'sourceReference', 'Original Document', 'reference']);
       const costCad = readAliasedField(row, [
         'Cost CAD',
         'costCad',
@@ -807,6 +844,7 @@ function importExcelFile(file: File) {
     file.arrayBuffer()
       .then(importWorkbookData)
       .catch((err) => {
+        if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
         if (import.meta.env.DEV) {
           console.error('Spreadsheet import failed', err);
         }
@@ -818,13 +856,19 @@ function importExcelFile(file: File) {
   } else {
     const reader = new FileReader();
     reader.onload = (e) => {
+      if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
       importWorkbookData(e.target?.result as ArrayBuffer);
     };
     reader.readAsArrayBuffer(file);
   }
   setEntrySourceType('EXCEL');
 }
-function parseCSVText(text: string) {
+function parseCSVText(
+  text: string,
+  importSessionId = importSessionRef.current,
+  sourceFileName = 'csv-paste-import.csv',
+) {
+  if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
   const lines = text.split(/\r?\n/).filter(Boolean);
 
   if (lines.length < 2) {
@@ -839,6 +883,7 @@ function parseCSVText(text: string) {
 
   const activityTypeIndex = findColumnIndex(headers, [
     'activityType',
+    'record category',
     'activity',
     'type',
     'fuelType',
@@ -854,6 +899,7 @@ function parseCSVText(text: string) {
 
   const quantityIndex = findColumnIndex(headers, [
     'quantity',
+    'consumption',
     'qty',
     'amount',
     'usage',
@@ -881,10 +927,12 @@ function parseCSVText(text: string) {
     'siteName',
     'site name',
     'location',
+    'locationName',
+    'location name',
     'branch',
     'factory',
   ]);
-  const sourceReferenceIndex = findColumnIndex(headers, ['sourceReference', 'source reference', 'reference']);
+  const sourceReferenceIndex = findColumnIndex(headers, ['sourceReference', 'source reference', 'original document', 'reference']);
   const costCadIndex = findColumnIndex(headers, [
     'costCad',
     'cost CAD',
@@ -904,7 +952,7 @@ function parseCSVText(text: string) {
     return;
   }
 
-  const importBatchId = createSpreadsheetImportBatchId('csv-paste-import.csv');
+  const importBatchId = createSpreadsheetImportBatchId(sourceFileName);
   const importedRows = lines.slice(1).map((line) => {
     const cols = line.split(',').map((v) => v.trim());
     const activityType = normalizeActivityType(cols[activityTypeIndex] || '');
@@ -927,6 +975,7 @@ function parseCSVText(text: string) {
       jurisdictionRegion: normalizeProvince(provinceIndex >= 0 ? cols[provinceIndex] : ''),
       facilityName: facilityIndex >= 0 ? cols[facilityIndex] : '',
       sourceReference: sourceReferenceIndex >= 0 ? cols[sourceReferenceIndex] : '',
+      sourceFileName,
       costCad: costCadIndex >= 0 ? cols[costCadIndex] : '',
       costCurrency:
         costCurrencyIndex >= 0
@@ -938,11 +987,12 @@ function parseCSVText(text: string) {
     };
   });
 
- setRows(
-  importedRows.length
-    ? importedRows.map(applyFactorToRow)
-    : [],
-);
+  if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
+  setRows(
+    importedRows.length
+      ? importedRows.map(applyFactorToRow)
+      : [],
+  );
 }
 function validateRow(row: Row) {
   const errors: string[] = [];
@@ -1173,7 +1223,7 @@ function buildSpreadsheetReviewRowPayload(row: Row): SpreadsheetReviewRowInput {
     reportTreatment: reviewCalculation.reportTreatment,
     scope: inferDefaultScope(row.activityType),
     calculationStatus: reviewCalculation.calculationStatus,
-    calculationMessage: reviewCalculation.calculationMessage ?? row.calculationMessage ?? reviewCalculation.calculationStatus,
+    calculationMessage: ('calculationMessage' in reviewCalculation ? reviewCalculation.calculationMessage : undefined) ?? row.calculationMessage ?? reviewCalculation.calculationStatus,
     matchedFactorId: canonicalCalculation.matchedFactorId,
     matchedFactorName: canonicalCalculation.matchedFactorName,
     matchedFactorSourceYear: canonicalCalculation.matchedFactorSourceYear ?? factorSourceYear,
@@ -1517,7 +1567,7 @@ function getCalculationStatusLabel(row: Row) {
 function getSavedReviewLabel(row: Row) {
   if (row.calculationStatus === 'missingJurisdiction') return 'Requires Review';
   const status = getCalculationStatusLabel(row);
-  return status === 'Factor Matched' ? 'Saved · Factor Matched' : `Saved · ${status}`;
+  return `Saved · ${status}`;
 }
 
 function buildImportReviewSummary(rows: Row[]) {
@@ -2070,7 +2120,7 @@ function normalizeProvince(value?: string | null) {
 
 function getProvinceOptions(currentProvince?: string | null) {
   const normalizedProvince = normalizeProvince(currentProvince);
-  return normalizedProvince && !ELECTRICITY_FACTOR_PROVINCE_OPTIONS.includes(normalizedProvince)
+  return normalizedProvince && !ELECTRICITY_FACTOR_PROVINCE_OPTIONS.some(option => option === normalizedProvince)
     ? [...ELECTRICITY_FACTOR_PROVINCE_OPTIONS, normalizedProvince]
     : ELECTRICITY_FACTOR_PROVINCE_OPTIONS;
 }
@@ -2368,6 +2418,7 @@ async function saveAll() {
 async function saveAllSpreadsheetRows(rowsToSave: Row[]) {
   if (rowsToSave.length === 0) return;
 
+  const importSessionId = importSessionRef.current;
   const reviewRows = rowsToSave.map(buildSpreadsheetReviewRowPayload);
 
   setIsSavingAll(true);
@@ -2392,6 +2443,7 @@ async function saveAllSpreadsheetRows(rowsToSave: Row[]) {
       sourceFileName: reviewRows.find((row) => row.sourceFileName)?.sourceFileName,
       rows: reviewRows,
     });
+    if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
     const failedRows = response.failedRows ?? [];
     const failedKeys = new Set(
       failedRows.map((row) => row.rowId ?? String(row.sourceRow ?? '')),
@@ -2449,6 +2501,7 @@ async function saveAllSpreadsheetRows(rowsToSave: Row[]) {
         : `${savedCount} spreadsheet row${savedCount === 1 ? '' : 's'} saved for review. ${readyCount} ready · ${needsReviewCount} need review · ${trackedOnlyCount} tracked.`,
     );
   } catch (err) {
+    if (!isCurrentSpreadsheetImportSession(importSessionId)) return;
     setRows((prev) =>
       prev.map((row) =>
         rowsToSave.some((item) => item.id === row.id)
@@ -2466,7 +2519,9 @@ async function saveAllSpreadsheetRows(rowsToSave: Row[]) {
       technicalDetails: getSpreadsheetSaveTechnicalDetails(err),
     });
   } finally {
-    setIsSavingAll(false);
+    if (isCurrentSpreadsheetImportSession(importSessionId)) {
+      setIsSavingAll(false);
+    }
   }
 }
 

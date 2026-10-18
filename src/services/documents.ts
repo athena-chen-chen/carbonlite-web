@@ -120,6 +120,8 @@ export async function uploadDocument(input: UploadDocumentInput) {
       );
     }
 
+    if (!('id' in response)) throw new Error('Upload did not return a document. Please try again.');
+
     track('DOCUMENT_UPLOADED', {
       documentType: response.type,
       documentCount: 1,

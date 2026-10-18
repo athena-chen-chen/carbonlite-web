@@ -1,0 +1,77 @@
+{
+  "freshWorkspaceEmpty": true,
+  "createdRecords": 5,
+  "reconfirmCreated": 0,
+  "filteredNoiseCount": 25,
+  "otherTenantEvents": 0,
+  "events": [
+    {
+      "id": "cmv8ahjcu002bgd7b20vvr7os",
+      "eventType": "REPORT_EXPORTED_PDF",
+      "organizationId": "cmv8ahf560000gd7b9zi6g4hz",
+      "workspaceId": "organizationId is the workspace scope",
+      "actorId": "cmv8ahfao0003gd7bp7hzcc7a",
+      "actorType": "USER",
+      "entityType": "Report",
+      "entityId": null,
+      "timestamp": "2026-10-14T15:53:26.334Z",
+      "metadataKeys": [
+        "outputProfile",
+        "recordsIncluded"
+      ]
+    },
+    {
+      "id": "cmv8ahhfr000vgd7bukwz1kxv",
+      "eventType": "ACTIVITY_RECORD_IMPORTED",
+      "organizationId": "cmv8ahf560000gd7b9zi6g4hz",
+      "workspaceId": "organizationId is the workspace scope",
+      "actorId": "cmv8ahfao0003gd7bp7hzcc7a",
+      "actorType": "USER",
+      "entityType": "Document",
+      "entityId": "cmv8ahfr60005gd7bodr1qo8h",
+      "timestamp": "2026-10-14T15:53:23.848Z",
+      "metadataKeys": [
+        "count",
+        "sourceType",
+        "skippedCount",
+        "importBatchId",
+        "sourceFileName",
+        "sourceDocumentId",
+        "createdRecordCount",
+        "reviewableRowCount",
+        "trackedMetricCount",
+        "unresolvedRowCount"
+      ],
+      "metadata": {
+        "count": 5,
+        "sourceType": "DOCUMENT_AI",
+        "skippedCount": 0,
+        "importBatchId": "document-cmv8ahfr60005gd7bodr1qo8h",
+        "sourceFileName": "carbonlite_field_mapping_test.xlsx",
+        "sourceDocumentId": "cmv8ahfr60005gd7bodr1qo8h",
+        "createdRecordCount": 5,
+        "reviewableRowCount": 5,
+        "trackedMetricCount": 0,
+        "unresolvedRowCount": 0
+      }
+    },
+    {
+      "id": "cmv8ahgh6000jgd7by12c11ow",
+      "eventType": "DOCUMENT_UPLOADED",
+      "organizationId": "cmv8ahf560000gd7b9zi6g4hz",
+      "workspaceId": "organizationId is the workspace scope",
+      "actorId": "cmv8ahfao0003gd7bp7hzcc7a",
+      "actorType": "USER",
+      "entityType": "Document",
+      "entityId": "cmv8ahfr60005gd7bodr1qo8h",
+      "timestamp": "2026-10-14T15:53:22.603Z",
+      "metadataKeys": [
+        "sourceType",
+        "importBatchId",
+        "sourceFileName",
+        "sourceDocumentId",
+        "reviewableRowCount"
+      ]
+    }
+  ]
+}

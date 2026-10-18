@@ -1,0 +1,295 @@
+{
+  "checkedAt": "2026-10-17T22:31:20.778Z",
+  "recordCount": 9,
+  "backendTotal": 1371.64,
+  "metricsTotal": [
+    {
+      "metricType": "CARBON_EMISSION",
+      "unit": "kgCO2e",
+      "totalValue": "1371.64",
+      "count": 3
+    }
+  ],
+  "expectedReportTotal": 3285.9,
+  "rows": [
+    {
+      "activity": "ELECTRICITY",
+      "quantity": 1250,
+      "unit": "kWh",
+      "persistedStatus": "CALCULATED",
+      "persistedEmissions": 662.5,
+      "persistedFactor": {
+        "id": "cmr75gv6l0007gdjbs0bz4d3j",
+        "name": "Electricity - Alberta",
+        "value": 0.53,
+        "unit": "kgCO2e/kWh",
+        "sourceYear": 2025,
+        "authority": "CarbonLite System Defaults"
+      },
+      "backendStatus": "CALCULATED",
+      "backendIncluded": true,
+      "backendEmissions": 662.5,
+      "reportIncluded": true,
+      "exportedEmissions": 662.5,
+      "discrepancy": "Current read matcher happens to agree with persisted fields"
+    },
+    {
+      "activity": "NATURAL_GAS",
+      "quantity": 8.5,
+      "unit": "GJ",
+      "persistedStatus": "CALCULATED",
+      "persistedEmissions": 420.24,
+      "persistedFactor": {
+        "id": "eccc-natural-gas-canada-generic-gj-2025",
+        "name": "Natural Gas - Canada Generic",
+        "value": 49.44,
+        "unit": "kgCO2e/GJ",
+        "sourceYear": 2025,
+        "authority": "Environment and Climate Change Canada"
+      },
+      "backendStatus": "MISSING_FACTOR",
+      "backendIncluded": false,
+      "backendEmissions": null,
+      "reportIncluded": true,
+      "exportedEmissions": 420.24,
+      "discrepancy": "No conversion factor found for Natural Gas / gj."
+    },
+    {
+      "activity": "GASOLINE",
+      "quantity": 350,
+      "unit": "L",
+      "persistedStatus": "CALCULATED",
+      "persistedEmissions": 808.5,
+      "persistedFactor": {
+        "id": "72960476-10cf-41e4-9aa3-1e02bde56616",
+        "name": "Gasoline combustion",
+        "value": 2.31,
+        "unit": "kgCO2e/liters",
+        "sourceYear": 2025,
+        "authority": "CarbonLite System Defaults"
+      },
+      "backendStatus": "MISSING_FACTOR",
+      "backendIncluded": false,
+      "backendEmissions": null,
+      "reportIncluded": true,
+      "exportedEmissions": 808.5,
+      "discrepancy": "No conversion factor found for Gasoline / liters."
+    },
+    {
+      "activity": "HOTEL",
+      "quantity": 3,
+      "unit": "nights",
+      "persistedStatus": "CALCULATED",
+      "persistedEmissions": 45,
+      "persistedFactor": {
+        "id": "b1a8e266-367e-4c21-b64a-58e225750f17",
+        "name": "Hotel stays",
+        "value": 15,
+        "unit": "kgCO2e/nights",
+        "sourceYear": 2025,
+        "authority": "CarbonLite System Defaults"
+      },
+      "backendStatus": "MISSING_FACTOR",
+      "backendIncluded": false,
+      "backendEmissions": null,
+      "reportIncluded": true,
+      "exportedEmissions": 45,
+      "discrepancy": "No conversion factor found for Hotel / nights."
+    },
+    {
+      "activity": "AIR_TRAVEL",
+      "quantity": 4280,
+      "unit": "km",
+      "persistedStatus": "CALCULATED",
+      "persistedEmissions": 492.2,
+      "persistedFactor": {
+        "id": "3a4fa79f-ee3a-4e48-9ac1-6469f7b2aaad",
+        "name": "Air travel",
+        "value": 0.115,
+        "unit": "kgCO2e/km",
+        "sourceYear": 2025,
+        "authority": "CarbonLite System Defaults"
+      },
+      "backendStatus": "MISSING_FACTOR",
+      "backendIncluded": false,
+      "backendEmissions": null,
+      "reportIncluded": true,
+      "exportedEmissions": 492.2,
+      "discrepancy": "No conversion factor found for Air Travel / km."
+    },
+    {
+      "activity": "ELECTRICITY",
+      "quantity": 358,
+      "unit": "kWh",
+      "persistedStatus": "CALCULATED",
+      "persistedEmissions": 189.74,
+      "persistedFactor": {
+        "id": "cmr75gv6l0007gdjbs0bz4d3j",
+        "name": "Electricity - Alberta",
+        "value": 0.53,
+        "unit": "kgCO2e/kWh",
+        "sourceYear": 2025,
+        "authority": "CarbonLite System Defaults"
+      },
+      "backendStatus": "CALCULATED",
+      "backendIncluded": true,
+      "backendEmissions": 189.74,
+      "reportIncluded": true,
+      "exportedEmissions": 189.74,
+      "discrepancy": "Current read matcher happens to agree with persisted fields"
+    },
+    {
+      "activity": "NATURAL_GAS",
+      "quantity": 3,
+      "unit": "GJ",
+      "persistedStatus": "CALCULATED",
+      "persistedEmissions": 148.32,
+      "persistedFactor": {
+        "id": "eccc-natural-gas-canada-generic-gj-2025",
+        "name": "Natural Gas - Canada Generic",
+        "value": 49.44,
+        "unit": "kgCO2e/GJ",
+        "sourceYear": 2025,
+        "authority": "Environment and Climate Change Canada"
+      },
+      "backendStatus": "MISSING_FACTOR",
+      "backendIncluded": false,
+      "backendEmissions": null,
+      "reportIncluded": true,
+      "exportedEmissions": 148.32,
+      "discrepancy": "No conversion factor found for Natural Gas / gj."
+    },
+    {
+      "activity": "ELECTRICITY",
+      "quantity": 980,
+      "unit": "kWh",
+      "persistedStatus": "MISSING_FACTOR",
+      "persistedEmissions": null,
+      "persistedFactor": {
+        "id": null,
+        "name": null,
+        "value": null,
+        "unit": null,
+        "sourceYear": null,
+        "authority": null
+      },
+      "backendStatus": "CALCULATED",
+      "backendIncluded": true,
+      "backendEmissions": 519.4,
+      "reportIncluded": true,
+      "exportedEmissions": 519.4,
+      "discrepancy": "Manual row has no durable factor/result; read matcher computes live"
+    }
+  ],
+  "legacySystemFactors": [
+    {
+      "activityType": "ELECTRICITY",
+      "name": "Electricity - Alberta",
+      "factorValue": "0.53",
+      "unit": "kWh",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Low"
+    },
+    {
+      "activityType": "NATURAL_GAS",
+      "name": "Natural gas combustion",
+      "factorValue": "1.89",
+      "unit": "m3",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Medium (Engineering Estimate)"
+    },
+    {
+      "activityType": "SHIPPING",
+      "name": "Shipping",
+      "factorValue": "0.09",
+      "unit": "ton-km",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Medium (Engineering Estimate)"
+    },
+    {
+      "activityType": "WATER",
+      "name": "Water usage tracked only",
+      "factorValue": "0",
+      "unit": "m3",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Pilot Estimate"
+    },
+    {
+      "activityType": "ELECTRICITY",
+      "name": "Electricity - Province Required",
+      "factorValue": "0.53",
+      "unit": "kWh",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Low (Placeholder)"
+    },
+    {
+      "activityType": "GASOLINE",
+      "name": "Gasoline combustion",
+      "factorValue": "2.31",
+      "unit": "liters",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Medium (Engineering Estimate)"
+    },
+    {
+      "activityType": "DIESEL",
+      "name": "Diesel combustion",
+      "factorValue": "2.68",
+      "unit": "liters",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Medium (Engineering Estimate)"
+    },
+    {
+      "activityType": "HOTEL",
+      "name": "Hotel stays",
+      "factorValue": "15",
+      "unit": "nights",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Medium (Engineering Estimate)"
+    },
+    {
+      "activityType": "AIR_TRAVEL",
+      "name": "Air travel",
+      "factorValue": "0.115",
+      "unit": "km",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Medium (Engineering Estimate)"
+    },
+    {
+      "activityType": "GROUND_TRANSPORT",
+      "name": "Ground Transport - Canada - 2025",
+      "factorValue": "0.2",
+      "unit": "km",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Pilot Estimate"
+    },
+    {
+      "activityType": "ELECTRICITY",
+      "name": "Electricity - Ontario",
+      "factorValue": "0.12",
+      "unit": "kWh",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Low"
+    },
+    {
+      "activityType": "ELECTRICITY",
+      "name": "Electricity - British Columbia",
+      "factorValue": "0.02",
+      "unit": "kWh",
+      "sourceYear": 2025,
+      "verified": false,
+      "confidenceLevel": "Low"
+    }
+  ],
+  "mainAccessed": false
+}

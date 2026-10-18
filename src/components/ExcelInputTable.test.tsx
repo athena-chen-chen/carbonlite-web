@@ -247,6 +247,31 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
   }
 
+  function renderSpreadsheetTableWithSourceChange(onSourceChange = vi.fn()) {
+    render(
+      <ToastProvider>
+        <AppDialogProvider>
+          <ExcelInputTable mode="spreadsheet" onSuccess={vi.fn()} onSourceChange={onSourceChange} />
+        </AppDialogProvider>
+      </ToastProvider>,
+    );
+    return onSourceChange;
+  }
+
+  function buildWorkbookFile(fileName: string, sourceReference: string) {
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit', 'Country', 'Province', 'Source Reference'],
+      ['2026-03-01', 'Electricity', 980, 'kWh', 'Canada', 'Alberta', sourceReference],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'March');
+    return new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      fileName,
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+  }
+
   async function getActivityRow(rowNumber: number) {
     return screen.findByRole('group', { name: `Activity row ${rowNumber}` });
   }
@@ -507,6 +532,51 @@ describe('ExcelInputTable empty activity row UX', () => {
           facilityName: 'Calgary HQ',
           costCad: 0,
           costCurrency: 'CAD',
+        }),
+      ]),
+    );
+  });
+
+  it('maps Location Name to facilityName without inventing missing cost data', async () => {
+    renderTable('spreadsheet');
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Service Date', 'Record Category', 'Consumption', 'UOM', 'Region', 'Location Name', 'Original Document'],
+      [46082, 'Electricity', 1250, 'kWh', 'AB', 'Calgary HQ', 'ENMAX_Jan_2026.pdf'],
+      [46083, 'Gasoline', 350, 'L', 'British Columbia', 'Vancouver Fleet', 'fuel_card_feb.csv'],
+    ]);
+    worksheet.A2.z = 'yyyy-mm-dd';
+    worksheet.A3.z = 'yyyy-mm-dd';
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Operations_2026');
+    const file = new File(
+      [XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })],
+      'carbonlite_field_mapping_test.xlsx',
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    );
+
+    await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    expect(await screen.findByText('2 records found')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+
+    await waitFor(() => {
+      expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
+    });
+    const payload = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0];
+    expect(payload.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceReference: 'ENMAX_Jan_2026.pdf',
+          facilityName: 'Calgary HQ',
+          costCad: undefined,
+          costCurrency: undefined,
+        }),
+        expect.objectContaining({
+          sourceReference: 'fuel_card_feb.csv',
+          facilityName: 'Vancouver Fleet',
+          costCad: undefined,
+          costCurrency: undefined,
         }),
       ]),
     );
@@ -1468,6 +1538,34 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(rowA).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(rowB).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(saveSpreadsheetReviewRows).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale spreadsheet file parses after a newer file is selected', async () => {
+    const onSourceChange = renderSpreadsheetTableWithSourceChange();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const slowFile = buildWorkbookFile('file-a.xlsx', 'FILE-A-ROW');
+    const fastFile = buildWorkbookFile('file-b.xlsx', 'FILE-B-ROW');
+    let resolveSlowFile!: (value: ArrayBuffer) => void;
+    const slowRead = new Promise<ArrayBuffer>((resolve) => {
+      resolveSlowFile = resolve;
+    });
+
+    vi.spyOn(slowFile, 'arrayBuffer').mockReturnValue(slowRead);
+
+    fireEvent.change(input, { target: { files: [slowFile] } });
+    expect(onSourceChange).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('group', { name: 'Activity row 1' })).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { files: [fastFile] } });
+    expect(onSourceChange).toHaveBeenCalledTimes(2);
+    const currentRow = await screen.findByRole('group', { name: 'Activity row 1' });
+    expect(within(currentRow).getByDisplayValue('FILE-B-ROW')).toBeInTheDocument();
+
+    resolveSlowFile(await buildWorkbookFile('file-a.xlsx', 'FILE-A-ROW').arrayBuffer());
+    await Promise.resolve();
+
+    expect(screen.queryByDisplayValue('FILE-A-ROW')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('FILE-B-ROW')).toBeInTheDocument();
   });
 
   it('marks spreadsheet subtotal rows as ignored and prevents ActivityData creation', async () => {

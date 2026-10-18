@@ -1810,13 +1810,13 @@ describe('ActivityDataPage delete flows', () => {
     expect(
       await screen.findByText('Showing 1 record requiring attention.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Electricity')).toBeInTheDocument();
+    expect(await screen.findByText('Electricity')).toBeInTheDocument();
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
 
-    expect(screen.getByText('Diesel')).toBeInTheDocument();
-    expect(screen.getByText('Electricity')).toBeInTheDocument();
+    expect(await screen.findByText('Diesel')).toBeInTheDocument();
+    expect(await screen.findByText('Electricity')).toBeInTheDocument();
   });
 
   it('shows a friendly empty state when requested record is missing', async () => {

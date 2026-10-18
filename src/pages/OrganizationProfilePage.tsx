@@ -1,5 +1,6 @@
+import { PageHeader } from '../components/PageHeader';
 import { FormEvent, useEffect, useState } from 'react';
-import { getCurrentUser, getOrganizationId, type AuthUser } from '../services/auth';
+import { getCurrentUser, getOrganizationId, getUserDisplayName, type AuthUser } from '../services/auth';
 import {
   CANADA_PROVINCE_TERRITORY_OPTIONS,
   INDUSTRY_OPTIONS,
@@ -29,7 +30,6 @@ import {
 } from '../services/organizationProfile';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
-import { formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
 
 const fieldGroups: Array<{
   title: string;
@@ -231,11 +231,7 @@ export function OrganizationProfilePage() {
 
   return (
     <div style={pageStyle}>
-      <h1 style={pageTitleStyle}>Organization & Boundary</h1>
-      <p style={pageIntroStyle}>
-        {formatWorkflowStageLabel(getWorkflowStage('BOUNDARY'))}. Define your organization, reporting period,
-        facilities, and emissions boundary used throughout CarbonLite.
-      </p>
+      <PageHeader title="Organization & Boundary" />
 
       <div style={currentUserContextStyle}>
         <strong>Your role:</strong> {formatOrganizationRole(organizationRole)}
@@ -284,7 +280,7 @@ export function OrganizationProfilePage() {
           ))}
         </div>
       ) : (
-        <form onSubmit={handleSubmit} style={formStyle} noValidate>
+        <form onSubmit={handleSubmit} style={formStyle} noValidate aria-label="Organization profile and boundary form">
           {fieldGroups.map((group) => (
             <section key={group.title} style={sectionStyle} aria-labelledby={`${slugify(group.title)}-title`}>
               <h2 id={`${slugify(group.title)}-title`} style={sectionTitleStyle}>{group.title}</h2>
@@ -379,20 +375,24 @@ export function OrganizationProfilePage() {
           ))}
 
           {canEdit ? (
-            <button type="submit" disabled={isSaving} style={saveButtonStyle(isSaving)}>
-              {isSaving ? 'Saving...' : 'Save Organization Profile'}
-            </button>
+            <div style={formFooterStyle}>
+              <button type="submit" disabled={isSaving} style={saveButtonStyle(isSaving)}>
+                {isSaving ? 'Saving...' : 'Save Organization Profile'}
+              </button>
+            </div>
           ) : null}
         </form>
       )}
 
-      <MembersAndAccessSection
-        currentUser={currentUser}
-        roleLabel={formatOrganizationRole(organizationRole)}
-        canManageMembers={canManageMembers}
-      />
+      <div style={settingsSupplementalStackStyle}>
+        <MembersAndAccessSection
+          currentUser={currentUser}
+          roleLabel={formatOrganizationRole(organizationRole)}
+          canManageMembers={canManageMembers}
+        />
 
-      <DataPrivacySection />
+        <DataPrivacySection />
+      </div>
     </div>
   );
 }
@@ -470,20 +470,35 @@ function MembersAndAccessSection({
   roleLabel: string;
   canManageMembers: boolean;
 }) {
+  const displayName = getUserDisplayName(currentUser).trim();
+  const email = String(currentUser?.email ?? '').trim();
+  const hasDistinctDisplayName = Boolean(displayName && email && displayName !== email);
+  const summaryItems = hasDistinctDisplayName
+    ? [
+        { label: 'Current user', value: displayName || 'Unknown user' },
+        { label: 'Email', value: email || 'Not available' },
+        { label: 'Role', value: roleLabel },
+        { label: 'Access status', value: currentUser ? 'Signed in' : 'Not signed in' },
+      ]
+    : [
+        { label: 'User', value: email || displayName || 'Unknown user' },
+        { label: 'Role', value: roleLabel },
+        { label: 'Access status', value: currentUser ? 'Signed in' : 'Not signed in' },
+      ];
+
   return (
-    <section style={sectionStyle} aria-labelledby="members-access-title">
+    <section style={supplementalSectionStyle} aria-labelledby="members-access-title">
       <h2 id="members-access-title" style={sectionTitleStyle}>Members & Roles</h2>
-      <p style={sectionNoteStyle}>
+      <p style={supplementalSectionNoteStyle}>
         Workspace data is visible to organization-authorized users according to role. Authorization checks
         are enforced by application permissions and must also be enforced by backend APIs.
       </p>
-      <div style={memberRowStyle}>
-        <TrustFact label="Current user" value={currentUser?.name || currentUser?.email || 'Unknown user'} />
-        <TrustFact label="Email" value={currentUser?.email || 'Not available'} />
-        <TrustFact label="Role" value={roleLabel} />
-        <TrustFact label="Access status" value={currentUser ? 'Signed in' : 'Not signed in'} />
-      </div>
-      <p style={permissionHelpStyle}>
+      <dl style={memberSummaryGridStyle}>
+        {summaryItems.map((item) => (
+          <ReadOnlySummaryItem key={item.label} label={item.label} value={item.value} />
+        ))}
+      </dl>
+      <p style={memberHelpTextStyle}>
         {canManageMembers
           ? 'Member management is controlled by backend membership APIs when available.'
           : 'Only organization owners or admins can manage members.'}
@@ -493,39 +508,63 @@ function MembersAndAccessSection({
 }
 
 function DataPrivacySection() {
+  const privacyItems = [
+    {
+      label: 'Data handling',
+      value: 'CarbonLite processes uploaded operational data to extract source rows, calculate emissions, and prepare review outputs.',
+    },
+    {
+      label: 'Retention',
+      value: 'Workspace data is retained until deleted by an authorized workspace user or by CarbonLite support action. No automatic deletion window is currently shown in the app.',
+    },
+    {
+      label: 'Deletion',
+      value: 'Deleting source documents or records may remove active workspace content; minimal audit metadata may remain for traceability.',
+    },
+    {
+      label: 'Backup / recovery',
+      value: 'No customer-facing backup or point-in-time recovery guarantee is currently configured in the app UI.',
+    },
+    {
+      label: 'Upload guidance',
+      value: 'Upload only information you are authorized to provide. Avoid unnecessary personal or sensitive information in source files.',
+    },
+    {
+      label: 'Exports',
+      value: 'Reports and CSV exports may contain uploaded source references, calculated values, review status, and audit metadata.',
+    },
+  ];
+
   return (
-    <section style={sectionStyle} aria-labelledby="data-privacy-title">
+    <section style={supplementalSectionStyle} aria-labelledby="data-privacy-title">
       <h2 id="data-privacy-title" style={sectionTitleStyle}>Data & Privacy</h2>
-      <p style={sectionNoteStyle}>
+      <p style={supplementalSectionNoteStyle}>
         This section describes the customer-facing posture currently visible in the app.
       </p>
-      <div style={trustGridStyle}>
-        <TrustFact
-          label="Data handling"
-          value="CarbonLite processes uploaded operational data to extract source rows, calculate emissions, and prepare review outputs."
-        />
-        <TrustFact
-          label="Retention"
-          value="Workspace data is retained until deleted by an authorized workspace user or by CarbonLite support action. No automatic deletion window is currently shown in the app."
-        />
-        <TrustFact
-          label="Deletion"
-          value="Deleting source documents or records may remove active workspace content; minimal audit metadata may remain for traceability."
-        />
-        <TrustFact
-          label="Backup / recovery"
-          value="No customer-facing backup or point-in-time recovery guarantee is currently configured in the app UI."
-        />
-        <TrustFact
-          label="Upload guidance"
-          value="Upload only information you are authorized to provide. Avoid unnecessary personal or sensitive information in source files."
-        />
-        <TrustFact
-          label="Exports"
-          value="Reports and CSV exports may contain uploaded source references, calculated values, review status, and audit metadata."
-        />
-      </div>
+      <dl style={privacyGridStyle}>
+        {privacyItems.map((item) => (
+          <InfoCard key={item.label} label={item.label} value={item.value} />
+        ))}
+      </dl>
     </section>
+  );
+}
+
+function ReadOnlySummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={summaryItemStyle}>
+      <dt style={summaryLabelStyle}>{label}</dt>
+      <dd style={summaryValueStyle}>{value}</dd>
+    </div>
+  );
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={infoCardStyle}>
+      <dt style={infoCardLabelStyle}>{label}</dt>
+      <dd style={infoCardBodyStyle}>{value}</dd>
+    </div>
   );
 }
 
@@ -609,23 +648,8 @@ function slugify(value: string) {
 const pageStyle: React.CSSProperties = {
   maxWidth: 1100,
   margin: '0 auto',
-  padding: '28px 24px 48px',
+  padding: '24px 24px 48px',
   color: '#0f172a',
-};
-
-const pageTitleStyle: React.CSSProperties = {
-  margin: '0 0 8px',
-  color: '#0f172a',
-  fontSize: 32,
-  lineHeight: 1.15,
-};
-
-const pageIntroStyle: React.CSSProperties = {
-  maxWidth: 760,
-  margin: '0 0 24px',
-  color: '#64748b',
-  lineHeight: 1.55,
-  fontSize: 16,
 };
 
 const currentUserContextStyle: React.CSSProperties = {
@@ -647,11 +671,28 @@ const formStyle: React.CSSProperties = {
   gap: 24,
 };
 
+const formFooterStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-start',
+  paddingTop: 2,
+};
+
+const settingsSupplementalStackStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 24,
+  marginTop: 24,
+};
+
 const sectionStyle: React.CSSProperties = {
   padding: 22,
   borderRadius: 12,
   border: '1px solid #e2e8f0',
   background: '#fff',
+};
+
+const supplementalSectionStyle: React.CSSProperties = {
+  ...sectionStyle,
+  padding: 26,
 };
 
 const sectionTitleStyle: React.CSSProperties = {
@@ -666,6 +707,11 @@ const sectionNoteStyle: React.CSSProperties = {
   color: '#64748b',
   fontSize: 13,
   lineHeight: 1.5,
+};
+
+const supplementalSectionNoteStyle: React.CSSProperties = {
+  ...sectionNoteStyle,
+  maxWidth: 920,
 };
 
 const gridStyle: React.CSSProperties = {
@@ -700,10 +746,71 @@ const permissionHelpStyle: React.CSSProperties = {
   lineHeight: 1.45,
 };
 
-const memberRowStyle: React.CSSProperties = {
+const memberSummaryGridStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-  gap: 14,
+  gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+  gap: 18,
+  margin: 0,
+};
+
+const summaryItemStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+};
+
+const summaryLabelStyle: React.CSSProperties = {
+  color: '#475569',
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: 0,
+};
+
+const summaryValueStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#0f172a',
+  fontSize: 15,
+  lineHeight: 1.45,
+  overflowWrap: 'anywhere',
+};
+
+const memberHelpTextStyle: React.CSSProperties = {
+  margin: '18px 0 0',
+  color: '#64748b',
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const privacyGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+  gap: 16,
+  margin: 0,
+};
+
+const infoCardStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  alignContent: 'start',
+  padding: 16,
+  borderRadius: 10,
+  border: '1px solid #e5e7eb',
+  background: '#f8fafc',
+  minWidth: 0,
+};
+
+const infoCardLabelStyle: React.CSSProperties = {
+  color: '#334155',
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const infoCardBodyStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#334155',
+  fontSize: 13,
+  lineHeight: 1.55,
+  overflowWrap: 'break-word',
 };
 
 const fieldStyle: React.CSSProperties = {

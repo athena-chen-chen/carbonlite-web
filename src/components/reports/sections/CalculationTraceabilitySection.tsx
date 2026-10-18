@@ -1,3 +1,4 @@
+import { factorProvenanceLines } from '../../../utils/factorGovernance';
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { CalculationAuditDetail } from '../../../services/metrics';
@@ -54,7 +55,7 @@ export function CalculationTraceabilitySection({
             rows={calculationDetails.map((item) => [
               getActivityTypeLabel(item.activityType),
               `${formatDisplayNumber(item.activityQuantity)} ${formatRecordUnit(item.activityUnit, item)}`,
-              formatTraceableFactor(item),
+              [formatTraceableFactor(item), ...factorProvenanceLines(item.factorProvenance)].join("; "),
               buildCalculatedFormula(item),
               formatScopeLabel(item),
               formatCalculationStatus(item.status),

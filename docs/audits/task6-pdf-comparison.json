@@ -1,0 +1,194 @@
+{
+  "reports": [
+    {
+      "name": "messy-executive",
+      "beforePages": 2,
+      "afterPages": 2,
+      "filenameIdentical": true,
+      "pageDrawingStreamsIdentical": true,
+      "beforeStreams": 2,
+      "afterStreams": 2
+    },
+    {
+      "name": "messy-technical",
+      "beforePages": 9,
+      "afterPages": 9,
+      "filenameIdentical": true,
+      "pageDrawingStreamsIdentical": true,
+      "beforeStreams": 9,
+      "afterStreams": 9
+    },
+    {
+      "name": "enmax-executive",
+      "beforePages": 2,
+      "afterPages": 2,
+      "filenameIdentical": true,
+      "pageDrawingStreamsIdentical": true,
+      "beforeStreams": 2,
+      "afterStreams": 2
+    },
+    {
+      "name": "enmax-technical",
+      "beforePages": 9,
+      "afterPages": 9,
+      "filenameIdentical": true,
+      "pageDrawingStreamsIdentical": true,
+      "beforeStreams": 9,
+      "afterStreams": 9
+    },
+    {
+      "name": "field-executive",
+      "beforePages": 2,
+      "afterPages": 2,
+      "filenameIdentical": true,
+      "pageDrawingStreamsIdentical": true,
+      "beforeStreams": 2,
+      "afterStreams": 2
+    },
+    {
+      "name": "field-technical",
+      "beforePages": 9,
+      "afterPages": 9,
+      "filenameIdentical": true,
+      "pageDrawingStreamsIdentical": true,
+      "beforeStreams": 9,
+      "afterStreams": 9
+    }
+  ],
+  "renderedPageCount": 33,
+  "identicalRenderedPageCount": 33,
+  "renderedPages": [
+    {
+      "page": "enmax-executive-1.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-executive-2.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-1.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-2.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-3.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-4.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-5.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-6.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-7.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-8.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "enmax-technical-9.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-executive-1.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-executive-2.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-1.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-2.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-3.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-4.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-5.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-6.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-7.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-8.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "field-technical-9.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-executive-1.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-executive-2.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-1.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-2.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-3.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-4.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-5.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-6.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-7.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-8.png",
+      "identicalPixels": true
+    },
+    {
+      "page": "messy-technical-9.png",
+      "identicalPixels": true
+    }
+  ]
+}

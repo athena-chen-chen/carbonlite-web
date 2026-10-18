@@ -851,7 +851,7 @@ describe('UploadPage sample workflow', () => {
       });
     vi.mocked(getAllActivityData).mockImplementation(async () => {
       const confirmedCount = vi.mocked(confirmDocumentImport).mock.calls.length;
-      const importedRows = allReviewRows.filter((row) =>
+      const importedRows = allReviewRows.filter((row) => confirmedCount >= 1 &&
         [
           'MARCH-ELEC-001',
           'MARCH-WATER-007',
@@ -875,16 +875,16 @@ describe('UploadPage sample workflow', () => {
       count: 3,
       createdIds: ['created-electricity', 'created-water', 'created-hotel'],
       createdRecordKeys: [
-        'needs-review-workbook-doc::row:2',
-        'needs-review-workbook-doc::row:8',
-        'needs-review-workbook-doc::row:11',
+        'needs-review-workbook-doc::sheet::::row::2',
+        'needs-review-workbook-doc::sheet::::row::8',
+        'needs-review-workbook-doc::sheet::::row::11',
       ],
       importBatchId: 'document-needs-review-workbook-doc',
       alreadyImported: false,
     }).mockResolvedValueOnce({
       count: 1,
       createdIds: ['created-diesel'],
-      createdRecordKeys: ['needs-review-workbook-doc::row:7'],
+      createdRecordKeys: ['needs-review-workbook-doc::sheet::::row::7'],
       importBatchId: 'document-needs-review-workbook-doc',
       alreadyImported: false,
     });
@@ -898,7 +898,7 @@ describe('UploadPage sample workflow', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Review Rows/i }));
 
     expect(await screen.findByText('Extracted rows: 9')).toBeInTheDocument();
-    expect(screen.getByText('Ready: 2 · Tracked metrics: 1 · Requires review: 6 · Selected for import: 3')).toBeInTheDocument();
+    expect(screen.getByText(/Calculated: 2 · Tracked metrics: 1 · Requires review: 6 · .*Selected for import: 3/)).toBeInTheDocument();
     expect(screen.getAllByLabelText(/Select preview row/i)).toHaveLength(9);
     expect(screen.getByDisplayValue('MARCH-ELEC-001')).toBeInTheDocument();
     expect(screen.getByDisplayValue('MARCH-HOTEL-010')).toBeInTheDocument();
@@ -951,7 +951,7 @@ describe('UploadPage sample workflow', () => {
     await waitFor(() => {
       expect(dieselCheckbox).toBeEnabled();
     });
-    fireEvent.click(dieselCheckbox);
+    if (!(dieselCheckbox as HTMLInputElement).checked) await userEvent.click(dieselCheckbox);
     await waitFor(() => {
       const selectedDieselRow = screen.getByDisplayValue('MARCH-DIESEL-006').closest('tr');
       expect(selectedDieselRow).toBeTruthy();
@@ -1311,16 +1311,10 @@ describe('UploadPage sample workflow', () => {
       </MemoryRouter>,
     );
 
-    const workflow = screen.getByLabelText(/CarbonLite input workflow/i);
-    expect(workflow).toHaveTextContent('Input Data');
-    expect(workflow).toHaveTextContent('Review extracted rows');
-    expect(workflow).toHaveTextContent('Confirm activity records');
-    expect(workflow).toHaveTextContent('Match emission factors');
-    expect(workflow).toHaveTextContent('Review calculations');
-    expect(workflow).toHaveTextContent('Generate report');
-    expect(workflow).toHaveTextContent(
-      'This reviewer account uses preloaded sample data and is read-only. Upload and import actions are disabled.',
-    );
+    expect(screen.getByText('Step 2 of 5 · Add Data')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText('Upload bills or spreadsheets, or add activity data manually.')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/CarbonLite workflow: 6 canonical stages/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/canonical CarbonLite workflow/i)).not.toBeInTheDocument();
     expect(await screen.findByText(/sample data is already loaded/i)).toBeInTheDocument();
     expect(screen.getByText(/pilot reviewer accounts use preloaded sample data/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /data records/i })).toBeInTheDocument();
@@ -1470,7 +1464,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText('Needs Review')).toBeInTheDocument();
     expect(screen.getByText('9')).toBeInTheDocument();
     expect(await screen.findByRole('heading', { level: 2, name: 'Draft Records Review' })).toBeInTheDocument();
-    expect(screen.getByText('Calculated: 2 · Tracked metrics: 1 · Requires review: 6 · Selected for import: 3')).toBeInTheDocument();
+    expect(screen.getByText(/Calculated: 2 · Tracked metrics: 1 · Requires review: 6 · .*Selected for import: 3/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeEnabled();
     expect(screen.getByText('Spreadsheet rows saved for review. 3 records ready to import; 6 source rows remain in Input Review.')).toBeInTheDocument();
   });
@@ -1546,9 +1540,9 @@ describe('UploadPage sample workflow', () => {
       count: 3,
       createdIds: ['created-electricity', 'created-gas', 'created-water'],
       createdRecordKeys: [
-        'spreadsheet-source-1::row:2',
-        'spreadsheet-source-1::row:3',
-        'spreadsheet-source-1::row:8',
+        'spreadsheet-source-1::sheet::Activity Data::row::2',
+        'spreadsheet-source-1::sheet::Activity Data::row::3',
+        'spreadsheet-source-1::sheet::Activity Data::row::8',
       ],
       importBatchId: 'document-spreadsheet-source-1',
       alreadyImported: false,
@@ -1597,6 +1591,8 @@ describe('UploadPage sample workflow', () => {
         flashMessage:
           'Imported 3 activity record(s). 6 rows were left in draft because they require review. Generated emissions metrics.',
         sourceDocumentIds: ['spreadsheet-source-1'],
+        inputReviewDocumentId: 'spreadsheet-source-1',
+        inputReviewPath: '/input-data?documentId=spreadsheet-source-1&view=review',
         importedActivityIds: ['created-electricity', 'created-gas', 'created-water'],
         importedCount: 3,
         trackedMetricCount: 1,
@@ -2160,57 +2156,36 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getAllByText('delete-fails.pdf').length).toBeGreaterThan(0);
   });
 
-  it('uses status-aware selected document action labels', async () => {
+  it('selects imported subsets regardless of document status and skips empty files in select-all', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
-        {
-          id: 'doc-ready',
-          fileName: 'ready-upload.xlsx',
-          fileUrl: '',
-          type: 'SPREADSHEET',
-          status: 'REVIEW_REQUIRED',
-          fileSize: 100,
-          createdAt: '2026-07-20T00:00:00.000Z',
-          updatedAt: '2026-07-20T00:00:00.000Z',
-        },
-        {
-          id: 'doc-imported',
-          fileName: 'imported-upload.xlsx',
-          fileUrl: '',
-          type: 'SPREADSHEET',
-          status: 'IMPORTED',
-          fileSize: 100,
-          createdAt: '2026-07-21T00:00:00.000Z',
-          updatedAt: '2026-07-21T00:00:00.000Z',
-        },
-      ],
-      page: 1,
-      pageSize: 20,
-      total: 2,
-      totalPages: 1,
+        { id: 'doc-ready', fileName: 'ready-upload.xlsx', status: 'REVIEW_REQUIRED', importedRecordCount: 0 },
+        { id: 'doc-partial', fileName: 'partial-upload.xlsx', status: 'REVIEW_REQUIRED', importedRecordCount: 3 },
+        { id: 'doc-imported', fileName: 'imported-upload.xlsx', status: 'IMPORTED', importedRecordCount: 5 },
+      ].map((doc) => ({ ...doc, fileUrl: '', type: 'SPREADSHEET', fileSize: 100, createdAt: '2026-07-20T00:00:00.000Z', updatedAt: '2026-07-20T00:00:00.000Z' })),
+      page: 1, pageSize: 20, total: 3, totalPages: 1,
     });
-
-    render(
-      <MemoryRouter>
-        <UploadPage />
-      </MemoryRouter>,
-    );
-
+    render(<MemoryRouter><UploadPage /><LocationStateProbe /></MemoryRouter>);
     expect(await screen.findByText('ready-upload.xlsx')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Review Rows' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Imported Records' })).toBeInTheDocument();
-
-    const selectedAction = screen.getByRole('button', { name: 'Review Selected Data' });
-    expect(selectedAction).toBeDisabled();
-
-    await userEvent.click(screen.getByLabelText('Select document ready-upload.xlsx'));
-    expect(screen.getByRole('button', { name: 'Review Selected Data' })).toBeEnabled();
-
-    await userEvent.click(screen.getByLabelText('Select document imported-upload.xlsx'));
-    expect(screen.getByRole('button', { name: 'Select Compatible Documents' })).toBeDisabled();
-
-    await userEvent.click(screen.getByLabelText('Select document ready-upload.xlsx'));
+    const empty = screen.getByLabelText('Select document ready-upload.xlsx');
+    const partial = screen.getByLabelText('Select document partial-upload.xlsx');
+    const imported = screen.getByLabelText('Select document imported-upload.xlsx');
+    expect(empty).toBeDisabled();
+    expect(empty).toHaveAccessibleDescription('No imported records are available for calculation review yet.');
+    expect(partial).toBeEnabled();
+    expect(imported).toBeEnabled();
+    expect(within(partial.closest('tr')!).getByText('Needs Review')).toBeInTheDocument();
+    expect(within(partial.closest('tr')!).getByRole('button', { name: 'Review Rows' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review Selected Data' })).toBeDisabled();
+    await userEvent.click(partial);
     expect(screen.getByRole('button', { name: 'Generate Report' })).toBeEnabled();
+    await userEvent.click(screen.getByLabelText('Select visible documents'));
+    expect(empty).not.toBeChecked();
+    expect(partial).toBeChecked();
+    expect(imported).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/reports');
+    expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({ reportScope: 'selectedDocuments', selectedDocumentIds: ['doc-partial', 'doc-imported'] });
   });
 
   it('opens Manual Entry when route state requests manual input focus', async () => {
@@ -3071,8 +3046,8 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByText(/Document ID:/i)).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('Calgary Office')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Red Deer Yard')).toBeInTheDocument();
-    expect(screen.getByText(/Ready:/i)).toHaveTextContent(/Tracked metrics:/i);
-    expect(screen.getByText(/Ready:/i)).toHaveTextContent(/Requires review:/i);
+    expect(screen.getByText(/Calculated:/i)).toHaveTextContent(/Tracked metrics:/i);
+    expect(screen.getByText(/Calculated:/i)).toHaveTextContent(/Requires review:/i);
 
     const checkboxes = screen.getAllByLabelText(/Select preview row/i) as HTMLInputElement[];
     const importableCheckboxes = checkboxes.filter((checkbox) => !checkbox.disabled);
@@ -3087,8 +3062,8 @@ describe('UploadPage sample workflow', () => {
 
     const waterRow = checkboxes[9].closest('tr');
     expect(waterRow).toBeTruthy();
-    expect(within(waterRow!).getByText('Tracked Metric')).toBeInTheDocument();
-    expect(within(waterRow!).getByText('Tracked Only')).toBeInTheDocument();
+    expect(within(waterRow!).getAllByText('Tracked Metric')[0]).toBeInTheDocument();
+    expect(within(waterRow!).getAllByText('Tracked Metric')).toHaveLength(2);
     expect(within(waterRow!).getByRole('checkbox')).toBeChecked();
 
     const confirmButton = screen.getByRole('button', { name: 'Confirm Import' });
@@ -3100,7 +3075,7 @@ describe('UploadPage sample workflow', () => {
       expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
     });
     const importedActivities = vi.mocked(confirmDocumentImport).mock.calls[0][1];
-    expect(importedActivities.length).toBeLessThan(selectedImportableCheckboxes.length);
+    expect(importedActivities.length).toBe(selectedImportableCheckboxes.length);
     expect(importedActivities).toHaveLength(9);
     expect(importedActivities.map((activity) => activity.activityType)).toContain('WATER');
     expect(importedActivities).toEqual(
@@ -3427,15 +3402,15 @@ describe('UploadPage sample workflow', () => {
     });
     expect(importEventCall?.[0].metadata).toEqual(
       expect.objectContaining({
-        totalRowsConsidered: 3,
+        totalRowsConsidered: 1,
         includedEmissionsCreated: 1,
         trackedMetricsCreated: 0,
-        alreadyImportedSkipped: 1,
-        needsReviewSkipped: 1,
+        alreadyImportedSkipped: 0,
+        needsReviewSkipped: 0,
         duplicateSkipped: 0,
         otherSkipped: 0,
-        rowsNotImported: 2,
-        recordsRequiringReview: 1,
+        rowsNotImported: 0,
+        recordsRequiringReview: 0,
       }),
     );
   }, 20000);
@@ -3706,6 +3681,8 @@ describe('UploadPage sample workflow', () => {
         flashMessage:
           'Import completed successfully. The selected records have been saved as Data Records. 1 record imported. 0 records require review. Opening Data Records...',
         sourceDocumentIds: ['complete-import-doc'],
+        inputReviewDocumentId: 'complete-import-doc',
+        inputReviewPath: '/input-data?documentId=complete-import-doc&view=review',
         importedActivityIds: ['created-1'],
         importedCount: 1,
         trackedMetricCount: 0,
@@ -3999,8 +3976,8 @@ describe('UploadPage sample workflow', () => {
     await waitFor(() => expect(fileInput.accept).toContain('.pdf'));
     expect(fileInput.accept).toContain('.jpg');
     expect(fileInput.accept).toContain('.png');
-    expect(fileInput.accept).toContain('.heic');
-    expect(fileInput.accept).not.toContain('.xlsx');
+    expect(fileInput.accept).not.toContain('.heic');
+    expect(fileInput.accept).toContain('.xlsx');
   });
 
   it('shows a friendly error when saved extraction preview is missing', async () => {

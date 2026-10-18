@@ -1,5 +1,5 @@
+import { PageHeader } from '../components/PageHeader';
 import { Link } from 'react-router-dom';
-import { CARBONLITE_WORKFLOW, formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
 
 const dataCategories = [
   {
@@ -120,7 +120,6 @@ const reviewIssues = [
   },
 ];
 
-const dataCollectionStage = getWorkflowStage('SOURCE_DATA');
 
 const templateRows = [
   ['Electricity', '1000', 'kWh', '2026-01-01', 'Canada', 'British Columbia', 'Vancouver Office', 'Electricity bill', 'BC electricity example'],
@@ -158,15 +157,9 @@ export default function DataCollectionGuidePage() {
   return (
     <div style={pageStyle}>
       <section style={heroStyle}>
-        <p style={eyebrowStyle}>SME Data Readiness</p>
-        <h1 style={titleStyle}>Data Collection Guide</h1>
-        <p style={subtitleStyle}>
-          Use this guide to gather the source documents and activity data needed for a clean CarbonLite review.
-          Start with the records your organization already has, including utility bills, fuel records,
-          invoices, spreadsheets, travel data, and other operational information.
-        </p>
+        <PageHeader title="Data Collection Guide" subtitle="See what documents and activity data are useful before uploading." />
         <p style={introSupportStyle}>
-          You do not need perfect data before you begin. Records with missing information can be flagged for review.
+          You can start with the records you already have. Missing information can be reviewed and corrected later.
         </p>
         <div style={actionRowStyle}>
           <button type="button" onClick={downloadTemplate} style={primaryButtonStyle}>
@@ -234,21 +227,10 @@ export default function DataCollectionGuidePage() {
       <section style={sectionStyle}>
         <h2 style={sectionTitleStyle}>Uploading Documents</h2>
         <p style={bodyTextStyle}>
-          {formatWorkflowStageLabel(dataCollectionStage)} focuses on collecting and uploading source data. It is not a separate reporting methodology.
-        </p>
-        <p style={bodyTextStyle}>
           CarbonLite extracts supported activity information and presents it for review before it becomes an
           Activity Record. Utility bills, fuel invoices, travel records, PDFs, and spreadsheets should still be
           checked in Review Data before import.
         </p>
-        <div style={workflowStyle} aria-label="CarbonLite canonical workflow">
-          {CARBONLITE_WORKFLOW.map((step) => (
-            <div key={step.id} style={workflowStepStyle}>
-              <span style={workflowNumberStyle}>{step.step}</span>
-              <span>{step.shortTitle}</span>
-            </div>
-          ))}
-        </div>
       </section>
 
       <section style={sectionStyle}>
@@ -341,26 +323,10 @@ const heroStyle: React.CSSProperties = {
   marginBottom: 24,
 };
 
-const eyebrowStyle: React.CSSProperties = {
-  margin: 0,
-  color: '#047857',
-  fontSize: 13,
-  fontWeight: 800,
-  textTransform: 'uppercase',
-};
-
 const titleStyle: React.CSSProperties = {
   margin: '8px 0',
   fontSize: 34,
   lineHeight: 1.1,
-};
-
-const subtitleStyle: React.CSSProperties = {
-  maxWidth: 820,
-  margin: 0,
-  color: '#475569',
-  fontSize: 16,
-  lineHeight: 1.6,
 };
 
 const introSupportStyle: React.CSSProperties = {
@@ -560,39 +526,6 @@ const checkIconStyle: React.CSSProperties = {
   background: '#dcfce7',
   color: '#047857',
   fontWeight: 900,
-};
-
-const workflowStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-  gap: 10,
-  marginTop: 16,
-};
-
-const workflowStepStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #e2e8f0',
-  background: '#f8fafc',
-  color: '#0f172a',
-  fontWeight: 700,
-};
-
-const workflowNumberStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 22,
-  height: 22,
-  borderRadius: 999,
-  background: '#ecfdf5',
-  color: '#047857',
-  fontSize: 12,
-  fontWeight: 900,
-  flexShrink: 0,
 };
 
 const issueGridStyle: React.CSSProperties = {

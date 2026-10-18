@@ -1,3 +1,5 @@
+import { factorProvenanceLines } from '../utils/factorGovernance';
+import { getDisplayFactorVersion, getDisplayFactorJurisdiction } from '../utils/factorProvenanceDisplay';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -165,7 +167,7 @@ function formatDate(value?: string | null) {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString();
+  return date.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
 function formatDateTime(value?: string | null) {
@@ -220,15 +222,11 @@ function isPlaceholderElectricityVersion(version: FactorVersion) {
 
 function formatJurisdiction(version: FactorVersion) {
   if (isProvinceRequiredJurisdiction(version.jurisdictionRegion)) return 'Province Required';
-  const region = String(version.jurisdictionRegion ?? '').trim();
-  const country = String(version.jurisdictionCountry ?? '').trim();
-  if (!region && !country) return 'Not specified';
-  if (!region) return country;
-  if (!country || region === country || region.toLowerCase().includes(country.toLowerCase())) return region;
-  return `${region}, ${country}`;
+  return getDisplayFactorJurisdiction({ factorJurisdictionRegion: version.jurisdictionRegion, factorJurisdictionCountry: version.jurisdictionCountry });
 }
 
 function formatFactorTitle(version: FactorVersion) {
+  if (version.applicability && version.applicability !== 'CORPORATE_INVENTORY' && version.displayName) return version.displayName;
   if (isElectricityVersion(version)) {
     if (isProvinceRequiredJurisdiction(version.jurisdictionRegion)) return 'Electricity - Province Required';
     if (version.jurisdictionRegion) return `Electricity - ${version.jurisdictionRegion}`;
@@ -443,7 +441,7 @@ export function FactorDetailsPage() {
               <span style={statusBadgeStyle(ready ? 'OFFICIAL' : 'DRAFT')}>
                 {ready ? 'Production Ready' : 'Review Required'}
               </span>
-              <span style={versionPillStyle}>{version.version}</span>
+              <span style={versionPillStyle}>Factor Version: {getDisplayFactorVersion({ factorVersion: version.version, factorVersionId: version.id, factorId: version.factorId }) || 'Not specified'}</span>
             </div>
           </div>
 
@@ -501,7 +499,7 @@ export function FactorDetailsPage() {
         <Card title="Basic Information">
           <InfoGrid>
             <Info label="Category" value={titleCase(version.source?.publisherType)} />
-            <Info label="Activity Type" value={titleCase(version.displayName)} />
+            <Info label="Activity Type" value={titleCase(version.activityType || version.displayName)} />
             <Info label="Fuel Type" value={titleCase(version.displayName)} />
             <Info label="Default Scope" value={defaultScopeForVersion(version)} />
             <Info label="Description" value={displayValue(version.notes)} wide />
@@ -528,6 +526,10 @@ export function FactorDetailsPage() {
             <Info label="Default Scope" value={defaultScopeForVersion(version)} />
             <Info label="Methodology" value={formatMethodology(version)} wide />
             <Info label="Calculation Notes" value={formatNotes(version)} wide />
+            {factorProvenanceLines(version).map((line) => {
+              const separator = line.indexOf(': ');
+              return <Info key={line} label={line.slice(0, separator)} value={line.slice(separator + 2)} wide />;
+            })}
           </InfoGrid>
         </Card>
 
@@ -535,7 +537,7 @@ export function FactorDetailsPage() {
           <InfoGrid>
             <Info label="Source Authority" value={displayValue(source?.sourceAuthority)} />
             <Info label="Source Document" value={displayValue(source?.sourceDocument)} />
-            <Info label="Source Version" value={displayValue(source?.sourceVersion)} />
+            <Info label="Source Document Version" value={displayValue(source?.sourceVersion)} />
             <Info label="Source Year" value={source?.sourceYear ?? 'Not specified'} />
             <Info label="Publisher Type" value={titleCase(source?.publisherType)} />
             <Info label="Official Source" value={source?.isOfficial ? 'Yes' : 'No'} />
@@ -604,7 +606,7 @@ export function FactorDetailsPage() {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Version</th>
+                  <th style={thStyle}>Factor Version</th>
                   <th style={thStyle}>Factor Value</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Year</th>
@@ -620,7 +622,7 @@ export function FactorDetailsPage() {
                     style={item.id === version.id ? { background: '#f0fdf4' } : undefined}
                   >
                     <td style={tdStyle}>
-                      <strong>{item.version}</strong>
+                      <strong>{getDisplayFactorVersion({ factorVersion: item.version, factorVersionId: item.id, factorId: item.factorId }) || 'Not specified'}</strong>
                       {item.id === version.id ? <div style={mutedStyle}>Current view</div> : null}
                     </td>
                     <td style={tdStyle}>

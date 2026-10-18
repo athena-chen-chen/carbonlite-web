@@ -1,3 +1,4 @@
+import type { FactorProvenanceSnapshot } from '../utils/factorGovernance';
 import { apiFetch } from './api';
 import { clampApiPageSize } from '../config/api';
 
@@ -211,6 +212,7 @@ export type MetricsSummaryResponse = {
     reportingYear?: number | null;
     sourceAuthority: string;
     sourceDocument?: string | null;
+    factorProvenance?: FactorProvenanceSnapshot | null;
     sourceUrl?: string | null;
     factorSelectionReason?: string | null;
     factorSelectionExplanation?: string | null;
@@ -253,7 +255,23 @@ export type MetricsSummaryResponse = {
   }>;
 };
 
+export type ManualSourceProvenance = {
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  facilityId?: string | null;
+  facilityName?: string | null;
+  auditId: string;
+  actorId: string;
+  createdAt: string;
+  activityDataId: string;
+  activityType: string;
+  recordDate: string;
+  quantity: number;
+  unit: string;
+};
+
 export type CalculationAuditDetail = {
+  manualSourceProvenance?: ManualSourceProvenance | null;
   activityDataId: string;
   activityType: string;
   recordDate: string;
@@ -290,6 +308,7 @@ export type CalculationAuditDetail = {
   factorSource: string;
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
+    factorProvenance?: FactorProvenanceSnapshot | null;
   sourceUrl?: string | null;
   factorSelectionReason?: string | null;
   factorSelectionExplanation?: string | null;
@@ -373,6 +392,7 @@ export type CalculationExplanation = {
     factorSet?: string | null;
     sourceAuthority?: string | null;
     sourceDocument?: string | null;
+    factorProvenance?: FactorProvenanceSnapshot | null;
     sourceYear?: number | null;
     sourceUrl?: string | null;
     boundary?: string | null;

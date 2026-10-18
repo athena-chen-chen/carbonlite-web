@@ -1,3 +1,7 @@
+import { DocumentScopeContext } from '../components/DocumentScopeContext';
+import { buildSourceReviewSummary } from '../reports/domain/buildSourceReviewSummary';
+import type { SpreadsheetReviewRowItem } from '../services/spreadsheetReviewRows';
+import { PageHeader } from '../components/PageHeader';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
@@ -33,7 +37,6 @@ import {
   ORGANIZATION_PROFILE_UPDATED_EVENT,
   profileToReportContextInventoryBoundary,
 } from '../services/organizationProfile';
-import { getWorkflowStage } from '../constants/carbonliteWorkflow';
 import {
   buildSiteFacilityRollup,
   type SiteFacilityBreakdownRow,
@@ -80,6 +83,7 @@ export function MetricsSummaryPage() {
   });
   const [missingFactors, setMissingFactors] = useState<MissingFactorItem[]>([]);
   const [calculationDetails, setCalculationDetails] = useState<CalculationAuditDetail[]>([]);
+  const [sourceReviewRows, setSourceReviewRows] = useState<SpreadsheetReviewRowItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(
@@ -99,7 +103,7 @@ export function MetricsSummaryPage() {
   const isSlowLoadingSummary = useSlowLoading(isInitialMetricsLoading(loading, lastUpdated, summary, error));
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestSequenceRef = useRef(0);
-  const dateCommitTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const dateCommitTimerRef = useRef<number | null>(null);
   const trackedViewRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -234,6 +238,7 @@ export function MetricsSummaryPage() {
       });
       setMissingFactors(overview.missingFactors);
       setCalculationDetails(overview.calculationDetails);
+      setSourceReviewRows(overview.sourceReviewRows ?? []);
       setLastUpdated(new Date());
     } catch (err) {
       if (requestSequence === requestSequenceRef.current) {
@@ -448,11 +453,13 @@ function handleDownloadPDF() {
       data-testid={showPilotReviewerWelcome ? 'pilot-reviewer-welcome-panel' : undefined}
       style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}
     >
-      <h1 ref={headingRef} tabIndex={-1} style={{ marginBottom: 8 }}>Calculation Review</h1>
+      <PageHeader title="Calculation Review" headingRef={headingRef} />
+      {selectedDocumentIds.length > 0 && selectedRecordIds.length === 0 ? (
+        <DocumentScopeContext selectedDocumentIds={selectedDocumentIds} importedRecordCount={activities.length}
+          sourceReview={buildSourceReviewSummary({ rows: sourceReviewRows, calculationDetails: calculationDetails ?? [] })}
+          loading={!dateRangeReady || loading || lastUpdated === null} destination="report" />
+      ) : null}
 
-      <p style={{ color: '#666', marginBottom: 24 }}>
-        Internal workspace for validating emissions calculations, data quality, included and excluded records, and factor matching issues before generating a shareable report.
-      </p>
 
       {showPilotReviewerWelcome ? (
         <>
@@ -698,30 +705,27 @@ function formatSiteFacilityActivityBreakdown(row: SiteFacilityBreakdownRow) {
 }
 
 function PilotReviewerWelcomePanel() {
-  const factorStage = getWorkflowStage('FACTORS_CALCULATIONS');
-  const resultsStage = getWorkflowStage('RESULTS');
-  const reportStage = getWorkflowStage('REPORT');
 
   return (
     <section aria-label="How to review CarbonLite" style={pilotReviewerPanelStyle}>
       <h2 style={pilotReviewerTitleStyle}>How to review CarbonLite</h2>
       <p style={pilotReviewerTextStyle}>This account is read-only and uses sample data only.</p>
-      <p style={pilotReviewerPathLabelStyle}>Suggested review path using the canonical CarbonLite workflow:</p>
+      <p style={pilotReviewerPathLabelStyle}>Suggested review path:</p>
       <ol style={pilotReviewerListStyle}>
         <li>
-          <Link to="/data-records" style={pilotReviewerLinkStyle}>Stage 3: Review & Resolve Data Issues</Link>
+          <Link to="/data-records" style={pilotReviewerLinkStyle}>Data Records</Link>
           <span style={pilotReviewerDescriptionStyle}> — review sample activity data and source-data issues</span>
         </li>
         <li>
-          <Link to="/conversion-factors" style={pilotReviewerLinkStyle}>Stage {factorStage.step}: {factorStage.title}</Link>
+          <Link to="/conversion-factors" style={pilotReviewerLinkStyle}>Emission Factors (advanced)</Link>
           <span style={pilotReviewerDescriptionStyle}> — review emission factor transparency and assumptions</span>
         </li>
         <li>
-          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Stage {resultsStage.step}: {resultsStage.title}</Link>
+          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Calculation Review</Link>
           <span style={pilotReviewerDescriptionStyle}> — review totals, hotspots, and calculation trail</span>
         </li>
         <li>
-          <Link to="/reports" style={pilotReviewerLinkStyle}>Stage {reportStage.step}: {reportStage.title}</Link>
+          <Link to="/reports" style={pilotReviewerLinkStyle}>Reports</Link>
           <span style={pilotReviewerDescriptionStyle}> — review sample report structure and disclaimer</span>
         </li>
         <li>

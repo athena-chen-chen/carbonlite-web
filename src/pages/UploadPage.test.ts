@@ -1,4 +1,5 @@
 import {
+  hasImportedRecords,
   FILE_MISSING_EXPLANATION,
   FILE_MISSING_TOOLTIP,
   formatSourceReference,
@@ -8,8 +9,13 @@ import {
   getDocumentActionModel,
   getDocumentStatusLabel,
   getDocumentDownloadUrl,
+  getParsedActivityRowKey,
   getImportValidationIssues,
+  buildDetectedSourceItems,
+  classifyExtractedDocumentSourceItems,
   buildDraftRowAuditSummary,
+  buildDocumentImportRecordKey,
+  classifyDraftRow,
   resolveActivityRecordDate,
   buildDocumentImportActivityPayload,
   extractProvinceFromAddress,
@@ -71,6 +77,136 @@ describe('duplicate document messaging', () => {
 });
 
 describe('document import factor matching metadata', () => {
+  it('keeps detected waste source items separate from importable ActivityData rows', () => {
+    const items = buildDetectedSourceItems([
+      {
+        type: 'WASTE_AND_RECYCLING',
+        label: 'Waste & Recycling',
+        importEligibility: 'NOT_IMPORTABLE',
+        reason: 'INSUFFICIENT_ACTIVITY_QUANTITY',
+        reasonDetail: 'No supported waste quantity was provided.',
+        serviceDays: 30,
+        sourceCostCad: 19.54,
+        sourceDetails: [
+          { label: 'Blue Cart', amountCad: 2.17 },
+          { label: 'Black Cart', amountCad: 7.39 },
+          { label: 'Green Cart', amountCad: 9.98 },
+        ],
+      },
+    ], {
+      id: 'document-enmax',
+      fileName: '2025_August_01.pdf',
+    });
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        documentId: 'document-enmax',
+        documentFileName: '2025_August_01.pdf',
+        sourceDocumentId: 'document-enmax',
+        sourceFileName: '2025_August_01.pdf',
+        type: 'WASTE_AND_RECYCLING',
+        importEligibility: 'NOT_IMPORTABLE',
+        serviceDays: 30,
+        sourceCostCad: 19.54,
+        reasonDetail: 'No supported waste quantity was provided.',
+      }),
+    ]);
+  });
+
+  it('splits EPCOR-style water review records from wastewater and waste service source evidence', () => {
+    const classification = classifyExtractedDocumentSourceItems([
+      {
+        activityType: 'Water',
+        quantity: 17.779,
+        unit: 'm3',
+        sourceReference: 'Water',
+      },
+      {
+        activityType: 'Wastewater Collection and Treatment',
+        quantity: 17.779,
+        unit: 'm3',
+        sourceReference: 'Wastewater based on water usage',
+      },
+      {
+        activityType: 'Waste Services',
+        sourceReference: 'Waste Services monthly fee',
+        costCad: 42.63,
+      },
+    ], {
+      id: 'document-epcor',
+      fileName: 'sanitized-epcor.pdf',
+    });
+
+    expect(classification.reviewableActivities).toHaveLength(1);
+    expect(classification.reviewableActivities[0]).toMatchObject({
+      activityType: 'Water',
+      quantity: 17.779,
+      unit: 'm3',
+    });
+    expect(classification.detectedSourceItems).toEqual([
+      expect.objectContaining({
+        type: 'WASTEWATER',
+        label: 'Wastewater Collection and Treatment',
+        importEligibility: 'NOT_IMPORTABLE',
+        sourceQuantity: 17.779,
+        sourceUnit: 'm3',
+        reason: 'NOT_SEPARATELY_MODELED',
+      }),
+      expect.objectContaining({
+        type: 'WASTE_SERVICES',
+        label: 'Waste Services',
+        importEligibility: 'NOT_IMPORTABLE',
+        sourceCostCad: 42.63,
+        reason: 'INSUFFICIENT_ACTIVITY_QUANTITY',
+      }),
+    ]);
+  });
+
+  it('keeps unsupported spreadsheet rows reviewable instead of treating them as source evidence', () => {
+    const classification = classifyExtractedDocumentSourceItems([
+      {
+        activityType: 'Office Supplies',
+        quantity: 10,
+        unit: 'each',
+        sourceSheetName: 'Needs Review',
+        sourceRow: 3,
+      },
+    ], {
+      id: 'document-golden',
+      fileName: 'Golden Test Data.xlsx',
+    });
+
+    expect(classification.reviewableActivities).toHaveLength(1);
+    expect(classification.detectedSourceItems).toHaveLength(0);
+  });
+
+  it('keeps physical waste quantities as genuine unsupported ActivityData candidates', () => {
+    const classification = classifyExtractedDocumentSourceItems([
+      {
+        activityType: 'Waste',
+        quantity: 120,
+        unit: 'kg',
+        sourceReference: 'Waste disposal quantity',
+      },
+    ], {
+      id: 'document-waste-quantity',
+      fileName: 'waste-disposal.pdf',
+    });
+
+    expect(classification.reviewableActivities).toHaveLength(1);
+    expect(classification.detectedSourceItems).toHaveLength(0);
+    expect(getImportValidationIssues([
+      buildImportRow({ activityType: { value: 'Waste', confidence: 'medium' }, quantity: { value: 120, confidence: 'high' }, unit: { value: 'kg', confidence: 'high' } }),
+    ])).toEqual([
+      {
+        rowIndex: 0,
+        field: 'activityType',
+        message:
+          'Unsupported Activity Type: This activity type is not supported in the current CarbonLite pilot.',
+      },
+    ]);
+  });
+
   it('extracts province from the real ENMAX service address shape', () => {
     expect(
       extractProvinceFromAddress({
@@ -119,6 +255,66 @@ describe('document import factor matching metadata', () => {
       requiresReviewCount: 3,
       importableCount: 10,
     });
+  });
+
+  it('uses the latest canonical evaluation instead of stale needs-review status', () => {
+    const correctedRow = buildImportRow({
+      status: 'READY',
+      activityType: { value: 'ELECTRICITY', confidence: 'high' },
+      jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+      jurisdictionRegion: { value: 'Alberta', confidence: 'medium' },
+      matchingStatus: 'MATCHED',
+      calculationStatus: 'CALCULATED',
+      reportTreatment: 'INCLUDED',
+      scope: 'SCOPE_2',
+    });
+
+    expect(classifyDraftRow(correctedRow, getImportValidationIssues([correctedRow]))).toBe('READY');
+  });
+
+  it('keeps editable review row keys stable while mutable values change', () => {
+    const before = buildImportRow({
+      documentId: 'doc-golden',
+      sourceSheetName: 'Needs Review',
+      sourceRow: 3,
+      quantity: { value: 5, confidence: 'low' },
+      unit: { value: 'bad', confidence: 'low' },
+    });
+    const after = buildImportRow({
+      documentId: 'doc-golden',
+      sourceSheetName: 'Needs Review',
+      sourceRow: 3,
+      quantity: { value: 500, confidence: 'medium' },
+      unit: { value: 'kWh', confidence: 'medium' },
+      jurisdictionRegion: { value: 'Alberta', confidence: 'medium' },
+      matchingStatus: 'MATCHED',
+      calculationStatus: 'CALCULATED',
+      reportTreatment: 'INCLUDED',
+    });
+
+    expect(getParsedActivityRowKey(before, 0)).toBe(getParsedActivityRowKey(after, 0));
+  });
+
+  it('uses source sheet and row, not corrected business values, as import identity', () => {
+    const before = buildDocumentImportRecordKey({
+      sourceDocumentId: 'doc-golden',
+      sourceSheetName: 'Needs Review',
+      sourceRow: 3,
+      activityType: 'ELECTRICITY',
+      quantity: 0,
+      unit: 'bad',
+    });
+    const after = buildDocumentImportRecordKey({
+      sourceDocumentId: 'doc-golden',
+      sourceSheetName: 'Needs Review',
+      sourceRow: 3,
+      activityType: 'ELECTRICITY',
+      quantity: 980,
+      unit: 'kWh',
+    });
+
+    expect(after).toBe(before);
+    expect(after).toBe('doc-golden::sheet::Needs Review::row::3');
   });
 
   it('matches imported BC electricity with the same canonical metadata as manual entry', () => {
@@ -775,5 +971,18 @@ describe('document upload action model', () => {
     expect(getDocumentStatusLabel('FAILED')).toBe('Needs Attention');
     expect(getDocumentStatusLabel('FILE_MISSING')).toBe('Re-upload Required');
     expect(getDocumentStatusLabel('REUPLOAD_REQUIRED')).toBe('Re-upload Required');
+  });
+});
+
+describe('document report eligibility', () => {
+  it.each([
+    { status: 'IMPORTED', importedRecordCount: 5, eligible: true },
+    { status: 'REVIEW_REQUIRED', importedRecordCount: 3, eligible: true },
+    { status: 'REVIEW_REQUIRED', importedRecordCount: 0, eligible: false },
+    { status: 'IMPORTED', importedRecordCount: 0, eligible: false },
+    { status: 'IMPORTED', importedRecordCount: null, eligible: false },
+    { status: 'REVIEW_REQUIRED', importedRecordCount: undefined, eligible: false },
+  ])('uses linked records for $status with count $importedRecordCount', ({ eligible, ...document }) => {
+    expect(hasImportedRecords(document)).toBe(eligible);
   });
 });

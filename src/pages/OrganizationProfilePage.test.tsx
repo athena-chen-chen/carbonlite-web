@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { OrganizationProfilePage } from './OrganizationProfilePage';
 import {
@@ -30,6 +30,20 @@ function setCustomerUser(role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER') {
       accountType: 'CUSTOMER',
       organizationId: 'customer-workspace',
       organizationName: 'Customer Workspace',
+    }),
+  );
+}
+
+function setNamedCustomerUser() {
+  localStorage.setItem(
+    'currentUser',
+    JSON.stringify({
+      name: 'Athena Chen',
+      email: 'athena.chen@example.com',
+      role: 'EDITOR',
+      accountType: 'CUSTOMER',
+      organizationId: 'named-workspace',
+      organizationName: 'Named Workspace',
     }),
   );
 }
@@ -126,6 +140,58 @@ describe('OrganizationProfilePage', () => {
 
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
     expect(loadOrganizationProfile().city).toBe('Calgary');
+  });
+
+  it('renders Members & Roles as read-only summary values without duplicate email fallback', () => {
+    setCustomerUser('EDITOR');
+
+    render(<OrganizationProfilePage />);
+
+    const membersSection = screen.getByRole('region', { name: 'Members & Roles' });
+    expect(within(membersSection).getByText('User')).toBeInTheDocument();
+    expect(within(membersSection).queryByText('Current user')).not.toBeInTheDocument();
+    expect(within(membersSection).queryByText('Email')).not.toBeInTheDocument();
+    expect(within(membersSection).getByText('editor@example.com')).toBeInTheDocument();
+    expect(within(membersSection).getByText('Contributor')).toBeInTheDocument();
+    expect(within(membersSection).getByText('Signed in')).toBeInTheDocument();
+    expect(within(membersSection).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(membersSection).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(membersSection).getByText('Only organization owners or admins can manage members.')).toBeInTheDocument();
+    expect(within(membersSection).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('renders distinct display name and email when a user name exists', () => {
+    setNamedCustomerUser();
+
+    render(<OrganizationProfilePage />);
+
+    const membersSection = screen.getByRole('region', { name: 'Members & Roles' });
+    expect(within(membersSection).getByText('Current user')).toBeInTheDocument();
+    expect(within(membersSection).getByText('Athena Chen')).toBeInTheDocument();
+    expect(within(membersSection).getByText('Email')).toBeInTheDocument();
+    expect(within(membersSection).getByText('athena.chen@example.com')).toBeInTheDocument();
+  });
+
+  it('renders Data & Privacy as six informational cards in a responsive grid', () => {
+    setAdminUser();
+
+    render(<OrganizationProfilePage />);
+
+    const privacySection = screen.getByRole('region', { name: 'Data & Privacy' });
+    [
+      'Data handling',
+      'Retention',
+      'Deletion',
+      'Backup / recovery',
+      'Upload guidance',
+      'Exports',
+    ].forEach((label) => {
+      expect(within(privacySection).getByText(label)).toBeInTheDocument();
+    });
+
+    const privacyGrid = within(privacySection).getByText('Data handling').closest('dl');
+    expect(privacyGrid).toHaveStyle({ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' });
+    expect(within(privacySection).queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('keeps customer viewers read-only on Organization & Boundary settings', () => {

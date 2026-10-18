@@ -52,6 +52,7 @@ type PilotActivity = GoldenRecord & {
   documentId: string;
   sourceDocumentId: string;
   sourceFileName: string;
+  sourceSheetName?: string | null;
   importBatchId: string;
   sourceType: string;
   sourceReference: string;
@@ -610,6 +611,11 @@ export async function installPilotDemoApiMock(
       return;
     }
 
+    if (method === 'GET' && path === '/activity-events/workflow') {
+      await fulfillJson(route, { items: [], page: 1, pageSize: 20, total: 0, totalPages: 0 });
+      return;
+    }
+
     if (method === 'POST' && (path === '/activity-events' || path === '/audit-logs/client-event')) {
       await fulfillJson(route, { ok: true }, 201);
       return;
@@ -701,6 +707,7 @@ function normalizeImportedActivity(
     documentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
     sourceDocumentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
     sourceFileName: String(activity.sourceFileName ?? sourceFileName),
+    sourceSheetName: activity.sourceSheetName === undefined ? null : String(activity.sourceSheetName),
     importBatchId: String(activity.importBatchId ?? defaults.importBatchId),
     sourceType: String(activity.sourceType ?? 'SPREADSHEET'),
     sourceReference: String(activity.sourceReference ?? sourceFileName),
@@ -739,8 +746,9 @@ function getActivityRecordImportKey(activity: PilotActivity, documents: PilotDoc
   const sourceDocument = documents.find((document) => document.id === activity.sourceDocumentId);
   const fileHash = String(sourceDocument?.fileHash ?? '').trim();
   const sourceRow = String(activity.sourceRow ?? '').trim();
-  if (fileHash && sourceRow) return `${fileHash}::row:${sourceRow}`;
-  if (sourceRow) return `${activity.sourceDocumentId}::row:${sourceRow}`;
+  const sourceSheetName = String(activity.sourceSheetName ?? '').trim();
+  if (fileHash && sourceRow) return `${fileHash}::sheet:${sourceSheetName}::row:${sourceRow}`;
+  if (sourceRow) return `${activity.sourceDocumentId}::sheet:${sourceSheetName}::row:${sourceRow}`;
 
   return [
     activity.sourceDocumentId,

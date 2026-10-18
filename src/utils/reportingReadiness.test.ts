@@ -1,3 +1,4 @@
+import { getWorkflowStage } from '../constants/carbonliteWorkflow';
 import { buildInventoryBoundary } from '../constants/inventoryBoundary';
 import type { CalculationAuditDetail } from '../services/metrics';
 import {
@@ -76,6 +77,10 @@ describe('buildReportingReadinessAssessment', () => {
       }),
     });
 
+    for (const item of assessment.items) {
+      const stage = getWorkflowStage(item.workflowStageId);
+      expect(item.workflowStageLabel).toBe(`Stage ${stage.step}: ${stage.title}`);
+    }
     expect(itemStatus(assessment, 'REQUIRED_DATA_COMPLETE')).toBe('COMPLETE');
     expect(itemStatus(assessment, 'CALCULATIONS_COMPLETE')).toBe('COMPLETE');
     expect(assessment.items.map((item) => item.evidence).join(' ')).not.toMatch(/95%|weighted/i);
@@ -199,9 +204,9 @@ describe('buildReportingReadinessAssessment', () => {
     expect(assessment.items.find((item) => item.code === 'FACTORS_SELECTED')?.evidence)
       .toBe('1 of 1 eligible emissions record has a matched emission factor.');
     expect(assessment.items.find((item) => item.code === 'FACTORS_REVIEWED')?.evidence)
-      .toBe('1 factor is used; 1 requires review before formal use.');
+      .toBe('1 calculated record uses an emission factor; 1 record-level factor usage requires review before formal use.');
     expect(assessment.items.find((item) => item.code === 'FACTORS_REVIEWED')?.action)
-      .toBe('Review or replace the pilot-stage emission factor.');
+      .toBe('Review all factors and replace pilot-stage factors where appropriate.');
     expect(assessment.items.find((item) => item.code === 'TRACEABILITY_COMPLETE')?.evidence)
       .toBe('Required source, factor, and result lineage is present for the calculated emissions record.');
   });

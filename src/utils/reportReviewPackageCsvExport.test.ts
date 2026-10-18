@@ -241,6 +241,14 @@ describe('report review package CSV exports', () => {
     expect(csv).toContain('CL-DRAFT-2026-AB12CD3');
   });
 
+  it.each(['demo-2025-kwh-alberta', 'ECCC_EPR_2025_TABLE_A8', 'cmv8vg8eu0009gd3sxfn0w9z7', '2.1'])('keeps the audit CSV schema and separates identity from revision: %s', factorVersion => {
+    const csv = buildReviewPackageAuditEvidenceCsv([{ ...baseDetail, factorId: 'stable-factor', factorVersionId: 'version-row', factorVersion }]);
+    const [header, row] = csv.replace(/^\uFEFF/, '').trim().split(/\r?\n/).map(line => line.split(','));
+    expect(row[header.indexOf('Factor Version')]).toBe(factorVersion === '2.1' ? '2.1' : '');
+    expect(row[header.indexOf('Factor ID')]).toBe('stable-factor');
+    expect(row[header.indexOf('Factor Version ID')]).toBe('version-row');
+  });
+
   it('builds review package filenames', () => {
     expect(
       getReviewPackageCsvFileName('calculation-traceability', new Date('2026-09-16T12:00:00Z')),

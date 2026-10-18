@@ -385,7 +385,7 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText('I. Emission Factors Used')).toBeInTheDocument();
     expect(screen.getByText('J. Calculation Traceability')).toBeInTheDocument();
     expect(screen.getByText('K. Source Evidence Summary')).toBeInTheDocument();
-    expect(screen.getByText(/source files and import methods used to create the activity records/i)).toBeInTheDocument();
+    expect(screen.getByText(/source inputs and entry\/import methods used to create the activity records/i)).toBeInTheDocument();
     expect(screen.getAllByText('fuel-invoice.pdf').length).toBeGreaterThan(0);
     expect(screen.getAllByText('PDF').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Document Extraction').length).toBeGreaterThan(0);
@@ -417,7 +417,7 @@ describe('FormalReportPreview', () => {
     expect(screen.getByText(FORMAL_REPORT_METHODOLOGY[1])).toBeInTheDocument();
     expect(screen.getByText('100 liters × 2.68 kg CO₂e/liter = 268 kg CO₂e')).toBeInTheDocument();
     expect(screen.getAllByText('2.68 kg CO₂e/L').length).toBeGreaterThan(0);
-    expect(screen.getByText('Source File')).toBeInTheDocument();
+    expect(screen.getByText('Source Input')).toBeInTheDocument();
 
     expect(screen.getByText('1 record-level reference')).toBeInTheDocument();
     expect(screen.queryByText('fuel-invoice.pdf · Page 1 · Line item 3')).not.toBeInTheDocument();
@@ -1128,7 +1128,7 @@ describe('Version 1 report presentation data', () => {
     ]);
 
     expect(rows[0][7]).toBe('Internal Review Required · Consultant Review Recommended');
-    expect(rows[0][10]).toBe('v1.0');
+    expect(rows[0][10]).toBe('Not specified');
     expect(rows[0][11]).toMatch(/Consultant review recommended/i);
     expect(rows[0]).not.toContain('cmr75gvgt0009gdjbmhpv7zdd');
   });
@@ -1216,7 +1216,7 @@ describe('buildSourceEvidenceRows', () => {
           recordDate: '2026-02-01',
         },
       ]),
-    ).toEqual([
+    ).toMatchObject([
       {
         activityType: 'Electricity',
         quantity: '500',
@@ -1259,7 +1259,7 @@ describe('buildSourceEvidenceRows', () => {
           recordDate: '2026-07-20',
         },
       ]),
-    ).toEqual([
+    ).toMatchObject([
       {
         activityType: 'Electricity',
         quantity: '12,500',

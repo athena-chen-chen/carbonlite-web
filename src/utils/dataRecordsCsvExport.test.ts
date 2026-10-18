@@ -4,6 +4,16 @@ import {
 } from './dataRecordsCsvExport';
 
 describe('data records CSV export', () => {
+  it('does not put a matched factor identifier in the version column', () => {
+    const csv = buildDataRecordsCsv([{ activityType: 'ELECTRICITY', matchedFactorId: 'stable-key', matchedFactorVersion: 'stable-key' }]);
+    const [header, row] = csv.replace(/^\uFEFF/, '').trim().split(/\r?\n/).map(line => line.split(','));
+    expect(row[header.indexOf('Factor Version')]).toBe('');
+  });
+  it.each(['demo-2025-kwh-alberta', 'ECCC_EPR_2025_TABLE_A8', 'cmv8vg8eu0009gd3sxfn0w9z7', '2.1'])('exports only a real factor revision: %s', matchedFactorVersion => {
+    const csv = buildDataRecordsCsv([{ activityType: 'ELECTRICITY', matchedFactorVersion }]);
+    const [header, row] = csv.replace(/^\uFEFF/, '').trim().split(/\r?\n/).map(line => line.split(','));
+    expect(row[header.indexOf('Factor Version')]).toBe(matchedFactorVersion === '2.1' ? '2.1' : '');
+  });
   it('builds user-facing CSV columns without internal identifiers', () => {
     const csv = buildDataRecordsCsv([
       {

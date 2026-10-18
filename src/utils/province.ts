@@ -43,7 +43,7 @@ export const ELECTRICITY_FACTOR_PROVINCE_OPTIONS = PILOT_SUPPORTED_PROVINCE_NAME
 export function getProvinceOptionsForActivity(
   activityType?: string | null,
   currentProvince?: string | null,
-  fallbackOptions = CANADIAN_PROVINCE_OPTIONS,
+  fallbackOptions: readonly string[] = CANADIAN_PROVINCE_OPTIONS,
 ) {
   const baseOptions =
     String(activityType ?? '').trim().toUpperCase() === 'ELECTRICITY'

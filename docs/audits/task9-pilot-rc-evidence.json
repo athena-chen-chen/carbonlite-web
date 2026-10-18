@@ -1,0 +1,377 @@
+{
+  "date": "2026-10-17",
+  "timezone": "America/Edmonton",
+  "decision": "TASK 9 = PILOT RC BLOCKED",
+  "releaseFrozen": false,
+  "repositories": {
+    "web": {
+      "head": "df83b4c128d8de990c2593d8cafc700438e01eed",
+      "branch": "main",
+      "version": "0.0.0",
+      "dirty": true,
+      "selectedSourceHashes": {
+        "src/pages/ReportingPage.tsx": "002d741fe3af91903a0c50dfe453b5295e748bf807c190031b9926b2463703e0",
+        "src/pages/ReportingPage.test.tsx": "680708ef93c30c7bc605e13b3d45e724cba12e7c602e698bc905b7491f723efd",
+        "src/services/organizationProfile.ts": "61ac57ef9d9e89637acfeefa436229ce88062442c8976bdbb8a81ed934d0ff08",
+        "src/reports/hooks/useReportData.ts": "2f65ac9a58752ea1521099c459ce247f91fa76f3a7ca0f25ef87e7596a5317bb",
+        "src/utils/conversionFactorMatching.ts": "ed3638d1b5aee87f6ccd982afb954f3db6114d8e2f8fc8dde599a14acb82b2c2"
+      }
+    },
+    "api": {
+      "head": "63769c347a740a9b4611d8882d8bf52aa9c8c973",
+      "branch": "feature/pilot-readiness",
+      "version": "0.0.0",
+      "dirty": true,
+      "selectedSourceHashes": {
+        "src/metrics/calculation-quality.service.ts": "a6d9b007564ad7c15f6445b786d7be35bcbde15faf4413313eb898b84f2335f6",
+        "src/metrics/metrics.service.ts": "487709e87c0b47614224f3f681f6da6b11e002b57a4d9ef2d27de71bee118d42",
+        "src/document-extraction/document-extraction.service.ts": "289a6e284c705a238a264940237f1235bfbc64fb24b99272f83d3c2bb49d0a67",
+        "src/activity-data/dto/create-activity-data.dto.ts": "a361af45502f7fe80c64ce442db59e8899cf97ef088e27d39dc2e50b62ffb439",
+        "src/organizations/dto/update-organization-profile.dto.ts": "ab152ea5c29757e0cd193a43678ecaf1c23c4c9bbe22d380440c8ba6b99ff52e",
+        "prisma/schema.prisma": "45b2f2122adf8fd048e63c1ba1f07af99d898cc39648406224b688de0ab6085d",
+        "prisma/migrations/20261004043000_backfill_province_electricity_matches/migration.sql": "861e4eb515b4925801d43f3f88fea14542899ce802aa719f3a0dadf4b4d5c08f"
+      }
+    }
+  },
+  "environment": {
+    "runtime": "local frontend -> localhost:3333 -> guarded Neon development",
+    "independentNeonBranchMetadataVerified": false,
+    "neonDevelopmentModified": true,
+    "neonMainAccessed": false,
+    "neonMainModified": false,
+    "productionDeployment": false,
+    "migrationsCreated": []
+  },
+  "migrations": {
+    "localCount": 46,
+    "appliedCount": 46,
+    "pending": [],
+    "failed": [],
+    "checksumMismatch": [
+      "20261004043000_backfill_province_electricity_matches"
+    ],
+    "schemaDiffExitCode": 2,
+    "prismaValidation": "PASS",
+    "cleanLocalMigrateDeploy": "PASS"
+  },
+  "tests": {
+    "frontendFull": {
+      "passed": 1049,
+      "failed": 12,
+      "total": 1061,
+      "passedFiles": 85,
+      "failedFiles": 4,
+      "collectionFailures": 1
+    },
+    "frontendGoldenGovernanceCsv": {
+      "passed": 187,
+      "files": 11
+    },
+    "reportingPage": {
+      "passed": 34
+    },
+    "frontendTypecheck": "FAIL: missing node/Nx typings",
+    "frontendBuild": "PASS",
+    "backendUnit": {
+      "passed": 240,
+      "suites": 22
+    },
+    "backendBuild": "PASS",
+    "backendLocalIntegration": {
+      "passed": 100,
+      "failed": 9,
+      "passedSuites": 18,
+      "failedSuites": 8,
+      "collectionFailures": 1
+    },
+    "browser": {
+      "freshSession": "PASS",
+      "sourceIsolation": "PASS",
+      "partialConfirm": "FAIL: corrected eligible row imports 0 instead of 1",
+      "boundaryMaterialSaveReload": "PASS",
+      "combinedFlow": "FAIL: missing persisted manual calculation snapshot",
+      "combinedReportDatesAndExports": "PASS: 2025-08-01 to 2026-10-14",
+      "activityIdsAfterLogoutLogin": "PASS",
+      "unexpected500sOrPageExceptionsInCompletedFlow": 0
+    }
+  },
+  "frozenTotalsKgCO2e": {
+    "goldenA": 579.4,
+    "goldenB": 338.06,
+    "goldenC": 2428.44,
+    "combined": 3285.9
+  },
+  "downloadedCombinedCsv": {
+    "records": 9,
+    "total": 3285.9,
+    "scopeTotals": {
+      "Scope 1": 1377.06,
+      "Scope 2": 1371.64,
+      "Scope 3": 537.2
+    },
+    "waterNumericEmissionsBlank": true,
+    "missingCostsBlank": true,
+    "sha256": "2406c7bb96b4e3f28d7af652caacf1b212373b463f85b40fd1fb7a2258124482"
+  },
+  "fixturePrivacyScan": {
+    "trackedPdfs": 54,
+    "readablePdfs": 54,
+    "emailCandidates": 0,
+    "confirmedRealPii": 0,
+    "exhaustiveCertification": false
+  },
+  "unverified": [
+    "backend restart after a fully successful workflow",
+    "migrate deploy on a new Neon development branch",
+    "live extraction of every supported file format",
+    "paired database/source-file restore drill"
+  ],
+  "goldenCalculationsChanged": false,
+  "reportSemanticsChanged": false,
+  "liveRecheck": {
+    "checkedAt": "2026-10-17T22:07:26.430Z",
+    "checks": [
+      {
+        "name": "Runtime matches guarded Neon development database",
+        "pass": true,
+        "mainAccessed": false
+      },
+      {
+        "name": "Empty tenant /activity-data",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /documents",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /spreadsheet-import/review-rows",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /metrics/summary",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /metrics/calculation-summary",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /organization-profile",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /activity-events/workflow",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /reports",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Empty tenant /facilities",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "name": "Unauthenticated API",
+        "pass": true,
+        "status": 401
+      },
+      {
+        "name": "Invalid token",
+        "pass": true,
+        "status": 401
+      },
+      {
+        "name": "Cross-tenant activity-data",
+        "pass": true,
+        "status": 404
+      },
+      {
+        "name": "Cross-tenant documents",
+        "pass": true,
+        "status": 403
+      },
+      {
+        "name": "Cross-tenant document-extraction",
+        "pass": true,
+        "status": 404
+      },
+      {
+        "name": "Manual electricity calculation",
+        "pass": true,
+        "emissions": 519.4,
+        "factor": 0.53,
+        "sourceType": "MANUAL",
+        "manualLineageAvailable": true
+      },
+      {
+        "name": "Corporate activities in live development tenant",
+        "pass": false,
+        "details": [
+          {
+            "activity": "ELECTRICITY",
+            "quantity": 1000,
+            "unit": "kWh",
+            "status": "CALCULATED",
+            "factor": 0.53,
+            "emissions": 530
+          },
+          {
+            "activity": "NATURAL_GAS",
+            "quantity": 3,
+            "unit": "GJ",
+            "status": "MISSING_FACTOR",
+            "factor": null,
+            "emissions": null
+          },
+          {
+            "activity": "GASOLINE",
+            "quantity": 100,
+            "unit": "L",
+            "status": "MISSING_FACTOR",
+            "factor": null,
+            "emissions": null
+          },
+          {
+            "activity": "DIESEL",
+            "quantity": 100,
+            "unit": "L",
+            "status": "CALCULATED",
+            "factor": 3.68,
+            "emissions": 368
+          },
+          {
+            "activity": "DIESEL",
+            "quantity": 100,
+            "unit": "L",
+            "status": "CALCULATED",
+            "factor": 3.68,
+            "emissions": 368
+          },
+          {
+            "activity": "ELECTRICITY",
+            "quantity": -1,
+            "unit": "kWh",
+            "status": "INVALID_QUANTITY",
+            "factor": null,
+            "emissions": null
+          }
+        ]
+      },
+      {
+        "name": "Historical report agrees with persisted calculation",
+        "pass": false,
+        "storedEmissions": 268,
+        "snapshotFactor": "2.68",
+        "displayedEmissions": 368,
+        "displayedFactor": 3.68
+      },
+      {
+        "name": "Structured existing synthetic workflow outcome",
+        "pass": false,
+        "expected": {
+          "total": 579.4,
+          "count": 3,
+          "included": 2
+        },
+        "total": 519.4,
+        "included": 1,
+        "count": 3,
+        "details": [
+          {
+            "activity": "ELECTRICITY",
+            "status": "CALCULATED",
+            "emissions": 519.4
+          },
+          {
+            "activity": "WATER",
+            "status": "TRACKED_ONLY",
+            "emissions": null
+          },
+          {
+            "activity": "HOTEL",
+            "status": "MISSING_FACTOR",
+            "emissions": null
+          }
+        ]
+      },
+      {
+        "name": "Combined existing synthetic workflow outcome",
+        "pass": false,
+        "expected": {
+          "total": 3285.9,
+          "count": 9,
+          "included": 8
+        },
+        "total": 1371.64,
+        "included": 3,
+        "count": 9,
+        "details": [
+          {
+            "activity": "ELECTRICITY",
+            "status": "CALCULATED",
+            "emissions": 189.74
+          },
+          {
+            "activity": "NATURAL_GAS",
+            "status": "MISSING_FACTOR",
+            "emissions": null
+          },
+          {
+            "activity": "WATER",
+            "status": "TRACKED_ONLY",
+            "emissions": null
+          },
+          {
+            "activity": "ELECTRICITY",
+            "status": "CALCULATED",
+            "emissions": 662.5
+          },
+          {
+            "activity": "NATURAL_GAS",
+            "status": "MISSING_FACTOR",
+            "emissions": null
+          },
+          {
+            "activity": "GASOLINE",
+            "status": "MISSING_FACTOR",
+            "emissions": null
+          },
+          {
+            "activity": "HOTEL",
+            "status": "MISSING_FACTOR",
+            "emissions": null
+          },
+          {
+            "activity": "AIR_TRAVEL",
+            "status": "MISSING_FACTOR",
+            "emissions": null
+          },
+          {
+            "activity": "ELECTRICITY",
+            "status": "CALCULATED",
+            "emissions": 519.4
+          }
+        ]
+      },
+      {
+        "name": "Durable UI manual factor and calculation snapshot",
+        "pass": false,
+        "activityFactorSnapshot": null,
+        "activityCalculationSnapshot": null,
+        "persistedMetricCount": 0,
+        "sourceFileAbsent": true
+      }
+    ]
+  }
+}

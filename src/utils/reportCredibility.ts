@@ -1,3 +1,4 @@
+import type { FactorProvenanceSnapshot } from './factorGovernance';
 import type { CalculationAuditDetail } from '../services/metrics';
 import { formatEmissionsUnit } from './numberFormatting';
 import { getActivityTypeLabel, getFactorDisplayName, normalizeActivityType } from './activityType';
@@ -97,34 +98,42 @@ export function looksLikeInternalId(value?: string | number | null) {
 
   return (
     /^c[a-z0-9]{20,}$/i.test(text) ||
+    /^factor_version_[a-z0-9_-]+$/i.test(text) ||
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ||
     /^(factor|version|fv|cmr)[-_]?[a-z0-9]{10,}$/i.test(text)
   );
 }
 
-function parseVersionFromSource(value?: string | null) {
-  const match = cleanText(value).match(/\bv\d+(?:\.\d+){0,3}\b/i);
-  return match?.[0] ?? '';
-}
-
-export function formatReportFactorVersion(input: {
+export type FactorVersionDisplayInput = {
+  factorId?: string | null;
+  factorVersionId?: string | null;
   factorVersion?: string | number | null;
   sourceDocument?: string | null;
   sourceReference?: string | null;
   sourceAuthority?: string | null;
-}) {
-  const direct = cleanText(input.factorVersion);
-  if (direct && !looksLikeInternalId(direct)) return direct;
+  methodologyProvenance?: FactorProvenanceSnapshot['methodologyProvenance'];
+  factorProvenance?: FactorProvenanceSnapshot | null;
+};
 
-  const parsed =
-    parseVersionFromSource(input.sourceDocument) ||
-    parseVersionFromSource(input.sourceReference);
-  if (parsed) return parsed;
+/** Legacy keys stored in version fields do not describe a factor revision. */
+function isLegacyFactorKey(value: string): boolean {
+  // prisma/seed.ts builds this upsert key from source year, unit and region.
+  // The ECCC fallback uses its publication/table key as both version and factorSet.
+  return /^demo-\d{4}-[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value) || value === 'ECCC_EPR_2025_TABLE_A8';
+}
 
-  const source = `${input.sourceAuthority ?? ''} ${input.sourceDocument ?? ''}`.toLowerCase();
-  if (source.includes('carbonlite') && source.includes('default factor')) return 'v1.0';
+/** Display only: record identifiers and audited legacy keys are never version labels. */
+export function getDisplayFactorVersion(input: FactorVersionDisplayInput): string {
+  const ids = [input.factorId, input.factorVersionId, input.factorProvenance?.factorId, input.factorProvenance?.factorVersionId];
+  for (const candidate of [input.factorVersion, input.factorProvenance?.factorVersion, input.methodologyProvenance?.factorVersion]) {
+    const value = String(candidate ?? '').trim();
+    if (value && value !== input.sourceDocument && !ids.includes(value) && !looksLikeInternalId(value) && !isLegacyFactorKey(value)) return value;
+  }
+  return '';
+}
 
-  return 'Not specified';
+export function formatReportFactorVersion(input: FactorVersionDisplayInput) {
+  return getDisplayFactorVersion(input) || 'Not specified';
 }
 
 export function formatReportFactorSource(input: {

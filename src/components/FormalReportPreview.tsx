@@ -1,3 +1,5 @@
+import { buildSourceEvidenceCounts, formatSourceEvidenceCounts } from '../reports/domain/reportSemantics';
+import type { FactorProvenanceSnapshot } from '../utils/factorGovernance';
 import { useEffect, useState } from 'react';
 import {
   buildDataReadinessSummary,
@@ -20,7 +22,7 @@ import {
   resolveScopeClassification,
 } from '../utils/scopeClassification';
 import { getActivityTypeLabel } from '../utils/activityType';
-import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
+import { formatDateOnly } from '../utils/dateOnly';
 import {
   buildSourceEvidenceNote,
   formatReportAssumptions,
@@ -128,6 +130,7 @@ export type FormalConversionFactorUsed = {
   assumptions?: string | null;
   sourceAuthority: string;
   sourceDocument?: string | null;
+    factorProvenance?: FactorProvenanceSnapshot | null;
   sourceUrl?: string | null;
   sourcePage?: string | number | null;
   sourceTable?: string | null;
@@ -381,7 +384,9 @@ export function buildEmissionFactorsUsedInventory(
 
     if (existing) {
       existing.usedRecordsCount =
-        usedRecordsCount ?? (existing.usedRecordsCount ?? 0) + (factor.usedRecordsCount ?? 1);
+        hasScopedCalculationDetails
+          ? usedRecordsCount
+          : (existing.usedRecordsCount ?? 1) + (factor.usedRecordsCount ?? 1);
       return;
     }
 
@@ -414,7 +419,7 @@ function isActualEmissionFactor(factor: FormalConversionFactorUsed) {
 
   const factorName = firstNonEmpty(factor.factorName);
   if (!factorName) return false;
-  if (/^(n\/?a|not applicable|no factor required|tracked metric)/i.test(factorName)) return false;
+  if (/^(n\/?a(?:$|[\s:;-])|not applicable|no factor required|tracked metric)/i.test(factorName)) return false;
 
   return (
     hasFiniteFactorValue(factor.factorValue) &&
@@ -429,7 +434,8 @@ function hasFiniteFactorValue(value: string | number | null | undefined) {
 
 function getCalculationDetailFactorKey(detail: CalculationAuditDetail) {
   return (
-    firstNonEmpty(detail.factorVersionId, detail.factorId) ??
+    firstNonEmpty(detail.factorVersionId) ??
+    (detail.factorId ? [detail.factorId, detail.factorVersion || detail.factorProvenance?.factorVersion || ''].join('::') : null) ??
     buildFallbackFactorKey({
       factorName: firstNonEmpty(detail.factorName, detail.factorDisplayName),
       factorValue: detail.factorValue,
@@ -443,7 +449,8 @@ function getCalculationDetailFactorKey(detail: CalculationAuditDetail) {
 
 function getConversionFactorUsedKey(factor: FormalConversionFactorUsed) {
   return (
-    firstNonEmpty(factor.factorVersionId, factor.factorId) ??
+    firstNonEmpty(factor.factorVersionId) ??
+    (factor.factorId ? [factor.factorId, factor.factorVersion || factor.factorProvenance?.factorVersion || ''].join('::') : null) ??
     buildFallbackFactorKey({
       factorName: factor.factorName,
       factorValue: factor.factorValue,
@@ -491,6 +498,10 @@ function firstNonEmpty(...values: Array<string | number | null | undefined>) {
 }
 
 export type SourceEvidenceRow = {
+  activityDataId?: string;
+  rawSourceType?: string | null;
+  sourceDocumentId?: string | null;
+  sourceFileName?: string | null;
   activityType: string;
   quantity: string;
   unit: string;
@@ -572,6 +583,7 @@ export function buildSourceEvidenceRows(
     recordDate?: string | null;
     quantity?: string | number | null;
     unit?: string | null;
+    sourceDocumentId?: string | null;
     sourceReference?: string | null;
     sourceType?: string | null;
     sourceFileName?: string | null;
@@ -602,6 +614,10 @@ export function buildSourceEvidenceRows(
     const rawSourceReference = sourceReferenceParts.join(' · ');
 
     return {
+      activityDataId: activity.id ?? undefined,
+      rawSourceType: activity.sourceType,
+      sourceDocumentId: activity.sourceDocumentId,
+      sourceFileName: activity.sourceFileName,
       activityType: getActivityTypeLabel(activity.activityType),
       quantity:
         activity.quantity === null || activity.quantity === undefined
@@ -797,7 +813,7 @@ export function FormalReportPreview({
   const inventoryBoundaryStatus = getInventoryBoundaryStatus(inventoryBoundary);
   const inventoryBoundarySummary = summarizeInventoryBoundary(
     inventoryBoundary,
-    `${getDateOnlyYear(reportPeriod) ?? 2026} reporting period`,
+    reportPeriod,
   );
   const electricityRecordCount = calculationDetails.filter((item) => item.activityType === 'ELECTRICITY').length;
   const calculatedElectricityCount = calculationDetails.filter(
@@ -1050,7 +1066,7 @@ export function FormalReportPreview({
         sectionId="source-evidence"
         expanded={expandedSections['source-evidence']}
         onToggle={toggleSection}
-        summary={formatCount(buildSourceEvidenceSummaryRows(sourceEvidenceRows).length, 'source file')}
+        summary={formatSourceEvidenceCounts(buildSourceEvidenceCounts(sourceEvidenceRows))}
       >
         <SourceEvidenceSection sourceEvidenceRows={sourceEvidenceRows} />
       </ReportSection>

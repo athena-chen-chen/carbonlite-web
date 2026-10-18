@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/PageHeader';
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
@@ -13,9 +14,10 @@ import {
   extractDocument,
   getDocumentExtraction,
   type ConfirmImportResponse,
+  type DetectedSourceItem,
   type ParsedActivity,
 } from '../services/documentExtraction';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { calculateMetrics } from '../services/metrics';
 import {
   createActivityData,
@@ -32,12 +34,6 @@ import {
   activityTypes,
   defaultActivityType,
 } from '../constants/activityTypes';
-import {
-  CARBONLITE_WORKFLOW,
-  CARBONLITE_WORKFLOW_STAGE_COUNT,
-  formatWorkflowStageLabel,
-  getWorkflowStage,
-} from '../constants/carbonliteWorkflow';
 import {
   getActivityTypeLabel,
   normalizeActivityType as normalizeCanonicalActivityType,
@@ -86,6 +82,7 @@ import { getActivitySourceType } from '../utils/activitySourceType';
 import {
   CALCULATION_REVIEW_ROUTE,
   DATA_RECORDS_ROUTE,
+  INPUT_DATA_ROUTE,
   REPORTS_ROUTE,
 } from '../constants/routes';
 import { queryClient } from '../queryClient';
@@ -158,6 +155,11 @@ type EditableParsedActivity = {
   notes: EditableConfidenceField<string>;
 };
 
+type EditableDetectedSourceItem = DetectedSourceItem & {
+  documentId: string;
+  documentFileName: string;
+};
+
 export type DraftRowClassification =
   | 'READY'
   | 'TRACKED_METRIC'
@@ -177,25 +179,29 @@ type ImportValidationIssue = {
   message: string;
 };
 
-function getParsedActivityRowKey(item: EditableParsedActivity, index: number) {
-  const identityParts = [
-    item.documentId,
-    item.sourceRow,
-    item.sourceReference.value,
-    item.recordDate.value,
-    item.activityType.value,
-    item.quantity.value,
-    item.unit.value,
-  ]
-    .map((part) => String(part ?? '').trim())
-    .filter(Boolean);
+export function getParsedActivityRowKey(item: EditableParsedActivity, index: number) {
+  const rowId = String(item.rowId ?? '').trim();
+  if (rowId) return `parsed-row-${rowId}`;
 
-  return identityParts.length > 0 ? `parsed-${identityParts.join('::')}` : `parsed-${index}`;
+  const sourceRow = String(item.sourceRow ?? '').trim();
+  if (sourceRow) {
+    return [
+      'parsed-source',
+      item.documentId,
+      item.sourceSheetName ?? '',
+      sourceRow,
+    ]
+      .map((part) => String(part ?? '').trim())
+      .join('::');
+  }
+
+  return `parsed-${item.documentId || 'draft'}-${index}`;
 }
 
 export function buildDocumentImportRecordKey(input: {
   sourceDocumentId?: unknown;
   documentId?: unknown;
+  sourceSheetName?: unknown;
   sourceRow?: unknown;
   sourceReference?: unknown;
   activityType?: unknown;
@@ -207,7 +213,15 @@ export function buildDocumentImportRecordKey(input: {
   if (!sourceDocumentId) return '';
 
   const sourceRow = String(input.sourceRow ?? '').trim();
-  if (sourceRow) return `${sourceDocumentId}::row:${sourceRow}`;
+  if (sourceRow) {
+    return [
+      sourceDocumentId,
+      'sheet',
+      String(input.sourceSheetName ?? '').trim(),
+      'row',
+      sourceRow,
+    ].join('::');
+  }
 
   return [
     sourceDocumentId,
@@ -227,6 +241,8 @@ type UploadRouteState = {
   flashMessage?: string;
 };
 
+type DraftActivityInput = Omit<Partial<ActivityDataInput>, 'quantity' | 'unit'> & { quantity?: number | null; unit?: string | null };
+
 type ImportReviewRouteState = {
   selectedDocumentIds?: string[];
   reportScope?: 'selectedDocuments';
@@ -234,13 +250,18 @@ type ImportReviewRouteState = {
 
 const INPUT_TEMPLATE_HEADERS = [
   'Activity Type',
+  'Record Category',
   'Quantity',
+  'Consumption',
   'Unit',
+  'UOM',
   'Date',
   'Country',
   'Province',
   'Facility',
+  'Location Name',
   'Source Reference',
+  'Original Document',
   'Notes',
 ];
 
@@ -255,6 +276,9 @@ const SITE_FACILITY_ALIASES = [
   'Site',
   'location',
   'Location',
+  'locationName',
+  'Location Name',
+  'location name',
   'branch',
   'Branch',
   'factory',
@@ -265,6 +289,9 @@ const SOURCE_REFERENCE_ALIASES = [
   'sourceReference',
   'Source Reference',
   'source reference',
+  'originalDocument',
+  'Original Document',
+  'original document',
   'reference',
   'Reference',
   'invoice',
@@ -302,11 +329,11 @@ const ADDRESS_ALIASES = [
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const DOCUMENT_UPLOAD_ACCEPT =
-  '.pdf,.jpg,.jpeg,.png,.heic,application/pdf,image/jpeg,image/png,image/heic';
+  '.pdf,.csv,.xlsx,.xls,.json,.jpg,.jpeg,.png,application/pdf,text/csv,application/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/json,text/json,image/jpeg,image/png';
 const SPREADSHEET_UPLOAD_ACCEPT =
   '.csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
-const DOCUMENT_UPLOAD_FORMAT_LABEL = 'PDF, JPG, PNG, or HEIC';
-const DOCUMENT_UPLOAD_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'heic'] as const;
+const DOCUMENT_UPLOAD_FORMAT_LABEL = 'PDF, CSV, XLSX, JSON, JPG, or PNG';
+const DOCUMENT_UPLOAD_EXTENSIONS = ['pdf', 'csv', 'xlsx', 'xls', 'json', 'jpg', 'jpeg', 'png'] as const;
 const SPREADSHEET_UPLOAD_EXTENSIONS = ['csv', 'xlsx', 'xls'] as const;
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
 const ACTIVITY_DATA_SAVED_SUCCESS_MESSAGE =
@@ -317,7 +344,6 @@ export const FILE_MISSING_TOOLTIP =
   'The original uploaded file is no longer available. Please upload it again.';
 const UNSUPPORTED_ACTIVITY_TYPE_MESSAGE =
   'Unsupported Activity Type: This activity type is not supported in the current CarbonLite pilot.';
-const inputDataStage = getWorkflowStage('SOURCE_DATA');
 
 function getConfirmedImportCreatedCount(result: ConfirmImportResponse) {
   if (Number.isFinite(result.count)) {
@@ -456,6 +482,32 @@ function isCanonicalReadyReviewRow(row: Pick<
   );
 }
 
+function getCanonicalReviewStatusFromPayload(payload: DraftActivityInput) {
+  const matchingStatus = normalizeClassificationSignal(payload.matchingStatus);
+  const calculationStatus = normalizeClassificationSignal(payload.calculationStatus);
+  const reportTreatment = normalizeClassificationSignal(payload.reportTreatment);
+  const scope = normalizeClassificationSignal(payload.scope);
+
+  if (
+    matchingStatus === 'TRACKED_ONLY' ||
+    calculationStatus === 'TRACKED_ONLY' ||
+    reportTreatment === 'TRACKED_ONLY' ||
+    scope === 'TRACKED_METRIC'
+  ) {
+    return 'TRACKED_ONLY';
+  }
+
+  if (
+    matchingStatus === 'MATCHED' &&
+    calculationStatus === 'CALCULATED' &&
+    reportTreatment === 'INCLUDED'
+  ) {
+    return 'READY';
+  }
+
+  return 'NEEDS_REVIEW';
+}
+
 export function classifyDraftRow(
   row: EditableParsedActivity,
   issues: ImportValidationIssue[] = getImportValidationIssues([row]),
@@ -475,7 +527,7 @@ function isImportableDraftRowClassification(classification: DraftRowClassificati
   return classification === 'READY' || classification === 'TRACKED_METRIC';
 }
 
-function hasBlockingImportStatus(activity: Partial<ActivityDataInput | EditableParsedActivity>) {
+function hasBlockingImportStatus(activity: DraftActivityInput) {
   const matchingStatus = normalizeClassificationSignal(activity.matchingStatus);
   const calculationStatus = normalizeClassificationSignal(activity.calculationStatus);
   const reportTreatment = normalizeClassificationSignal(activity.reportTreatment);
@@ -494,7 +546,7 @@ function hasBlockingImportStatus(activity: Partial<ActivityDataInput | EditableP
   );
 }
 
-function hasTrackedMetricImportStatus(activity: Partial<ActivityDataInput | EditableParsedActivity>) {
+function hasTrackedMetricImportStatus(activity: DraftActivityInput) {
   const matchingStatus = normalizeClassificationSignal(activity.matchingStatus);
   const calculationStatus = normalizeClassificationSignal(activity.calculationStatus);
   const reportTreatment = normalizeClassificationSignal(activity.reportTreatment);
@@ -508,7 +560,7 @@ function hasTrackedMetricImportStatus(activity: Partial<ActivityDataInput | Edit
   );
 }
 
-function hasBlockingImportValueIssue(activity: Partial<ActivityDataInput>) {
+function hasBlockingImportValueIssue(activity: DraftActivityInput) {
   const activityType = String(activity.activityType ?? '').trim();
   const quantity = Number(activity.quantity);
   const unit = String(activity.unit ?? '').trim();
@@ -516,7 +568,7 @@ function hasBlockingImportValueIssue(activity: Partial<ActivityDataInput>) {
   return !activityType || !Number.isFinite(quantity) || quantity <= 0 || !unit;
 }
 
-export function isDocumentImportPayloadImportable(activity: Partial<ActivityDataInput>) {
+export function isDocumentImportPayloadImportable(activity: DraftActivityInput): activity is ActivityDataInput {
   const matchingStatus = normalizeClassificationSignal(activity.matchingStatus);
   const calculationStatus = normalizeClassificationSignal(activity.calculationStatus);
   const reportTreatment = normalizeClassificationSignal(activity.reportTreatment);
@@ -627,6 +679,7 @@ function buildConfirmImportAuditSummary(input: {
 function getEditableParsedActivityRecordKeyForAudit(activity: EditableParsedActivity) {
   return buildDocumentImportRecordKey({
     documentId: activity.documentId,
+    sourceSheetName: activity.sourceSheetName,
     sourceRow: activity.sourceRow,
     sourceReference: activity.sourceReference.value,
     activityType: activity.activityType.value,
@@ -785,13 +838,12 @@ function isRecord(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function extractFieldConfidence(value: RawExtractionField) {
-  return isRecord(value) && typeof value.confidence === 'string'
-    ? value.confidence
-    : 'medium';
+function extractFieldConfidence(value: RawExtractionField): 'high' | 'medium' | 'low' {
+  const confidence = isRecord(value) ? String(value.confidence ?? '').toLowerCase() : '';
+  return confidence === 'high' || confidence === 'low' ? confidence : 'medium';
 }
 
-function formatOptionalExtractionField(value: RawExtractionField) {
+function formatOptionalExtractionField(value: unknown) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return String(value);
@@ -888,6 +940,278 @@ export function formatDocumentSourceTypeLabel(input: {
   if (type === 'PDF') return 'PDF extraction';
   if (type === 'MANUAL') return 'Manual entry';
   return 'Source review required';
+}
+
+export function buildDetectedSourceItems(
+  items: DetectedSourceItem[] = [],
+  document: { id: string; fileName: string },
+): EditableDetectedSourceItem[] {
+  return items.map((item, index) => ({
+    ...item,
+    id: item.id ?? `${document.id}-detected-${index + 1}`,
+    documentId: document.id,
+    documentFileName: item.sourceFileName || document.fileName,
+    sourceDocumentId: item.sourceDocumentId ?? document.id,
+    sourceFileName: item.sourceFileName || document.fileName,
+  }));
+}
+
+type ExtractedSourceItemClassification = {
+  reviewableActivities: Array<ParsedActivity | any>;
+  detectedSourceItems: DetectedSourceItem[];
+};
+
+export function classifyExtractedDocumentSourceItems(
+  extractedActivities: Array<ParsedActivity | any> = [],
+  document: { id: string; fileName: string },
+): ExtractedSourceItemClassification {
+  if (isSpreadsheetFileName(document.fileName)) {
+    return {
+      reviewableActivities: extractedActivities,
+      detectedSourceItems: [],
+    };
+  }
+
+  return extractedActivities.reduce<ExtractedSourceItemClassification>(
+    (result, item, index) => {
+      const detectedSourceItem = classifyDetectedDocumentSourceItem(item, document, index);
+      if (detectedSourceItem) {
+        result.detectedSourceItems.push(detectedSourceItem);
+      } else {
+        result.reviewableActivities.push(item);
+      }
+      return result;
+    },
+    { reviewableActivities: [], detectedSourceItems: [] },
+  );
+}
+
+function classifyDetectedDocumentSourceItem(
+  item: ParsedActivity | any,
+  document: { id: string; fileName: string },
+  index: number,
+): DetectedSourceItem | null {
+  const activityTypeField = getAliasedExtractionField(item, [
+    'activityType',
+    'activity_type',
+    'recordCategory',
+    'Record Category',
+    'type',
+    'category',
+  ]);
+  const rawActivityType = formatOptionalExtractionField(activityTypeField).trim();
+  const quantity = getFieldNumber(getAliasedExtractionField(item, [
+    'quantity',
+    'consumption',
+    'Consumption',
+    'amount',
+    'usage',
+    'value',
+  ]));
+  const unit = formatOptionalExtractionField(getAliasedExtractionField(item, [
+    'unit',
+    'uom',
+    'measurement',
+    'UOM',
+  ])).trim();
+  const costCad = normalizeOptionalImportCost(
+    item.sourceCostCad ?? item.costCad ?? item.cost ?? item.amountCad ?? item.totalCost,
+  );
+  const label = getSourceItemLabel(item, rawActivityType, document.fileName);
+  const searchableText = [
+    label,
+    rawActivityType,
+    unit,
+    formatOptionalExtractionField(item.sourceReference),
+    formatOptionalExtractionField(item.sourceTextSnippet),
+    formatOptionalExtractionField(item.notes),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  if (isWastewaterEvidence(searchableText)) {
+    return buildDetectedDocumentSourceItem({
+      item,
+      document,
+      index,
+      type: 'WASTEWATER',
+      label: label || 'Wastewater',
+      quantity,
+      unit,
+      costCad,
+      reason: 'NOT_SEPARATELY_MODELED',
+      reasonDetail: 'Based on water usage and not separately modeled in the current pilot.',
+      potentialCategory: 'WASTEWATER',
+    });
+  }
+
+  const normalizedActivityType = normalizeCanonicalActivityType(rawActivityType);
+  if (normalizedActivityType) return null;
+
+  const hasPhysicalWasteQuantity = isPhysicalWasteUnit(unit) && Number.isFinite(quantity);
+  if (isWasteServiceEvidence(searchableText) && !hasPhysicalWasteQuantity) {
+    return buildDetectedDocumentSourceItem({
+      item,
+      document,
+      index,
+      type: 'WASTE_SERVICES',
+      label: label || 'Waste Services',
+      quantity,
+      unit,
+      costCad,
+      reason: 'INSUFFICIENT_ACTIVITY_QUANTITY',
+      reasonDetail: 'No supported physical waste quantity was provided.',
+      potentialCategory: 'WASTE',
+    });
+  }
+
+  if (isUtilityFeeEvidence(searchableText)) {
+    return buildDetectedDocumentSourceItem({
+      item,
+      document,
+      index,
+      type: 'UTILITY_FEE',
+      label,
+      quantity,
+      unit,
+      costCad,
+      reason: 'NON_ACTIVITY_BILLING_ITEM',
+      reasonDetail: 'Billing charge detected, but not imported as ActivityData.',
+      potentialCategory: 'UTILITY_BILLING',
+    });
+  }
+
+  return null;
+}
+
+function buildDetectedDocumentSourceItem(input: {
+  item: ParsedActivity | any;
+  document: { id: string; fileName: string };
+  index: number;
+  type: string;
+  label: string;
+  quantity?: number;
+  unit?: string;
+  costCad?: number;
+  reason: string;
+  reasonDetail: string;
+  potentialCategory: string;
+}): DetectedSourceItem {
+  const sourceQuantity =
+    Number.isFinite(input.quantity) && input.quantity !== undefined
+      ? input.quantity
+      : undefined;
+  const sourceUnit = input.unit?.trim() || undefined;
+  const sourceDetails: DetectedSourceItem['sourceDetails'] = [];
+  if (sourceQuantity !== undefined && sourceUnit) {
+    sourceDetails.push({ label: 'Quantity', value: `${sourceQuantity} ${sourceUnit}` });
+  }
+  if (input.costCad !== undefined) {
+    sourceDetails.push({ label: 'Source cost', amountCad: input.costCad });
+  }
+
+  return {
+    id: input.item.id ?? input.item.rowId ?? `${input.document.id}-detected-from-row-${input.index + 1}`,
+    type: input.type,
+    label: input.label,
+    classification: 'DETECTED_SOURCE_ITEM',
+    importEligibility: 'NOT_IMPORTABLE',
+    reason: input.reason,
+    reasonDetail: input.reasonDetail,
+    sourceDocumentId: input.item.sourceDocumentId ?? input.document.id,
+    sourceFileName: input.item.sourceFileName ?? input.document.fileName,
+    sourceReference: formatSourceReference(input.item.sourceReference, input.document.fileName),
+    sourcePage: getRawExtractionFieldValue(input.item.sourcePage, null) as string | number | null,
+    sourceTextSnippet: formatOptionalExtractionField(input.item.sourceTextSnippet),
+    servicePeriodStart: formatDateValue(input.item.startDate ?? input.item.periodStart),
+    servicePeriodEnd: formatDateValue(input.item.endDate ?? input.item.periodEnd),
+    sourceQuantity,
+    sourceUnit,
+    sourceCostCad: input.costCad,
+    sourceCostCurrency: normalizeOptionalImportString(input.item.costCurrency) ?? 'CAD',
+    potentialCategory: input.potentialCategory,
+    sourceDetails,
+  };
+}
+
+function getSourceItemLabel(
+  item: ParsedActivity | any,
+  rawActivityType: string,
+  documentFileName: string,
+) {
+  return (
+    formatOptionalExtractionField(item.label) ||
+    formatOptionalExtractionField(item.sourceLabel) ||
+    formatOptionalExtractionField(item.description) ||
+    formatOptionalExtractionField(item.lineItem) ||
+    rawActivityType ||
+    formatSourceReference(item.sourceReference, documentFileName)
+  ).trim();
+}
+
+function getFieldNumber(value: RawExtractionField) {
+  const numericValue = Number(formatOptionalExtractionField(value).replace(/[$,\s]/g, ''));
+  return Number.isFinite(numericValue) ? numericValue : undefined;
+}
+
+function getRawExtractionFieldValue<T>(value: RawExtractionField, fallback: T): T {
+  if (isRecord(value) && 'value' in value) {
+    return (value.value ?? fallback) as T;
+  }
+
+  return (value ?? fallback) as T;
+}
+
+function isWastewaterEvidence(text: string) {
+  return /\b(waste\s*water|wastewater|sewer|sewage)\b/.test(text);
+}
+
+function isWasteServiceEvidence(text: string) {
+  return /\b(waste|garbage|recycling|refuse|organics|sanitation)\b/.test(text);
+}
+
+function isUtilityFeeEvidence(text: string) {
+  return /\b(admin(?:istration)?|delivery|distribution|transmission|service charge|service fee|storm\s*water|stormwater|municipal|franchise|tax|gst|fee|charge)\b/.test(text);
+}
+
+function isPhysicalWasteUnit(unit: string) {
+  return /\b(kg|kilogram|kilograms|tonne|tonnes|metric ton|metric tons|ton|tons|lb|lbs|pound|pounds|yd3|yard|yards|m3|cubic metre|cubic meter)\b/i.test(
+    unit,
+  );
+}
+
+function getDetectedSourceItemLabel(item: DetectedSourceItem) {
+  const label = String(item.label ?? '').trim();
+  if (label) return label;
+
+  return String(item.type ?? '')
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\w\S*/g, (part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase());
+}
+
+function formatDetectedSourceCost(value?: string | number | null) {
+  const numericValue = typeof value === 'number'
+    ? value
+    : Number(String(value ?? '').replace(/[$,\s]/g, ''));
+  if (!Number.isFinite(numericValue)) return '-';
+  return `$${numericValue.toFixed(2)}`;
+}
+
+function formatDetectedSourceDetails(item: DetectedSourceItem) {
+  const details = item.sourceDetails ?? [];
+  if (!details.length) return '-';
+
+  return details
+    .map((detail) => {
+      const label = String(detail.label ?? '').trim();
+      const amount = detail.amountCad !== undefined && detail.amountCad !== null
+        ? formatDetectedSourceCost(detail.amountCad)
+        : String(detail.value ?? '').trim();
+      return [label, amount && amount !== '-' ? amount : ''].filter(Boolean).join(': ');
+    })
+    .filter(Boolean)
+    .join('; ');
 }
 
 function normalizeSourceReferenceForDocument(sourceReference: string, documentFileName: string) {
@@ -1345,6 +1669,12 @@ function getDocumentImportedRecordCount(doc: DocumentItem) {
   return doc.importedRecordCount ?? '-';
 }
 
+const NO_IMPORTED_RECORDS_MESSAGE = 'No imported records are available for calculation review yet.';
+
+export function hasImportedRecords(doc: Pick<DocumentItem, 'importedRecordCount'>) {
+  return Number(doc.importedRecordCount ?? 0) > 0;
+}
+
 function isImportedDocument(doc: Pick<DocumentItem, 'status' | 'importedAt' | 'importBatchId' | 'importedRecordCount'>) {
   return (
     normalizeDocumentStatus(doc.status) === 'IMPORTED' ||
@@ -1500,6 +1830,8 @@ export function UploadPage() {
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
   const [previewDocumentIds, setPreviewDocumentIds] = useState<string[]>([]);
   const [parsedActivities, setParsedActivities] = useState<EditableParsedActivity[]>([]);
+  const [detectedSourceItems, setDetectedSourceItems] = useState<EditableDetectedSourceItem[]>([]);
+  const [importedRecordKeys, setImportedRecordKeys] = useState<string[]>([]);
   const [bulkProvince, setBulkProvince] = useState('');
   const [latestDocumentId, setLatestDocumentId] = useState<string | null>(null);
   const [lastSavedSpreadsheetDocumentId, setLastSavedSpreadsheetDocumentId] = useState<string | null>(null);
@@ -1525,6 +1857,7 @@ export function UploadPage() {
   const canSetProvinceOnDraftRows = canSetProvinceForActivityRecords(currentUser);
   const pilotReviewerReadOnly = isPilotReviewer(currentUser);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const reviewSectionRef = useRef<HTMLDivElement | null>(null);
@@ -1532,6 +1865,9 @@ export function UploadPage() {
   const manualEntryRef = useRef<HTMLDivElement | null>(null);
   const validationSummaryRef = useRef<HTMLDivElement | null>(null);
   const uploadDragDepthRef = useRef(0);
+  const conversionFactorCacheRef = useRef<ConversionFactorItem[] | null>(null);
+  const restoredReviewDocumentRef = useRef<string | null>(null);
+  const activeReviewRequestRef = useRef(0);
   const documentMenuRef = useRef<HTMLDivElement | null>(null);
   const documentMenuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const visibleDocuments = showAllDocuments ? documents : documents.slice(0, 3);
@@ -1549,57 +1885,26 @@ export function UploadPage() {
   const selectedDocuments = documents.filter((document) =>
     selectedDocumentIds.includes(document.id),
   );
-  const selectedReadyDocuments = selectedDocuments.filter((document) =>
-    ['PROCESSED', 'EXTRACTED', 'REVIEW_REQUIRED'].includes(
-      normalizeDocumentStatus(document.status),
-    ),
-  );
-  const selectedImportedDocuments = selectedDocuments.filter(
-    (document) => normalizeDocumentStatus(document.status) === 'IMPORTED',
-  );
-  const selectedDocumentsAction =
-    selectedDocuments.length === 0
-      ? 'none'
-      : selectedImportedDocuments.length === selectedDocuments.length
-      ? 'report'
-      : selectedReadyDocuments.length === selectedDocuments.length
-      ? 'review'
-      : 'mixed';
-  const selectedDocumentsActionLabel =
-    selectedDocumentsAction === 'report'
-      ? 'Generate Report'
-      : selectedDocumentsAction === 'review'
-      ? 'Review Selected Data'
-      : selectedDocumentsAction === 'mixed'
-      ? 'Select Compatible Documents'
-      : 'Review Selected Data';
+  const selectableDocuments = documents.filter(hasImportedRecords);
+  const selectableVisibleDocuments = visibleDocuments.filter(hasImportedRecords);
+  const selectedImportedDocuments = selectedDocuments.filter(hasImportedRecords);
+  const selectedDocumentsActionLabel = selectedImportedDocuments.length > 0
+    ? 'Generate Report'
+    : 'Review Selected Data';
   const selectedDocumentsActionDisabled =
-    selectedDocumentsAction === 'none' ||
-    selectedDocumentsAction === 'mixed' ||
-    uploading ||
-    extractingId !== null ||
-    confirmingId !== null ||
-    generatingMetrics;
-  const selectedDocumentsActionHelp =
-    selectedDocuments.length === 0
-      ? 'Select ready documents to review rows, or imported documents to generate a report.'
-      : selectedDocumentsAction === 'mixed'
-      ? 'Select only Ready for Review documents to review rows, or only Imported documents to generate a report.'
-      : selectedDocumentsAction === 'review'
-      ? `${selectedReadyDocuments.length} ready document${
-          selectedReadyDocuments.length === 1 ? '' : 's'
-        } selected for row review.`
-      : selectedDocumentsAction === 'report'
-      ? `${selectedImportedDocuments.length} imported document${
-          selectedImportedDocuments.length === 1 ? '' : 's'
-        } selected for reporting.`
-      : '';
+    selectedImportedDocuments.length === 0 ||
+    selectedImportedDocuments.length !== selectedDocumentIds.length ||
+    uploading || extractingId !== null || confirmingId !== null || generatingMetrics;
+  const selectedDocumentsActionHelp = selectedImportedDocuments.length > 0
+    ? `${selectedImportedDocuments.length} document${selectedImportedDocuments.length === 1 ? '' : 's'} selected. Calculations and reports include imported records only; unresolved source rows remain excluded.`
+    : 'Select files with imported records for reporting. Use Review Rows to resolve source-data issues.';
   const isProcessing =
     uploading ||
     extractingId !== null ||
     confirmingId !== null ||
     generatingMetrics;
   const importValidationIssues = getImportValidationIssues(parsedActivities);
+  const importedRecordKeySet = new Set(importedRecordKeys);
   const missingProvinceRowIndexes = Array.from(
     new Set(
       importValidationIssues
@@ -1640,8 +1945,10 @@ export function UploadPage() {
   const rowsRequiringReviewCount = draftRowClassifications.filter(
     (classification) => classification === 'REQUIRES_REVIEW',
   ).length;
+  const detectedSourceItemCount = detectedSourceItems.length;
+  const alreadyImportedParsedActivitiesCount = parsedActivities.filter(isParsedActivityAlreadyImported).length;
   const rowsLeftOutOfImportCount =
-    parsedActivities.length - selectedImportableActivitiesCount;
+    parsedActivities.length - selectedImportableActivitiesCount - alreadyImportedParsedActivitiesCount;
   const hasImportValidationErrors = importValidationIssues.length > 0;
   const hasSelectedImportValidationErrors = selectedImportValidationIssues.length > 0;
   const canAttemptConfirmImport =
@@ -1658,6 +1965,10 @@ export function UploadPage() {
     documents,
   });
   const normalizedBulkProvince = normalizePreviewProvince(bulkProvince);
+  const routeReviewDocumentId =
+    searchParams.get('view') === 'review'
+      ? searchParams.get('documentId')?.trim() || null
+      : null;
   const canSetBulkProvince =
     canSetProvinceOnDraftRows &&
     missingProvinceRowIndexes.length > 0 &&
@@ -1686,6 +1997,49 @@ export function UploadPage() {
     reviewHeadingRef.current?.focus({ preventScroll: true });
   }
 
+  function setReviewRouteDocument(documentId: string) {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set('view', 'review');
+    nextParams.set('documentId', documentId);
+    setSearchParams(nextParams, { replace: true });
+  }
+
+  function clearReviewRouteDocument() {
+    const nextParams = new URLSearchParams(location.search);
+    const hadReviewRoute = nextParams.has('view') || nextParams.has('documentId');
+    nextParams.delete('view');
+    nextParams.delete('documentId');
+    restoredReviewDocumentRef.current = null;
+
+    if (hadReviewRoute) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }
+
+  function clearActiveReviewState(options: { clearRoute?: boolean } = {}) {
+    setPreviewDocumentId(null);
+    setPreviewDocumentIds([]);
+    setParsedActivities([]);
+    setDetectedSourceItems([]);
+    setImportedRecordKeys([]);
+    setBulkProvince('');
+    setSelectedDocumentIds([]);
+
+    if (options.clearRoute) {
+      clearReviewRouteDocument();
+    }
+  }
+
+  function beginActiveReviewRequest(options: { clearRoute?: boolean } = {}) {
+    activeReviewRequestRef.current += 1;
+    clearActiveReviewState(options);
+    return activeReviewRequestRef.current;
+  }
+
+  function isActiveReviewRequest(requestId: number) {
+    return requestId === activeReviewRequestRef.current;
+  }
+
   useEffect(() => {
     loadDocuments();
   }, [location.pathname]);
@@ -1695,8 +2049,8 @@ export function UploadPage() {
     if (!routeState?.flashMessage) return;
 
     setSuccessMessage(routeState.flashMessage);
-    navigate(location.pathname, { replace: true, state: null });
-  }, [location.pathname, location.state, navigate]);
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get('section') !== 'review') return;
@@ -1705,11 +2059,29 @@ export function UploadPage() {
   }, [location.search]);
 
   useEffect(() => {
+    if (!routeReviewDocumentId) {
+      restoredReviewDocumentRef.current = null;
+      return;
+    }
+
+    if (previewDocumentId === routeReviewDocumentId) return;
+    if (restoredReviewDocumentRef.current === routeReviewDocumentId) return;
+
+    const documentToRestore = documents.find((document) => document.id === routeReviewDocumentId);
+    if (!documentToRestore) return;
+
+    restoredReviewDocumentRef.current = routeReviewDocumentId;
+    void handlePreviewDocument(documentToRestore, { preserveRoute: true });
+  }, [documents, previewDocumentId, routeReviewDocumentId]);
+
+  useEffect(() => {
     function handleDemoDataReset() {
       setDocuments([]);
       setPreviewDocumentId(null);
       setPreviewDocumentIds([]);
       setParsedActivities([]);
+      setDetectedSourceItems([]);
+      setImportedRecordKeys([]);
       setBulkProvince('');
       setLatestDocumentId(null);
       setLastSavedSpreadsheetDocumentId(null);
@@ -1741,7 +2113,7 @@ export function UploadPage() {
     }
 
     function isInsideOpenDocumentMenu(target: Node | null) {
-      const activeButton = documentMenuButtonRefs.current[openDocumentMenuId];
+      const activeButton = documentMenuButtonRefs.current[openDocumentMenuId ?? ''];
 
       return Boolean(
         target &&
@@ -1854,18 +2226,17 @@ export function UploadPage() {
   ) {
     if (rows.length === 0) return rows;
 
-    const conversionFactors = await getAllConversionFactors({ type: 'EMISSION' }).catch(
-      () => [] as ConversionFactorItem[],
-    );
+    const conversionFactors = await getEmissionConversionFactors();
     if (conversionFactors.length === 0) return rows;
 
     const organizationId = getOrganizationId(getCurrentUser());
 
     return rows.map((item) => {
       if (isCanonicalReadyReviewRow(item)) {
+        const alreadyImported = isParsedActivityAlreadyImported(item);
         return {
           ...item,
-          selected: options.preserveSelection ? item.selected : true,
+          selected: alreadyImported ? false : options.preserveSelection ? item.selected : true,
         };
       }
 
@@ -1890,10 +2261,20 @@ export function UploadPage() {
       return {
         ...enrichedItem,
         selected: options.preserveSelection
-          ? item.selected && isImportableDraftRowClassification(classification)
-          : isImportableDraftRowClassification(classification),
+          ? item.selected && !isParsedActivityAlreadyImported(enrichedItem) && isImportableDraftRowClassification(classification)
+          : !isParsedActivityAlreadyImported(enrichedItem) && isImportableDraftRowClassification(classification),
       };
     });
+  }
+
+  async function getEmissionConversionFactors() {
+    if (conversionFactorCacheRef.current) return conversionFactorCacheRef.current;
+
+    const conversionFactors = await getAllConversionFactors({ type: 'EMISSION' }).catch(
+      () => [] as ConversionFactorItem[],
+    );
+    conversionFactorCacheRef.current = conversionFactors;
+    return conversionFactors;
   }
 
   async function reloadRemainingDraftRowsAfterConfirm(input: {
@@ -1915,10 +2296,17 @@ export function UploadPage() {
       const reloadedRows: EditableParsedActivity[] = [];
 
       for (const documentId of input.documentIds) {
-        const document = documents.find((item) => item.id === documentId);
-        const result = await getDocumentExtraction(documentId);
-        const sourceRows = buildEditableParsedActivities(
-          result.parsedActivities ?? [],
+      const document = documents.find((item) => item.id === documentId);
+      const result = await getDocumentExtraction(documentId);
+      const sourceClassification = classifyExtractedDocumentSourceItems(
+        result.parsedActivities ?? [],
+        {
+          id: documentId,
+          fileName: document?.fileName ?? documentId,
+        },
+      );
+      const sourceRows = buildEditableParsedActivities(
+          sourceClassification.reviewableActivities,
           {
             id: documentId,
             fileName: document?.fileName ?? documentId,
@@ -1959,6 +2347,15 @@ export function UploadPage() {
     } catch {
       return [];
     }
+  }
+
+  async function refreshImportedRecordKeys(
+    documentIds: string[],
+    requestId = activeReviewRequestRef.current,
+  ) {
+    const keys = await getImportedActivityRecordKeysForDocuments(documentIds);
+    if (!isActiveReviewRequest(requestId)) return;
+    setImportedRecordKeys(Array.from(new Set(keys)));
   }
 
   function filterUnimportedDraftRows(
@@ -2084,11 +2481,11 @@ export function UploadPage() {
     document?: { id: string; fileName: string },
   ) {
     const activityType = normalizePreviewActivityType(
-      getAliasedExtractionField(item, ['activityType', 'activity_type', 'type', 'category']),
+      getAliasedExtractionField(item, ['activityType', 'activity_type', 'recordCategory', 'Record Category', 'type', 'category']),
     );
-    const unit = String(getFieldValue(getAliasedExtractionField(item, ['unit', 'uom', 'measurement']), '')).trim().toUpperCase();
+    const unit = String(getFieldValue(getAliasedExtractionField(item, ['unit', 'uom', 'UOM', 'measurement']), '')).trim().toUpperCase();
     const recordDate = formatDateValue(
-      getAliasedExtractionField(item, ['recordDate', 'date', 'startDate', 'periodStart', 'fromDate']),
+      getAliasedExtractionField(item, ['recordDate', 'date', 'Service Date', 'startDate', 'periodStart', 'fromDate']),
     );
     const endDate = formatDateValue(getAliasedExtractionField(item, ['endDate', 'periodEnd', 'toDate']));
     const country = normalizeJurisdictionCountry(
@@ -2098,7 +2495,17 @@ export function UploadPage() {
       getAliasedExtractionField(item, ['jurisdictionRegion', 'province', 'region', 'state', 'stateProvince']),
     );
     const facility = normalizePreviewSiteFacility(
-      getAliasedExtractionField(item, ['facilityName', 'facility', 'site', 'siteName', 'location', 'branch', 'factory']),
+      getAliasedExtractionField(item, [
+        'facilityName',
+        'facility',
+        'site',
+        'siteName',
+        'location',
+        'locationName',
+        'Location Name',
+        'branch',
+        'factory',
+      ]),
     );
     const sourceDocument = formatOptionalExtractionField(item.sourceDocumentId) ||
       document?.id ||
@@ -2144,19 +2551,24 @@ export function UploadPage() {
       const activityTypeField = getAliasedExtractionField(item, [
         'activityType',
         'activity_type',
+        'recordCategory',
+        'Record Category',
         'type',
         'category',
       ]);
       const quantityField = getAliasedExtractionField(item, [
         'quantity',
+        'consumption',
+        'Consumption',
         'amount',
         'usage',
         'value',
       ]);
-      const unitField = getAliasedExtractionField(item, ['unit', 'uom', 'measurement']);
+      const unitField = getAliasedExtractionField(item, ['unit', 'uom', 'UOM', 'measurement']);
       const startDateField = getAliasedExtractionField(item, [
         'recordDate',
         'date',
+        'Service Date',
         'startDate',
         'periodStart',
         'fromDate',
@@ -2196,7 +2608,7 @@ export function UploadPage() {
       const normalizedCountry = normalizePreviewCountry(countryField);
       const normalizedProvince =
         normalizePreviewProvince(provinceField) || extractProvinceFromAddress(addressField);
-      const normalizedFacility = isSpreadsheetFileName(document.fileName)
+      const normalizedFacility = (isSpreadsheetFileName(document.fileName) || /\.json$/i.test(document.fileName))
         ? normalizePreviewSiteFacility(facilityField)
         : '';
       const rawSourceReferenceValue = formatSourceReference(sourceReferenceField, document.fileName);
@@ -2344,6 +2756,7 @@ export function UploadPage() {
     setPreviewDocumentId('MULTIPLE');
     setPreviewDocumentIds(sampleDocuments.map((document) => document.id));
     setParsedActivities(buildSampleReviewRows());
+    setDetectedSourceItems([]);
     setBulkProvince('');
     setSampleWorkspaceLoaded(true);
     setSuccessMessage('Sample files loaded. You can review, import, edit, and generate reports like a real workflow.');
@@ -2361,7 +2774,7 @@ export function UploadPage() {
       return 'SPREADSHEET';
     }
 
-    if (file.type.startsWith('image/') || /\.(png|jpe?g|heic)$/i.test(fileName)) {
+    if (file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(fileName)) {
       return 'IMAGE';
     }
 
@@ -2428,6 +2841,7 @@ export function UploadPage() {
       return;
     }
 
+    beginActiveReviewRequest({ clearRoute: true });
     setSelectedFiles(files);
     setSuccessMessage(null);
     setError(null);
@@ -2634,6 +3048,8 @@ ${sampleRows.join('\n')}`,
               sourceDocument,
             );
             setParsedActivities(draftRows);
+            setDetectedSourceItems([]);
+            void refreshImportedRecordKeys([result.sourceDocumentId]);
             setPreviewDocumentId(result.sourceDocumentId);
             setPreviewDocumentIds([result.sourceDocumentId]);
             setSuccessMessage(getSpreadsheetSaveReviewMessage(draftRows));
@@ -2641,6 +3057,8 @@ ${sampleRows.join('\n')}`,
             setPreviewDocumentId(null);
             setPreviewDocumentIds([]);
             setParsedActivities([]);
+            setDetectedSourceItems([]);
+            setImportedRecordKeys([]);
             setSuccessMessage('Spreadsheet rows saved for review.');
           }
         } else {
@@ -2671,6 +3089,7 @@ ${sampleRows.join('\n')}`,
 
     const shouldExtractAfterUpload = options?.extractAfterUpload ?? false;
 
+    beginActiveReviewRequest({ clearRoute: true });
     setUploading(true);
     setError(null);
     setSuccessMessage(
@@ -3012,13 +3431,26 @@ ${sampleRows.join('\n')}`,
     }
   }
 
-  async function handlePreviewDocument(doc: DocumentItem) {
+  async function handlePreviewDocument(
+    doc: DocumentItem,
+    options: { preserveRoute?: boolean } = {},
+  ) {
+    const requestId = beginActiveReviewRequest();
+
+    if (!options.preserveRoute) {
+      setReviewRouteDocument(doc.id);
+    }
+
     const localRows = parsedActivities.filter((item) => item.documentId === doc.id);
+    const localSourceItems = detectedSourceItems.filter((item) => item.documentId === doc.id);
 
     if (localRows.length > 0 && !shouldRefreshReviewRowsFromBackend(doc)) {
+      if (!isActiveReviewRequest(requestId)) return;
       setPreviewDocumentId(doc.id);
       setPreviewDocumentIds([doc.id]);
       setParsedActivities(localRows);
+      setDetectedSourceItems(localSourceItems);
+      void refreshImportedRecordKeys([doc.id], requestId);
       setSuccessMessage('Review the extracted activity rows below, then confirm import.');
       setError(null);
       return;
@@ -3026,7 +3458,10 @@ ${sampleRows.join('\n')}`,
 
     if (isSampleDocumentId(doc.id)) {
       const sampleRows = buildSampleReviewRows().filter((item) => item.documentId === doc.id);
+      if (!isActiveReviewRequest(requestId)) return;
       setParsedActivities(sampleRows);
+      setDetectedSourceItems([]);
+      setImportedRecordKeys([]);
       setPreviewDocumentId(doc.id);
       setPreviewDocumentIds([doc.id]);
       setSuccessMessage('Review the extracted activity rows below, then confirm import.');
@@ -3040,8 +3475,20 @@ ${sampleRows.join('\n')}`,
 
     try {
       const result = await getDocumentExtraction(doc.id);
-      const extractedRows = await enrichDraftRowsWithCalculationStatus(buildEditableParsedActivities(
+      if (!isActiveReviewRequest(requestId)) return;
+      const sourceClassification = classifyExtractedDocumentSourceItems(
         result.parsedActivities ?? [],
+        doc,
+      );
+      const sourceItems = buildDetectedSourceItems(
+        [...(result.detectedSourceItems ?? []), ...sourceClassification.detectedSourceItems],
+        {
+          id: doc.id,
+          fileName: doc.fileName,
+        },
+      );
+      const extractedRows = await enrichDraftRowsWithCalculationStatus(buildEditableParsedActivities(
+        sourceClassification.reviewableActivities,
         {
           id: doc.id,
           fileName: doc.fileName,
@@ -3049,14 +3496,18 @@ ${sampleRows.join('\n')}`,
         },
         { preserveRows: isSpreadsheetFileName(doc.fileName) },
       ));
+      if (!isActiveReviewRequest(requestId)) return;
 
       if (extractedRows.length === 0) {
         setError('No emissions data detected. You can view the file or retry extraction.');
         setSuccessMessage(null);
+        setDetectedSourceItems(sourceItems);
         return;
       }
 
       setParsedActivities(extractedRows);
+      setDetectedSourceItems(sourceItems);
+      void refreshImportedRecordKeys([doc.id], requestId);
       setPreviewDocumentId(doc.id);
       setPreviewDocumentIds([doc.id]);
       updateDocumentStatuses([doc.id], result.status || 'REVIEW_REQUIRED');
@@ -3072,7 +3523,9 @@ ${sampleRows.join('\n')}`,
       }
       setSuccessMessage(null);
     } finally {
-      setExtractingId(null);
+      if (isActiveReviewRequest(requestId)) {
+        setExtractingId(null);
+      }
     }
   }
 
@@ -3163,6 +3616,7 @@ ${sampleRows.join('\n')}`,
 
   function clearDeletedDocumentPreview(documentId: string) {
     setParsedActivities((prev) => prev.filter((item) => item.documentId !== documentId));
+    setDetectedSourceItems((prev) => prev.filter((item) => item.documentId !== documentId));
     setSelectedDocumentIds((prev) => prev.filter((id) => id !== documentId));
     setPreviewDocumentIds((prev) => {
       const next = prev.filter((id) => id !== documentId);
@@ -3211,113 +3665,27 @@ ${sampleRows.join('\n')}`,
   }
 
   function toggleDocumentSelection(documentId: string, checked: boolean) {
-    setSelectedDocumentIds((prev) =>
-      checked
-        ? Array.from(new Set([...prev, documentId]))
-        : prev.filter((id) => id !== documentId),
-    );
+    if (checked && !selectableDocuments.some((document) => document.id === documentId)) return;
+    setSelectedDocumentIds((prev) => checked
+      ? Array.from(new Set([...prev, documentId]))
+      : prev.filter((id) => id !== documentId));
   }
 
   function toggleVisibleDocumentSelection(checked: boolean) {
-    const visibleIds = visibleDocuments.map((document) => document.id);
-
-    setSelectedDocumentIds((prev) => {
-      if (checked) {
-        return Array.from(new Set([...prev, ...visibleIds]));
-      }
-
-      return prev.filter((id) => !visibleIds.includes(id));
-    });
+    const visibleIds = selectableVisibleDocuments.map((document) => document.id);
+    setSelectedDocumentIds((prev) => checked
+      ? Array.from(new Set([...prev, ...visibleIds]))
+      : prev.filter((id) => !visibleIds.includes(id)));
   }
 
-  async function handleSelectedDocumentsAction() {
-    if (!selectedDocumentIds.length) return;
-
-    if (selectedDocumentsAction === 'review') {
-      await handleReviewSelectedDocuments();
-      return;
-    }
-
-    if (selectedDocumentsAction !== 'report') return;
-
+  function handleSelectedDocumentsAction() {
+    if (selectedDocumentsActionDisabled) return;
     navigate('/reports', {
       state: {
         reportScope: 'selectedDocuments',
-        selectedDocumentIds,
+        selectedDocumentIds: selectedImportedDocuments.map((document) => document.id),
       },
     });
-  }
-
-  async function handleReviewSelectedDocuments() {
-    if (selectedReadyDocuments.length === 0) return;
-
-    if (selectedReadyDocuments.length === 1) {
-      await handlePreviewDocument(selectedReadyDocuments[0]);
-      return;
-    }
-
-    setExtractingId('multiple');
-    setError(null);
-    setSuccessMessage(null);
-
-    try {
-      const selectedIds = selectedReadyDocuments.map((document) => document.id);
-      const localRows = parsedActivities.filter((item) =>
-        selectedIds.includes(item.documentId) &&
-        !selectedReadyDocuments.some(
-          (document) =>
-            document.id === item.documentId && shouldRefreshReviewRowsFromBackend(document),
-        ),
-      );
-      const localDocumentIds = new Set(localRows.map((item) => item.documentId));
-      const rowsToReview: EditableParsedActivity[] = [...localRows];
-
-      for (const document of selectedReadyDocuments) {
-        if (localDocumentIds.has(document.id)) continue;
-
-        if (isSampleDocumentId(document.id)) {
-          rowsToReview.push(
-            ...buildSampleReviewRows().filter((item) => item.documentId === document.id),
-          );
-          continue;
-        }
-
-        const result = await getDocumentExtraction(document.id);
-        rowsToReview.push(
-          ...(await enrichDraftRowsWithCalculationStatus(
-            buildEditableParsedActivities(result.parsedActivities ?? [], {
-              id: document.id,
-              fileName: document.fileName,
-              createdAt: document.createdAt,
-            }),
-          )),
-        );
-      }
-
-      if (rowsToReview.length === 0) {
-        setPreviewDocumentId(null);
-        setPreviewDocumentIds([]);
-        setParsedActivities([]);
-        setError('No extracted rows are available for the selected documents.');
-        return;
-      }
-
-      setParsedActivities(rowsToReview);
-      setPreviewDocumentId('MULTIPLE');
-      setPreviewDocumentIds(selectedIds);
-      setSuccessMessage('Review the extracted rows for the selected documents, then confirm import.');
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'EXTRACTION_NOT_FOUND') {
-        setError('Preview data is no longer available. Please extract the document again.');
-      } else if (err instanceof ApiError && err.code === 'FILE_MISSING') {
-        setError(FILE_MISSING_MESSAGE);
-      } else {
-        setError('Extraction preview could not be loaded. Please retry extraction.');
-      }
-      setSuccessMessage(null);
-    } finally {
-      setExtractingId(null);
-    }
   }
 
   async function handleExtract(documentId: string) {
@@ -3339,6 +3707,7 @@ ${sampleRows.join('\n')}`,
       return;
     }
 
+    const requestId = beginActiveReviewRequest({ clearRoute: true });
     setExtractingId(documentsToExtract.length > 1 ? 'multiple' : documentsToExtract[0].id);
     setError(null);
     setSuccessMessage(null);
@@ -3346,10 +3715,14 @@ ${sampleRows.join('\n')}`,
     try {
       if (documentsToExtract.every((document) => isSampleDocumentId(document.id))) {
         const sampleRows = buildSampleReviewRows();
+        if (!isActiveReviewRequest(requestId)) return;
         setSuccessMessage('Extracting sample fuel, electricity, and operations records...');
         setPreviewDocumentId(documentsToExtract.length === 1 ? documentsToExtract[0].id : 'MULTIPLE');
         setPreviewDocumentIds(documentsToExtract.map((document) => document.id));
         setParsedActivities(sampleRows);
+        if (documentsToExtract.length === 1) {
+          setReviewRouteDocument(documentsToExtract[0].id);
+        }
         updateDocumentStatuses(
           documentsToExtract.map((document) => document.id),
           'REVIEW_REQUIRED',
@@ -3373,13 +3746,25 @@ ${sampleRows.join('\n')}`,
       }
 
       const extractedRows: EditableParsedActivity[] = [];
+      const extractedSourceItems: EditableDetectedSourceItem[] = [];
       const warnings: string[] = [];
       const noDataDocumentIds: string[] = [];
       const reviewRequiredDocumentIds: string[] = [];
 
       for (const document of documentsToExtract) {
         const result = await extractDocument(document.id);
-        const extractedActivities = result.parsedActivities ?? [];
+        if (!isActiveReviewRequest(requestId)) return;
+        const sourceClassification = classifyExtractedDocumentSourceItems(
+          result.parsedActivities ?? [],
+          document,
+        );
+        const extractedActivities = sourceClassification.reviewableActivities;
+        extractedSourceItems.push(
+          ...buildDetectedSourceItems(
+            [...(result.detectedSourceItems ?? []), ...sourceClassification.detectedSourceItems],
+            document,
+          ),
+        );
 
         if (extractedActivities.length === 0) {
           noDataDocumentIds.push(document.id);
@@ -3403,23 +3788,33 @@ ${sampleRows.join('\n')}`,
       }
 
       if (extractedRows.length === 0) {
+        if (!isActiveReviewRequest(requestId)) return;
         setPreviewDocumentId(null);
         setPreviewDocumentIds([]);
         setParsedActivities([]);
+        setDetectedSourceItems(extractedSourceItems);
+        setImportedRecordKeys([]);
         setSuccessMessage(null);
         await loadDocuments();
+        if (!isActiveReviewRequest(requestId)) return;
         updateDocumentStatuses(noDataDocumentIds, 'NO_DATA_FOUND');
         setError('No emissions data detected. You can view the file or retry extraction.');
         return;
       }
 
       const enrichedExtractedRows = await enrichDraftRowsWithCalculationStatus(extractedRows);
+      if (!isActiveReviewRequest(requestId)) return;
 
       setPreviewDocumentId(
         documentsToExtract.length === 1 ? documentsToExtract[0].id : 'MULTIPLE',
       );
       setPreviewDocumentIds(documentsToExtract.map((document) => document.id));
       setParsedActivities(enrichedExtractedRows);
+      setDetectedSourceItems(extractedSourceItems);
+      if (documentsToExtract.length === 1) {
+        setReviewRouteDocument(documentsToExtract[0].id);
+      }
+      void refreshImportedRecordKeys(documentsToExtract.map((document) => document.id), requestId);
       const extractionSummary = buildDraftRowAuditSummary(enrichedExtractedRows);
       trackWorkflowEvent({
         eventName: 'DATA_EXTRACTED',
@@ -3435,6 +3830,7 @@ ${sampleRows.join('\n')}`,
         },
       });
       await loadDocuments();
+      if (!isActiveReviewRequest(requestId)) return;
       updateDocumentStatuses(noDataDocumentIds, 'NO_DATA_FOUND');
       updateDocumentStatuses(reviewRequiredDocumentIds, 'REVIEW_REQUIRED');
 
@@ -3450,14 +3846,18 @@ ${sampleRows.join('\n')}`,
         setError(null);
       }
     } catch (err) {
+      if (!isActiveReviewRequest(requestId)) return;
       const failure = getExtractionFailureState(err);
       const failedDocumentIds = documentsToExtract.map((document) => document.id);
       setSuccessMessage(null);
       await loadDocuments();
+      if (!isActiveReviewRequest(requestId)) return;
       updateDocumentStatuses(failedDocumentIds, failure.status);
       setError(failure.message);
     } finally {
-      setExtractingId(null);
+      if (isActiveReviewRequest(requestId)) {
+        setExtractingId(null);
+      }
     }
   }
 
@@ -3550,10 +3950,16 @@ ${sampleRows.join('\n')}`,
           setPreviewDocumentId(null);
           setPreviewDocumentIds([]);
           setParsedActivities([]);
+          setDetectedSourceItems((prev) =>
+            prev.filter((item) => !activeDocumentIds.includes(item.documentId)),
+          );
         } else {
           setParsedActivities(remainingRows);
           const remainingDocumentIds = Array.from(
             new Set(remainingRows.map((item) => item.documentId).filter(Boolean)),
+          );
+          setDetectedSourceItems((prev) =>
+            prev.filter((item) => remainingDocumentIds.includes(item.documentId)),
           );
           setPreviewDocumentIds(remainingDocumentIds);
           setPreviewDocumentId(
@@ -3632,10 +4038,8 @@ ${sampleRows.join('\n')}`,
       let importedCount = 0;
       const createdActivityIds: string[] = [];
       const importedSourceActivities: EditableParsedActivity[] = [];
-      const reviewPayloadByActivity = new Map<EditableParsedActivity, ActivityDataInput>();
-      const conversionFactors = await getAllConversionFactors({ type: 'EMISSION' }).catch(
-        () => [] as ConversionFactorItem[],
-      );
+      const reviewPayloadByActivity = new Map<EditableParsedActivity, DraftActivityInput>();
+      const conversionFactors = await getEmissionConversionFactors();
       const organizationId = getOrganizationId(getCurrentUser());
 
       for (const [activityDocumentId, activities] of activitiesByDocument) {
@@ -3655,7 +4059,8 @@ ${sampleRows.join('\n')}`,
               organizationId,
           }),
         }));
-        const importablePairs = payloadPairs.filter(({ item, payload }) => {
+        const importablePairs = payloadPairs.filter((pair): pair is typeof pair & { payload: ActivityDataInput } => {
+          const { item, payload } = pair;
           const importable = isDocumentImportPayloadImportable(payload);
           if (!importable) {
             reviewPayloadByActivity.set(item, payload);
@@ -3689,6 +4094,12 @@ ${sampleRows.join('\n')}`,
             ...importablePairs.slice(0, createdCount).map(({ item }) => item),
           );
         }
+      }
+      const importedSourceKeys = importedSourceActivities
+        .map(getEditableParsedActivityRecordKey)
+        .filter(Boolean);
+      if (importedSourceKeys.length > 0) {
+        setImportedRecordKeys((prev) => Array.from(new Set([...prev, ...importedSourceKeys])));
       }
 
       if (importedCount === 0) {
@@ -3785,6 +4196,9 @@ ${sampleRows.join('\n')}`,
           });
         } else {
           setParsedActivities(remainingRows);
+          setDetectedSourceItems((prev) =>
+            prev.filter((item) => remainingDocumentIds.includes(item.documentId)),
+          );
           setPreviewDocumentIds(remainingDocumentIds);
           setPreviewDocumentId(
             remainingDocumentIds.length === 0
@@ -3875,13 +4289,11 @@ ${sampleRows.join('\n')}`,
 
   function applyConfirmReviewPayload(
     item: EditableParsedActivity,
-    payload: Partial<ActivityDataInput>,
+    payload: DraftActivityInput,
   ): EditableParsedActivity {
     return {
       ...item,
-      status: payload.matchingStatus === 'MATCHED' && payload.calculationStatus === 'CALCULATED'
-        ? 'READY'
-        : item.status,
+      status: getCanonicalReviewStatusFromPayload(payload),
       matchingStatus: payload.matchingStatus ?? item.matchingStatus,
       reportTreatment: payload.reportTreatment ?? item.reportTreatment,
       scope: payload.scope ?? item.scope,
@@ -3913,7 +4325,8 @@ ${sampleRows.join('\n')}`,
     importBatchId: string,
   ) {
     try {
-      return await confirmDocumentImport(documentId, activities, importBatchId);
+      const result = await confirmDocumentImport(documentId, activities, importBatchId);
+      return result;
     } catch (error) {
       if (!(error instanceof DuplicateDocumentImportError)) {
         throw error;
@@ -3970,7 +4383,7 @@ ${sampleRows.join('\n')}`,
     };
   }
 
-  function getActivitySourceDocumentId(activity: Partial<ActivityDataItem | ActivityDataInput>) {
+  function getActivitySourceDocumentId(activity: { sourceDocumentId?: string | null; documentId?: string | null }) {
     return String(
       activity.sourceDocumentId ??
         (activity as { documentId?: unknown }).documentId ??
@@ -3981,6 +4394,7 @@ ${sampleRows.join('\n')}`,
   function getImportedActivityRecordKey(activity: Partial<ActivityDataItem>) {
     return buildDocumentImportRecordKey({
       sourceDocumentId: getActivitySourceDocumentId(activity),
+      sourceSheetName: activity.sourceSheetName,
       sourceRow: activity.sourceRow,
       sourceReference: activity.sourceReference,
       activityType: activity.activityType,
@@ -3990,9 +4404,10 @@ ${sampleRows.join('\n')}`,
     });
   }
 
-  function getImportActivityRecordKey(activity: Partial<ActivityDataInput>) {
+  function getImportActivityRecordKey(activity: DraftActivityInput) {
     return buildDocumentImportRecordKey({
       sourceDocumentId: getActivitySourceDocumentId(activity),
+      sourceSheetName: activity.sourceSheetName,
       sourceRow: activity.sourceRow,
       sourceReference: activity.sourceReference,
       activityType: activity.activityType,
@@ -4005,6 +4420,7 @@ ${sampleRows.join('\n')}`,
   function getEditableParsedActivityRecordKey(activity: EditableParsedActivity) {
     return buildDocumentImportRecordKey({
       documentId: activity.documentId,
+      sourceSheetName: activity.sourceSheetName,
       sourceRow: activity.sourceRow,
       sourceReference: activity.sourceReference.value,
       activityType: activity.activityType.value,
@@ -4196,9 +4612,16 @@ ${sampleRows.join('\n')}`,
     rowIndex: number,
     item: EditableParsedActivity,
   ) {
+    if (isParsedActivityAlreadyImported(item)) return false;
+
     return isImportableDraftRowClassification(
       classifyDraftRow(item, getRowValidationIssues(rowIndex)),
     );
+  }
+
+  function isParsedActivityAlreadyImported(item: EditableParsedActivity) {
+    const key = getEditableParsedActivityRecordKey(item);
+    return Boolean(key && importedRecordKeySet.has(key));
   }
 
   function parsedActivityHasValidationIssues(item: EditableParsedActivity) {
@@ -4292,7 +4715,7 @@ ${sampleRows.join('\n')}`,
           jurisdictionRegion: {
             ...item.jurisdictionRegion,
             value: normalizedBulkProvince,
-            confidence: 'medium',
+            confidence: 'medium' as const,
           },
         };
 
@@ -4400,10 +4823,15 @@ ${sampleRows.join('\n')}`,
     if (importedCount <= 0) return;
 
     await invalidatePostConfirmImportQueries();
+    const returnDocumentId = documentIds[0];
     navigate(DATA_RECORDS_ROUTE, {
       state: {
         flashMessage: message,
         sourceDocumentIds: Array.from(new Set(documentIds)),
+        inputReviewDocumentId: returnDocumentId,
+        inputReviewPath: returnDocumentId
+          ? `${INPUT_DATA_ROUTE}?documentId=${encodeURIComponent(returnDocumentId)}&view=review`
+          : INPUT_DATA_ROUTE,
         importedActivityIds: createdActivityIds,
         importedCount,
         trackedMetricCount,
@@ -4475,58 +4903,120 @@ ${sampleRows.join('\n')}`,
   ) {
     if (!canImportData) return;
 
+    const currentItem = parsedActivities[index];
+    if (!currentItem || field === 'selected') return;
+
+    const currentField = currentItem[field] as EditableConfidenceField<any>;
+    const nextValue =
+      field === 'quantity'
+        ? value.trim() === ''
+          ? null
+          : Number(value)
+        : field === 'activityType'
+        ? normalizePreviewActivityType(value)
+        : field === 'jurisdictionCountry'
+        ? normalizePreviewCountry(value)
+        : field === 'jurisdictionRegion'
+        ? normalizePreviewProvince(value)
+        : formatOptionalExtractionField(value);
+    const updatedItem = {
+      ...currentItem,
+      ...(field === 'recordDate' ? { dateEstimated: false } : {}),
+      [field]: {
+        ...currentField,
+        value: nextValue,
+        confidence: 'medium' as const,
+      },
+    };
+    const calculationFieldChanged = [
+      'activityType',
+      'recordDate',
+      'quantity',
+      'unit',
+      'jurisdictionCountry',
+      'jurisdictionRegion',
+    ].includes(field);
+    const nextItem = calculationFieldChanged
+      ? {
+          ...updatedItem,
+          status: null,
+          matchingStatus: null,
+          reportTreatment: null,
+          scope: null,
+          calculationStatus: null,
+          calculationMessage: null,
+          matchedFactorId: null,
+          matchedFactorName: null,
+          matchedFactorSourceYear: null,
+          matchedFactorValue: null,
+          matchedFactorUnit: null,
+          matchedFactorVersion: null,
+          matchedFactorSourceAuthority: null,
+          matchedFactorSourceDocument: null,
+          matchedFactorSourceUrl: null,
+          matchedFactorVerificationStatus: null,
+          matchedFactorConfidenceLevel: null,
+          matchedFactorAssumptions: null,
+          factorSelectionReason: null,
+          factorSelectionExplanation: null,
+          calculatedEmissionsKgCO2e: null,
+        }
+      : updatedItem;
+    const nextRow = {
+      ...nextItem,
+      selected: parsedActivityHasValidationIssues(nextItem) ? false : currentItem.selected,
+    };
+
     setParsedActivities((prev) =>
-      prev.map((item, i) => {
-        if (i !== index) return item;
-        if (field === 'selected') return item;
+      prev.map((item, i) => (i === index ? nextRow : item)),
+    );
 
-        const currentField = item[field] as EditableConfidenceField<any>;
-        const nextValue =
-          field === 'quantity'
-            ? value.trim() === ''
-              ? null
-              : Number(value)
-            : field === 'activityType'
-            ? normalizePreviewActivityType(value)
-            : field === 'jurisdictionCountry'
-            ? normalizePreviewCountry(value)
-            : field === 'jurisdictionRegion'
-            ? normalizePreviewProvince(value)
-            : formatOptionalExtractionField(value);
+    if (calculationFieldChanged) {
+      void refreshParsedActivityEvaluation(index, nextRow);
+    }
+  }
 
-        const updatedItem = {
-          ...item,
-          ...(field === 'recordDate' ? { dateEstimated: false } : {}),
-          [field]: {
-            ...currentField,
-            value: nextValue,
-            confidence: 'medium',
-          },
-        };
-        const calculationFieldChanged = [
-          'activityType',
-          'recordDate',
-          'quantity',
-          'unit',
-          'jurisdictionCountry',
-          'jurisdictionRegion',
-        ].includes(field);
-        const nextItem = calculationFieldChanged
+  async function refreshParsedActivityEvaluation(
+    index: number,
+    item: EditableParsedActivity,
+  ) {
+    const issues = getImportValidationIssues([item]);
+    if (issues.length > 0) return;
+
+    const conversionFactors = await getEmissionConversionFactors();
+    if (conversionFactors.length === 0) return;
+
+    const sourceFileName =
+      item.documentFileName ||
+      documents.find((document) => document.id === item.documentId)?.fileName ||
+      item.documentId;
+    const payload = buildDocumentImportActivityPayload({
+      item,
+      documentId: item.documentId,
+      sourceFileName,
+      importBatchId: `document-${item.documentId}`,
+      conversionFactors,
+      organizationId: getOrganizationId(getCurrentUser()),
+    });
+    const evaluatedItem = applyConfirmReviewPayload(item, payload);
+    const classification = classifyDraftRow(
+      evaluatedItem,
+      getImportValidationIssues([evaluatedItem]),
+    );
+    const refreshedKey = getParsedActivityRowKey(item, index);
+
+    setParsedActivities((prev) =>
+      prev.map((current, currentIndex) =>
+        currentIndex === index &&
+        getParsedActivityRowKey(current, currentIndex) === refreshedKey
           ? {
-              ...updatedItem,
-              matchingStatus: null,
-              reportTreatment: null,
-              scope: null,
-              calculationStatus: null,
-              calculationMessage: null,
+              ...evaluatedItem,
+              selected:
+                !isParsedActivityAlreadyImported(evaluatedItem) &&
+                isImportableDraftRowClassification(classification),
             }
-          : updatedItem;
-
-        return {
-          ...nextItem,
-          selected: parsedActivityHasValidationIssues(nextItem) ? false : item.selected,
-        };
-      }),
+          : current,
+      ),
     );
   }
 
@@ -4569,7 +5059,7 @@ ${sampleRows.join('\n')}`,
           value:
             documents.find((doc) => doc.id === (previewDocumentIds[0] ?? previewDocumentId))
               ?.fileName ?? '',
-          confidence: 'medium',
+          confidence: 'medium' as const,
         },
         notes: { value: '', confidence: 'medium' },
       },
@@ -4586,6 +5076,7 @@ ${sampleRows.join('\n')}`,
               ...item,
               selected:
                 checked &&
+                !isParsedActivityAlreadyImported(item) &&
                 isImportableDraftRowClassification(
                   classifyDraftRow(item, getImportValidationIssues([item])),
                 ),
@@ -4601,9 +5092,11 @@ ${sampleRows.join('\n')}`,
     setParsedActivities((prev) =>
       prev.map((item) => ({
         ...item,
-        selected: isImportableDraftRowClassification(
-          classifyDraftRow(item, getImportValidationIssues([item])),
-        ),
+        selected:
+          !isParsedActivityAlreadyImported(item) &&
+          isImportableDraftRowClassification(
+            classifyDraftRow(item, getImportValidationIssues([item])),
+          ),
       })),
     );
   }
@@ -4633,41 +5126,7 @@ ${sampleRows.join('\n')}`,
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1 ref={pageHeadingRef} tabIndex={-1} style={{ marginBottom: 8 }}>
-        Input Data
-      </h1>
-
-      <p style={{ color: '#666', marginBottom: 16 }}>
-        Add emissions-related activity data from documents, spreadsheets, or manual entry. New records can be reviewed before they are included in emissions calculations.
-      </p>
-
-      <section
-        style={workflowCardStyle}
-        aria-label={`CarbonLite workflow: ${CARBONLITE_WORKFLOW_STAGE_COUNT} canonical stages`}
-      >
-        <div style={workflowHeaderStyle}>
-          <h2 style={workflowTitleStyle}>{formatWorkflowStageLabel(inputDataStage)}</h2>
-          <p style={workflowTextStyle}>
-            Input Data is the upload and entry workspace for the canonical CarbonLite workflow. Data contributors upload source data here; CarbonLite extracts and stages rows for review before records feed factor validation, calculation review, results review, and reports.
-          </p>
-          {pilotReviewerReadOnly ? (
-            <p style={workflowReviewerNoteStyle}>
-              This reviewer account uses preloaded sample data and is read-only. Upload and import actions are disabled.
-            </p>
-          ) : null}
-        </div>
-        <ol style={workflowStepsStyle}>
-          {CARBONLITE_WORKFLOW.map((step) => (
-            <li key={step.title} style={workflowStepStyle}>
-              <span style={workflowStepNumberStyle}>{step.step}</span>
-              <span style={workflowStepContentStyle}>
-                <strong>{step.title}</strong>
-                <span>{step.primaryRole}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      </section>
+      <PageHeader title="Input Data" headingRef={pageHeadingRef} />
 
       {!canImportData ? (
         <div style={readOnlyNoticeStyle}>
@@ -4866,7 +5325,13 @@ ${sampleRows.join('\n')}`,
               Download Excel template
             </button>
           </div>
-          <ExcelInputTable mode="spreadsheet" onSuccess={handleManualOrSpreadsheetSave} />
+          <ExcelInputTable
+            mode="spreadsheet"
+            onSuccess={handleManualOrSpreadsheetSave}
+            onSourceChange={() => {
+              beginActiveReviewRequest({ clearRoute: true });
+            }}
+          />
         </div>
       ) : null}
 
@@ -4956,12 +5421,13 @@ ${sampleRows.join('\n')}`,
                   <input
                     type="checkbox"
                     checked={
-                      visibleDocuments.length > 0 &&
-                      visibleDocuments.every((doc) => selectedDocumentIds.includes(doc.id))
+                      selectableVisibleDocuments.length > 0 &&
+                      selectableVisibleDocuments.every((doc) => selectedDocumentIds.includes(doc.id))
                     }
                     onChange={(event) =>
                       toggleVisibleDocumentSelection(event.target.checked)
                     }
+                    disabled={selectableVisibleDocuments.length === 0}
                     aria-label="Select visible documents"
                   />
                 </th>
@@ -4989,14 +5455,22 @@ ${sampleRows.join('\n')}`,
                     <td style={tdStyle}>
                       <input
                         type="checkbox"
-                        checked={selectedDocumentIds.includes(doc.id)}
+                        checked={hasImportedRecords(doc) && selectedDocumentIds.includes(doc.id)}
+                        disabled={!hasImportedRecords(doc)}
+                        title={!hasImportedRecords(doc) ? NO_IMPORTED_RECORDS_MESSAGE : undefined}
+                        aria-describedby={!hasImportedRecords(doc) ? `document-eligibility-${doc.id}` : undefined}
                         onChange={(event) =>
                           toggleDocumentSelection(doc.id, event.target.checked)
                         }
                         aria-label={`Select document ${doc.fileName}`}
                       />
                     </td>
-                    <td style={inputReviewFileNameTdStyle}>{doc.fileName}</td>
+                    <td style={inputReviewFileNameTdStyle}>
+                      {doc.fileName}
+                      <div id={`document-eligibility-${doc.id}`} style={{ marginTop: 4, fontSize: 12, color: '#475569' }}>
+                        {hasImportedRecords(doc) ? `${doc.importedRecordCount} imported records` : NO_IMPORTED_RECORDS_MESSAGE}
+                      </div>
+                    </td>
                     <td style={inputReviewTypeTdStyle}>
                       {formatDocumentSourceTypeLabel({
                         fileName: doc.fileName,
@@ -5094,7 +5568,7 @@ ${sampleRows.join('\n')}`,
 
       {showPersistentSuccessPanel ? (
         <div style={successStyle}>
-          {renderSuccessMessage(successMessage)}
+          {renderSuccessMessage(successMessage ?? '')}
 
           {showPostImportLinks ? (
             <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
@@ -5203,7 +5677,7 @@ ${sampleRows.join('\n')}`,
                 Extracted rows: {parsedActivities.length}
               </p>
               <p style={importReviewCountsStyle}>
-          Calculated: {readyImportableCount} · Tracked metrics: {trackedImportableCount} · Requires review: {rowsRequiringReviewCount} · Selected for import: {selectedImportableActivitiesCount}
+          Calculated: {readyImportableCount} · Tracked metrics: {trackedImportableCount} · Requires review: {rowsRequiringReviewCount} · Already imported: {alreadyImportedParsedActivitiesCount} · Detected source items: {detectedSourceItemCount} · Selected for import: {selectedImportableActivitiesCount}
               </p>
               <p style={{ marginTop: 8, color: '#999' }}>
                 {previewSourceSummary}
@@ -5315,6 +5789,41 @@ ${sampleRows.join('\n')}`,
                 </ul>
               </div>
             ) : null}
+            {detectedSourceItems.length > 0 ? (
+              <div style={detectedSourceItemsPanelStyle} aria-label="Detected source items not used in emissions calculation">
+                <h3 style={detectedSourceItemsHeadingStyle}>
+                  Detected Source Items Not Used in Emissions Calculation
+                </h3>
+                <div style={detectedSourceItemsGridStyle}>
+                  {detectedSourceItems.map((item) => (
+                    <div key={`${item.documentId}-${item.id ?? item.sourceReference ?? item.type}`} style={detectedSourceItemStyle}>
+                      <div style={detectedSourceItemHeaderStyle}>
+                        <strong>{getDetectedSourceItemLabel(item)}</strong>
+                        <span style={detectedSourceItemBadgeStyle}>Not imported</span>
+                      </div>
+                      <div style={detectedSourceItemMetaStyle}>
+                        Source: {item.sourceFileName || item.documentFileName}
+                      </div>
+                      <div style={detectedSourceItemMetaStyle}>
+                        Service Days: {formatDocumentMetadataValue(item.serviceDays)}
+                      </div>
+                      <div style={detectedSourceItemMetaStyle}>
+                        Source Cost: {formatDetectedSourceCost(item.sourceCostCad)}
+                      </div>
+                      <div style={detectedSourceItemMetaStyle}>
+                        Details: {formatDetectedSourceDetails(item)}
+                      </div>
+                      <div style={detectedSourceItemReasonStyle}>
+                        Reason: {item.reasonDetail || item.reason || 'No supported waste quantity was provided.'}
+                      </div>
+                      <div style={detectedSourceItemHelpStyle}>
+                        Provide waste mass and disposal/treatment information to calculate emissions.
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div style={previewScrollHintStyle}>Scroll horizontally to view all columns →</div>
             <div style={previewTableWrapStyle}>
             <table style={previewTableStyle}>
@@ -5362,22 +5871,25 @@ ${sampleRows.join('\n')}`,
                   const rowStatusLabel = getRowStatusLabel(index, item);
                   const rowIssueText = getRowIssueText(index);
                   const rowIssueTitle = getRowIssueTitle(index);
-                  const rowHasValidationIssues = getRowValidationIssues(index).length > 0;
+                  const rowIsImportable = isParsedActivityImportable(index, item);
+                  const rowAlreadyImported = isParsedActivityAlreadyImported(item);
                   const rowReportTreatment = getRowReportTreatment(index, item);
 
                   return (
                   <tr
                     key={getParsedActivityRowKey(item, index)}
-                    style={item.selected && !rowHasValidationIssues ? selectedPreviewRowStyle : undefined}
+                    style={item.selected && rowIsImportable ? selectedPreviewRowStyle : undefined}
                   >
                     <td style={tdStyle}>
                       <input
                         type="checkbox"
-                        checked={item.selected && !rowHasValidationIssues}
-                        disabled={rowHasValidationIssues}
+                        checked={item.selected && rowIsImportable}
+                        disabled={!rowIsImportable}
                         aria-label={`Select preview row ${index + 1}`}
                         title={
-                          rowHasValidationIssues
+                          rowAlreadyImported
+                            ? 'This source row has already been imported.'
+                            : !rowIsImportable
                             ? 'Fix validation issues before selecting this row.'
                             : undefined
                         }
@@ -5415,14 +5927,14 @@ ${sampleRows.join('\n')}`,
                           )}
                           title={
                             item.activityType.value &&
-                            !activityTypes.includes(item.activityType.value)
+                            !activityTypes.some(type => type === item.activityType.value)
                               ? `Unsupported activity type: ${item.activityType.value}`
                               : getPreviewActivityTypeLabel(item.activityType.value)
                           }
                         >
                           <option value="">-- Select --</option>
                           {item.activityType.value &&
-                          !activityTypes.includes(item.activityType.value) ? (
+                          !activityTypes.some(type => type === item.activityType.value) ? (
                             <option value={item.activityType.value}>
                               {getUnsupportedActivityTypeDisplayLabel()}
                             </option>
@@ -5770,15 +6282,6 @@ function DocumentMetadataField({
   );
 }
 
-const workflowCardStyle: React.CSSProperties = {
-  marginBottom: 20,
-  padding: 16,
-  borderRadius: 12,
-  border: '1px solid #dbe3ec',
-  background: '#fff',
-  boxShadow: '0 8px 20px rgba(15, 23, 42, 0.04)',
-};
-
 const inputReviewPalette = {
   primaryGreen: '#047857',
   primaryText: '#0F172A',
@@ -5795,76 +6298,6 @@ const inputReviewPalette = {
   errorBackground: '#FEF2F2',
   errorText: '#B91C1C',
   infoText: '#475569',
-};
-
-const workflowHeaderStyle: React.CSSProperties = {
-  display: 'grid',
-  gap: 6,
-  marginBottom: 14,
-};
-
-const workflowTitleStyle: React.CSSProperties = {
-  margin: 0,
-  color: '#0f172a',
-  fontSize: 18,
-};
-
-const workflowTextStyle: React.CSSProperties = {
-  margin: 0,
-  color: '#475569',
-  fontSize: 14,
-  lineHeight: 1.5,
-};
-
-const workflowReviewerNoteStyle: React.CSSProperties = {
-  ...workflowTextStyle,
-  padding: '8px 10px',
-  borderRadius: 8,
-  background: '#f8fafc',
-  border: '1px solid #e2e8f0',
-};
-
-const workflowStepsStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-  gap: 10,
-  margin: 0,
-  padding: 0,
-  listStyle: 'none',
-};
-
-const workflowStepStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '28px 1fr',
-  gap: 8,
-  alignItems: 'start',
-  minWidth: 0,
-  padding: 10,
-  borderRadius: 10,
-  border: '1px solid #e2e8f0',
-  background: '#f8fafc',
-};
-
-const workflowStepNumberStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 24,
-  height: 24,
-  borderRadius: 999,
-  background: '#ecfdf5',
-  color: '#047857',
-  fontSize: 12,
-  fontWeight: 900,
-};
-
-const workflowStepContentStyle: React.CSSProperties = {
-  display: 'grid',
-  gap: 3,
-  minWidth: 0,
-  color: '#0f172a',
-  fontSize: 13,
-  lineHeight: 1.35,
 };
 
 const readOnlyNoticeStyle: React.CSSProperties = {
@@ -6164,6 +6597,72 @@ const importSelectionHelpStyle: React.CSSProperties = {
   fontSize: 13,
   lineHeight: 1.4,
   maxWidth: 520,
+};
+
+const detectedSourceItemsPanelStyle: React.CSSProperties = {
+  margin: '0 16px 16px',
+  padding: 14,
+  border: '1px solid #bfdbfe',
+  borderRadius: 8,
+  background: '#eff6ff',
+};
+
+const detectedSourceItemsHeadingStyle: React.CSSProperties = {
+  margin: '0 0 10px',
+  fontSize: 15,
+  color: '#1e3a8a',
+};
+
+const detectedSourceItemsGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+};
+
+const detectedSourceItemStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 8,
+  border: '1px solid #dbeafe',
+  background: '#fff',
+  display: 'grid',
+  gap: 6,
+};
+
+const detectedSourceItemHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 8,
+  alignItems: 'center',
+  color: '#0f172a',
+};
+
+const detectedSourceItemBadgeStyle: React.CSSProperties = {
+  borderRadius: 999,
+  padding: '3px 8px',
+  fontSize: 12,
+  fontWeight: 800,
+  color: '#1e40af',
+  background: '#dbeafe',
+  whiteSpace: 'nowrap',
+};
+
+const detectedSourceItemMetaStyle: React.CSSProperties = {
+  color: '#334155',
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const detectedSourceItemReasonStyle: React.CSSProperties = {
+  color: '#7c2d12',
+  fontSize: 13,
+  fontWeight: 700,
+  lineHeight: 1.45,
+};
+
+const detectedSourceItemHelpStyle: React.CSSProperties = {
+  color: '#475569',
+  fontSize: 12,
+  lineHeight: 1.45,
 };
 
 const thStyle: React.CSSProperties = {

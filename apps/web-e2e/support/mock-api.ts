@@ -1,3 +1,4 @@
+import type { ActivityEventItem } from '../../../src/services/activityEvents';
 import type { Page, Route } from '@playwright/test';
 
 const now = '2026-06-13T16:00:00.000Z';
@@ -17,15 +18,20 @@ type TestDocument = {
 };
 
 type TestActivity = {
+  [key: string]: unknown;
   id: string;
   organizationId: string;
   documentId: string;
   sourceDocumentId: string;
   sourceFileName: string;
+  sourceSheetName?: string | null;
   importBatchId: string;
   sourceRow?: string | number | null;
   activityType: string;
   recordDate: string;
+  facilityId?: unknown;
+  facilityName?: unknown;
+  costCad?: unknown;
   quantity: number;
   unit: string;
   jurisdictionCountry: string;
@@ -66,11 +72,13 @@ type TestConversionFactor = {
 };
 
 export type CarbonLiteApiState = {
+  workflowEvents: ActivityEventItem[];
   documents: TestDocument[];
   activities: TestActivity[];
   conversionFactors: TestConversionFactor[];
   extractionResults: Record<string, unknown>;
   calculationSummaryOverride?: unknown;
+  extractionResponseOverride?: Record<string, unknown>;
   uploadRequests: number;
   extractionRequests: number;
   importRequests: number;
@@ -92,6 +100,7 @@ export function createCarbonLiteApiState(): CarbonLiteApiState {
   });
 
   return {
+    workflowEvents: [],
     documents: [],
     activities: [],
     conversionFactors: buildSystemConversionFactors(),
@@ -132,8 +141,10 @@ export async function installCarbonLiteApiMock(
       return;
     }
 
-    if (method === 'GET' && path === '/activity-events') {
-      await fulfillJson(route, paginated([]));
+    if (method === 'GET' && (path === '/activity-events' || path === '/activity-events/workflow')) {
+      const workflowNames = new Set(['DOCUMENT_UPLOADED', 'ACTIVITY_RECORD_IMPORTED', 'REPORT_GENERATED', 'REPORT_EXPORTED_PDF', 'REPORT_EXPORTED_CSV']);
+      const items = state.workflowEvents.filter((event) => event.organizationId === 'organization-1' && (path !== '/activity-events/workflow' || workflowNames.has(event.eventName))).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      await fulfillJson(route, paginated(items));
       return;
     }
 
@@ -146,6 +157,7 @@ export async function installCarbonLiteApiMock(
       state.uploadRequests += 1;
       const formData = request.postData() ?? '';
       const fileHash = getMultipartField(formData, 'fileHash');
+      const uploadedFileName = getMultipartFileName(formData) ?? 'enmax-electricity.csv';
       const existingDocument = fileHash
         ? state.documents.find((document) => document.fileHash === fileHash)
         : undefined;
@@ -166,17 +178,18 @@ export async function installCarbonLiteApiMock(
       const document: TestDocument = {
         id: `document-${state.documents.length + 1}`,
         organizationId: 'organization-1',
-        fileName: 'enmax-electricity.csv',
-        fileUrl: '/storage/enmax-electricity.csv',
-        mimeType: 'text/csv',
+        fileName: uploadedFileName,
+        fileUrl: `/storage/${uploadedFileName}`,
+        mimeType: getMimeTypeForFileName(uploadedFileName),
         fileSize: 113,
-        type: 'SPREADSHEET',
+        type: getDocumentTypeForFileName(uploadedFileName),
         status: 'UPLOADED',
         fileHash,
         createdAt: now,
         updatedAt: now,
       };
       state.documents = [document, ...state.documents];
+      appendWorkflowEvent(state, { eventName: 'DOCUMENT_UPLOADED', entityType: 'Document', entityId: document.id, metadata: { sourceFileName: document.fileName } });
       await fulfillJson(route, document, 201);
       return;
     }
@@ -234,39 +247,28 @@ export async function installCarbonLiteApiMock(
     if (method === 'POST' && path === '/document-extraction/extract') {
       state.extractionRequests += 1;
       await state.extractionResponseGate;
-      state.documents = state.documents.map((document) => ({
-        ...document,
-        status: 'REVIEW_REQUIRED',
-        updatedAt: now,
-      }));
-      const response = {
-        documentId: 'document-1',
-        status: 'REVIEW_REQUIRED',
-        parsedActivities: [
-          {
-            activityType: { value: 'ELECTRICITY', confidence: 'high' },
-            recordDate: { value: '2026-05-31', confidence: 'high' },
-            quantity: { value: 4280, confidence: 'high' },
-            unit: { value: 'kWh', confidence: 'high' },
-            jurisdictionCountry: { value: 'Canada', confidence: 'high' },
-            jurisdictionRegion: { value: 'Alberta', confidence: 'high' },
-            sourceType: 'AI_EXTRACTION',
-            sourceReference: {
-              value: 'enmax-electricity.csv',
-              confidence: 'high',
-            },
-            sourceDocumentId: 'document-1',
-            sourceFileName: 'enmax-electricity.csv',
-            notes: { value: '', confidence: 'medium' },
-          },
-        ],
-        sourceRowCount: 1,
-        extractedRowCount: 1,
-        possibleMissingRows: 0,
-        warning: null,
-        extractedAt: now,
-      };
-      state.extractionResults['document-1'] = response;
+      const input = request.postDataJSON() as { documentId?: string };
+      const documentId = String(input.documentId ?? 'document-1');
+      const document =
+        state.documents.find((item) => item.id === documentId) ??
+        state.documents[0];
+
+      if (!document) {
+        await fulfillJson(route, { message: 'Document not found.' }, 404);
+        return;
+      }
+
+      state.documents = state.documents.map((item) =>
+        item.id === document.id
+          ? {
+              ...item,
+              status: 'REVIEW_REQUIRED',
+              updatedAt: now,
+            }
+          : item,
+      );
+      const response = state.extractionResponseOverride ? { ...state.extractionResponseOverride, documentId: document.id } : buildExtractionResponse(document);
+      state.extractionResults[document.id] = response;
       await fulfillJson(route, response);
       return;
     }
@@ -315,6 +317,7 @@ export async function installCarbonLiteApiMock(
       });
 
       state.activities = [...state.activities, ...created];
+      if (created.length) appendWorkflowEvent(state, { eventName: 'ACTIVITY_RECORD_IMPORTED', entityType: 'Document', entityId: documentId, metadata: { sourceDocumentId: documentId, sourceFileName: state.documents.find((doc) => doc.id === documentId)?.fileName, importBatchId, createdRecordCount: created.length, trackedMetricCount: created.filter((row) => row.activityType === 'WATER').length, unresolvedRowCount: 0 } });
       state.documents = state.documents.map((document) => ({
         ...document,
         status: created.length > 0 ? 'IMPORTED' : document.status,
@@ -451,10 +454,9 @@ export async function installCarbonLiteApiMock(
       method === 'POST' &&
       (path === '/activity-events' || path === '/audit-logs/client-event')
     ) {
-      await fulfillJson(route, {
-        id: `event-${Date.now()}`,
-        createdAt: now,
-      }, 201);
+      const input = request.postDataJSON();
+      const event = appendWorkflowEvent(state, input);
+      await fulfillJson(route, event, 201);
       return;
     }
 
@@ -530,7 +532,7 @@ function buildEnmaxMissingCostSummary() {
       unit: 'kWh',
       emissions: 189.74,
       status: 'CALCULATED',
-      costCad: 0,
+      costCad: null,
     }),
     buildEnmaxCalculationDetail({
       activityDataId: 'enmax-natural-gas',
@@ -539,7 +541,7 @@ function buildEnmaxMissingCostSummary() {
       unit: 'GJ',
       emissions: 148.32,
       status: 'CALCULATED',
-      costCad: 0,
+      costCad: null,
     }),
     buildEnmaxCalculationDetail({
       activityDataId: 'enmax-water',
@@ -548,7 +550,7 @@ function buildEnmaxMissingCostSummary() {
       unit: 'm3',
       emissions: null,
       status: 'TRACKED_ONLY',
-      costCad: 0,
+      costCad: null,
     }),
   ];
 
@@ -610,7 +612,7 @@ function buildEnmaxCalculationDetail(input: {
   unit: string;
   emissions: number | null;
   status: 'CALCULATED' | 'TRACKED_ONLY';
-  costCad: number;
+  costCad: number | null;
 }) {
   const trackedOnly = input.status === 'TRACKED_ONLY';
   return {
@@ -647,13 +649,15 @@ function normalizeImportedActivity(
   defaults: { id: string; documentId: string; importBatchId: string; index: number },
 ): TestActivity {
   return {
+    ...activity,
     id: defaults.id,
     organizationId: 'organization-1',
     documentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
     sourceDocumentId: String(activity.sourceDocumentId ?? activity.documentId ?? defaults.documentId),
     sourceFileName: String(activity.sourceFileName ?? 'enmax-electricity.csv'),
+    sourceSheetName: activity.sourceSheetName === undefined ? null : String(activity.sourceSheetName),
     importBatchId: String(activity.importBatchId ?? defaults.importBatchId),
-    sourceRow: activity.sourceRow as string | number | null | undefined ?? defaults.index + 2,
+    sourceRow: activity.sourceRow as string | number | null | undefined ?? null,
     activityType: String(activity.activityType ?? 'ELECTRICITY'),
     recordDate: String(activity.recordDate ?? '2026-05-31'),
     quantity: Number(activity.quantity ?? 4280),
@@ -662,6 +666,9 @@ function normalizeImportedActivity(
     jurisdictionRegion: String(activity.jurisdictionRegion ?? 'Alberta'),
     sourceType: String(activity.sourceType ?? 'AI_EXTRACTION'),
     sourceReference: String(activity.sourceReference ?? activity.sourceFileName ?? 'enmax-electricity.csv'),
+    facilityId: activity.facilityId ?? null,
+    facilityName: activity.facilityName ?? activity.facility ?? null,
+    costCad: activity.costCad ?? null,
     notes: String(activity.notes ?? 'Imported from document extraction.'),
     createdAt: now,
     updatedAt: now,
@@ -672,8 +679,9 @@ function getActivityRecordImportKey(activity: TestActivity, documents: TestDocum
   const sourceDocument = documents.find((document) => document.id === activity.sourceDocumentId);
   const fileHash = String(sourceDocument?.fileHash ?? '').trim();
   const sourceRow = String(activity.sourceRow ?? '').trim();
-  if (fileHash && sourceRow) return `${fileHash}::row:${sourceRow}`;
-  if (sourceRow) return `${activity.sourceDocumentId}::row:${sourceRow}`;
+  const sourceSheetName = String(activity.sourceSheetName ?? '').trim();
+  if (fileHash && sourceRow) return `${fileHash}::sheet:${sourceSheetName}::row:${sourceRow}`;
+  if (sourceRow) return `${activity.sourceDocumentId}::sheet:${sourceSheetName}::row:${sourceRow}`;
 
   return [
     activity.sourceDocumentId,
@@ -983,10 +991,157 @@ function getMultipartField(body: string, fieldName: string) {
   return match?.[1]?.trim() || null;
 }
 
+function getMultipartFileName(body: string) {
+  const match = body.match(/name="file";\s*filename="([^"]+)"/);
+  return match?.[1]?.trim() || null;
+}
+
+function getMimeTypeForFileName(fileName: string) {
+  if (/\.pdf$/i.test(fileName)) return 'application/pdf';
+  if (/\.csv$/i.test(fileName)) return 'text/csv';
+  if (/\.xlsx$/i.test(fileName)) {
+    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  }
+  if (/\.xls$/i.test(fileName)) return 'application/vnd.ms-excel';
+  if (/\.(png)$/i.test(fileName)) return 'image/png';
+  if (/\.(jpe?g)$/i.test(fileName)) return 'image/jpeg';
+  return 'application/octet-stream';
+}
+
+function getDocumentTypeForFileName(fileName: string) {
+  if (/\.pdf$/i.test(fileName)) return 'PDF';
+  if (/\.(csv|xlsx|xls)$/i.test(fileName)) return 'SPREADSHEET';
+  if (/\.(png|jpe?g)$/i.test(fileName)) return 'IMAGE';
+  return 'OTHER';
+}
+
+function buildExtractionResponse(document: TestDocument) {
+  const fileName = document.fileName;
+  const lowerFileName = fileName.toLowerCase();
+  const parsedActivities =
+    lowerFileName.includes('validation-a')
+      ? [
+          buildExtractedActivity(document, {
+            activityType: 'ELECTRICITY',
+            quantity: 100,
+            unit: 'kWh',
+            jurisdictionRegion: '',
+            sourceReference: 'FILE-A-ROW',
+            sourceRow: 1,
+          }),
+        ]
+      : lowerFileName.includes('validation-b')
+      ? [
+          buildExtractedActivity(document, {
+            activityType: 'NATURAL_GAS',
+            quantity: 0,
+            unit: 'GJ',
+            jurisdictionRegion: 'Alberta',
+            sourceReference: 'FILE-B-ROW',
+            sourceRow: 1,
+          }),
+        ]
+      : lowerFileName.includes('validation-clean')
+      ? [
+          buildExtractedActivity(document, {
+            activityType: 'ELECTRICITY',
+            quantity: 980,
+            unit: 'kWh',
+            jurisdictionRegion: 'Alberta',
+            sourceReference: 'FILE-C-ROW',
+            sourceRow: 1,
+          }),
+        ]
+      : [
+          buildExtractedActivity(document, {
+            activityType: 'ELECTRICITY',
+            quantity: 4280,
+            unit: 'kWh',
+            jurisdictionRegion: 'Alberta',
+            sourceReference: fileName,
+            sourceRow: 2,
+          }),
+        ];
+
+  return {
+    documentId: document.id,
+    status: 'REVIEW_REQUIRED',
+    parsedActivities,
+    detectedSourceItems: lowerFileName.includes('enmax')
+      ? [
+          {
+            id: 'detected-waste-recycling',
+            type: 'WASTE_AND_RECYCLING',
+            label: 'Waste & Recycling',
+            classification: 'DETECTED_SOURCE_ITEM',
+            importEligibility: 'NOT_IMPORTABLE',
+            reason: 'INSUFFICIENT_ACTIVITY_QUANTITY',
+            reasonDetail: 'No supported waste quantity was provided.',
+            sourceFileName: 'enmax-utility-bill.pdf',
+            sourceDocumentId: document.id,
+            sourceReference: 'Waste and Recycling',
+            servicePeriodStart: '2025-06-17',
+            servicePeriodEnd: '2025-07-16',
+            serviceDays: 30,
+            sourceCostCad: 19.54,
+            sourceCostCurrency: 'CAD',
+            potentialCategory: 'Waste generated in operations',
+            sourceDetails: [
+              { label: 'Blue Cart', amountCad: 2.17 },
+              { label: 'Black Cart', amountCad: 7.39 },
+              { label: 'Green Cart', amountCad: 9.98 },
+            ],
+          },
+        ]
+      : [],
+    sourceRowCount: parsedActivities.length,
+    extractedRowCount: parsedActivities.length,
+    possibleMissingRows: 0,
+    warning: null,
+    extractedAt: now,
+  };
+}
+
+function buildExtractedActivity(
+  document: TestDocument,
+  input: {
+    activityType: string;
+    quantity: number;
+    unit: string;
+    jurisdictionRegion: string;
+    sourceReference: string;
+    sourceRow: number;
+  },
+) {
+  return {
+    activityType: { value: input.activityType, confidence: 'high' },
+    recordDate: { value: '2026-05-31', confidence: 'high' },
+    quantity: { value: input.quantity, confidence: 'high' },
+    unit: { value: input.unit, confidence: 'high' },
+    jurisdictionCountry: { value: 'Canada', confidence: 'high' },
+    jurisdictionRegion: { value: input.jurisdictionRegion, confidence: 'high' },
+    sourceType: 'AI_EXTRACTION',
+    sourceReference: {
+      value: input.sourceReference,
+      confidence: 'high',
+    },
+    sourceDocumentId: document.id,
+    sourceFileName: document.fileName,
+    sourceRow: input.sourceRow,
+    notes: { value: '', confidence: 'medium' },
+  };
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
     contentType: 'application/json',
     body: JSON.stringify(body),
   });
+}
+
+function appendWorkflowEvent(state: CarbonLiteApiState, input: Partial<ActivityEventItem>) {
+  const event: ActivityEventItem = { ...input, id: `event-${String(state.workflowEvents.length + 1).padStart(5, '0')}`, createdAt: now, organizationId: 'organization-1', userId: 'user-1', eventName: input.eventName ?? 'CLIENT_EVENT' };
+  state.workflowEvents.push(event);
+  return event;
 }

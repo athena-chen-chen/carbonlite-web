@@ -1003,7 +1003,7 @@ describe('ConversionFactorsPage traceability', () => {
     );
 
     expect(await screen.findByText(/Read-only access/i)).toBeInTheDocument();
-    expect(screen.getByText('Company diesel custom factor')).toBeInTheDocument();
+    expect(await screen.findByText('Company diesel custom factor')).toBeInTheDocument();
     expect(screen.getByText('Company Factor')).toBeInTheDocument();
     expect(screen.getByText('Consultant factor table')).toBeInTheDocument();
     expect(screen.getAllByText('Consultant Reviewed').length).toBeGreaterThan(0);

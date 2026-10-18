@@ -1,3 +1,5 @@
+import { captureFactorGovernance } from '../utils/factorGovernance';
+import type { FactorProvenanceSnapshot } from '../utils/factorGovernance';
 import {
   type ActivityDataItem,
   getAllActivityData,
@@ -102,6 +104,8 @@ export type MetricsOverview = {
     factorVersionId?: string | null;
     calculationFormula?: string | null;
     matchingMethod?: string | null;
+    factorSelectionReason?: string | null;
+    factorSelectionExplanation?: string | null;
     matchingMessage?: string | null;
   }>;
   conversionFactorsUsed: Array<{
@@ -121,6 +125,7 @@ export type MetricsOverview = {
     assumptions?: string | null;
     sourceAuthority: string;
     sourceDocument?: string | null;
+    factorProvenance?: FactorProvenanceSnapshot | null;
     sourceUrl?: string | null;
     sourcePage?: string | number | null;
     sourceTable?: string | null;
@@ -130,6 +135,8 @@ export type MetricsOverview = {
     verified: boolean;
     usedRecordsCount?: number;
     matchingMethod?: string | null;
+    factorSelectionReason?: string | null;
+    factorSelectionExplanation?: string | null;
     matchingMessage?: string | null;
   }>;
   calculationDetails: CalculationAuditDetail[];
@@ -249,11 +256,9 @@ export async function loadMetricsOverview(options?: {
   const carbonMetric = totalsByMetric.find((metric) =>
     String(metric.metricType).includes('CARBON'),
   );
-  const supplementalCalculations = await buildSupplementalCalculations({
-    activities,
-    summary: calculationSummaryForMatching,
-    processedRecords,
-  });
+  // The API owns persisted calculation truth. A read must never reconstruct
+  // missing or historical results from the current frontend factor library.
+  const supplementalCalculations: SupplementalCalculation[] = [];
   const supplementalActivityIds = new Set(
     supplementalCalculations.map((item) => item.activityId),
   );
@@ -633,10 +638,12 @@ function mergeCalculationRecordsIntoDetails(
       factorYear: record.factor?.factorYear ?? record.factor?.sourceYear ?? activity?.matchedFactorSourceYear ?? null,
       factorEffectiveYear: record.factor?.effectiveYear ?? record.factor?.sourceYear ?? activity?.matchedFactorSourceYear ?? null,
       factorSet: record.factor?.factorSet ?? null,
-      factorJurisdictionRegion: record.factor?.jurisdiction ?? null,
+      factorJurisdictionRegion: existingDetail?.factorJurisdictionRegion ?? record.factor?.jurisdiction ?? null,
+      factorJurisdictionCountry: existingDetail?.factorJurisdictionCountry ?? null,
       factorSource: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? 'Source not specified',
       sourceAuthority: activity?.matchedFactorSourceAuthority ?? record.factor?.sourceAuthority ?? null,
       sourceDocument: activity?.matchedFactorSourceDocument ?? record.factor?.sourceDocument ?? null,
+      factorProvenance: existingDetail?.factorProvenance ?? record.factor?.factorProvenance ?? null,
       sourceUrl: activity?.matchedFactorSourceUrl ?? record.factor?.sourceUrl ?? null,
       factorSelectionReason: activity?.factorSelectionReason ?? null,
       factorSelectionExplanation: activity?.factorSelectionExplanation ?? null,
@@ -761,6 +768,8 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       factorId: emission.factorId ?? null,
       factorVersionId: emission.factorVersionId ?? factor?.factorVersionId ?? null,
       factorVersion: factor?.factorVersion ?? null,
+      factorJurisdictionRegion: existingDetail?.factorJurisdictionRegion ?? factor?.jurisdiction ?? null,
+      factorJurisdictionCountry: existingDetail?.factorJurisdictionCountry ?? null,
       factorName: factor?.factorName ?? null,
       factorValue: Number.isFinite(factorValue) ? factorValue : null,
       factorInputUnit: factor?.inputUnit ?? null,
@@ -773,6 +782,7 @@ function mergeMatchedEmissionsIntoCalculationDetails(
       factorSource: factor?.sourceAuthority ?? 'Source not specified',
       sourceAuthority: factor?.sourceAuthority ?? null,
       sourceDocument: factor?.sourceDocument ?? null,
+      factorProvenance: existingDetail?.factorProvenance ?? factor?.factorProvenance ?? null,
       sourceUrl: activity?.matchedFactorSourceUrl ?? factor?.sourceUrl ?? null,
       factorSelectionReason: activity?.factorSelectionReason ?? null,
       factorSelectionExplanation: activity?.factorSelectionExplanation ?? null,
@@ -993,6 +1003,7 @@ function resolveActivityFacilityName(
   const recordWithAliases = getRecordWithFacilityAliases(record);
 
   return firstPresentString(
+    typeof activity?.facility === 'object' ? activity.facility?.name : null,
     existingDetail?.facilityName,
     activity?.facilityName,
     activity?.facility,
@@ -1168,7 +1179,9 @@ function mergeSupplementalCalculationDetails(
     ]),
   );
   const merged = existingDetails.map((detail) =>
-    replacements.get(detail.activityDataId) ?? detail,
+    replacements.has(detail.activityDataId)
+      ? { ...replacements.get(detail.activityDataId)!, manualSourceProvenance: detail.manualSourceProvenance }
+      : detail,
   );
   const existingIds = new Set(existingDetails.map((detail) => detail.activityDataId));
 
@@ -1227,6 +1240,7 @@ function buildSupplementalCalculationDetail(
     factorSource: sourceAuthority || 'Source not specified',
     sourceAuthority,
     sourceDocument: getFactorSourceDocument(item.factor) || null,
+    factorProvenance: captureFactorGovernance(item.factor),
     sourceUrl: activity?.matchedFactorSourceUrl ?? (getFactorSourceUrl(item.factor) || null),
     factorSelectionReason: activity?.factorSelectionReason ?? item.match.selectionReason,
     factorSelectionExplanation: activity?.factorSelectionExplanation ?? item.match.selectionExplanation,
@@ -1317,7 +1331,7 @@ function mergeConversionFactorsUsed(
       factorVersion: getFactorVersionLabel(item.factor) || null,
       activityType: item.activityType,
       factorName: item.factor.displayName ?? item.factor.name,
-      factorValue: getFactorValue(item.factor),
+      factorValue: getFactorValue(item.factor)! ,
       inputUnit: getFactorInputUnit(item.factor),
       resultUnit: getFactorResultUnit(item.factor),
       jurisdiction: item.factor.jurisdiction ?? null,
@@ -1328,6 +1342,7 @@ function mergeConversionFactorsUsed(
       assumptions: getFactorAssumptionDisclosure(item.activityType, item.factor) || null,
       sourceAuthority: getFactorSourceAuthority(item.factor) || 'Source not specified',
       sourceDocument: getFactorSourceDocument(item.factor) || null,
+      factorProvenance: captureFactorGovernance(item.factor),
       sourceUrl: getFactorSourceUrl(item.factor) || null,
       factorSelectionReason: item.match.selectionReason,
       factorSelectionExplanation: item.match.selectionExplanation,

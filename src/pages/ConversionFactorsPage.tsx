@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/PageHeader';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
@@ -30,7 +31,8 @@ import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
 import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
 import { formatEmissionsUnit } from '../utils/numberFormatting';
-import { formatWorkflowStageLabel, getWorkflowStage } from '../constants/carbonliteWorkflow';
+import { factorProvenanceLines } from '../utils/factorGovernance';
+import { getDisplayFactorVersion, getDisplayFactorVersionLines, getDisplayFactorJurisdiction } from '../utils/factorProvenanceDisplay';
 
 type ConversionFactorListResponse = {
   items: ConversionFactorItem[];
@@ -112,7 +114,7 @@ export function getFactorTraceability(item: ConversionFactorItem) {
     sourceAuthority: formatPilotSourceAuthority(item),
     sourceDocument: formatPilotSourceDocument(item),
     sourceYear: item.sourceYear ?? null,
-    effectiveYear: item.effectiveYear ?? item.sourceYear ?? null,
+    effectiveYear: item.effectiveYear ?? item.methodologyProvenance?.factorYear ?? item.sourceYear ?? null,
     sourceUrl: item.sourceUrl ?? '',
     factorVersion: formatPilotFactorVersion(item),
     factorStatus: isPilotDefaultFactor(item)
@@ -161,10 +163,18 @@ function isPlaceholderElectricityFactor(item: ConversionFactorItem) {
 }
 
 function isPilotDefaultFactor(item: ConversionFactorItem) {
+  if (isGovernedReferenceFactor(item)) return false;
   if (isOfficialReferenceFactor(item)) return false;
   const factorSet = String(item.factorSet ?? '').trim().toUpperCase();
   if (factorSet === 'PILOT_DEFAULT_V0_1') return true;
   return isSystemFactor(item) || String(item.sourceAuthority ?? '').toLowerCase().includes('carbonlite');
+}
+
+function isGovernedReferenceFactor(item: ConversionFactorItem) {
+  return Boolean(
+    (item.applicability && item.applicability !== 'CORPORATE_INVENTORY') ||
+    (item.emissionBasis && item.emissionBasis !== 'DIRECT_CO2E'),
+  );
 }
 
 function isOfficialReferenceFactor(item: Pick<ConversionFactorItem, 'factorSet' | 'sourceAuthority' | 'sourceName'>) {
@@ -197,8 +207,7 @@ function formatPilotSourceDocument(item: ConversionFactorItem) {
 }
 
 function formatPilotFactorVersion(item: ConversionFactorItem) {
-  if (isPilotDefaultFactor(item)) return 'CarbonLite MVP Default Factors v1.0';
-  return String(item.factorVersion ?? '').trim() || 'Not versioned — pilot default';
+  return getDisplayFactorVersion({ ...item, factorId: item.id }) || 'Not specified';
 }
 
 function formatPilotConfidence(item: ConversionFactorItem) {
@@ -348,6 +357,7 @@ function formatActivityTypeDisplay(value?: string | null) {
 }
 
 function formatFactorNameDisplay(item: ConversionFactorItem) {
+  if (isGovernedReferenceFactor(item) && item.name) return getFactorDisplayName(item.name);
   if (!isSystemFactor(item) && item.name) return getFactorDisplayName(item.name);
   if (isOfficialReferenceFactor(item) && item.name) return getFactorDisplayName(item.name);
 
@@ -759,7 +769,7 @@ export function ConversionFactorsPage() {
     }
 
     function isInsideActiveActionMenu(target: Node | null) {
-      const activeButton = actionMenuButtonRefs.current[openActionMenuId];
+      const activeButton = actionMenuButtonRefs.current[openActionMenuId ?? ''];
 
       return Boolean(
         target &&
@@ -889,7 +899,7 @@ export function ConversionFactorsPage() {
     return {
       ...form,
       type: 'EMISSION',
-      factorType: CUSTOM_FACTOR_TYPE,
+      factorType: CUSTOM_FACTOR_TYPE as 'CUSTOM',
       activityType,
       country,
       region: jurisdiction,
@@ -956,7 +966,7 @@ export function ConversionFactorsPage() {
     setForm({
       name: item.name,
       type: 'EMISSION',
-      factorType: CUSTOM_FACTOR_TYPE,
+      factorType: CUSTOM_FACTOR_TYPE as 'CUSTOM',
       activityType: item.activityType ?? '',
       jurisdiction: getJurisdictionSelectValue(getFactorRegionForDuplicate(item), item.country),
       region: getJurisdictionSelectValue(getFactorRegionForDuplicate(item), item.country),
@@ -1148,12 +1158,7 @@ export function ConversionFactorsPage() {
       </div>
 
       <div style={pageHeaderStyle}>
-        <div>
-          <h1 style={{ margin: 0 }}>Emission Factors</h1>
-          <p style={{ marginTop: 8, color: factorsPalette.secondaryText }}>
-            {formatWorkflowStageLabel(getWorkflowStage('FACTORS_CALCULATIONS'))}. CarbonLite suggests and applies factors; reviewers or consultants validate provenance, assumptions, fallback use, and applicability before formal use.
-          </p>
-        </div>
+        <PageHeader title="Emission Factors" subtitle="Review factor sources, applicability, and provenance." badge="Advanced reviewer tool" />
         <button
           type="button"
           onClick={handlePrintFactors}
@@ -1389,7 +1394,7 @@ export function ConversionFactorsPage() {
               />
             </Field>
 
-            <Field label="Version">
+            <Field label="Factor Version">
               <input
                 type="text"
                 value={form.factorVersion ?? ''}
@@ -1698,7 +1703,7 @@ export function ConversionFactorsPage() {
                 <th style={thStyle}>Source Document</th>
                 <th style={thStyle}>Source Year</th>
                 <th style={thStyle}>Effective Year</th>
-                <th style={thStyle}>Version</th>
+                <th style={thStyle}>Factor Version</th>
                 <th style={thStyle}>Status</th>
                 <th style={thStyle}>Confidence</th>
                 <th style={thStyle}>Verification</th>
@@ -1983,11 +1988,14 @@ function FactorDetailsModal({
               <DetailItem label="Value" value={formatFactorValueDisplay(item)} />
               <DetailItem label="Activity Unit" value={formatInputUnitDisplay(item.unit || item.inputUnit)} />
               <DetailItem label="Factor Unit" value={formatFactorResultUnitDisplay(item)} />
-              <DetailItem label="Jurisdiction" value={traceability.jurisdiction} />
+              <DetailItem label="Jurisdiction" value={getDisplayFactorJurisdiction({ factorJurisdictionRegion: item.region || item.jurisdiction, factorJurisdictionCountry: item.country })} />
               <DetailItem label="Source Year" value={traceability.sourceYear} />
               <DetailItem label="Effective Year" value={traceability.effectiveYear} />
               <DetailItem label="Factor Set" value={traceability.factorSet} />
-              <DetailItem label="Version" value={traceability.factorVersion} />
+              {getDisplayFactorVersionLines({ ...item, factorId: item.id }).map(line => {
+                const separator = line.indexOf(': ');
+                return <DetailItem key={line} label={line.slice(0, separator)} value={line.slice(separator + 2)} />;
+              })}
               <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
               {isWaterTrackedFactor(item) ? (
                 <DetailItem label="Calculation" value="Not calculated by default" />
@@ -2019,6 +2027,15 @@ function FactorDetailsModal({
             </DetailSection>
 
             <DetailSection title="Assumptions / Review Notes">
+              {factorProvenanceLines(item).filter(line => !line.startsWith('Source Document Version: ')).map(line => {
+                const separator = line.indexOf(': ');
+                const label = line.slice(0, separator);
+                const raw = line.slice(separator + 2);
+                const value = label === 'Publication Date'
+                  ? new Date(raw).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+                  : label === 'Emission Basis' && item.emissionBasis === 'DIRECT_CO2E' ? 'Direct CO2e' : raw;
+                return <DetailItem key={line} label={label} value={value} />;
+              })}
               <DetailItem label="Assumptions" value={traceability.assumptions} />
               <DetailItem label="Review Guidance" value={formatModalReviewGuidance(item)} />
               <DetailItem label="Methodology Notes" value={formatMethodologyDisplay(item)} />

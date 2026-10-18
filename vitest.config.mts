@@ -8,6 +8,6 @@ export default defineConfig({
     globals: true,
     setupFiles: './src/test/setup.ts',
     css: true,
-    exclude: ['apps/web-e2e/**', 'node_modules/**', 'dist/**'],
+    exclude: ['apps/web-e2e/**', 'scripts/**/*.test.mjs', 'node_modules/**', 'dist/**'],
   },
 });

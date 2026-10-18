@@ -11,6 +11,7 @@ import { formatCredibilityLabel } from './factorCredibility';
 import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
 import { escapeCsvValue } from './reportCsvExport';
 import {
+  getDisplayFactorVersion,
   formatReportSourceReference,
   isRecordRequiringCorrection,
   isTrackedMetricDetail,
@@ -393,7 +394,7 @@ export function buildReviewPackageAuditEvidenceCsv(
       'Report Version',
       'Warnings',
     ],
-    chains.map((chain) => [
+    chains.map((chain, index) => [
       clean(chain.sourceDocument.id),
       chain.sourceDocument.fileName,
       chain.sourceDocument.sheetName,
@@ -409,7 +410,7 @@ export function buildReviewPackageAuditEvidenceCsv(
       chain.reviewedActivity.reportTreatment,
       clean(chain.factor.id),
       clean(chain.factor.versionId),
-      chain.factor.version,
+      chain.factor.id ? getDisplayFactorVersion(details[index]) : '',
       chain.factor.name,
       chain.factor.value,
       chain.factor.unit,

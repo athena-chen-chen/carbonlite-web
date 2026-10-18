@@ -1,0 +1,266 @@
+{
+  "checkedAt": "2026-10-18T02:57:07.287557+00:00",
+  "decision": "TASK 9 = PILOT RC PASS",
+  "target": "Neon development",
+  "neonMainModified": false,
+  "goldenExpectedValuesChanged": false,
+  "gates": {
+    "frontend": {
+      "passed": 1051,
+      "failed": 0,
+      "files": 86,
+      "nodeNativePassed": 2
+    },
+    "backendUnit": {
+      "passed": 245,
+      "failed": 0,
+      "suites": 23
+    },
+    "backendIntegration": {
+      "passed": 112,
+      "failed": 0,
+      "suites": 26
+    },
+    "realApiRcE2E": {
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0
+    },
+    "strictTypecheck": "PASS",
+    "frontendBuild": "PASS",
+    "backendBuild": "PASS",
+    "prismaValidation": "PASS",
+    "migrationStatus": "CLEAN",
+    "schemaDrift": "ZERO",
+    "appliedMigrations": 48,
+    "checksumMismatches": 0,
+    "pdfPages": {
+      "executive": 2,
+      "technical": 11
+    }
+  },
+  "evidence": {
+    "migrationDeployment": {
+      "before": [
+        {
+          "count": 205,
+          "digest": "dd4e8c834ceeed0266c9ceb83be7071f"
+        }
+      ],
+      "after": [
+        {
+          "count": 205,
+          "digest": "dd4e8c834ceeed0266c9ceb83be7071f"
+        }
+      ],
+      "migration": "20261017233000_canonical_calculation_snapshots",
+      "migrationHash": "22f152c706496238cc59ed2967320d94edbb873fb859235ca5548c042768a984",
+      "status": "CLEAN",
+      "mainAccessed": false
+    },
+    "calculationContract": {
+      "checks": [
+        {
+          "name": "Server ignores forged result/factor/scope",
+          "pass": true
+        },
+        {
+          "name": "Durable calculation actor/time/version/input/factor",
+          "pass": true
+        },
+        {
+          "name": "Activity stays 268 after library edit",
+          "pass": true
+        },
+        {
+          "name": "/metrics/summary stays 268",
+          "pass": true
+        },
+        {
+          "name": "/metrics/calculation-summary stays 268",
+          "pass": true
+        },
+        {
+          "name": "Quantity -1 rejected without persistence",
+          "pass": true
+        },
+        {
+          "name": "Quantity 0 rejected without persistence",
+          "pass": true
+        },
+        {
+          "name": "Saving material boundary retains draft",
+          "pass": true
+        },
+        {
+          "name": "Review uses authenticated actor and server time",
+          "pass": true
+        },
+        {
+          "name": "Material change invalidates attestation and increments version",
+          "pass": true
+        }
+      ]
+    },
+    "goldensAndSecurity": {
+      "checks": [
+        {
+          "name": "Combined backend",
+          "pass": true,
+          "total": 3285.9,
+          "records": 9,
+          "included": 8
+        },
+        {
+          "name": "Combined scopes",
+          "pass": true,
+          "scopes": {
+            "SCOPE_1": 1377.06,
+            "SCOPE_2": 1371.64,
+            "SCOPE_3": 537.2
+          }
+        },
+        {
+          "name": "Golden B /metrics/summary",
+          "pass": true,
+          "total": 338.06
+        },
+        {
+          "name": "Golden B /metrics/calculation-summary",
+          "pass": true,
+          "total": 338.06
+        },
+        {
+          "name": "Golden C /metrics/summary",
+          "pass": true,
+          "total": 2428.44
+        },
+        {
+          "name": "Golden C /metrics/calculation-summary",
+          "pass": true,
+          "total": 2428.44
+        },
+        {
+          "name": "Manual snapshot and lineage durable",
+          "pass": true
+        },
+        {
+          "name": "Golden A /metrics/summary",
+          "pass": true,
+          "total": 579.4
+        },
+        {
+          "name": "Golden A /metrics/calculation-summary",
+          "pass": true,
+          "total": 579.4
+        },
+        {
+          "name": "Original synthetic history factor restored",
+          "pass": true
+        },
+        {
+          "name": "Existing RC evidence reconciles after explicit missing-manual calculation",
+          "pass": true,
+          "total": 3285.9
+        },
+        {
+          "name": "Previously exposed synthetic sessions revoked",
+          "pass": true,
+          "accountsDisabled": 17
+        },
+        {
+          "name": "Explicit recalculation retains old/new snapshot audit",
+          "pass": true
+        }
+      ]
+    },
+    "restartPersistence": {
+      "checks": [
+        {
+          "name": "A login/restart persistence",
+          "pass": true,
+          "activityCount": 1,
+          "auditCount": 20,
+          "boundaryStatus": "REVIEWED"
+        },
+        {
+          "name": "Combined login/restart persistence",
+          "pass": true,
+          "activityCount": 9,
+          "auditCount": 18,
+          "boundaryStatus": "DRAFT"
+        },
+        {
+          "name": "History login/restart persistence",
+          "pass": true,
+          "activityCount": 1,
+          "auditCount": 23,
+          "boundaryStatus": "REVIEWED"
+        }
+      ]
+    },
+    "csv": {
+      "records": 9,
+      "calculated": 8,
+      "total": 3285.9,
+      "waterEmissionsBlank": true,
+      "missingCostsBlank": true
+    },
+    "webCredentialScan": {
+      "credentialPatternFindings": [],
+      "scannedCandidateFiles": 749
+    },
+    "apiCredentialScan": {
+      "credentialPatternFindings": [],
+      "scannedCandidateFiles": 297
+    },
+    "migrationChecksums": {
+      "checkedAt": "2026-10-18T00:54:13.873Z",
+      "applied": 48,
+      "mismatches": [],
+      "mainAccessed": false
+    },
+    "sessionRetirement": {
+      "accountsDisabled": 14,
+      "capturedSessionsRejected": 8,
+      "allCapturedTokens401": true,
+      "externalSecretsRotated": false
+    }
+  },
+  "privateLogSha256": {
+    "task9a-web-full.log": "bde2fd1be64f72324eff4a0a7c2b498ed4c1272287cccd74263f16d07b465df4",
+    "task9a-api-unit.log": "9caafbb795684bc20c8a503a1fc25d9a0309c130e3c5dfbff2e2227405ed6996",
+    "task9a-api-integration-final.log": "494338bb4158bdff78a73d2a64c92724a1c2fa5f63012c7ca3838fedb4f45e8b",
+    "task9a-final-rc-e2e.log": "0cf1199bd82e1523eba78f143c4fd9b3d4c7fed574b72d28908376e5dbc2b211",
+    "task9a-typecheck.log": "e0a8c07c1d045de3666acecdb6630d02222771b94fbdc8f982ca1a9b189636d2",
+    "task9a-web-build.log": "3dc91c341519919292972a8dac359e1701cbc22f25d9df3ad6f839604aab1d6f",
+    "task9a-api-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "task9a-pdf-render.log": "e1d5f2b53e77a48a98aa22d345f9ed19eff52569f312ad427dc8191379ad5244"
+  },
+  "sourceHeads": {
+    "web": "df83b4c128d8de990c2593d8cafc700438e01eed",
+    "api": "63769c347a740a9b4611d8882d8bf52aa9c8c973"
+  },
+  "p0Remaining": [],
+  "p1Remaining": [],
+  "releaseCandidateSourceSha256": {
+    "web/src/services/metricsOverview.ts": "a6e094492128464485f2fa210f7c31bf3339155bd0561815b04c971e8a756c2a",
+    "web/src/pages/UploadPage.tsx": "7801fcc8073a0b01fe0ef668870a79f31d97e99151731833f0d1225301e5fc87",
+    "web/src/pages/ReportingPage.tsx": "002d741fe3af91903a0c50dfe453b5295e748bf807c190031b9926b2463703e0",
+    "web/package.json": "d51a7f3b6b24dd152cbef9c5b140763987192e6087894efc81eed14e1081005d",
+    "web/tsconfig.json": "4d0847bb69aa187c5202cb000822fd9381e79d565c890242d7ee626368cc4e54",
+    "web/tsconfig.app.json": "8869e3fc60d8981733a7ab0119bee15dc3e346151b7edbee67fa3e7d8fd21eb8",
+    "web/vitest.config.mts": "6a83de0e8abf90f2a4100c98adaae4aae1e792468d70f82929b328d6edf567b0",
+    "api/prisma/schema.prisma": "016da9bb1de550c347ce9a66364fe2bfa9d960f5742db2ba3f663dfeaafa53ed",
+    "api/prisma/migrations/20261004043000_backfill_province_electricity_matches/migration.sql": "13006eb2872235da2575302c3c0182a1332fc31b153fc91365a9a2808e8775e1",
+    "api/prisma/migrations/20261017230000_reconcile_activity_source_type/migration.sql": "ae07bef38d8736b311833bd895aedbfa02db1657000f719c5a5d071f2b516634",
+    "api/prisma/migrations/20261017233000_canonical_calculation_snapshots/migration.sql": "22f152c706496238cc59ed2967320d94edbb873fb859235ca5548c042768a984",
+    "api/src/metrics/calculation-snapshot.ts": "4987500075773edc7d1611cc0a417b77a3c4e24e0b3d7b531879f5b3de6194f9",
+    "api/src/metrics/calculation-snapshots.service.ts": "2c6d22ae2e22a28bb8f5d0587ee197710356db020d1df151a9cdb7a667e7cb90",
+    "api/src/metrics/calculation-quality.service.ts": "51ffee2add0d261be67da01a3ef4a4f29e33c7d0afcb3cc86e697d4ce0bf8f53",
+    "api/src/metrics/metrics.service.ts": "167febfa2b0bd6dc83441524d3fd9558ba7dcd4b0c3e0b599613bbbfc87af06e",
+    "api/src/document-extraction/document-extraction.service.ts": "c1743b4cf984b7b704277b1b4d7e1421ead54953f81eb466d2f97883bd99f102",
+    "api/src/activity-data/activity-data.service.ts": "f8369253b9525f1c2ee4e90dbfbf60cf21226f1a74a33f0bc8c28703d38890a7",
+    "api/src/organizations/organizations.service.ts": "b319d9898f119bbe7c690882e73b4fe85f278e09e044a3128657a094e24126ad"
+  }
+}
