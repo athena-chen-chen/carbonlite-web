@@ -1,14 +1,58 @@
-node_modules
-dist
+# Dependencies, build output, and caches (at any workspace depth).
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+.vite/
+.vitest/
+.cache/
+.parcel-cache/
+.turbo/
+.nx/cache/
+.pnpm-store/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+__pycache__/
+
+# Local configuration; commit example templates, including nested examples.
 .env
 .env.*
 !.env.example
 !.env.*.example
+
+# Logs and OS metadata.
 *.log
+/logs/
 .DS_Store
-coverage
-.vite
-apps/web-e2e/playwright-report
-apps/web-e2e/test-results
-apps/web-e2e/playwright/.auth
-carbonlite-pilot-data-readiness-report-*.pdf
+
+# Temporary working copies, generated evidence, and downloaded dependencies.
+tmp/
+
+# Browser output can contain synthetic authenticated session state.
+playwright-report/
+test-results/
+blob-report/
+**/playwright/.auth/
+
+# Downloaded application exports at the repository root. Do not ignore fixture
+# or documentation PDFs/CSVs elsewhere, or globally ignore binary extensions.
+/carbonlite-pilot-data-readiness-report-*.pdf
+/carbonlite-executive-summary-*.pdf
+/carbonlite-technical-review-package-*.pdf
+/carbonlite-sample.csv
+/carbonlite-activity-data-template.csv
+/carbonlite-sme-data-template.csv
+/carbonlite-data-records-*.csv
+/CarbonLite_Sample_Report_Export_*.csv
+/carbonlite-site-facility-breakdown-*.csv
+/carbonlite-factor-source-summary-*.csv
+/carbonlite-calculation-traceability-*.csv
+/carbonlite-audit-evidence-*.csv
+/carbonlite-records-requiring-review-*.csv
+
+# Known generated report-correctness exports; keep the accompanying README.
+/output/reports/report-correctness/executive.pdf
+/output/reports/report-correctness/technical.pdf
+/output/reports/report-correctness/activity-records.csv
