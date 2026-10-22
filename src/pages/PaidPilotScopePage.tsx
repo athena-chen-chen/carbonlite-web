@@ -41,7 +41,7 @@ export const PAID_PILOT_SCOPE_SECTIONS: PaidPilotSection[] = [
       'Formal regulatory submission preparation.',
       'GHG Protocol assurance or legal compliance sign-off.',
       'Enterprise SSO, billing, custom procurement workflows, or production data migration.',
-      'Unlimited datasets, unlimited report cycles, or unrestricted custom factor review.',
+      'Unlimited datasets, unlimited report cycles, or unrestricted custom factor validation.',
     ],
   },
   {
@@ -59,7 +59,7 @@ export const PAID_PILOT_SCOPE_SECTIONS: PaidPilotSection[] = [
     items: [
       'Configured pilot workspace.',
       'Reviewed activity record set with ready, tracked-only, and review-required classifications.',
-      'Calculation Review page showing totals, scope breakdowns, data quality notes, and calculation trail.',
+      'Calculation Results page showing totals, scope breakdowns, data quality notes, and calculation trail.',
       'Pilot PDF report and pilot CSV export for stakeholder review.',
       'Summary of observed workflow gaps, unsupported data needs, and recommended next steps.',
     ],
@@ -95,7 +95,7 @@ export const PAID_PILOT_SCOPE_SECTIONS: PaidPilotSection[] = [
     items: [
       'CarbonLite pilot outputs are for workflow validation and structured feedback only.',
       'The pilot report is not a certified GHG emissions report and does not constitute audit assurance, verification, legal advice, or regulatory approval.',
-      'Factor sources, assumptions, and review status should be checked by a qualified reviewer before using outputs in client-facing or formal reporting contexts.',
+      'Factor sources, assumptions, and validation status should be checked by a qualified reviewer before using outputs in client-facing or formal reporting contexts.',
       'CarbonLite does not guarantee completeness for unsupported jurisdictions, unsupported activity types, or source files that are outside the current pilot scope.',
     ],
   },

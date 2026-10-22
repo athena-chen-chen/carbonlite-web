@@ -99,7 +99,7 @@ test('pilot RC: real combined upload, manual entry, report downloads and login p
   const visibleReport = await page.locator('body').innerText();
   fs.writeFileSync('/private/tmp/task9-current-combined-visible.txt', await page.locator('body').innerText());
   await page.screenshot({ path: '/private/tmp/task9-current-combined.png', fullPage: true });
-  for (const [label, file] of [['Executive Summary (PDF)', 'executive.pdf'], ['Technical Review Package (PDF)', 'technical.pdf'], ['Data Export (CSV)', 'records.csv']]) {
+  for (const [label, file] of [['Executive Summary (PDF)', 'executive.pdf'], ['Technical Emissions Report (PDF)', 'technical.pdf'], ['Data Export (CSV)', 'records.csv']]) {
     await page.getByRole('button', { name: 'Export reports', exact: true }).click();
     const download = page.waitForEvent('download');
     await page.getByRole('menuitem', { name: label, exact: true }).click();

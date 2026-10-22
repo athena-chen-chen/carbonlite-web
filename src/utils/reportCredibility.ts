@@ -449,7 +449,7 @@ export function formatReportSourceReference(input: {
     return 'Source file unavailable';
   }
 
-  return 'Source review required';
+  return 'Source information needed';
 }
 
 export function getDisplaySourceLabel(input: {
@@ -462,7 +462,7 @@ export function getDisplaySourceLabel(input: {
   const reference = formatReportSourceReference(input);
 
   if (sourceType === 'Manual Entry') return 'Manual Entry';
-  if (reference && !/^source (file unavailable|review required)$/i.test(reference)) {
+  if (reference && !/^source (file unavailable|review required|information needed)$/i.test(reference)) {
     return `${reference} · ${sourceType}`;
   }
   if (sourceFile) return `${sourceFile} · ${sourceType}`;
@@ -584,5 +584,5 @@ export function buildSourceEvidenceNote(input: {
     return 'Submitted unit does not match available factor units.';
   }
 
-  return 'Review this record before calculation.';
+  return 'Correct this record before calculation.';
 }

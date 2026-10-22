@@ -17,7 +17,7 @@ export const FACTOR_DETAIL_LINE_HEIGHT_MM = 4.1;
 export const FACTOR_DETAIL_BLOCK_SPACING_MM = 5;
 export const REPORT_OUTPUT_PROFILE_LABELS: Record<ReportOutputProfile, string> = {
   EXECUTIVE_SUMMARY: 'Executive Summary',
-  TECHNICAL_REVIEW: 'Technical Review Package',
+  TECHNICAL_REVIEW: 'Technical Emissions Report',
 };
 export type ReportOutputProfile = 'EXECUTIVE_SUMMARY' | 'TECHNICAL_REVIEW';
 
@@ -181,7 +181,7 @@ export function drawReportPdfCover(
       ['Generated Date', input.generatedDate],
       ['Prepared By', 'CarbonLite'],
       ['Reviewer', input.documentControl.reviewer],
-      ['Review Status', input.documentControl.reviewStatus],
+      ['Reviewer Sign-off Status', input.documentControl.reviewStatus],
       ['Generated With', input.documentControl.generatedWith],
     ],
     styles: { fontSize: 8.5, cellPadding: 1.5, valign: 'top' },
@@ -256,7 +256,7 @@ export function getReportPdfFileName(
   const profileSlug =
     profile === 'EXECUTIVE_SUMMARY'
       ? 'executive-summary'
-      : 'technical-review-package';
+      : 'technical-emissions-report';
 
   return `carbonlite-${profileSlug}-${dateText}-${reportId}-${version}.pdf`;
 }

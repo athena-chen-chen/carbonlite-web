@@ -21,7 +21,7 @@ function renderLanding(authenticated = false) {
     </MemoryRouter>,
   );
 }
-const actions = ['Set Boundary', 'Add Data', 'Resolve Issues', 'Review Calculations', 'Generate Report'];
+const actions = ['Set Boundary', 'Add Data', 'Resolve Issues', 'Calculation Results', 'Generate Report'];
 
 it('offers Sign In and Request Pilot Access to public visitors', () => {
   renderLanding();
@@ -72,7 +72,7 @@ it('removes sample stats and prioritizes three outcomes and two audiences', () =
 it('consolidates trust, outputs and pilot limitations without middle pilot sections', () => {
   renderLanding();
   const trust = within(screen.getByRole('region', { name: 'Review-ready Output' }));
-  for (const item of ['Source record', 'Emission factor', 'Jurisdiction & year', 'Calculation traceability', 'Executive Summary', 'Technical Review Package', 'CSV export']) {
+  for (const item of ['Source record', 'Emission factor', 'Jurisdiction & year', 'Calculation traceability', 'Executive Summary', 'Technical Emissions Report', 'CSV export']) {
     expect(trust.getByText(item)).toBeInTheDocument();
   }
   expect(trust.getByText('Pilot results require professional review before formal use.')).toBeInTheDocument();

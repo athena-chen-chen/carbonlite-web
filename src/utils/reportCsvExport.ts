@@ -1,3 +1,4 @@
+import { escapeCsvValue } from './csv';
 import { factorProvenanceLines } from './factorGovernance';
 import type { CalculationAuditDetail } from '../services/metrics';
 import type { CanonicalReportData } from '../reports/domain/reportTypes';
@@ -21,6 +22,8 @@ import {
 } from './scopeClassification';
 import { formatDateOnly } from './dateOnly';
 import { buildCalculatedFormula } from './calculationTraceability';
+
+export { escapeCsvValue } from './csv';
 
 export const PILOT_CSV_HEADERS = [
   'Record No.',
@@ -60,7 +63,7 @@ export const PILOT_CSV_HEADERS = [
   'Source Type',
   'Import Method',
   'Source Reference',
-  'Review Note',
+  'Validation Note',
 ] as const;
 
 export type PilotCsvRow = Record<(typeof PILOT_CSV_HEADERS)[number], string | number>;
@@ -95,7 +98,7 @@ const CSV_STATUS_LABELS: Record<string, string> = {
   CALCULATED: 'Calculated',
   MATCHED: 'Factor Matched',
   TRACKED_ONLY: 'Tracked Metric',
-  REQUIRES_REVIEW: 'Requires Review',
+  REQUIRES_REVIEW: 'Needs Attention',
   MISSING_FACTOR: 'Missing Factor',
   MISSING_PROVINCE: 'Missing Province',
   MISSING_JURISDICTION: 'Missing Province',
@@ -398,23 +401,22 @@ export function buildPilotCsvRows(input: CsvInput): PilotCsvRow[] {
       'Source Type': sourceType,
       'Import Method': importMethod,
       'Source Reference': sourceReference,
-      'Review Note': [buildCsvReviewNote(detail), ...factorProvenanceLines(detail.factorProvenance)].filter(Boolean).join('; '),
+      'Validation Note': [buildCsvReviewNote(detail), ...factorProvenanceLines(detail.factorProvenance)].filter(Boolean).join('; '),
     };
   });
 }
 
-export function escapeCsvValue(value: unknown) {
-  const text = value === null || value === undefined ? '' : String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
+const NUMERIC_CSV_HEADERS = new Set<string>([
+  'Record No.', 'Quantity', 'Cost CAD', 'Matched Factor Value',
+  'Factor Source Year', 'Calculated Emissions kgCO2e', 'Source Row',
+]);
 
 export function buildPilotCsv(input: CsvInput) {
   const rows = buildPilotCsvRows(input);
   return [
     PILOT_CSV_HEADERS.join(','),
-    ...rows.map((row) => PILOT_CSV_HEADERS.map((header) => escapeCsvValue(row[header])).join(',')),
+    ...rows.map((row) => PILOT_CSV_HEADERS.map((header) =>
+      escapeCsvValue(row[header], NUMERIC_CSV_HEADERS.has(header) ? 'number' : 'text'),
+    ).join(',')),
   ].join('\n');
 }

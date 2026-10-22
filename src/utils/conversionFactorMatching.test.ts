@@ -1322,3 +1322,22 @@ describe('normalizeJurisdictionRegion', () => {
     expect(normalizeJurisdictionRegion(input)).toBe(expected);
   });
 });
+
+
+describe('field-mapped fuel unit and jurisdiction normalization', () => {
+  it.each(['L', 'l', 'liter', 'liters', 'litre', 'litres'])('retains the existing Canada-generic gasoline match for BC / %s', inputUnit => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'Gasoline', inputUnit, jurisdictionCountry: 'Canada', jurisdictionRegion: 'British Columbia',
+      recordYear: 2026, quantity: 350,
+      factors: [{ id: 'existing-gasoline', name: 'Gasoline combustion', type: 'EMISSION', activityType: 'GASOLINE',
+        country: 'Canada', jurisdiction: 'Canada (Generic)', unit: 'liters', factorValue: 2.31, resultUnit: 'kgCO2e',
+        sourceYear: 2025, isSystemDefault: true, isDefault: true }],
+    });
+    expect(normalizeActivityType('Gasoline')).toBe('GASOLINE');
+    expect(normalizeJurisdictionRegion('BC')).toBe(normalizeJurisdictionRegion('British Columbia'));
+    expect(match?.factor.id).toBe('existing-gasoline');
+    expect(match?.selectionReason).toBe('GENERIC_JURISDICTION_FALLBACK');
+    expect(match?.usedPriorYearFallback).toBe(true);
+    expect(Number(match?.factor.factorValue) * 350).toBe(808.5);
+  });
+});

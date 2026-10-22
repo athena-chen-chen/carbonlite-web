@@ -81,9 +81,9 @@ test('@pilot-daily CarbonLite Pilot Demo v0.1 golden smoke workflow', async ({ p
     await expect(waterRow).toContainText('m3');
   });
 
-  await test.step('verify calculation review golden totals', async () => {
-    await page.getByRole('link', { name: 'Calculation Review', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Calculation Review' })).toBeVisible();
+  await test.step('verify calculation results golden totals', async () => {
+    await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Calculation Results' })).toBeVisible();
     await expect(page.getByText('37,285 kg CO2e')).toBeVisible();
     await expect(page.getByText('63,600 kWh').first()).toBeVisible();
 

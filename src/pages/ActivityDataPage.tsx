@@ -1416,7 +1416,7 @@ function getActivityRecordQuality(
     label: 'Ready for Calculation',
     filterKey: 'ready',
     tone: 'success' as const,
-    title: 'This record has the required fields for calculation review.',
+    title: 'This record has the required fields for calculation results.',
   };
 }
 
@@ -1491,7 +1491,7 @@ function normalizeSourceReferenceValue(
 ) {
   const value = String(sourceReference ?? '').trim();
   if (!value) return '';
-  if (/^source review required$/i.test(value)) return '';
+  if (/^source information needed$/i.test(value)) return '';
   if (sourceFileName && value.toLowerCase() === sourceFileName.trim().toLowerCase()) return '';
   return value;
 }
@@ -1501,7 +1501,7 @@ function formatActivitySourceReviewStatus(row: ActivityDataItem) {
   if (!rawStatus) return '';
 
   const normalized = rawStatus.replace(/[_-]+/g, ' ').trim().toLowerCase();
-  if (normalized === 'review required' || normalized === 'source review required') {
+  if (normalized === 'review required' || normalized === 'source information needed') {
     return 'Review required';
   }
   if (normalized === 'needs review') return 'Needs review';
@@ -2267,7 +2267,7 @@ function renderViewedRecordModal() {
             />
             {formatActivitySourceReviewStatus(viewedRecord) ? (
               <DetailsField
-                label="Source Review"
+                label="Source Data Status"
                 value={formatActivitySourceReviewStatus(viewedRecord)}
               />
             ) : null}
@@ -2471,13 +2471,14 @@ if (import.meta.env.DEV) {
         <button
           type="button"
           onClick={() => navigate('/input-data', { state: { focusInputMethod: 'manual' } })}
-          style={{ ...primaryActionBtn, marginBottom: 20 }}
+          style={{ ...secondaryActionBtn, marginBottom: 20 }}
+          title="Go to Step 2 · Add Data"
         >
-          Add data
+          Add More Data
         </button>
       ) : (
         <div style={readOnlyNoticeStyle}>
-          Read-only access: you can view activity records, Calculation Review, and Reports, but cannot import, edit, delete, or clear records.
+          Read-only access: you can view activity records, Calculation Results, and Reports, but cannot import, edit, delete, or clear records.
         </div>
       )}
       {/* ⭐ Summary 卡片 */}
@@ -2570,7 +2571,7 @@ if (import.meta.env.DEV) {
                 >
                   <option value="all">All records</option>
                   <option value="ready">Calculated records</option>
-                  <option value="requires-review">Records requiring review</option>
+                  <option value="requires-review">Records needing attention</option>
                   <option value="tracked-metric">Tracked metrics</option>
                   <option value="missing-factor">Missing factor records</option>
                   <option value="missing-jurisdiction">Missing province records</option>
@@ -2853,7 +2854,7 @@ if (import.meta.env.DEV) {
           <div style={documentFilterBannerStyle}>
             <div>
               <div style={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
-                {recordFilterId ? 'Showing 1 record requiring attention.' : 'Showing records from:'}
+                {recordFilterId ? 'Showing selected record.' : 'Showing records from:'}
               </div>
               {!recordFilterId ? (
                 <div style={{ marginTop: 3, color: '#0f172a', fontWeight: 700 }}>
@@ -3615,16 +3616,6 @@ const clearFilterButtonStyle: React.CSSProperties = {
   border: `1px solid ${activityRecordsPalette.border}`,
   background: activityRecordsPalette.white,
   color: activityRecordsPalette.primaryGreen,
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const primaryActionBtn = {
-  padding: '8px 14px',
-  borderRadius: 8,
-  border: `1px solid ${activityRecordsPalette.primaryGreen}`,
-  background: activityRecordsPalette.primaryGreen,
-  color: activityRecordsPalette.white,
   fontWeight: 700,
   cursor: 'pointer',
 };

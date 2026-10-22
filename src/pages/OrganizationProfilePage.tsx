@@ -531,7 +531,7 @@ function DataPrivacySection() {
     },
     {
       label: 'Exports',
-      value: 'Reports and CSV exports may contain uploaded source references, calculated values, review status, and audit metadata.',
+      value: 'Reports and CSV exports may contain uploaded source references, calculated values, status, and audit metadata.',
     },
   ];
 
@@ -627,7 +627,7 @@ function getSectionNote(title: string) {
     case 'Organization':
       return 'This workspace is set up for Canadian emissions reporting. Country is currently fixed to Canada.';
     case 'Reporting Period':
-      return 'Set the date range used for Calculation Review and Reports.';
+      return 'Set the date range used for Calculation Results and Reports.';
     case 'Operational Boundary':
       return 'Define which operations and emissions sources are included in this workspace.';
     case 'Facilities / Sites':

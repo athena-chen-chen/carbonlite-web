@@ -12,14 +12,14 @@ The findings below were reported in chat before editing implementation code.
 6. **Creation audit already exists:** the earlier verified read-only capture identified `CREATE_ACTIVITY_RECORD` audit `cmv8qhq50001pgd6k4yho9eou`, actor `cmp37x9i30005gdcui8pa1ki6`, timestamp `2026-10-14T23:21:28.981Z`. `ActivityDataController.create` passes the authenticated user ID to `ActivityDataService.create`, which writes this audit with `newValue: created`. No new audit subsystem or event is necessary. A reproducible frontend gap was found: `mergeSupplementalCalculationDetails` replaced the whole original detail and discarded the real manual provenance. The exact latest live report cannot be reproduced from the current local database; see the validation limits below.
 7. **Field rendered as Factor Version:** for the governed Electricity selection, Prisma `FactorVersion.version` → factor provenance snapshot `factorVersion` → API calculation detail / used-factor projection → CanonicalReportData → `getDisplayFactorVersion` → Technical Factor Details. The version database ID remains a separate `factorVersionId`.
 8. **Meaning of `demo-2025-kwh-alberta`:** a real seeded version string, not the factor ID or version database ID. `prisma/seed.ts` builds `version = demo-${sourceYear}-${unit}-${region}` and upserts by the `(factorId, version)` unique key. The local DB independently returned `{ factorId: demo-factor-electricity-alberta, id: cmv8vg8eu0009gd3sxfn0w9z7, version: demo-2025-kwh-alberta }`. User Case A therefore applies: retain **Factor Version: demo-2025-kwh-alberta**.
-9. **Five-row wording:** `formatExecutiveSourceReviewStatus` formats the canonical structured source-review counts; `executiveSummaryPdf` previously labeled that row simply “Source Review.” `buildSourceReviewSummary` counts structured review rows / spreadsheet row lineage, independently of ActivityData records.
-10. **Smallest changes:** pass calculation details into the canonical factor review builder; correct duplicate-count fallback; preserve manual provenance on supplemental detail replacement; extend the existing API audit projection with original jurisdiction/location; clarify structured-review labels; reuse one factor-version display rule in PDF/UI/CSV and audit evidence; add focused tests.
+9. **Five-row wording:** `formatExecutiveSourceReviewStatus` formats the canonical structured source-data counts; `executiveSummaryPdf` previously labeled that row simply “Source Review.” `buildSourceReviewSummary` counts structured review rows / spreadsheet row lineage, independently of ActivityData records.
+10. **Smallest changes:** pass calculation details into the canonical factor validation builder; correct duplicate-count fallback; preserve manual provenance on supplemental detail replacement; extend the existing API audit projection with original jurisdiction/location; clarify structured-review labels; reuse one factor-version display rule in PDF/UI/CSV and audit evidence; add focused tests.
 
 ## Implementation
 
 ### Factor usage
 
-- Canonical factor review now receives the calculated activity details and counts their usages by the existing shared identity helper.
+- Canonical factor validation now receives the calculated activity details and counts their usages by the existing shared identity helper.
 - With no record-level details, duplicate selection rows sum their usage counts instead of overwriting them.
 - Version IDs remain the primary key. When only a factor ID and a real version label exist, the key includes both so genuinely different versions remain separate. Snapshot fallback remains available for older representations.
 - The Report UI and both PDFs continue using shared factor facts. A synthetic pagination test was corrected to provide actual corresponding activity/factor identities rather than ten unused factor definitions.
@@ -47,9 +47,9 @@ Unique selections: **5**, derived without hardcoding the dataset.
 
 ### Source review and version display
 
-- Executive label: **Structured Source Review** when canonical availability is `STRUCTURED_REVIEW_AVAILABLE`; document-only/unavailable review keeps the general Source Review label.
+- Executive label: **Structured Source Data Status** when canonical availability is `STRUCTURED_REVIEW_AVAILABLE`; document-only/unavailable review keeps the general Source Review label.
 - Shared readiness label/evidence explicitly names structured source rows. Five structured rows remain separate from nine ActivityData records.
-- Executive Factor Review explicitly says **5 of 5 unique emission factors**.
+- Executive Factor Validation explicitly says **5 of 5 unique emission factors**.
 - A shared version formatter now serves normal provenance, CSV and audit evidence. Real version strings remain visible. Factor IDs, version IDs, source-document versions and guessed `v1.0` defaults are not substituted as factor versions.
 - The Report UI names Factor Version and Source Document Version separately when those values exist. CSV retains the exact existing schema/header order; only misleading version values are corrected. Missing factor version is `Not specified`.
 
@@ -63,7 +63,7 @@ Unique selections: **5**, derived without hardcoding the dataset.
 | Calculation traceability | 8/8 for the retained previously verified regression capture |
 | Manual audit event added | NO — already existed |
 | Historical data fabricated | NO |
-| Issue 3 source-review wording | FIXED: Structured Source Review |
+| Issue 3 source-review wording | FIXED: Structured Source Data Status |
 | Issue 4 version semantics | FIXED shared ID/document fallback; audited real seeded version remains Factor Version |
 | Calculation totals changed | NO |
 | Matcher/applicability/unit/scope/import/facility logic changed | NO |

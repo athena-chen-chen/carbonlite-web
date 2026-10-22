@@ -36,7 +36,7 @@ function calculatedDetail(
     factorJurisdictionRegion: input.factorJurisdictionRegion ?? null,
     factorSource: input.factorSource ?? 'CarbonLite',
     sourceAuthority: input.sourceAuthority ?? 'CarbonLite',
-    sourceDocument: input.sourceDocument ?? 'CarbonLite MVP Default Factors v1.0',
+    sourceDocument: input.sourceDocument ?? 'CarbonLite Default Factor Library v1.0',
     sourceYear: input.sourceYear ?? input.factorYear ?? 2025,
     factorVerified: input.factorVerified ?? false,
     factorConfidenceLevel: input.factorConfidenceLevel ?? 'PILOT_ESTIMATE',
@@ -280,7 +280,7 @@ describe('pilot CSV export', () => {
     expect(csv).not.toContain('kgCO2e/nights');
   });
 
-  it('uses professional factor labels, source labels, and review notes', () => {
+  it('uses professional factor labels, source labels, and validation notes', () => {
     const rows = buildPilotCsvRows(goldenDetails);
     const electricityRows = rows.filter((row) => row['Activity Type'] === 'Electricity');
     const naturalGas = rows.find((row) => row['Activity Type'] === 'Natural Gas');
@@ -297,9 +297,9 @@ describe('pilot CSV export', () => {
     expect(gasoline?.['Matched Factor Unit']).toBe('kgCO2e/liter');
     expect(hotel?.['Matched Factor Unit']).toBe('kgCO2e/night');
 
-    expect(rows[0]['Review Note']).toContain('A prior-year factor was used');
+    expect(rows[0]['Validation Note']).toContain('A prior-year factor was used');
     expect(airTravel?.['Consultant Review Recommended']).toBe('Yes');
-    expect(airTravel?.['Review Note']).toContain('consultant review is recommended before formal reporting');
+    expect(airTravel?.['Validation Note']).toContain('consultant review is recommended before formal reporting');
     electricityRows.forEach((row) => {
       expect(row['Verification Status']).toBe('Internal Review Required');
       expect(row['Confidence Level']).toBe('Pilot Estimate');
@@ -319,7 +319,7 @@ describe('pilot CSV export', () => {
     expect(water?.['Calculated Emissions kgCO2e']).toBe('');
     expect(water?.['Calculated Emissions Display']).toBe('Tracked Metric');
     expect(water?.['Consultant Review Recommended']).toBe('No');
-    expect(water?.['Review Note']).toBe('Tracked metric. Not included in the GHG emissions total.');
+    expect(water?.['Validation Note']).toBe('Tracked metric. Not included in the GHG emissions total.');
 
     rows.forEach((row) => {
       expect(row['Source File']).toBe('Golden Test Data.xlsx');
@@ -459,7 +459,7 @@ describe('pilot CSV export', () => {
       'Source File': 'carbonlite_needs_review_test.xlsx',
       'Source Sheet': 'Messy_Operations',
       'Source Row': '2',
-      'Review Note': 'Matched to a CarbonLite system-default factor. A prior-year factor was used because no exact factor was available for the record year. Review before formal reporting.',
+      'Validation Note': 'Matched to a CarbonLite system-default factor. A prior-year factor was used because no exact factor was available for the record year. Review before formal reporting.',
     });
 
     expect(byReference.get('MARCH-WATER-007')).toMatchObject({
@@ -481,7 +481,7 @@ describe('pilot CSV export', () => {
       'Calculated Emissions Display': 'Tracked Metric',
       'Source Sheet': 'Messy_Operations',
       'Source Row': '8',
-      'Review Note': 'Tracked metric. Not included in the GHG emissions total.',
+      'Validation Note': 'Tracked metric. Not included in the GHG emissions total.',
     });
 
     expect(byReference.get('MARCH-HOTEL-010')).toMatchObject({
@@ -506,7 +506,7 @@ describe('pilot CSV export', () => {
       'Calculated Emissions Display': '60 kgCO2e',
       'Source Sheet': 'Messy_Operations',
       'Source Row': '11',
-      'Review Note': 'Matched to a CarbonLite system-default factor. A Canada-generic and prior-year fallback was used; consultant review is recommended before formal reporting.',
+      'Validation Note': 'Matched to a CarbonLite system-default factor. A Canada-generic and prior-year fallback was used; consultant review is recommended before formal reporting.',
     });
 
     const emissionsTotal = rows.reduce(
@@ -655,7 +655,7 @@ describe('pilot CSV export', () => {
       'Factor Source Authority': 'CarbonLite System Defaults',
       'Factor Selection Reason': 'PILOT_DEFAULT_FALLBACK',
       'Calculated Emissions kgCO2e': '189.74',
-      'Review Note': 'Matched to a CarbonLite system-default factor. Review before formal reporting.',
+      'Validation Note': 'Matched to a CarbonLite system-default factor. Review before formal reporting.',
     });
     expect(naturalGas).toMatchObject({
       'Cost CAD': '',
@@ -670,9 +670,9 @@ describe('pilot CSV export', () => {
       'Factor Selection Explanation':
         'Natural Gas and GJ matched directly. No Alberta-specific direct GJ factor was available, so the 2025 Canada-generic factor was selected.',
       'Calculated Emissions kgCO2e': '148.32',
-      'Review Note': 'Canada-generic ECCC factor used because no Alberta-specific direct GJ factor was available. Review before formal reporting.',
+      'Validation Note': 'Canada-generic ECCC factor used because no Alberta-specific direct GJ factor was available. Review before formal reporting.',
     });
-    expect(naturalGas?.['Review Note']).not.toContain('CarbonLite system-default factor');
+    expect(naturalGas?.['Validation Note']).not.toContain('CarbonLite system-default factor');
     expect(naturalGas?.['Factor Selection Explanation']).not.toContain('Canada, Canada');
     expect(water).toMatchObject({
       'Cost CAD': '',
@@ -680,7 +680,7 @@ describe('pilot CSV export', () => {
       'Calculation Status': 'TRACKED_ONLY',
       'Matching Status': 'NOT_APPLICABLE',
       'Calculated Emissions Display': 'Tracked Metric',
-      'Review Note': 'Tracked metric. Not included in the GHG emissions total.',
+      'Validation Note': 'Tracked metric. Not included in the GHG emissions total.',
     });
 
     const total = rows.reduce((sum, row) => sum + Number(row['Calculated Emissions kgCO2e'] || 0), 0);
@@ -788,9 +788,28 @@ describe('CSV factor version semantics', () => {
   });
   it('keeps factor identifiers and document versions out of the Factor Version column', () => {
     const detail = calculatedDetail({ activityDataId: 'manual-version', activityType: 'ELECTRICITY', activityQuantity: 980, activityUnit: 'kWh', factorName: 'Electricity - Alberta', factorValue: .53, calculatedEmissionsKgCO2e: 519.4 });
-    const rows = buildPilotCsvRows([{ ...detail, factorId: 'demo-2025-kwh-alberta', factorVersion: null, sourceDocument: 'Default Factors v1.0', factorProvenance: { sourceVersion: 'v1.0' } }]);
+    const rows = buildPilotCsvRows([{ ...detail, factorId: 'demo-2025-kwh-alberta', factorVersion: null, sourceDocument: 'CarbonLite Default Factor Library v1.0', factorProvenance: { sourceVersion: 'v1.0' } }]);
     expect(rows[0]['Factor Version']).toBe('');
     const versioned = buildPilotCsvRows([{ ...detail, factorVersion: '2.1', factorProvenance: { sourceVersion: '3.2' } }]);
     expect(versioned[0]['Factor Version']).toBe('2.1');
+  });
+});
+
+
+describe('internal library provenance in CSV', () => {
+  it('exports current and historical document names verbatim without changing calculations', () => {
+    const current = 'CarbonLite Default Factor Library v1.0';
+    const historical = 'CarbonLite MVP Default Factors v1.0'; // Immutable historical evidence.
+    const detail = calculatedDetail({ activityDataId: 'library-rename', activityType: 'ELECTRICITY', activityQuantity: 100, activityUnit: 'kWh', factorName: 'Electricity - Alberta', factorValue: 0.53, calculatedEmissionsKgCO2e: 53 });
+    const original = JSON.stringify(detail);
+    const [currentRow] = buildPilotCsvRows([detail]);
+    const [historicalRow] = buildPilotCsvRows([{ ...detail, sourceDocument: historical }]);
+    expect(currentRow['Factor Source Document']).toBe(current);
+    expect(buildPilotCsv([detail])).not.toContain(historical);
+    expect(historicalRow['Factor Source Document']).toBe(historical);
+    expect(historicalRow).toEqual({ ...currentRow, 'Factor Source Document': historical });
+    expect(Number(currentRow['Matched Factor Value'])).toBe(0.53);
+    expect(Number(currentRow['Calculated Emissions kgCO2e'])).toBe(53);
+    expect(JSON.stringify(detail)).toBe(original);
   });
 });

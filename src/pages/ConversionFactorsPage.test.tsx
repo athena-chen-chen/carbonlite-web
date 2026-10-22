@@ -174,7 +174,7 @@ describe('ConversionFactorsPage traceability', () => {
       getFactorTraceability({
         ...baseFactor,
         sourceAuthority: 'CarbonLite System Defaults',
-        sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+        sourceDocument: 'CarbonLite Default Factor Library v1.0',
         methodology:
           'Used for pilot validation. Intended for demonstration workflows only. Replace with official ECCC or provincial emission factors before production reporting.',
         confidenceLevel: 'Medium (Engineering Estimate)',
@@ -184,7 +184,7 @@ describe('ConversionFactorsPage traceability', () => {
       }),
     ).toMatchObject({
       sourceAuthority: 'CarbonLite System Defaults',
-      sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+      sourceDocument: 'CarbonLite Default Factor Library v1.0',
       methodology:
         'Used for pilot validation. Intended for demonstration workflows only. Replace with official ECCC or provincial emission factors before production reporting.',
       confidenceLevel: 'Medium — Engineering Estimate',
@@ -226,7 +226,7 @@ describe('ConversionFactorsPage traceability', () => {
         {
           ...baseFactor,
           sourceAuthority: 'CarbonLite System Defaults',
-          sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+          sourceDocument: 'CarbonLite Default Factor Library v1.0',
           sourceYear: 2025,
           sourceUrl: 'https://carbonlite.ai/methodology/default-factors',
           methodology:
@@ -421,7 +421,8 @@ describe('ConversionFactorsPage traceability', () => {
     const dialog = screen.getByRole('dialog', { name: /Electricity - Alberta/i });
     expect(within(dialog).getAllByText('Pilot Estimate').length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText('Internal Review Required').length).toBeGreaterThan(0);
-    expect(within(dialog).getAllByText('CarbonLite MVP Default Factors v1.0').length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('CarbonLite Default Factor Library v1.0').length).toBeGreaterThan(0);
+    expect(screen.queryByText('CarbonLite MVP Default Factors v1.0')).not.toBeInTheDocument();
     expect(
       within(dialog).getAllByText(/Pilot-stage default electricity factor/i).length,
     ).toBeGreaterThan(0);

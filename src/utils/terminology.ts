@@ -5,7 +5,7 @@ export const TERMINOLOGY = {
   conversionFactors: 'Conversion Factors',
   readyForCalculation: 'Ready for Calculation',
   calculated: 'Calculated',
-  needsReview: 'Needs Review',
+  needsReview: 'Needs Attention',
   trackedMetric: 'Tracked Metric',
   excluded: 'Excluded',
   includedInGhgTotal: 'Included in GHG Total',

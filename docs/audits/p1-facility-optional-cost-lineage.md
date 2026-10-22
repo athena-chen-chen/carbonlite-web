@@ -76,7 +76,7 @@ This verifies database writes and readback, rather than relying solely on browse
 - Imported/calculated: 5/5.
 - Total: 2428.44 kgCO2e.
 - Scope 1 / 2 / 3: 1228.74 / 662.50 / 537.20.
-- Source Review: 5 reviewable, 5 resolved/imported, 0 requiring review; Spreadsheet / File Import classification retained.
+- Source Review: 5 reviewable, 5 resolved/imported, 0 needing attention; Spreadsheet / File Import classification retained.
 - Optional cost: 0 present / 5 total; 0%.
 - Natural Gas: 49.44 kgCO2e/GJ, Canada (Generic), Environment and Climate Change Canada, GENERIC_JURISDICTION_FALLBACK; golden domain/export tests preserve the existing provenance. Browser Confirm also asserts the authority and fallback reason.
 - Messy Excel: 214.55 / 64 / 720 remain supplied costs; canonical completeness 3/3 and 100%, CSV numeric values retained.

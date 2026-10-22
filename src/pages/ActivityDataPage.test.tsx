@@ -225,7 +225,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /^Delete/i }));
   }
 
-  it('navigates Add data to Input Data with manual entry focused', async () => {
+  it('shows secondary Add More Data navigation to Step 2 while keeping Data Records in Step 3', async () => {
     render(
       <MemoryRouter initialEntries={['/data-records']}>
         <ToastProvider>
@@ -239,7 +239,16 @@ describe('ActivityDataPage delete flows', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(screen.getByRole('button', { name: /^Add data$/i }));
+    const addMoreData = screen.getByRole('button', { name: 'Add More Data' });
+    expect(screen.queryByRole('button', { name: /^Add data$/i })).not.toBeInTheDocument();
+    expect(addMoreData).toHaveAccessibleDescription('Go to Step 2 · Add Data');
+    expect(addMoreData).toHaveStyle({ background: '#ffffff', color: '#334155' });
+    expect(screen.getByText('Step 3 of 5 · Resolve Issues')).toHaveAttribute('aria-current', 'step');
+    expect(screen.queryByRole('group', { name: /Activity row/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save row|Add activity record/i })).not.toBeInTheDocument();
+    expect(document.querySelector('input[type="file"]')).not.toBeInTheDocument();
+
+    await userEvent.click(addMoreData);
 
     expect(screen.getByText('Input Data focus: manual')).toBeInTheDocument();
   });
@@ -324,7 +333,7 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-activity-1');
 
     expect(screen.getByText(/Read-only access:/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Add data$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Add More Data$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Delete selected/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
@@ -1128,7 +1137,7 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     const row = await screen.findByTestId('activity-row-electricity-user-missing-province');
-    expect(screen.getByRole('button', { name: /^Add data$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Add More Data$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/More actions for/i)).toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('checkbox'));
@@ -1327,7 +1336,7 @@ describe('ActivityDataPage delete flows', () => {
         facilityName: null,
         sourceType: 'AI_EXTRACTION',
         sourceFileName: 'bc hydro.pdf',
-        sourceReference: 'Source review required',
+        sourceReference: 'Source information needed',
         sourceReviewStatus: 'REVIEW_REQUIRED',
         sourceDocumentId: 'doc-bc-hydro',
         calculationStatus: 'CALCULATED',
@@ -1339,7 +1348,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-activity-bc-hydro');
     expect(within(row).getByText('bc hydro.pdf')).toBeInTheDocument();
-    expect(within(row).queryByText(/Source review required/i)).not.toBeInTheDocument();
+    expect(within(row).queryByText(/Source information needed/i)).not.toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
 
@@ -1354,9 +1363,9 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(dialog).getByText('PDF Extraction')).toBeInTheDocument();
     expect(within(dialog).getByText('Source File')).toBeInTheDocument();
     expect(within(dialog).getAllByText('bc hydro.pdf').length).toBeGreaterThan(0);
-    expect(within(dialog).getByText('Source Review')).toBeInTheDocument();
+    expect(within(dialog).getByText('Source Data Status')).toBeInTheDocument();
     expect(within(dialog).getByText('Review required')).toBeInTheDocument();
-    expect(within(dialog).queryByText('bc hydro.pdf · Source review required')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('bc hydro.pdf · Source information needed')).not.toBeInTheDocument();
   });
 
   it('exports selected data records as user-facing CSV without internal ids', async () => {
@@ -1808,7 +1817,7 @@ describe('ActivityDataPage delete flows', () => {
     });
 
     expect(
-      await screen.findByText('Showing 1 record requiring attention.'),
+      await screen.findByText('Showing selected record.'),
     ).toBeInTheDocument();
     expect(await screen.findByText('Electricity')).toBeInTheDocument();
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();

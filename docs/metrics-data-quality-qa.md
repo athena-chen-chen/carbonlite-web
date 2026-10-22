@@ -9,7 +9,7 @@ Use this checklist after uploading a large mixed test set, such as 40+ utility b
 - Water records are grouped once as tracked-only, including both `m3` and `m³`.
 - Fuel Usage card displays readable grouped totals, for example `Diesel: 7,959 liters`.
 - Fuel Usage card does not include records with missing or invalid units.
-- Fuel Usage card shows a review note when invalid fuel records exist.
+- Fuel Usage card shows a validation note when invalid fuel records exist.
 - Calculation Issues separates Missing Data, Missing Factor, and Informational issues.
 - Missing Data issues show `Fix Record` and do not show `Create Factor`.
 - Missing Factor issues show `Create Factor`.

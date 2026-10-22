@@ -49,7 +49,7 @@ export default function Index() {
             From messy records to traceable emissions insights.
           </p>
           <p className="text-sm text-gray-500 mt-1 max-w-3xl">
-            CarbonLite helps organize operational data, match records with appropriate emission factors, and explain calculation results with source, jurisdiction, confidence level, and review status.
+            CarbonLite helps organize operational data, match records with appropriate emission factors, and explain calculation results with source, jurisdiction, confidence level, and status.
           </p>
         </div>
         <div className="flex gap-2">
@@ -93,7 +93,7 @@ export default function Index() {
         <div className="card">
           <div className="text-xs text-gray-500">Reports</div>
           <div className="mt-1 text-sm">
-            Generate traceable reports with factor sources and records requiring review.
+            Generate traceable reports with factor sources and records needing attention.
           </div>
           <div className="mt-2">
             <Link to="/reports" className="btn btn-ghost">Open Reports</Link>

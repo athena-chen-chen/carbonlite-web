@@ -88,17 +88,18 @@ describe('AppNav logout flow', () => {
       'Input Data',
       'Data Records',
       'Organization & Boundary',
-      'Calculation Review',
+      'Calculation Results',
       'Reports',
     ].forEach((label) => {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href');
     });
     expect(screen.queryByRole('link', { name: 'Input Review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Calculation Review', exact: true })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /exit demo/i })).not.toBeInTheDocument();
   });
 
   it.each(['/calculation-review', '/metrics-summary'])(
-    'highlights Calculation Review for %s',
+    'highlights Calculation Results for %s',
     (path) => {
       localStorage.setItem('accessToken', 'valid-token');
       localStorage.setItem(
@@ -114,7 +115,7 @@ describe('AppNav logout flow', () => {
         </MemoryRouter>,
       );
 
-      expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveStyle({
+      expect(screen.getByRole('link', { name: 'Calculation Results' })).toHaveStyle({
         background: '#111',
         color: '#fff',
       });
@@ -166,7 +167,7 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    const workflowLabels = ['Organization & Boundary', 'Input Data', 'Data Records', 'Calculation Review', 'Reports'];
+    const workflowLabels = ['Organization & Boundary', 'Input Data', 'Data Records', 'Calculation Results', 'Reports'];
     const links = screen.getAllByRole('link').map((link) => link.textContent);
     expect(links.filter((label) => workflowLabels.includes(label ?? ''))).toEqual(workflowLabels);
     expect(screen.queryByRole('link', { name: 'Emission Factors' })).not.toBeInTheDocument();
@@ -280,7 +281,7 @@ describe('AppNav logout flow', () => {
       '/pilot-review-instructions',
     );
     expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
-    expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', '/metrics-summary');
+    expect(screen.getByRole('link', { name: 'Calculation Results' })).toHaveAttribute('href', '/metrics-summary');
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
     expect(screen.getByRole('button', { name: /^Workspace Info\s*▾?$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /admin/i })).not.toBeInTheDocument();

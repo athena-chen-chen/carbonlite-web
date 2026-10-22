@@ -176,7 +176,7 @@ export default function CarbonLiteLandingPage() {
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
                 <h3 className="text-lg font-bold">Share the review package</h3>
                 <ul className="mt-3 grid gap-2 text-sm text-slate-600">
-                  {['Executive Summary', 'Technical Review Package', 'CSV export'].map((item) => <li key={item}>{item}</li>)}
+                  {['Executive Summary', 'Technical Emissions Report', 'CSV export'].map((item) => <li key={item}>{item}</li>)}
                 </ul>
               </div>
             </div>

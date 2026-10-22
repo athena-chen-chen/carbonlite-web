@@ -29,7 +29,7 @@ export function SourceEvidenceSection({
         <SummaryItem label="Source inputs" value={counts.sourceInputCount} />
         <SummaryItem label="Included GHG records" value={includedCount} />
         <SummaryItem label="Tracked operational metrics" value={trackedCount} />
-        <SummaryItem label="Records requiring review" value={reviewCount} />
+        <SummaryItem label="Records needing attention" value={reviewCount} />
       </div>
       <p style={introStyle}>{formatSourceEvidenceCounts(counts)}</p>
       <SimpleTable
@@ -41,7 +41,7 @@ export function SourceEvidenceSection({
           'Record-Level References',
           'Included GHG Records',
           'Tracked Metrics',
-          'Review Records',
+          'Records Needing Attention',
         ]}
         emptyMessage="No source evidence available."
         rows={summaryRows.map((item) => [
@@ -82,7 +82,7 @@ export function SourceEvidenceSection({
             'Source Reference',
             'Matching Status',
             'Report Treatment',
-            'Review Note',
+            'Validation Note',
           ]}
           emptyMessage="No source evidence available."
           rows={sourceEvidenceRows.map((item) => [
@@ -96,7 +96,7 @@ export function SourceEvidenceSection({
             item.sourceReference,
             item.matchingStatus,
             item.reportTreatment,
-            item.notes || 'Source evidence requires review. The original file or source reference was not available.',
+            item.notes || 'Source evidence needs attention. The original file or source reference was not available.',
           ])}
         />
       ) : null}

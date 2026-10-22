@@ -13,7 +13,7 @@ function renderLogin() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/upload" element={<div>Upload page</div>} />
           <Route path="/reports" element={<div>Reports page</div>} />
-          <Route path="/metrics-summary" element={<div>Calculation Review page</div>} />
+          <Route path="/metrics-summary" element={<div>Calculation Results page</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -25,7 +25,7 @@ describe('LoginPage', () => {
     vi.unstubAllEnvs();
   });
 
-  it('redirects pilot reviewers to Calculation Review after login', async () => {
+  it('redirects pilot reviewers to Calculation Results after login', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -47,7 +47,7 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText(/^password$/i), 'Password123!');
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
-    await screen.findByText('Calculation Review page');
+    await screen.findByText('Calculation Results page');
   });
 
   it('logs in successfully and redirects to upload', async () => {

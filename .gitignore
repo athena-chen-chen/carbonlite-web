@@ -41,6 +41,7 @@ blob-report/
 /carbonlite-pilot-data-readiness-report-*.pdf
 /carbonlite-executive-summary-*.pdf
 /carbonlite-technical-review-package-*.pdf
+/carbonlite-technical-emissions-report-*.pdf
 /carbonlite-sample.csv
 /carbonlite-activity-data-template.csv
 /carbonlite-sme-data-template.csv
@@ -51,6 +52,7 @@ blob-report/
 /carbonlite-calculation-traceability-*.csv
 /carbonlite-audit-evidence-*.csv
 /carbonlite-records-requiring-review-*.csv
+/carbonlite-records-needing-attention-*.csv
 
 # Known generated report-correctness exports; keep the accompanying README.
 /output/reports/report-correctness/executive.pdf

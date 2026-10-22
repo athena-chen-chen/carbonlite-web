@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { getAuditLogs, type AuditLogItem } from '../services/auditLogs';
+import { getAuditLogs, type AuditLogItem, type AuditLogQuery } from '../services/auditLogs';
+import {
+  EVENT_LOG_PERIODS, getEventLogDateRange, formatEventLogDateTime, validateEventLogCustomRange,
+  type EventLogPeriod, type EventLogDateRange,
+} from '../utils/eventLogDateRange';
 
 const commonActions = [
   '',
@@ -41,6 +45,8 @@ const commonEntityTypes = [
 export function AuditLogPage() {
   const [items, setItems] = useState<AuditLogItem[]>([]);
   const [selected, setSelected] = useState<AuditLogItem | null>(null);
+  const [period, setPeriod] = useState<EventLogPeriod>('TODAY');
+  const [effectiveRange, setEffectiveRange] = useState(() => getEventLogDateRange('TODAY', new Date()));
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [action, setAction] = useState('');
@@ -49,27 +55,64 @@ export function AuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const query = useMemo(
-    () => ({ dateFrom, dateTo, action, entityType, search }),
-    [dateFrom, dateTo, action, entityType, search],
-  );
+  const initialSearchStarted = useRef(false);
+  const mounted = useRef(false);
+  const requestId = useRef(0);
+  const custom = useMemo(() => validateEventLogCustomRange(dateFrom, dateTo, effectiveRange), [dateFrom, dateTo, effectiveRange]);
+  const dateError = period === 'CUSTOM' ? custom.error : null;
 
   useEffect(() => {
-    void loadAuditLogs();
-  }, [query]);
+    mounted.current = true;
+    // StrictMode replays effects. Reuse the intended initial request rather than
+    // issuing a second search; its result can still update the mounted page.
+    if (!initialSearchStarted.current) {
+      initialSearchStarted.current = true;
+      void loadAuditLogs(effectiveRange, { action: '', entityType: '', search: '' });
+    }
+    return () => { mounted.current = false; };
+  }, []);
 
-  async function loadAuditLogs() {
+  async function loadAuditLogs(range: EventLogDateRange, filters: AuditLogQuery) {
+    const currentRequest = ++requestId.current;
     setLoading(true);
     setError(null);
-
     try {
-      const response = await getAuditLogs(query);
-      setItems(response.items);
+      const response = await getAuditLogs({ ...filters, dateFrom: range.start, dateTo: range.end });
+      if (mounted.current && currentRequest === requestId.current) setItems(response.items);
     } catch {
-      setError('Unable to load audit logs. Please try again.');
+      if (mounted.current && currentRequest === requestId.current) setError('Unable to load audit logs. Please try again.');
     } finally {
-      setLoading(false);
+      if (mounted.current && currentRequest === requestId.current) setLoading(false);
     }
+  }
+
+  function selectPeriod(next: EventLogPeriod) {
+    if (next === 'CUSTOM') {
+      setDateFrom(formatEventLogDateTime(effectiveRange.start));
+      setDateTo(formatEventLogDateTime(effectiveRange.end));
+    } else {
+      setEffectiveRange(getEventLogDateRange(next, new Date()));
+    }
+    setPeriod(next);
+  }
+
+  function searchLogs() {
+    const range = period === 'CUSTOM' ? custom.range : getEventLogDateRange(period, new Date());
+    if (!range) return;
+    setEffectiveRange(range);
+    void loadAuditLogs(range, { action, entityType, search });
+  }
+
+  function resetFilters() {
+    const range = getEventLogDateRange('TODAY', new Date());
+    setPeriod('TODAY');
+    setDateFrom('');
+    setDateTo('');
+    setAction('');
+    setEntityType('');
+    setSearch('');
+    setEffectiveRange(range);
+    void loadAuditLogs(range, { action: '', entityType: '', search: '' });
   }
 
   return (
@@ -81,15 +124,29 @@ export function AuditLogPage() {
         </div>
       </div>
 
-      <div style={filterCardStyle}>
+      <form style={filterCardStyle} noValidate onSubmit={(event) => { event.preventDefault(); searchLogs(); }} aria-label="Event log filters">
         <label style={labelStyle}>
-          Date from
-          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} style={inputStyle} />
+          Date range
+          <select title="Mountain Time (America/Edmonton)" value={period} onChange={(event) => selectPeriod(event.target.value as EventLogPeriod)} style={inputStyle}>
+            {EVENT_LOG_PERIODS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+          </select>
         </label>
-        <label style={labelStyle}>
-          Date to
-          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} style={inputStyle} />
-        </label>
+        {period === 'CUSTOM' ? (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <p id="event-log-timezone" style={subtitleStyle}>Mountain Time (America/Edmonton). Repeated fall-back times use the first occurrence when edited.</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
+              <label style={labelStyle}>
+                Start date/time
+                <input type="datetime-local" step="0.001" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} style={inputStyle} aria-describedby="event-log-timezone event-log-date-error" aria-invalid={Boolean(dateError)} />
+              </label>
+              <label style={labelStyle}>
+                End date/time
+                <input type="datetime-local" step="0.001" value={dateTo} onChange={(event) => setDateTo(event.target.value)} style={inputStyle} aria-describedby="event-log-timezone event-log-date-error" aria-invalid={Boolean(dateError)} />
+              </label>
+            </div>
+            {dateError ? <p id="event-log-date-error" role="alert" style={{ color: '#991b1b' }}>{dateError}</p> : null}
+          </div>
+        ) : null}
         <label style={labelStyle}>
           Action
           <select value={action} onChange={(event) => setAction(event.target.value)} style={inputStyle}>
@@ -115,15 +172,19 @@ export function AuditLogPage() {
             style={inputStyle}
           />
         </label>
-      </div>
+        <div style={{ display: 'flex', alignItems: 'end', gap: 8 }}>
+          <button type="submit" disabled={loading || Boolean(dateError)} style={filterButtonStyle}>Search</button>
+          <button type="button" onClick={resetFilters} style={filterButtonStyle}>Reset</button>
+        </div>
+      </form>
 
       {error ? <div style={errorStyle}>{error}</div> : null}
 
       <div style={cardStyle}>
         {loading ? (
           <div style={emptyStyle}>Loading audit logs...</div>
-        ) : items.length === 0 ? (
-          <div style={emptyStyle}>No audit logs found.</div>
+        ) : error ? null : items.length === 0 ? (
+          <div style={{ ...emptyStyle, fontSize: 20, fontWeight: 700 }}>No Events Found</div>
         ) : (
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
@@ -219,8 +280,9 @@ const headerStyle: CSSProperties = { display: 'flex', justifyContent: 'space-bet
 const titleStyle: CSSProperties = { margin: 0, color: '#0f172a' };
 const subtitleStyle: CSSProperties = { margin: '8px 0 0', color: '#64748b' };
 const filterCardStyle: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff', padding: 16, marginBottom: 16 };
-const labelStyle: CSSProperties = { display: 'grid', gap: 6, fontSize: 13, fontWeight: 700, color: '#334155' };
-const inputStyle: CSSProperties = { border: '1px solid #cbd5e1', borderRadius: 8, padding: '9px 10px', fontSize: 14, background: '#fff' };
+const labelStyle: CSSProperties = { minWidth: 0, display: 'grid', gap: 6, fontSize: 13, fontWeight: 700, color: '#334155' };
+const inputStyle: CSSProperties = { minWidth: 0, width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: 8, padding: '9px 10px', fontSize: 14, background: '#fff' };
+const filterButtonStyle: CSSProperties = { ...inputStyle, width: 'auto', cursor: 'pointer', fontWeight: 700 };
 const cardStyle: CSSProperties = { border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff', overflow: 'hidden' };
 const tableWrapStyle: CSSProperties = { overflowX: 'auto' };
 const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse' };

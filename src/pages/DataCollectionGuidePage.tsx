@@ -1,3 +1,4 @@
+import { escapeCsvValue } from '../utils/csv';
 import { PageHeader } from '../components/PageHeader';
 import { Link } from 'react-router-dom';
 
@@ -143,7 +144,7 @@ const templateColumns = [
 export default function DataCollectionGuidePage() {
   function downloadTemplate() {
     const rows = [templateColumns, ...templateRows];
-    const csv = rows.map((row) => row.map(escapeCSV).join(',')).join('\n');
+    const csv = rows.map((row) => row.map((value) => escapeCsvValue(value)).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -166,7 +167,7 @@ export default function DataCollectionGuidePage() {
             Download SME Data Template
           </button>
           <Link to="/input-data" style={secondaryLinkStyle}>Go to Input Data</Link>
-          <Link to="/metrics-summary" style={secondaryLinkStyle}>View Calculation Review</Link>
+          <Link to="/metrics-summary" style={secondaryLinkStyle}>View Calculation Results</Link>
         </div>
       </section>
 
@@ -267,7 +268,7 @@ export default function DataCollectionGuidePage() {
       <section style={calloutStyle}>
         <h2 style={sectionTitleStyle}>Ready to Add Data?</h2>
         <p style={bodyTextStyle}>
-          Calculation Review shows calculated emissions, records requiring review, tracked metrics, and data readiness.
+          Calculation Results shows calculated emissions, records needing attention, tracked metrics, and data readiness.
           Reports turn reviewed calculations into a polished output for sharing.
         </p>
         <div style={actionRowStyle}>
@@ -301,11 +302,6 @@ function ExampleRow({
       {note ? <span style={mutedTextStyle}>{note}</span> : null}
     </div>
   );
-}
-
-function escapeCSV(value: unknown) {
-  const text = String(value ?? '');
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 const pageStyle: React.CSSProperties = {

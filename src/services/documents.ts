@@ -176,40 +176,55 @@ export async function calculateFileSha256(file: File) {
     .join('');
 }
 
-export async function getDocuments() {
-  const response = await apiFetch<DocumentListResponse>('/documents');
+export type DocumentCollectionResponse = { items: DocumentItem[]; total: number };
+
+// Review Data owns the complete collection (recent three / expand all), not a server page.
+export async function getDocuments(): Promise<DocumentCollectionResponse> {
   const organizationId = getOrganizationId(getCurrentUser());
+  if (!organizationId) return { items: [], total: 0 };
 
-  if (!organizationId) {
-    return {
-      ...response,
-      items: [],
-      total: 0,
-      totalPages: 1,
-    };
+  const itemsById = new Map<string, DocumentItem>();
+  let pageSize: number | undefined;
+  // Explicitly fail rather than silently truncate or follow inconsistent metadata forever.
+  const maxPages = 1000;
+  for (let page = 1; page <= maxPages; page += 1) {
+    if (getOrganizationId(getCurrentUser()) !== organizationId) {
+      throw new Error('The workspace changed. Please reload input sources.');
+    }
+    const query = page === 1 ? '' : `?page=${page}&pageSize=${pageSize}`;
+    const response = await apiFetch<DocumentListResponse>(`/documents${query}`);
+    if (getOrganizationId(getCurrentUser()) !== organizationId) {
+      throw new Error('The workspace changed. Please reload input sources.');
+    }
+    const { total, totalPages } = response;
+    if (!Array.isArray(response.items) || response.page !== page ||
+        !Number.isSafeInteger(total) || total < 0 ||
+        !Number.isSafeInteger(response.pageSize) || response.pageSize < 1 || response.pageSize > 100 ||
+        (pageSize !== undefined && response.pageSize !== pageSize) ||
+        !Number.isSafeInteger(totalPages) || totalPages < 0 ||
+        (total === 0 ? totalPages > 1 : totalPages !== Math.ceil(total / response.pageSize)) ||
+        response.items.length > response.pageSize) {
+      throw new Error('Input source pagination was inconsistent. Please try again.');
+    }
+    pageSize = response.pageSize;
+    const hasOrganizationScopedItems = response.items.some((item) => 'organizationId' in item);
+    for (const item of response.items) {
+      // Preserve the existing defensive tenant filter and the server's authoritative total.
+      if (hasOrganizationScopedItems && item.organizationId !== organizationId) continue;
+      if (!item.id) throw new Error('An input source had no document ID. Please try again.');
+      if (!itemsById.has(item.id)) itemsById.set(item.id, item);
+    }
+    if (page >= totalPages) {
+      if (itemsById.size !== total) {
+        throw new Error('The input source collection changed or was incomplete. Please try again.');
+      }
+      return { items: [...itemsById.values()], total };
+    }
+    if (response.items.length === 0) {
+      throw new Error('An input source page was missing. Please try again.');
+    }
   }
-
-  const hasOrganizationScopedItems = (response.items ?? []).some(
-    (item) => 'organizationId' in item,
-  );
-  if (!hasOrganizationScopedItems) return response;
-
-  const items = (response.items ?? []).filter(
-    (item) => item.organizationId === organizationId,
-  );
-
-  return {
-    ...response,
-    items,
-    total: Math.min(Number(response.total ?? items.length), items.length),
-    totalPages: Math.max(
-      1,
-      Math.ceil(
-        items.length /
-          Math.max(1, Number(response.pageSize ?? (items.length || 1))),
-      ),
-    ),
-  };
+  throw new Error('The input source collection exceeded the page limit. Please try again.');
 }
 
 export async function deleteDocument(id: string) {

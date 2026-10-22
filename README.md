@@ -3,7 +3,7 @@
 React + Vite frontend for CarbonLite.
 
 This app provides document upload, extraction preview, validation, activity records,
-Calculation Review, reporting, and pilot demo workflows.
+Calculation Results, reporting, and pilot demo workflows.
 
 ## Tech Stack
 
@@ -85,7 +85,7 @@ The smoke workflow verifies:
 - Reset Demo Data completes
 - golden dataset import creates 10 records
 - Water is tracked-only and excluded from GHG totals
-- Calculation Review totals are Scope 1 `3,313`, Scope 2 `33,247`,
+- Calculation Results totals are Scope 1 `3,313`, Scope 2 `33,247`,
   Scope 3 `725`, and Total `37,285` kgCO2e
 - PDF and CSV exports download successfully
 - pilot-facing CSV avoids internal database ids
@@ -120,7 +120,7 @@ reports, or export files. It verifies the production pilot reviewer workflow:
 - pilot reviewer login succeeds
 - pilot reviewer banner appears
 - Data Records loads with the 10 golden sample records
-- Calculation Review shows `37,285 kgCO2e`
+- Calculation Results shows `37,285 kgCO2e`
 - Reports page loads
 - Factors page is read-only
 - Admin menu is hidden for Pilot Reviewer accounts

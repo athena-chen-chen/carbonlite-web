@@ -88,10 +88,10 @@ export function buildExecutiveSummaryPdf(canonicalData: CanonicalReportData): js
         `${calculationCoverage} (${coverageCounts.calculatedRecords} of ${coverageCounts.eligibleEmissionBearingRecords} eligible emissions records calculated)`,
       ],
       ['Tracked Metrics', primarySkippedReasons.trackedOnly],
-      [pdfSourceReviewSummary.availability === 'STRUCTURED_REVIEW_AVAILABLE' ? 'Structured Source Review' : 'Source Review', formatExecutiveSourceReviewStatus(pdfSourceReviewSummary)],
+      [pdfSourceReviewSummary.availability === 'STRUCTURED_REVIEW_AVAILABLE' ? 'Structured Source Data Status' : 'Source Data Status', formatExecutiveSourceReviewStatus(pdfSourceReviewSummary)],
       [
-        'Factor Review',
-        `${factorReviewCount} of ${conversionFactorsUsed.length} unique emission ${conversionFactorsUsed.length === 1 ? 'factor' : 'factors'} require review before formal reporting.`,
+        'Factor Validation',
+        `${factorReviewCount} of ${conversionFactorsUsed.length} unique emission ${conversionFactorsUsed.length === 1 ? 'factor' : 'factors'} need attention before formal reporting.`,
       ],
       ['Boundary', formatReadinessStatus(getReadinessItemStatus(reportingReadinessAssessment, 'boundary'))],
       ['Reviewer', documentControl.reviewStatus],
@@ -161,7 +161,7 @@ export function buildExecutiveSummaryPdf(canonicalData: CanonicalReportData): js
     nextY,
     estimatePdfTableSectionHeight(Math.max(1, keyPriorities.length), 6.6),
   );
-  drawPdfSectionTitle(doc, 'Key Review Priorities', nextY);
+  drawPdfSectionTitle(doc, 'Key Attention Priorities', nextY);
   autoTablePdf(doc, {
     startY: nextY + EXECUTIVE_SECTION_TITLE_TO_TABLE_MM,
     head: [['Priority', 'Action']],

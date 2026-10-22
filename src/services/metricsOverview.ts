@@ -178,6 +178,7 @@ function firstFiniteNumber(...values: unknown[]) {
 
 export async function loadMetricsOverview(options?: {
   recalculate?: boolean;
+  requireSourceReviewRows?: boolean;
   dateFrom?: string;
   dateTo?: string;
   selectedRecordIds?: string[];
@@ -321,6 +322,7 @@ export async function loadMetricsOverview(options?: {
     activities,
     calculationDetails: finalCalculationDetails,
     selectedDocumentIds,
+    required: options?.requireSourceReviewRows,
   });
 
   return {
@@ -361,6 +363,7 @@ async function loadSourceReviewRows(input: {
   activities: ActivityDataItem[];
   calculationDetails: CalculationAuditDetail[];
   selectedDocumentIds: string[];
+  required?: boolean;
 }) {
   const sourceDocumentIds = uniquePresentStrings([
     ...input.selectedDocumentIds,
@@ -373,7 +376,8 @@ async function loadSourceReviewRows(input: {
   try {
     const response = await getSpreadsheetReviewRows({ sourceDocumentIds });
     return response.items ?? [];
-  } catch {
+  } catch (error) {
+    if (input.required) throw error;
     return [];
   }
 }

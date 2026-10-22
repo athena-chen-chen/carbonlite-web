@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as XLSX from 'xlsx';
@@ -226,7 +228,7 @@ describe('ExcelInputTable empty activity row UX', () => {
         },
       ]);
     vi.mocked(getFacilities).mockResolvedValue([]);
-    vi.mocked(createActivityData).mockResolvedValue({ id: 'activity-1' } as any);
+    vi.mocked(createActivityData).mockImplementation(async (input) => ({ ...input, id: 'activity-1' } as any));
     vi.mocked(updateActivityData).mockResolvedValue({ id: 'activity-1' } as any);
     vi.mocked(saveSpreadsheetReviewRows).mockImplementation(async (input) => ({
       savedCount: input.rows.length,
@@ -371,6 +373,66 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.getByText('2 records found')).toBeInTheDocument();
     expect(screen.getByText('0 records missing date')).toBeInTheDocument();
     expect(screen.getByText('1 tracked metric')).toBeInTheDocument();
+  });
+
+  it.each(['1900', '1904'])('F22 imports the real %s XLSX fixture with correct dates and backend parity', async system => {
+    const fixtureRoot = resolve('test-fixtures/xlsx-date-systems');
+    const expected = JSON.parse(readFileSync(join(fixtureRoot, 'expected.json'), 'utf8'));
+    const bytes = readFileSync(join(fixtureRoot, `dates-${system}.xlsx`));
+    const workbook = XLSX.read(bytes, { type: 'buffer', cellDates: false });
+    expect(workbook.Workbook?.WBProps?.date1904).toBe(system === '1904');
+    expect(workbook.Sheets.Dates.B2.v).toBe(system === '1904' ? 44575 : 46037);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([2022, 2026].map(sourceYear => ({
+      id: `f22-electricity-${sourceYear}`, name: `Synthetic Alberta ${sourceYear}`, type: 'EMISSION',
+      activityType: 'ELECTRICITY', inputUnit: 'kWh', unit: 'kWh', factorValue: 0.53,
+      resultUnit: 'kgCO2e/kWh', sourceAuthority: 'Demo / Placeholder', sourceYear,
+      jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta',
+      isSystemDefault: true, isDefault: true, verified: false,
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    })));
+    renderTable('spreadsheet');
+    const file = new File([new Uint8Array(bytes)], `dates-${system}.xlsx`, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
+    expect(await screen.findByText('9 records found')).toBeInTheDocument();
+    expect(screen.getByText('0 records missing date')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
+    const payload = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0];
+    const actual = payload.rows.map(row => Object.fromEntries(Object.keys(expected[0]).map(key => [key, (row as any)[key]])));
+    expect(actual).toEqual(expected);
+    expect(payload.rows.find(row => row.sourceReference === 'modern')).toMatchObject({
+      recordDate: '2026-01-15', matchedFactorId: 'f22-electricity-2026', matchedFactorSourceYear: 2026,
+    });
+    // The cross-repository runner supplies output from the actual backend parser
+    // for these same bytes. Ordinary frontend runs still use the independent oracle.
+    if (process.env.F22_BACKEND_RESULTS) {
+      const backend = JSON.parse(readFileSync(process.env.F22_BACKEND_RESULTS, 'utf8'));
+      expect(actual).toEqual(backend[system]);
+    }
+  });
+
+  it('F22 preserves dates and Gasoline calculation in the actual Field Mapping workbook', async () => {
+    const bytes = readFileSync(resolve('apps/web-e2e/fixtures/carbonlite_field_mapping_original.xlsx'));
+    renderTable('spreadsheet');
+    const file = new File([new Uint8Array(bytes)], 'carbonlite_field_mapping_test.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
+    expect(await screen.findByText('5 records found')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
+    const rows = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows;
+    const dates = rows.map(row => row.recordDate);
+    expect(dates).toEqual(['2026-01-15', '2026-01-31', '2026-02-05', '2026-02-10', '2026-02-18']);
+    expect(rows.find(row => row.activityType === 'GASOLINE')).toMatchObject({
+      quantity: 350, unit: 'L', calculatedEmissionsKgCO2e: 808.5, scope: 'SCOPE_1',
+    });
+    if (process.env.F22_BACKEND_RESULTS) {
+      const backend = JSON.parse(readFileSync(process.env.F22_BACKEND_RESULTS, 'utf8'));
+      expect(dates).toEqual(backend.fieldMappingDates);
+    }
   });
 
   it('keeps Save All available for mixed-quality spreadsheet rows and preserves review issues', async () => {
@@ -772,24 +834,92 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.queryByText('No matching factor')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Remove row/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save All' })).toBeDisabled();
-    expect(within(row).getByText('Scope')).toBeInTheDocument();
-    expect(
-      within(row).getByText('GHG Protocol category inferred from activity type.'),
-    ).toBeInTheDocument();
-    expect(within(row).getByText('Factor Status')).toBeInTheDocument();
-    expect(
-      within(row).getByText('Whether this record is ready for emissions calculation.'),
-    ).toBeInTheDocument();
-    expect(within(row).getByText('Matched Factor')).toBeInTheDocument();
-    expect(
-      within(row).getByText('Conversion factor matched by type, unit, province, and year.'),
-    ).toBeInTheDocument();
-    expect(within(row).getByText('Report Treatment')).toBeInTheDocument();
-    expect(
-      within(row).getByText('How this row will affect totals after saving.'),
-    ).toBeInTheDocument();
+    expect(within(row).getByRole('region', { name: 'Calculation preview' })).toBeInTheDocument();
+    for (const title of ['Scope', 'Factor Status', 'Matched Factor', 'Report Treatment']) {
+      expect(within(row).queryByText(title, { exact: true })).not.toBeInTheDocument();
+    }
     expect(screen.queryByText('Import Review Summary')).not.toBeInTheDocument();
     expect(screen.queryByText(/Bulk set province for selected imported rows/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a compact Diesel preview and one warning, with provenance disclosed on demand', async () => {
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([{
+      id: 'diesel-combustion', name: 'Diesel combustion', type: 'EMISSION', activityType: 'DIESEL',
+      unit: 'L', inputUnit: 'L', factorValue: 2.68, resultUnit: 'kgCO2e', sourceYear: 2025,
+      jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', sourceAuthority: 'CarbonLite System Defaults',
+      sourceDocument: 'Diesel methodology', assumptions: 'Review combustion assumptions before formal reporting.',
+      verificationStatus: 'INTERNAL_REVIEW_REQUIRED', confidenceLevel: 'MEDIUM', isSystemDefault: true, isDefault: true,
+    } as any]);
+    renderTable();
+    const row = await addEmptyRow();
+    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'DIESEL');
+    await userEvent.selectOptions(within(row).getByLabelText('Province'), 'Alberta');
+    await userEvent.type(within(row).getByLabelText('Quantity'), '100');
+    const preview = within(row).getByRole('region', { name: 'Calculation preview' });
+    expect(within(preview).getByText('Scope 1')).toBeVisible();
+    expect(within(preview).getByText('Estimated emissions: 268 kg CO₂e')).toBeVisible();
+    expect(within(preview).getByText('Diesel combustion')).toBeVisible();
+    expect(within(preview).getByText(/Factor:.*2025/)).toBeVisible();
+    expect(within(preview).getAllByText('Factor needs validation')).toHaveLength(1);
+    expect(within(preview).getByText('Included in GHG total')).toBeVisible();
+    expect(within(preview).getByText('Ready to save')).toBeVisible();
+    expect(within(row).queryByText('Calculated', { exact: true })).not.toBeInTheDocument();
+    for (const title of ['Factor Status', 'Matched Factor', 'Report Treatment']) {
+      expect(within(row).queryByText(title, { exact: true })).not.toBeInTheDocument();
+    }
+    const provenance = within(preview).getByText('Source: CarbonLite System Defaults');
+    expect(provenance).not.toBeVisible();
+    expect(within(preview).getByText('Internal Review Required')).not.toBeVisible();
+    expect(within(preview).getByText('Medium Confidence')).not.toBeVisible();
+    expect(within(preview).getByText('Source document: Diesel methodology')).not.toBeVisible();
+    expect(createActivityData).not.toHaveBeenCalled();
+    expect(updateActivityData).not.toHaveBeenCalled();
+    await userEvent.click(within(preview).getByText('View calculation details'));
+    expect(provenance).toBeVisible();
+    expect(within(preview).getByText('Source document: Diesel methodology')).toBeVisible();
+    expect(within(preview).getByText(/Factor value: 2.68 kg CO₂e\/L/)).toBeVisible();
+    expect(within(preview).getByText('Internal Review Required')).toBeVisible();
+    expect(within(preview).getByText('Review combustion assumptions before formal reporting.')).toBeVisible();
+    expect(createActivityData).not.toHaveBeenCalled();
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    expect(await within(row).findByRole('status', { name: 'Manual entry saved' })).toBeVisible();
+    expect(createActivityData).toHaveBeenCalledTimes(1);
+    expect(createActivityData).toHaveBeenCalledWith(expect.objectContaining({
+      quantity: 100, unit: 'L', scope: 'SCOPE_1', calculatedEmissionsKgCO2e: 268,
+      matchingStatus: 'MATCHED', calculationStatus: 'CALCULATED', reportTreatment: 'INCLUDED', matchedFactorValue: 2.68,
+    }));
+  });
+
+  it('shows Missing Factor without a valid emissions estimate', async () => {
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([]);
+    renderTable();
+    const row = await addEmptyRow();
+    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'GASOLINE');
+    await userEvent.type(within(row).getByLabelText('Quantity'), '50');
+    const preview = within(row).getByRole('region', { name: 'Calculation preview' });
+    expect(within(preview).getByText('Missing Factor')).toBeVisible();
+    expect(within(preview).getByText('Not included in GHG total')).toBeVisible();
+    expect(within(preview).queryByText('Ready to save')).not.toBeInTheDocument();
+    expect(within(preview).queryByText(/Estimated emissions:.*kg/)).not.toBeInTheDocument();
+    expect(createActivityData).not.toHaveBeenCalled();
+  });
+
+  it('withholds a valid estimate for invalid quantities and missing dates without changing factor matching', async () => {
+    renderTable();
+    const row = await addEmptyRow();
+    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'DIESEL');
+    fireEvent.change(within(row).getByLabelText('Quantity'), { target: { value: '-1' } });
+    const preview = within(row).getByRole('region', { name: 'Calculation preview' });
+    expect(within(preview).getByText('Quantity must be greater than 0')).toBeVisible();
+    expect(within(preview).getByText('Diesel factor')).toBeVisible();
+    expect(within(preview).queryByText(/Estimated emissions:.*kg/)).not.toBeInTheDocument();
+    fireEvent.change(within(row).getByLabelText('Quantity'), { target: { value: '100' } });
+    fireEvent.change(within(row).getByLabelText('Date'), { target: { value: '' } });
+    expect(within(preview).getByText('Missing date')).toBeVisible();
+    expect(within(preview).queryByText('Ready to save')).not.toBeInTheDocument();
+    expect(within(preview).queryByText(/Estimated emissions:.*kg/)).not.toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    expect(createActivityData).not.toHaveBeenCalled();
   });
 
   it('sets the default unit when activity type changes in manual entry', async () => {
@@ -853,7 +983,7 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '3');
     await waitFor(() => {
-      expect(within(row).getByText('Calculated')).toBeInTheDocument();
+      expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     });
     expect(unitInput).toHaveValue('GJ');
 
@@ -921,9 +1051,8 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.selectOptions(within(row).getByRole('combobox', { name: /Activity type/i }), 'WATER');
 
     expect(within(row).getAllByText('Tracked Metric').length).toBeGreaterThan(0);
-    expect(within(row).getAllByText('Not Emissions Factor Required').length).toBeGreaterThan(0);
-    expect(within(row).getAllByText('Tracked Metric').length).toBeGreaterThan(1);
-    expect(within(row).getByText('Excluded from GHG total.')).toBeInTheDocument();
+    expect(within(row).getAllByText('Tracked Metric')).toHaveLength(1);
+    expect(within(row).getByText('Not included in GHG total')).toBeInTheDocument();
     expect(within(row).queryByText('Included in GHG Total')).not.toBeInTheDocument();
     expect(within(row).queryByText('Included in GHG total.')).not.toBeInTheDocument();
   });
@@ -954,7 +1083,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
     expect(within(row).getByText('Saved · Tracked Metric')).toBeInTheDocument();
     expect(within(row).getAllByText('Tracked Metric').length).toBeGreaterThan(0);
-    expect(within(row).getByText('Excluded from GHG total.')).toBeInTheDocument();
+    expect(within(row).getByText('Not included in GHG total')).toBeInTheDocument();
     expect(within(row).queryByText('Included in GHG total.')).not.toBeInTheDocument();
   });
 
@@ -983,10 +1112,10 @@ describe('ExcelInputTable empty activity row UX', () => {
       );
     }
 
-    expect(within(row).getByText('Scope')).toBeInTheDocument();
+    expect(within(row).getByRole('region', { name: 'Calculation preview' })).toBeInTheDocument();
     expect(within(row).getByText(scopeLabel)).toBeInTheDocument();
-    expect(within(row).getByText('Calculated')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Ready to save')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
     expect(within(row).getByText(factorName)).toBeInTheDocument();
   });
 
@@ -1011,8 +1140,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(provinceSelect).queryByRole('option', { name: 'Nunavut' })).not.toBeInTheDocument();
     expect(within(row).getByText('Missing Province')).toBeInTheDocument();
     expect(within(row).getByText('Select province to calculate.')).toBeInTheDocument();
-    expect(within(row).getByText('Not selected')).toBeInTheDocument();
-    expect(within(row).getByText('Province required')).toBeInTheDocument();
+    expect(within(row).getByText('Not included in GHG total')).toBeInTheDocument();
     expect(within(row).getByText('Current pilot coverage supports AB, BC, and ON.')).toBeInTheDocument();
     expect(
       screen.queryByText(
@@ -1021,8 +1149,8 @@ describe('ExcelInputTable empty activity row UX', () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Import Review Summary')).not.toBeInTheDocument();
     expect(screen.queryByText(/Bulk set province for selected imported rows/i)).not.toBeInTheDocument();
-    expect(within(row).queryByText(/Electricity emissions require a province-specific factor/i)).not.toBeInTheDocument();
-    expect(within(row).getByText('Excluded')).toBeInTheDocument();
+    expect(within(row).getByText(/Electricity emissions require a province-specific factor/i)).not.toBeVisible();
+    expect(within(row).getByText('Not included in GHG total')).toBeInTheDocument();
     expect(within(row).getByText('Province required before calculation.')).toBeInTheDocument();
   });
 
@@ -1110,11 +1238,11 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
 
     await waitFor(() => {
-      expect(within(row).getByText('Calculated')).toBeInTheDocument();
+      expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     });
     expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
     expect(within(row).getByText('Scope 2')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Province')).not.toBeInTheDocument();
   });
 
@@ -1139,11 +1267,11 @@ describe('ExcelInputTable empty activity row UX', () => {
       province,
     );
 
-    expect(within(row).getByText('Calculated')).toBeInTheDocument();
+    expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     expect(within(row).getByText(factorName)).toBeInTheDocument();
     expect(within(row).getAllByText(/Using latest available factor year: 2025/i).length).toBeGreaterThan(0);
     expect(within(row).getByText(emissionsText)).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
@@ -1157,11 +1285,11 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Calculated')).toBeInTheDocument();
+    expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta - 2025')).toBeInTheDocument();
     expect(within(row).getAllByText(/Using latest available factor year: 2025/i).length).toBeGreaterThan(0);
     expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Not included in GHG total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(row).queryByText('No factor found')).not.toBeInTheDocument();
   });
@@ -1215,10 +1343,10 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Calculated')).toBeInTheDocument();
+    expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: 53 kg CO₂e')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
     expect(within(row).queryByText('No factor found')).not.toBeInTheDocument();
   });
@@ -1258,10 +1386,10 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Calculated')).toBeInTheDocument();
+    expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
     expect(within(row).getByText('Electricity - Alberta - 2025')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: Waiting for quantity')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Not included in GHG total')).toBeInTheDocument();
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
@@ -1337,12 +1465,12 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '100');
 
     await waitFor(() => {
-      expect(within(row).getByText('Calculated')).toBeInTheDocument();
+      expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     });
     expect(within(row).queryByRole('combobox', { name: /Province required for electricity records/i })).not.toBeInTheDocument();
     expect(within(row).getByText('Ground Transport - Canada - 2025')).toBeInTheDocument();
     expect(within(row).getByText('Scope 3')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: 20 kg CO₂e')).toBeInTheDocument();
   });
 
@@ -1360,11 +1488,11 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.selectOptions(getUnitControl(row), 'GJ');
 
     await waitFor(() => {
-      expect(within(row).getByText('Calculated')).toBeInTheDocument();
+      expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     });
     expect(within(row).getByText('Natural Gas - Canada Generic')).toBeInTheDocument();
     expect(within(row).getByText('Scope 1')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
+    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
     expect(within(row).getByText('Estimated emissions: 148.32 kg CO₂e')).toBeInTheDocument();
     expect(within(row).queryByText('Unit Mismatch')).not.toBeInTheDocument();
 
@@ -1390,7 +1518,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
   });
 
-  it('saves electricity rows missing province as requiring review', async () => {
+  it('saves electricity rows missing province as needing attention', async () => {
     renderTable();
 
     const row = await addEmptyRow();
@@ -1457,9 +1585,134 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
     expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
     expect(within(row).queryByRole('button', { name: /Remove row 1/i })).not.toBeInTheDocument();
-    expect(within(row).getByRole('button', { name: 'Add Another Record' })).toBeInTheDocument();
-    expect(within(row).getByRole('button', { name: 'View in Data Records' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Add another entry' })).toBeInTheDocument();
+    expect(within(row).getByRole('link', { name: 'View in Data Records' })).toBeInTheDocument();
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms the persisted gasoline result and links to the saved record, then clears only that form', async () => {
+    vi.mocked(createActivityData).mockImplementationOnce(async (input) => ({
+      ...input, id: 'gasoline-50', calculatedEmissionsKgCO2e: '115.50', calculationStatus: 'CALCULATED',
+    } as any));
+    renderTable();
+    const row = await addEmptyRow();
+    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'GASOLINE');
+    await userEvent.type(within(row).getByLabelText('Quantity'), '50');
+    expect(within(row).getByRole('region', { name: 'Calculation preview' })).toHaveTextContent('Scope 1');
+    expect(within(row).getByText('Estimated emissions: 115.50 kg CO₂e')).toBeVisible();
+    expect(within(row).queryByText('Calculated', { exact: true })).not.toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    const confirmation = await within(row).findByRole('status', { name: 'Manual entry saved' });
+    expect(within(confirmation).getByText('Gasoline')).toBeInTheDocument();
+    expect(within(confirmation).getByText('50 L')).toBeInTheDocument();
+    expect(within(confirmation).getByText('Canada')).toBeInTheDocument();
+    expect(within(confirmation).getByText('Calculated')).toBeInTheDocument();
+    expect(within(confirmation).getByText('115.50 kgCO2e')).toBeInTheDocument();
+    expect(within(confirmation).getByRole('link', { name: 'View in Data Records' }))
+      .toHaveAttribute('href', '/activity-records?recordId=gasoline-50');
+    expect(createActivityData).toHaveBeenCalledWith(expect.objectContaining({
+      quantity: 50, unit: 'L', scope: 'SCOPE_1', calculatedEmissionsKgCO2e: 115.5,
+    }));
+    expect(within(row).getByLabelText('Quantity')).toHaveValue(50);
+    const otherDraft = await addValidDieselRow('200');
+    await userEvent.click(within(confirmation).getByRole('button', { name: 'Add another entry' }));
+    expect(screen.queryByRole('status', { name: 'Manual entry saved' })).not.toBeInTheDocument();
+    const cleanRow = await getActivityRow(1);
+    expect(within(cleanRow).getByLabelText('Quantity')).toHaveValue(null);
+    expect(within(cleanRow).getByLabelText('Activity Type')).toHaveValue('');
+    expect(within(otherDraft).getByLabelText('Quantity')).toHaveValue(200);
+    expect(createActivityData).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['MISSING_FACTOR', 'Needs Attention'], ['TRACKED_ONLY', 'Tracked Metric'], ['READY', 'Ready for Calculation'],
+  ])('shows persisted %s without inventing emissions', async (calculationStatus, label) => {
+    vi.mocked(createActivityData).mockImplementationOnce(async (input) => ({
+      ...input, id: 'pending-1', calculationStatus, matchingStatus: null, reportTreatment: null,
+      calculatedEmissionsKgCO2e: null, calculatedEmission: null,
+    } as any));
+    renderTable();
+    const row = await addValidDieselRow('100');
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    const confirmation = await within(row).findByRole('status', { name: 'Manual entry saved' });
+    expect(within(confirmation).getByText(label)).toBeInTheDocument();
+    expect(within(confirmation).queryByText(/kgCO2e/)).not.toBeInTheDocument();
+  });
+
+  it('preserves failed input and confirms only the eventual successful retry', async () => {
+    vi.mocked(createActivityData).mockRejectedValueOnce(new Error('API unavailable'));
+    renderTable();
+    const row = await addValidDieselRow('100');
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    await waitFor(() => expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeEnabled());
+    expect(screen.queryByRole('status', { name: 'Manual entry saved' })).not.toBeInTheDocument();
+    expect(within(row).getByLabelText('Quantity')).toHaveValue(100);
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    expect(await within(row).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
+    expect(createActivityData).toHaveBeenCalledTimes(2); // One rejection, one persisted record.
+  });
+
+  it('blocks repeated row saves and Save All while a row request is in flight', async () => {
+    let resolveSave!: (record: any) => void;
+    vi.mocked(createActivityData).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    renderTable();
+    const row = await addValidDieselRow('100');
+    const save = within(row).getByRole('button', { name: /Save row 1/i });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    fireEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    expect(createActivityData).toHaveBeenCalledTimes(1);
+    resolveSave({ ...vi.mocked(createActivityData).mock.calls[0][0], id: 'once' });
+    expect(await within(row).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
+    expect(screen.getAllByRole('status', { name: 'Manual entry saved' })).toHaveLength(1);
+    expect(createActivityData).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks repeated Save All and row saves during a batch request', async () => {
+    let resolveSave!: (record: any) => void;
+    vi.mocked(createActivityData).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    renderTable();
+    const row = await addValidDieselRow('100');
+    const saveAll = screen.getByRole('button', { name: 'Save All' });
+    fireEvent.click(saveAll);
+    fireEvent.click(saveAll);
+    fireEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    expect(createActivityData).toHaveBeenCalledTimes(1);
+    resolveSave({ ...vi.mocked(createActivityData).mock.calls[0][0], id: 'batch-once' });
+    expect(await within(row).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
+    expect(createActivityData).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a successful record saved if the summary refresh fails', async () => {
+    render(
+      <ToastProvider><AppDialogProvider>
+        <ExcelInputTable onSuccess={vi.fn().mockRejectedValue(new Error('Refresh unavailable'))} />
+      </AppDialogProvider></ToastProvider>,
+    );
+    const row = await addValidDieselRow('100');
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    expect(await within(row).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Entry saved' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
+    expect(createActivityData).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains successful Save All rows when a later request fails and skips them on retry', async () => {
+    vi.mocked(createActivityData)
+      .mockImplementationOnce(async (input) => ({ ...input, id: 'first-saved' } as any))
+      .mockRejectedValueOnce(new Error('API unavailable'));
+    renderTable();
+    const firstRow = await addValidDieselRow('100');
+    await addValidDieselRow('200');
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Unable to save records' });
+    expect(await within(firstRow).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
+    expect(createActivityData).toHaveBeenCalledTimes(2);
+    await userEvent.click(within(dialog).getByRole('button', { name: /OK|Close|Got it/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await waitFor(() => expect(screen.getAllByRole('status', { name: 'Manual entry saved' })).toHaveLength(2));
+    expect(createActivityData).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(createActivityData).mock.calls.map(([input]) => input.quantity)).toEqual([100, 200, 200]);
   });
 
   it('saves a valid spreadsheet row as an import source while preserving spreadsheet metadata', async () => {

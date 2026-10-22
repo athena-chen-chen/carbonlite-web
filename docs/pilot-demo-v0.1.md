@@ -57,7 +57,7 @@ The following pilot-demo workflows are expected to be stable in this freeze:
 - Manual Entry works for supported pilot activity types.
 - Import works for the golden pilot dataset.
 - Data Records loads and shows calculated, excluded, and tracked-only records.
-- Calculation Review loads totals, scope cards, data quality, source traceability, and calculation details.
+- Calculation Results loads totals, scope cards, data quality, source traceability, and calculation details.
 - PDF report export uses pilot-facing wording, factor traceability, source evidence, and tracked metrics.
 - CSV export uses pilot-facing columns, row numbers, raw numeric fields, and no internal database ids.
 - Reset Demo Data clears saved records and input-review staging data without deleting users, facilities, settings, or emission factors.
@@ -133,7 +133,7 @@ Use this checklist before each consultant or SME pilot-feedback session.
 - Verify Water is shown as tracked-only and excluded from GHG total.
 - Verify Manual Entry can save a supported record, such as Electricity + Alberta + kWh.
 - Verify Data Records loads and record details open without navigating unexpectedly.
-- Verify Calculation Review displays totals, data quality, included/excluded records, and calculation details.
+- Verify Calculation Results displays totals, data quality, included/excluded records, and calculation details.
 - Verify PDF export downloads and opens.
 - Verify CSV export downloads and opens in a spreadsheet.
 - Verify Factor Source, Factor Version, Verification, and Confidence display in reports.

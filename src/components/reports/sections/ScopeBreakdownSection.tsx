@@ -30,7 +30,7 @@ export function ScopeBreakdownSection({
   return (
     <>
       <p style={sectionHelperStyle}>
-        Scope totals include only successfully calculated records. Records requiring review are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
+        Scope totals include only successfully calculated records. Records needing attention are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
       </p>
       <div style={summaryGridStyle}>
         <Fact label="Scope 1" value={formatEmissionsWithUnit(scopeSummary.SCOPE_1)} />

@@ -186,6 +186,38 @@ try {
     factorValue: 15,
   });
 
+  // Confirmation retries and the golden import fixtures also require these
+  // factors. Keep the test baseline complete after an empty-database reset.
+  await upsertFactor({
+    id: 'e2e-factor-diesel-canada-2025',
+    name: 'Diesel - Canada - E2E',
+    activityType: 'DIESEL',
+    jurisdiction: 'Canada (Generic)',
+    region: 'Canada',
+    unit: 'L',
+    factorValue: 2.68,
+  });
+
+  await upsertFactor({
+    id: 'e2e-factor-gasoline-canada-2025',
+    name: 'Gasoline - Canada - E2E',
+    activityType: 'GASOLINE',
+    jurisdiction: 'Canada (Generic)',
+    region: 'Canada',
+    unit: 'L',
+    factorValue: 2.31,
+  });
+
+  await upsertFactor({
+    id: 'e2e-factor-air-travel-canada-2025',
+    name: 'Air travel - Canada - E2E',
+    activityType: 'AIR_TRAVEL',
+    jurisdiction: 'Canada (Generic)',
+    region: 'Canada',
+    unit: 'km',
+    factorValue: 0.115,
+  });
+
   await upsertFactor({
     id: 'e2e-factor-natural-gas-m3-2025',
     name: 'Natural Gas - Canada m3 - E2E',

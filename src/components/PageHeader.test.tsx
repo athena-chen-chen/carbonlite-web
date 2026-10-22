@@ -4,6 +4,14 @@ import { USER_WORKFLOW } from '../constants/userWorkflow';
 import { CARBONLITE_WORKFLOW, formatWorkflowStageLabel } from '../constants/carbonliteWorkflow';
 
 describe('interactive workflow presentation', () => {
+  it('names step four Calculation Results while retaining its calculation route', () => {
+    render(<PageHeader title="Calculation Results" />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Calculation Results' })).toBeInTheDocument();
+    expect(screen.getByText('Step 4 of 5 · Calculation Results')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText('Review emissions calculations, matched factors, and records needing attention.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Calculation Review' })).not.toBeInTheDocument();
+    expect(USER_WORKFLOW[3].route).toBe('/metrics-summary');
+  });
   it.each(USER_WORKFLOW.map((step, index) => ({ ...step, index })))('shows a concise accessible header for $title', ({ title, action, subtitle, index }) => {
     render(<PageHeader title={title} />);
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();

@@ -56,12 +56,12 @@ describe('optional provenance presentation', () => {
     expect(provenance.factorYear).toBe(2026); expect(provenance.sourceYear).toBe(2025);
     expect(factorProvenanceLines()).toEqual([]);
   });
-  it('uses the existing CSV Review Note column and preserves the column schema', () => {
+  it('uses the existing CSV Validation Note column and preserves the column schema', () => {
     const detail = { activityDataId: 'fixture', activityType: 'ELECTRICITY', activityQuantity: 980, activityUnit: 'kWh', status: 'CALCULATED', factorId: 'fixture-factor', factorValue: .53, calculatedEmissionsKgCO2e: 519.4, sourceAuthority: provenance.sourceAuthority, sourceDocument: provenance.sourceDocument };
     const plain = buildPilotCsvRows({ calculationDetails: [detail] } as never)[0];
     const richer = buildPilotCsvRows({ calculationDetails: [{ ...detail, factorProvenance: provenance }] } as never)[0];
     expect(Object.keys(richer)).toEqual(Object.keys(plain));
-    expect(richer['Review Note']).toContain('Applicability: Alberta Offset Project');
-    expect(richer['Review Note']).toContain('Source Document Version: 3.2');
+    expect(richer['Validation Note']).toContain('Applicability: Alberta Offset Project');
+    expect(richer['Validation Note']).toContain('Source Document Version: 3.2');
   });
 });

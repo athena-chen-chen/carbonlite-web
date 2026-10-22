@@ -35,7 +35,7 @@ test('pilot RC: live combined workspace preserves the frozen report total', asyn
   fs.writeFileSync('/private/tmp/task9-combined-report-visible.txt', await page.locator('body').innerText());
   for (const [label, filename] of [
     ['Executive Summary (PDF)', 'executive.pdf'],
-    ['Technical Review Package (PDF)', 'technical.pdf'],
+    ['Technical Emissions Report (PDF)', 'technical.pdf'],
     ['Data Export (CSV)', 'records.csv'],
   ]) {
     await page.getByRole('button', { name: 'Export reports', exact: true }).click();

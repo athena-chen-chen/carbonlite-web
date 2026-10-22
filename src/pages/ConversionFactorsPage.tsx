@@ -202,8 +202,8 @@ function formatPilotSourceAuthority(item: ConversionFactorItem) {
 function formatPilotSourceDocument(item: ConversionFactorItem) {
   const value = String(item.sourceDocument || item.sourceReference || '').trim();
   if (value) return value;
-  if (isPilotDefaultFactor(item)) return 'CarbonLite MVP Default Factors v1.0';
-  return 'Source review required';
+  if (isPilotDefaultFactor(item)) return 'CarbonLite Default Factor Library v1.0';
+  return 'Source information needed';
 }
 
 function formatPilotFactorVersion(item: ConversionFactorItem) {
@@ -223,7 +223,7 @@ function formatPilotConfidence(item: ConversionFactorItem) {
 
   if (normalized.includes('placeholder')) return 'Pilot Estimate';
   if (label === 'Low' && isPilotDefaultFactor(item)) return 'Pilot Estimate';
-  return label || (isPilotDefaultFactor(item) ? 'Pilot Estimate' : 'Source Review Required');
+  return label || (isPilotDefaultFactor(item) ? 'Pilot Estimate' : 'Source Information Needed');
 }
 
 function formatPilotVerification(item: ConversionFactorItem) {
@@ -243,7 +243,7 @@ function formatPilotVerification(item: ConversionFactorItem) {
   if (normalized === 'draft' || normalized.includes('placeholder') || normalized.includes('pilot demo')) {
     return 'Internal Review Required';
   }
-  return label || 'Source Review Required';
+  return label || 'Source Information Needed';
 }
 
 function formatPilotAssumptions(item: ConversionFactorItem) {
@@ -267,7 +267,7 @@ function formatPilotAssumptions(item: ConversionFactorItem) {
     return 'Pilot-stage Scope 3 estimate. Scope 3 calculations can vary by methodology, boundary, and factor source. Consultant review recommended before formal reporting.';
   }
 
-  return item.assumptions || item.methodology || item.notes || 'Source review required before formal reporting.';
+  return item.assumptions || item.methodology || item.notes || 'Source information needed before formal reporting.';
 }
 
 function formatModalReviewGuidance(item: ConversionFactorItem) {
@@ -1457,7 +1457,7 @@ export function ConversionFactorsPage() {
                 value={form.assumptions ?? ''}
                 onChange={(e) => updateField('assumptions', e.target.value)}
                 style={textareaStyle}
-                placeholder="Document limitations, applicability, or review notes."
+                placeholder="Document limitations, applicability, or validation notes."
               />
             </Field>
 
@@ -2011,7 +2011,7 @@ function FactorDetailsModal({
               <DetailItem label="Boundary" value={traceability.boundary} />
               <DetailItem
                 label="Consultant Review"
-                value={isScope3Factor(item) || isPilotDefaultFactor(item) ? 'Recommended before formal reporting' : 'Use documented review status'}
+                value={isScope3Factor(item) || isPilotDefaultFactor(item) ? 'Recommended before formal reporting' : 'Use documented validation status'}
               />
               <DetailItem label="Factor Type" value={getFactorTypeLabel(item)} />
               <DetailItem
@@ -2026,7 +2026,7 @@ function FactorDetailsModal({
               />
             </DetailSection>
 
-            <DetailSection title="Assumptions / Review Notes">
+            <DetailSection title="Assumptions / Validation Notes">
               {factorProvenanceLines(item).filter(line => !line.startsWith('Source Document Version: ')).map(line => {
                 const separator = line.indexOf(': ');
                 const label = line.slice(0, separator);

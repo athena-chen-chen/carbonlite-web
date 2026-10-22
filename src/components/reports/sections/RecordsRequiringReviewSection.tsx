@@ -29,13 +29,13 @@ export function RecordsRequiringReviewSection({
     <>
       <SimpleTable
         headers={['Activity', 'Quantity', 'Unit', 'Issue Type', 'Issue Message', 'Source Reference', 'Action']}
-        emptyMessage="No records require review for this report scope."
+        emptyMessage="No records need attention for this report scope."
         rows={reviewRows.map((item) => [
           getActivityTypeLabel(item.activityType),
           formatDisplayNumber(item.activityQuantity),
           formatRecordUnit(item.activityUnit, item),
           formatCalculationStatus(item.status),
-          item.matchingMessage || item.reason || 'Review this record before calculation.',
+          item.matchingMessage || item.reason || 'Correct this record before calculation.',
           formatRecordSource(item),
           item.status === 'MISSING_FACTOR' ? 'Create factor' : 'Fix record',
         ])}

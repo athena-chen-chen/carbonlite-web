@@ -109,6 +109,7 @@ export default function ReportingPage() {
     loading,
     error,
     isPreparingReportData,
+    isExportReady,
     refetch: loadReportData,
     draftPeriodStart,
     draftPeriodEnd,
@@ -377,11 +378,11 @@ function formatWorkflowEventSummary(event: ActivityEventItem) {
   };
 
   if (event.eventName === 'ACTIVITY_RECORD_IMPORTED') {
-    return `${countLabel(metadata.createdRecordCount ?? metadata.count, 'activity record')} imported${sourceFile ? ` from ${sourceFile}` : ''}. ${countLabel(metadata.trackedMetricCount, 'tracked metric')}; ${countLabel(metadata.unresolvedRowCount, 'row')} still requiring review.`;
+    return `${countLabel(metadata.createdRecordCount ?? metadata.count, 'activity record')} imported${sourceFile ? ` from ${sourceFile}` : ''}. ${countLabel(metadata.trackedMetricCount, 'tracked metric')}; ${countLabel(metadata.unresolvedRowCount, 'row')} still needing attention.`;
   }
 
   if (event.eventName === 'FILE_UPLOADED' || event.eventName === 'DOCUMENT_UPLOADED') {
-    return `${sourceFile || 'Source file'} uploaded as ${metadata.sourceType || 'Source Review Required'}.`;
+    return `${sourceFile || 'Source file'} uploaded as ${metadata.sourceType || 'Source Information Needed'}.`;
   }
 
   if (event.eventName === 'DOCUMENT_EXTRACT_SUCCEEDED') {
@@ -389,7 +390,7 @@ function formatWorkflowEventSummary(event: ActivityEventItem) {
   }
 
   if (event.eventName === 'DATA_EXTRACTED') {
-    return `Draft records created${sourceFile ? ` from ${sourceFile}` : ''}: ${countLabel(metadata.readyCount, 'ready record')}, ${countLabel(metadata.trackedMetricCount, 'tracked metric')}, ${countLabel(metadata.requiresReviewCount, 'record')} requiring review.`;
+    return `Draft records created${sourceFile ? ` from ${sourceFile}` : ''}: ${countLabel(metadata.readyCount, 'ready record')}, ${countLabel(metadata.trackedMetricCount, 'tracked metric')}, ${countLabel(metadata.requiresReviewCount, 'record')} needing attention.`;
   }
 
   if (event.eventName === 'RECORDS_IMPORTED') {
@@ -508,12 +509,13 @@ const {
 } = useReportExports({
   report: reportData,
   hasReportOutput,
+  isExportReady,
   page: location.pathname,
   url: typeof window !== 'undefined' ? window.location.href : '',
   reportScope,
   onWorkflowEventsRefresh: loadWorkflowEvents,
 });
-const exportDisabled = !hasReportOutput || exporting !== null;
+const exportDisabled = !hasReportOutput || !isExportReady || exporting !== null;
 const exportDisabledTitle = exportDisabled
   ? exporting
     ? 'Export in progress.'
@@ -685,8 +687,8 @@ function setAllReportSections(expanded: boolean) {
         <>
           {hasRecordsRequiringReviewOnly ? (
             <div style={reviewOnlyNoticeStyle}>
-              No emissions calculated because records require review. Review the
-              calculation issues and records requiring review below.
+              No emissions calculated because records need attention. Review the
+              calculation issues and records needing attention below.
             </div>
           ) : null}
 

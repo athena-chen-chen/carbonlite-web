@@ -1,7 +1,7 @@
 import { goldenReport } from '../reports/pdf/__tests__/goldenFixtures';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { vi } from 'vitest';
 import {
   buildDataReadinessSummary,
@@ -97,8 +97,8 @@ function goldenTrailDetail(overrides: Record<string, unknown>) {
     factorResultUnit: 'kgCO2e',
     factorSource: 'CarbonLite',
     sourceAuthority: 'CarbonLite',
-    sourceDocument: 'CarbonLite MVP Default Factors v1.0',
-    factorVersion: 'CarbonLite MVP Default Factors v1.0',
+    sourceDocument: 'CarbonLite Default Factor Library v1.0',
+    factorVersion: 'CarbonLite Default Factor Library v1.0',
     sourceYear: 2025,
     factorVerified: false,
     factorType: 'System',
@@ -251,7 +251,7 @@ describe('buildMetricsSummaryTableRows', () => {
     ],
   };
 
-  it('uses the same values shown in the Calculation Review cards', () => {
+  it('uses the same values shown in the Calculation Results cards', () => {
     const rows = buildMetricsSummaryTableRows({
       usageTotals,
       totalEstimatedEmissionsKgCO2e: 1234.5,
@@ -581,7 +581,7 @@ describe('buildMetricsSummaryTableRows', () => {
 
     const readinessSection = screen.getByRole('heading', { name: /Reporting Readiness Checklist/i }).closest('section');
     expect(readinessSection).toHaveTextContent('2 calculated records');
-    expect(readinessSection).toHaveTextContent('0 records require review');
+    expect(readinessSection).toHaveTextContent('0 records need attention');
     expect(readinessSection).toHaveTextContent('1 tracked metric');
     expect(screen.queryByText(/2 records ready for calculation/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Conversion factors are traceable/i)).not.toBeInTheDocument();
@@ -805,7 +805,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('9');
     expect(within(dialog).getByText('Tracked metrics').parentElement).toHaveTextContent('1');
     expect(within(dialog).getByText('Electricity - Alberta')).toBeInTheDocument();
-    expect(dialog).toHaveTextContent('CarbonLite MVP Default Factors v1.0');
+    expect(dialog).toHaveTextContent('CarbonLite Default Factor Library v1.0');
     expect(within(dialog).getAllByText('Internal Review Required').length).toBeGreaterThan(0);
     expect(dialog).not.toHaveTextContent(/\bDraft\b/);
     expect(within(dialog).getByText(/Water is tracked as an operational metric/i)).toBeInTheDocument();
@@ -816,7 +816,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.queryByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i })).not.toBeInTheDocument();
   });
 
-  it('keeps March pilot calculation review semantics separate for activity, factors, and tracked metrics', () => {
+  it('keeps March pilot calculation results semantics separate for activity, factors, and tracked metrics', () => {
     const marchDetails = [
       goldenTrailDetail({
         activityDataId: 'MARCH-ELEC-001',
@@ -832,7 +832,7 @@ describe('buildMetricsSummaryTableRows', () => {
         factorValue: 0.53,
         calculatedEmissionsKgCO2e: 519.4,
         factorDefaultScope: 'SCOPE_2',
-        factorSet: 'Source review required',
+        factorSet: 'Source information needed',
         notes: 'Imported from March operations sheet.',
       }),
       goldenTrailDetail({
@@ -913,12 +913,12 @@ describe('buildMetricsSummaryTableRows', () => {
       screen.getAllByText((_, element) => element?.textContent === '1 Tracked Metric').length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByText((_, element) => element?.textContent === '0 records requiring review').length,
+      screen.getAllByText((_, element) => element?.textContent === '0 records needing attention').length,
     ).toBeGreaterThan(0);
     expect(
       screen.getAllByText((_, element) => element?.textContent === '0 Excluded Due to Calculation Issues').length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText('No records require calculation review')).toBeInTheDocument();
+    expect(screen.getByText('No records need attention')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Calculation details and traceability (3 records)'));
     const detailsRegion = screen.getByText('Calculation details and traceability (3 records)').closest('details')!;
@@ -938,7 +938,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('579.40 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('2');
     expect(within(dialog).getByText('Tracked metrics').parentElement).toHaveTextContent('1');
-    expect(within(dialog).getByText('Records requiring review').parentElement).toHaveTextContent('0');
+    expect(within(dialog).getByText('Records needing attention').parentElement).toHaveTextContent('0');
     expect(dialog).toHaveTextContent('2026-03-01 · Alberta, Canada');
     expect(dialog).not.toHaveTextContent('2026-03-01T00:00:00.000Z');
     expect(within(dialog).getAllByText('No conversion required').length).toBeGreaterThan(0);
@@ -947,7 +947,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getAllByText('Source Note').length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText('Factor Assumptions').length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText('Review Recommendation').length).toBeGreaterThan(0);
-    expect(dialog).not.toHaveTextContent('Assumptions / review notes');
+    expect(dialog).not.toHaveTextContent('Assumptions / validation notes');
   });
 
   it('shows draft-stored pilot electricity verification as internal review in detail modals', () => {
@@ -1048,7 +1048,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).queryByText(/Natural Gas/i)).not.toBeInTheDocument();
   });
 
-  it('collapses secondary Calculation Review sections by default and keeps Calculation Summary expanded', () => {
+  it('collapses secondary Calculation Results sections by default and keeps Calculation Summary expanded', () => {
     render(
       <MemoryRouter>
         <MetricsSummarySection
@@ -1148,8 +1148,8 @@ describe('buildMetricsSummaryTableRows', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
 
     const dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
-    expect(within(dialog).getByText('Records Requiring Review')).toBeInTheDocument();
-    expect(within(dialog).getByText('No matched factor available. Review required.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Records Needing Attention')).toBeInTheDocument();
+    expect(within(dialog).getByText('No matched factor available. Needs attention.')).toBeInTheDocument();
   });
 
   it('shows calculated imported electricity emissions under Scope 2', () => {
@@ -1562,7 +1562,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getAllByText('9').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Calculated Emissions Records/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('6').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/records requiring review/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/records needing attention/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Excluded Due to Calculation Issues/i)).toBeInTheDocument();
     expect(screen.getByText('Calculation issues')).toBeInTheDocument();
     expect(screen.getByText('Outside selected date range')).toBeInTheDocument();
@@ -1591,7 +1591,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('No records require calculation review')).toBeInTheDocument();
+    expect(screen.getByText('No records need attention')).toBeInTheDocument();
   });
 });
 
@@ -1676,7 +1676,7 @@ describe('buildHotspotAnalysis', () => {
     expect(analysis.categoryHotspots[1]).toEqual(
       expect.objectContaining({
         activityType: 'HOTEL',
-        estimateConfidence: 'Engineering estimate / review required',
+        estimateConfidence: 'Engineering estimate / needs attention',
         decisionReadiness: 'Validate before reduction planning',
       }),
     );
@@ -1762,7 +1762,7 @@ describe('buildHotspotAnalysis', () => {
     ]);
 
     expect(formatHotspotExclusionNote(analysis)).toBe(
-      '1 tracked operational metric is excluded from the calculated GHG emissions total. No imported activity records require review.',
+      '1 tracked operational metric is excluded from the calculated GHG emissions total. No imported activity records need attention.',
     );
     expect(formatHotspotExclusionNote({
       ...analysis,
@@ -1771,7 +1771,7 @@ describe('buildHotspotAnalysis', () => {
         needsReviewCount: 6,
       },
     })).toBe(
-      '1 tracked operational metric is excluded from the calculated GHG emissions total. No imported activity records require review. 6 unresolved source rows remain in Input Review.',
+      '1 tracked operational metric is excluded from the calculated GHG emissions total. No imported activity records need attention. 6 unresolved source rows remain in Input Review.',
     );
     expect(formatHotspotExclusionNote(analysis)).not.toMatch(/1 records|missing factor|invalid unit|requiring review/i);
     expect(analysis.focusRecommendations.map((item) => item.message).join(' ')).not.toMatch(/1 records were excluded/i);
@@ -1785,7 +1785,7 @@ describe('buildHotspotAnalysis', () => {
     ]);
 
     expect(formatHotspotExclusionNote(analysis)).toBe(
-      'Tracked operational metrics are excluded from the calculated GHG emissions total by design. 1 imported activity record requires review before inclusion.',
+      'Tracked operational metrics are excluded from the calculated GHG emissions total by design. 1 imported activity record needs attention before inclusion.',
     );
   });
 
@@ -2064,7 +2064,7 @@ describe('buildCarbonCreditReadinessAssessment', () => {
       jurisdictionRegion: 'Alberta',
       sourceReference: 'Receipt #123',
       sourceAuthority: 'CarbonLite System Defaults',
-      sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+      sourceDocument: 'CarbonLite Default Factor Library v1.0',
       factorYear: 2025,
       factorValue: 2.68,
       calculationFormula: '100 liters × 2.68 kgCO2e/liter = 268 kgCO2e',
@@ -2139,7 +2139,7 @@ describe('buildCarbonCreditReadinessAssessment', () => {
     expect(factorTraceability?.label).not.toBe('Conversion factors are traceable');
   });
 
-  it('reduces readiness when many records require review', () => {
+  it('reduces readiness when many records need attention', () => {
     const details = [
       detail({ recordYear: 2025, calculatedEmissionsKgCO2e: 500 }),
       detail({ recordYear: 2026, calculatedEmissionsKgCO2e: 300 }),
@@ -2155,7 +2155,7 @@ describe('buildCarbonCreditReadinessAssessment', () => {
     expect(assessment.score).toBeLessThan(100);
     expect(assessment.nextSteps).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(/Resolve records requiring review/i),
+        expect.stringMatching(/Resolve records needing attention/i),
       ]),
     );
   });
@@ -2253,7 +2253,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(boundarySection).not.toHaveTextContent('2026-01-01 to 2026-12-31');
   });
 
-  it('loads Calculation Review for the selected imported document when route state provides a document scope', async () => {
+  it('loads Calculation Results for the selected imported document when route state provides a document scope', async () => {
     render(
       <MemoryRouter
         initialEntries={[
@@ -2497,7 +2497,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 150 kg CO₂e');
   });
 
-  it('renders Calculation Review for pilot reviewer without mutation controls', async () => {
+  it('renders Calculation Results for pilot reviewer without mutation controls', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -2514,7 +2514,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    const pageHeading = await screen.findByRole('heading', { name: /Calculation Review/i });
+    const pageHeading = await screen.findByRole('heading', { name: /Calculation Results/i });
     expect(pageHeading).toBeInTheDocument();
     expect(pageHeading).toHaveFocus();
     const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
@@ -2564,8 +2564,8 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Preparing calculation review...');
-    expect(screen.getAllByText('Preparing calculation review...').length).toBeGreaterThan(0);
+    expect(await screen.findByRole('status')).toHaveTextContent('Preparing calculation results...');
+    expect(screen.getAllByText('Preparing calculation results...').length).toBeGreaterThan(0);
     expect(screen.queryByText('No activity records yet. Import activity data to generate metrics.')).not.toBeInTheDocument();
     expect(screen.queryByText('0 kg CO₂e')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('2025-01-01')).not.toBeDisabled();
@@ -2702,7 +2702,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     );
 
     expect(
-      await screen.findByText('Unable to load calculation review. Please try again.'),
+      await screen.findByText('Unable to load calculation results. Please try again.'),
     ).toBeInTheDocument();
   });
 
@@ -2728,7 +2728,7 @@ function waitForDateDebounce() {
   return new Promise((resolve) => window.setTimeout(resolve, 550));
 }
 
-it('retains selected-document context and unresolved rows in Calculation Review', async () => {
+it('retains selected-document context and unresolved rows in Calculation Results', async () => {
   const { input } = goldenReport('messy');
   vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({ startDate: '2026-01-01', endDate: '2026-12-31', hasActivityRecords: true });
   vi.mocked(loadMetricsOverview).mockResolvedValue({
@@ -2743,4 +2743,34 @@ it('retains selected-document context and unresolved rows in Calculation Review'
   await waitFor(() => expect(context).toHaveTextContent('Imported records: 3 · Unresolved source rows: 6'));
   expect(within(context).getByRole('link', { name: 'Generate Report' })).toHaveAttribute('href', '/reports');
   expect(loadMetricsOverview).toHaveBeenCalledWith({ recalculate: true, selectedDocumentIds: ['doc-partial'] });
+});
+
+function ReportRouteProbe() {
+  const location = useLocation();
+  return <div data-testid="report-handoff">{JSON.stringify({ path: location.pathname, state: location.state })}</div>;
+}
+
+it.each([undefined, ['doc-partial'], ['doc-partial', 'doc-field']])('continues from Calculation Results to Reports preserving scope %j', async (selectedDocumentIds) => {
+  const { input } = goldenReport('messy');
+  vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({ startDate: '2026-01-01', endDate: '2026-12-31', hasActivityRecords: true });
+  vi.mocked(loadMetricsOverview).mockResolvedValue({
+    summary: {}, activities: input.activities, calculationDetails: input.calculationDetails,
+    sourceReviewRows: input.reviewRows, usageTotals: input.usageTotals,
+    totalEstimatedEmissionsKgCO2e: 579.4, totalRecordsFound: 3, processedRecords: 2,
+    skippedRecords: 0, missingFactorRecords: 0, missingFactors: [],
+    skippedReasons: { missingFactor: 0, outsideDateRange: 0, outsideScope: 0, invalidData: 0 },
+  } as any);
+  render(<MemoryRouter initialEntries={[{ pathname: '/metrics-summary', state: selectedDocumentIds ? { selectedDocumentIds } : undefined }]}>
+    <Routes><Route path="/metrics-summary" element={<MetricsSummaryPage />} /><Route path="/reports" element={<ReportRouteProbe />} /></Routes>
+  </MemoryRouter>);
+  await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
+  expect(screen.getByText('Step 4 of 5 · Calculation Results')).toBeInTheDocument();
+  expect(screen.getAllByRole('link', { name: 'Generate Report' })).toHaveLength(1);
+  const request = vi.mocked(loadMetricsOverview).mock.calls.at(-1)![0];
+  if (selectedDocumentIds) expect(request).toEqual({ recalculate: true, selectedDocumentIds });
+  else expect(request).toMatchObject({ dateFrom: '2026-01-01', dateTo: '2026-12-31' });
+  await userEvent.click(screen.getByRole('link', { name: 'Generate Report' }));
+  expect(JSON.parse(screen.getByTestId('report-handoff').textContent!)).toEqual({
+    path: '/reports', state: selectedDocumentIds ? { reportScope: 'selectedDocuments', selectedDocumentIds } : null,
+  });
 });

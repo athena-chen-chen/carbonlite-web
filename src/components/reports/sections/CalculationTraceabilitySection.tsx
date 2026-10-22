@@ -28,7 +28,7 @@ export function CalculationTraceabilitySection({
   return (
     <>
       <p style={sectionHelperStyle}>
-        Each row shows the activity quantity, matched factor, calculation formula, scope, status, and review note.
+        Each row shows the activity quantity, matched factor, calculation formula, scope, status, and validation note.
       </p>
       <details
         onToggle={(event) => setIsAuditExpanded(event.currentTarget.open)}
@@ -49,7 +49,7 @@ export function CalculationTraceabilitySection({
               'Calculation',
               'Scope',
               'Status',
-              'Review Note',
+              'Validation Note',
             ]}
             emptyMessage="No calculation details available."
             rows={calculationDetails.map((item) => [

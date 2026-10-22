@@ -166,7 +166,7 @@ describe('report review package CSV exports', () => {
     expect(csv).not.toContain('factor-internal-id');
   });
 
-  it('exports calculation traceability and records requiring review', () => {
+  it('exports calculation traceability and records needing attention', () => {
     const reviewDetail: CalculationAuditDetail = {
       ...baseDetail,
       activityDataId: 'missing-province-id',

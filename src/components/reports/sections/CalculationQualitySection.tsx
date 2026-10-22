@@ -50,7 +50,7 @@ export function CalculationQualitySection({
         <Fact label="Total Records Found" value={String(reportCountSummary.totalRecordsFound)} />
         <Fact label="Records Calculated" value={String(reportCountSummary.processedRecords)} />
         <Fact label="Tracked Operational Metrics" value={String(primarySkippedReasons.trackedOnly)} />
-        <Fact label="Records Requiring Review" value={String(recordsRequiringReview)} />
+        <Fact label="Records Needing Attention" value={String(recordsRequiringReview)} />
         <Fact label="Missing Factors" value={String(primarySkippedReasons.missingFactor)} />
         <Fact label="Missing Jurisdiction" value={String(primarySkippedReasons.missingJurisdiction)} />
         <Fact label="Invalid Unit" value={String(primarySkippedReasons.invalidUnit)} />
@@ -77,7 +77,7 @@ export function CalculationQualitySection({
       </div>
       {recordsRequiringReview > 0 ? (
         <div style={qualityReasonStyle}>
-          <strong>Review reasons:</strong>{' '}
+          <strong>Attention reasons:</strong>{' '}
           {reviewReasonsLabel}
         </div>
       ) : primarySkippedReasons.trackedOnly > 0 ? (

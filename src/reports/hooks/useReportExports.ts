@@ -11,6 +11,7 @@ type ReportExportKind = 'executive' | 'technical' | 'csv';
 type UseReportExportsInput = {
   report: CanonicalReportData;
   hasReportOutput: boolean;
+  isExportReady: boolean;
   page: string;
   url: string;
   reportScope: string;
@@ -20,6 +21,7 @@ type UseReportExportsInput = {
 export function useReportExports({
   report,
   hasReportOutput,
+  isExportReady,
   page,
   url,
   reportScope,
@@ -29,7 +31,7 @@ export function useReportExports({
   const [exportError, setExportError] = useState<string | null>(null);
 
   async function exportExecutivePdf() {
-    if (!hasReportOutput) return;
+    if (!hasReportOutput || !isExportReady) return;
 
     setExporting('executive');
     setExportError(null);
@@ -44,7 +46,7 @@ export function useReportExports({
   }
 
   async function exportTechnicalPdf() {
-    if (!hasReportOutput) return;
+    if (!hasReportOutput || !isExportReady) return;
 
     setExporting('technical');
     setExportError(null);
@@ -52,14 +54,14 @@ export function useReportExports({
       buildTechnicalReviewPdf(report).save(getReportPdfFileName('TECHNICAL_REVIEW', report.documentControl, report.outputGeneratedDate));
       recordPdfExport('TECHNICAL_REVIEW');
     } catch {
-      setExportError('Technical review package export failed. Please try again.');
+      setExportError('Technical emissions report export failed. Please try again.');
     } finally {
       setExporting(null);
     }
   }
 
   function recordPdfExport(outputProfile: 'EXECUTIVE_SUMMARY' | 'TECHNICAL_REVIEW') {
-    const description = outputProfile === 'EXECUTIVE_SUMMARY' ? 'executive summary' : 'technical review package';
+    const description = outputProfile === 'EXECUTIVE_SUMMARY' ? 'executive summary' : 'technical emissions report';
     void createClientAuditLog({
       action: 'EXPORT_PDF', entityType: 'Report',
       description: `Exported ${description} for ${report.reportScopeLabel}`, page,
@@ -81,7 +83,7 @@ export function useReportExports({
   }
 
   async function exportCsv() {
-    if (!hasReportOutput) return;
+    if (!hasReportOutput || !isExportReady) return;
 
     setExporting('csv');
     setExportError(null);

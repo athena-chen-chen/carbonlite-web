@@ -126,7 +126,7 @@ export default function AboutPage() {
               </h2>
               <p className="mt-5 leading-8 text-slate-600">
                 CarbonLite brings the common steps of an emissions reporting workflow
-                into one practical application for data readiness, factor review,
+                into one practical application for data readiness, factor validation,
                 traceable calculations, and emissions hotspot visibility.
               </p>
             </div>
@@ -159,7 +159,7 @@ export default function AboutPage() {
                 Many SMEs still prepare emissions reports manually from PDFs,
                 spreadsheets, invoices, and utility bills. CarbonLite is designed to
                 reduce repetitive data entry while making source records, conversion
-                factors, calculation steps, and records requiring review easier to
+                factors, calculation steps, and records needing attention easier to
                 explain.
               </p>
             </div>

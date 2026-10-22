@@ -85,6 +85,8 @@ describe('conversion factor traceability API payloads', () => {
     );
 
     expect(pilotRows).toHaveLength(3);
+    expect(pilotRows.every(item => item.sourceDocument === 'CarbonLite Default Factor Library v1.0')).toBe(true);
+    expect(pilotRows.find(item => item.region === 'Alberta')?.factorValue).toBe(0.53);
     expect(pilotRows.map((item) => item.name)).toEqual([
       'Electricity - Alberta - 2026',
       'Electricity - British Columbia - 2026',

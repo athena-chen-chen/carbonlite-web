@@ -26,7 +26,7 @@ export function formatExcludedReasonForPdf(reason: HotspotAnalysis['excludedCate
     MISSING_FACTOR: 'Missing factor',
     INVALID_UNIT: 'Invalid unit',
     TRACKED_ONLY: 'Tracked operational metric, excluded from GHG total',
-    NEEDS_REVIEW: 'Needs review',
+    NEEDS_REVIEW: 'Needs attention',
     MISSING_JURISDICTION: 'Missing jurisdiction',
   };
 
@@ -41,7 +41,7 @@ export function buildExecutiveLimitationsSentence(input: {
 
   if (input.factorReviewCount > 0) {
     limitations.push(
-      `${input.factorReviewCount} emission ${input.factorReviewCount === 1 ? 'factor requires' : 'factors require'} review before formal use.`,
+      `${input.factorReviewCount} emission ${input.factorReviewCount === 1 ? 'factor needs' : 'factors need'} attention before formal use.`,
     );
   }
 
@@ -57,17 +57,17 @@ export function buildExecutiveLimitationsSentence(input: {
 export function getSourceReviewLimitationSentence(summary: SourceReviewSummary) {
   if (summary.availability === 'STRUCTURED_REVIEW_AVAILABLE') {
     if (summary.needsReviewCount > 0) {
-      return `${summary.needsReviewCount} source ${summary.needsReviewCount === 1 ? 'row still requires' : 'rows still require'} review.`;
+      return `${summary.needsReviewCount} source ${summary.needsReviewCount === 1 ? 'row still needs' : 'rows still need'} attention.`;
     }
-    return 'No unresolved source-review issues are currently recorded for this report scope.';
+    return 'No unresolved source-data issues are currently recorded for this report scope.';
   }
 
   if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
     return summary.limitation ||
-      'Structured source-review counts are not available for this document import.';
+      'Structured source-data counts are not available for this document import.';
   }
 
-  return summary.limitation || 'Source-document review is not applicable to manually entered records.';
+  return summary.limitation || 'Source data validation is not applicable to manually entered records.';
 }
 
 export function getPilotStageFactorCount(factors: FormalConversionFactorUsed[]) {
@@ -120,7 +120,7 @@ export function getReadinessItemStatus(
 export function formatExecutiveSourceReviewStatus(summary: SourceReviewSummary) {
   if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') return 'Document source lineage available';
   if (!summary.available) return 'Not applicable';
-  return `${summary.totalRows} rows reviewed; ${summary.resolvedCount} resolved/imported; ${summary.needsReviewCount} require review`;
+  return `${summary.totalRows} rows assessed; ${summary.resolvedCount} resolved/imported; ${summary.needsReviewCount} need attention`;
 }
 
 export function buildExecutiveKeyPriorities(input: {
@@ -150,7 +150,7 @@ export function buildExecutiveKeyPriorities(input: {
     priorities.push('Assign a reviewer and complete report review before formal use.');
   }
   if (priorities.length === 0) {
-    priorities.push('Maintain source, factor, and calculation evidence with the technical review package.');
+    priorities.push('Maintain source, factor, and calculation evidence with the technical emissions report.');
   }
   return priorities;
 }
@@ -158,15 +158,15 @@ export function buildExecutiveKeyPriorities(input: {
 export function formatExecutiveFactorPriority(factorReviewCount: number, pilotStageFactorCount: number) {
   if (pilotStageFactorCount > 0 && pilotStageFactorCount === factorReviewCount) {
     return factorReviewCount === 1
-      ? 'Review or replace the pilot-stage emission factor.'
-      : `Review or replace ${factorReviewCount} pilot-stage emission factors.`;
+      ? 'Validate or replace the pilot-stage emission factor.'
+      : `Validate or replace ${factorReviewCount} pilot-stage emission factors.`;
   }
 
   const reviewPhrase = factorReviewCount === 1
-    ? 'Review the emission factor before formal use'
+    ? 'Validate the emission factor before formal use'
     : factorReviewCount === 2
-    ? 'Review both emission factors before formal use'
-    : `Review ${factorReviewCount} emission factors before formal use`;
+    ? 'Validate both emission factors before formal use'
+    : `Validate ${factorReviewCount} emission factors before formal use`;
 
   return pilotStageFactorCount > 0
     ? `${reviewPhrase}; replace pilot-stage factors where appropriate.`
@@ -209,19 +209,19 @@ export function formatSourceReviewCount(summary: SourceReviewSummary, value: num
 
 export function getSourceReviewAppendixEmptyMessage(summary: SourceReviewSummary) {
   if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
-    return 'Document source lineage is available, but structured source-review rows are not available for this document import.';
+    return 'Document source lineage is available, but structured source-data rows are not available for this document import.';
   }
-  return 'Source-document review is not applicable to manually entered records.';
+  return 'Source data validation is not applicable to manually entered records.';
 }
 
 export function getSourceReviewAppendixIntro(summary: SourceReviewSummary) {
   if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
-    return 'Structured unresolved source-review rows are not available for this document import.';
+    return 'Structured unresolved source-data rows are not available for this document import.';
   }
   if (!summary.available) {
-    return 'Source review items that remain unresolved are not included in ActivityData or the GHG emissions total until corrected and imported.';
+    return 'Source data items that remain unresolved are not included in ActivityData or the GHG emissions total until corrected and imported.';
   }
-  return 'Source review rows that remain unresolved after import review are not included in ActivityData or the GHG emissions total until corrected and imported.';
+  return 'Source data rows that remain unresolved after import validation are not included in ActivityData or the GHG emissions total until corrected and imported.';
 }
 
 export function getSourceReviewSectionNote(summary: SourceReviewSummary) {
@@ -229,17 +229,17 @@ export function getSourceReviewSectionNote(summary: SourceReviewSummary) {
     return 'Source document lineage is available for imported records. Structured unresolved-source-row counts are not available for this document import.';
   }
   if (!summary.available) {
-    return 'Source-document review is not applicable when this report scope contains manually entered records with no associated source document.';
+    return 'Source data validation is not applicable when this report scope contains manually entered records with no associated source document.';
   }
-  return 'Source dataset review status is joined by source document ID. Unresolved source rows remain in spreadsheet review history and are not imported into ActivityData or included in emissions totals.';
+  return 'Source data status is linked by source document ID. Unresolved source rows remain in spreadsheet review history and are not imported into ActivityData or included in emissions totals.';
 }
 
 export function formatSourceReviewStatus(summary: SourceReviewSummary) {
   if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
-    return 'Document source lineage available; structured review counts limited';
+    return 'Document source lineage available; structured validation counts limited';
   }
   if (!summary.available) return 'Not applicable for manual-only report scope';
-  return `${summary.resolvedCount} of ${summary.totalRows} source rows resolved/imported · ${summary.needsReviewCount} require review`;
+  return `${summary.resolvedCount} of ${summary.totalRows} source rows resolved/imported · ${summary.needsReviewCount} need attention`;
 }
 
 export function formatSourceReviewIssue(row: SpreadsheetReviewRowItem) {
@@ -248,14 +248,14 @@ export function formatSourceReviewIssue(row: SpreadsheetReviewRowItem) {
     return issues.map((issue) => issue.message || issue.code).filter(Boolean).join('; ');
   }
 
-  return row.calculationMessage || row.status || 'Review required';
+  return row.calculationMessage || row.status || 'Needs attention';
 }
 
 export function formatSourceReviewIssueType(row: SpreadsheetReviewRowItem) {
   const issue = row.issues?.[0];
   return formatCalculationStatusLabel(
     issue?.code || row.calculationStatus || row.matchingStatus || row.status || 'NEEDS_REVIEW',
-  ) || 'Needs Review';
+  ) || 'Needs Attention';
 }
 
 export function formatReviewRowJurisdiction(row: SpreadsheetReviewRowItem) {
@@ -272,10 +272,10 @@ export function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
     return 'Add the missing province/jurisdiction and re-import or update the row.';
   }
   if (issueType.includes('UNIT')) {
-    return 'Correct the unit to a supported factor unit and rerun review.';
+    return 'Correct the unit to a supported factor unit and rerun validation.';
   }
   if (issueType.includes('QUANTITY')) {
-    return 'Enter a numeric quantity and rerun review.';
+    return 'Enter a numeric quantity and rerun validation.';
   }
   if (issueType.includes('ACTIVITY')) {
     return 'Map the raw activity to a supported activity type.';
@@ -284,7 +284,7 @@ export function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
     return 'Add or select a matching emissions factor before including in GHG totals.';
   }
 
-  return 'Review and correct this source row before importing it into the report scope.';
+  return 'Correct this source row before importing it into the report scope.';
 }
 
 export function formatSourceEvidenceMethod(sourceType?: string | null, importMethod?: string | null) {

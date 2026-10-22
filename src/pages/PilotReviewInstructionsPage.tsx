@@ -7,8 +7,8 @@ const reviewPath = [
   { stage: getWorkflowStage('BOUNDARY'), label: 'Organization & Boundary', to: '/organization-profile' },
   { stage: getWorkflowStage('SOURCE_DATA'), label: 'Input Data', to: '/input-data' },
   { stage: getWorkflowStage('DATA_ISSUES'), label: 'Data Records', to: '/data-records' },
-  { stage: getWorkflowStage('FACTORS_CALCULATIONS'), label: 'Factors / Calculation Review', to: '/metrics-summary' },
-  { stage: getWorkflowStage('RESULTS'), label: 'Calculation Review / Reports', to: '/reports' },
+  { stage: getWorkflowStage('FACTORS_CALCULATIONS'), label: 'Factors / Calculation Results', to: '/metrics-summary' },
+  { stage: getWorkflowStage('RESULTS'), label: 'Calculation Results / Reports', to: '/reports' },
   { stage: getWorkflowStage('REPORT'), label: 'Reports', to: '/reports' },
 ];
 

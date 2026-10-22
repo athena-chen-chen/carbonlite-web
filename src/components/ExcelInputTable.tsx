@@ -1,5 +1,5 @@
 
-import { createActivityData, updateActivityData } from '../services/activityData';
+import { createActivityData, updateActivityData, type ActivityDataItem } from '../services/activityData';
 import {
   saveSpreadsheetReviewRows,
   type SpreadsheetReviewIssue,
@@ -68,6 +68,7 @@ import { formatReportFactorUnit } from '../utils/reportCredibility';
 import { getActivitySourceType } from '../utils/activitySourceType';
 import { formatCount, formatEmissionsUnit } from '../utils/numberFormatting';
 import { getActivityTypeLabel } from '../utils/activityType';
+import { ManualEntryConfirmation } from './manual-entry/ManualEntryConfirmation';
 
 type Row = {
   id: string;
@@ -116,6 +117,7 @@ type Row = {
   errors?: string[];
   status?: 'draft' | 'saved' | 'error' | 'saving';
   savedActivityId?: string;
+  savedRecord?: ActivityDataItem;
 };
 
 const SITE_FACILITY_ALIASES = [
@@ -137,7 +139,7 @@ const SITE_FACILITY_ALIASES = [
   'Factory',
 ];
 
-export function normalizeSpreadsheetDate(value: unknown) {
+export function normalizeSpreadsheetDate(value: unknown, date1904 = false) {
   if (value === undefined || value === null || value === '') return '';
 
   if (value instanceof Date) {
@@ -149,7 +151,9 @@ export function normalizeSpreadsheetDate(value: unknown) {
   }
 
   if (typeof value === 'number' && Number.isFinite(value)) {
-    const parsed = XLSX.SSF.parse_date_code(value);
+    // Decode raw serials once using the workbook epoch. Text and Date values
+    // already describe a calendar date and must not receive an epoch adjustment.
+    const parsed = XLSX.SSF.parse_date_code(value, { date1904 });
     if (!parsed) return '';
 
     const year = Number(parsed.y);
@@ -354,6 +358,9 @@ export function ExcelInputTable({
   const facilitiesRef = useRef<FacilityItem[]>([]);
   const conversionFactorsRef = useRef<any[]>([]);
   const [isSavingAll, setIsSavingAll] = useState(false);
+  const savingRowsRef = useRef(new Set<string>());
+  const savedRowsRef = useRef(new Set<string>());
+  const savingAllRef = useRef(false);
   const isSpreadsheetMode = mode === 'spreadsheet';
 
   useEffect(() => {
@@ -773,7 +780,7 @@ function importExcelFile(file: File, importSessionId = importSessionRef.current)
         'Activity Date',
         'Reporting Date',
       ]);
-      const recordDate = normalizeSpreadsheetDate(rawRecordDate);
+      const recordDate = normalizeSpreadsheetDate(rawRecordDate, !!workbook.Workbook?.WBProps?.date1904);
       const rawQuantity = readAliasedField(row, ['quantity', 'Quantity', 'Consumption', 'qty', 'amount', 'usage']);
       const sourceReference = readAliasedField(row, ['Source Reference', 'sourceReference', 'Original Document', 'reference']);
       const costCad = readAliasedField(row, [
@@ -1989,6 +1996,63 @@ function renderTreatmentCell(row: Row) {
   );
 }
 
+function renderManualCalculationPreview(row: Row) {
+  const started = hasRowStarted(row);
+  const scope = inferDefaultScope(row.activityType);
+  const tracked = scope === 'TRACKED_METRIC' || row.calculationStatus === 'trackedMetric';
+  const matched = row.factorStatus === 'matched';
+  const issues = started ? validateRow(row) : [];
+  const summary = getRowStatusSummary(row);
+  const emissions = matched && row.calculationStatus === 'calculated' && issues.length === 0
+    ? getRowEstimatedEmission(row) : null;
+  const needsValidation = matched && getRowCredibilityBadges(row)
+    .some((badge) => /review|pilot|demo|medium|low|missing|unverified|draft|engineering|proxy/i.test(badge));
+  const saved = row.status === 'saved';
+
+  return (
+    <section aria-label="Calculation preview" style={{ padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc', display: 'grid', gap: 6, fontSize: 13, color: '#334155' }}>
+      <strong>Calculation preview</strong>
+      {!row.activityType ? <span>Select an activity type to preview calculations.</span> : (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', alignItems: 'baseline' }}>
+            <strong>{formatScopeClassification(scope)}</strong>
+            {emissions !== null ? <><span aria-hidden="true">·</span><span>Estimated emissions: {emissions.toLocaleString(undefined, { minimumFractionDigits: Number.isInteger(emissions) ? 0 : 2, maximumFractionDigits: 3 })} {formatEmissionsUnit(getEmissionResultUnit(row))}</span></> : null}
+          </div>
+          {matched ? <span>Factor: <span>{row.factorName ?? 'Matched factor'}</span>{row.factorSourceYear ? ` · ${row.factorSourceYear}` : ''}</span> : null}
+          {issues.length > 0 ? <span>{issues.join(' · ')}</span> : null}
+          {!tracked && emissions === null && summary.badge !== 'Calculated' && summary.badge !== 'Invalid Amount' ? (
+            <span><strong>{summary.badge}</strong><span> · </span><span>{summary.detail}</span></span>
+          ) : null}
+          {matched && !String(row.quantity ?? '').trim() ? <span>Estimated emissions: Waiting for quantity</span> : null}
+          {needsValidation ? <span style={{ color: '#92400e' }}>Factor needs validation</span> : null}
+          <span>{tracked || emissions === null ? 'Not included in GHG total' : 'Included in GHG total'}</span>
+          {saved ? <span>{getSavedReviewLabel(row)}</span> : emissions !== null ? <span>Ready to save</span> : null}
+          <details key={`${row.id}-${row.activityType}`}>
+            <summary style={{ cursor: 'pointer', color: '#047857' }}>View calculation details</summary>
+            <div style={{ display: 'grid', gap: 6, marginTop: 8, overflowWrap: 'anywhere' }}>
+              {matched ? (
+                <>
+                  <span>Factor value: {row.factorValue} {formatReportFactorUnit(row.factorResultUnit || 'kgCO2e', row.unit)}</span>
+                  <span>Jurisdiction: {[row.jurisdictionRegion, row.jurisdictionCountry].filter(Boolean).join(', ')}</span>
+                  {row.factorSourceAuthority ? <span>Source: {row.factorSourceAuthority}</span> : null}
+                  {row.factorSourceDocument ? <span>Source document: {row.factorSourceDocument}</span> : null}
+                  {row.factorSourceUrl ? <a href={row.factorSourceUrl} target="_blank" rel="noreferrer">Factor source</a> : null}
+                  {row.factorVersion ? <span>Version: {row.factorVersion}</span> : null}
+                  {getRowCredibilityBadges(row).map((badge) => <span key={badge}>{badge}</span>)}
+                  {row.factorSelectionExplanation ? <span>{row.factorSelectionExplanation}</span> : null}
+                  {row.factorAssumptions ? <span>{row.factorAssumptions}</span> : null}
+                  {row.factorYearFallback && row.factorSourceYear ? <span>Using latest available factor year: {row.factorSourceYear}</span> : null}
+                </>
+              ) : <span>{row.calculationMessage || summary.detail}</span>}
+              <span>{getReportTreatment(row).detail}</span>
+            </div>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
 function renderPreviewPanel(title: string, helpText: string, children: ReactNode) {
   return (
     <div style={draftReviewPanelStyle}>
@@ -2023,6 +2087,7 @@ function getUnitForActivityTypeChange(currentUnit: string | undefined, nextActiv
 }
 
 function updateRow(id: string, key: keyof Row, value: string) {
+  savedRowsRef.current.delete(id);
   setRows((prev) =>
     prev.map((row) => {
       if (row.id !== id) return row;
@@ -2236,6 +2301,8 @@ function handleImportSpreadsheet(event: React.ChangeEvent<HTMLInputElement>) {
   event.target.value = '';
 }
 async function saveRow(row: Row) {
+  if (savingAllRef.current || savingRowsRef.current.has(row.id) ||
+      savedRowsRef.current.has(row.id)) return;
   if (!canImportRows) {
     updateRowStatus(row.id, {
       errors: ['You do not have permission to perform this action.'],
@@ -2262,6 +2329,7 @@ async function saveRow(row: Row) {
     return;
   }
 
+  savingRowsRef.current.add(row.id);
   updateRowStatus(row.id, {
     errors: undefined,
     status: 'saving',
@@ -2271,21 +2339,33 @@ async function saveRow(row: Row) {
     const saved = row.savedActivityId
       ? await updateActivityData(row.savedActivityId, buildActivityPayload(row))
       : await createActivityData(buildActivityPayload(row));
+    savedRowsRef.current.add(row.id);
     updateRowStatus(row.id, {
       errors: undefined,
       status: 'saved',
-      savedActivityId: (saved as { id?: string })?.id,
+      savedActivityId: saved?.id,
+      savedRecord: saved,
     });
-    void onSuccess({ source: 'manual' });
+    notifyManualSave();
   } catch (err) {
     updateRowStatus(row.id, {
       errors: [getUserFriendlyErrorMessage(err, 'draftRecordReview')],
       status: 'error',
     });
+  } finally {
+    savingRowsRef.current.delete(row.id);
   }
 }
 
+function notifyManualSave() {
+  // A refresh failure must never turn a persisted record into a retryable create.
+  void Promise.resolve().then(() => onSuccess({ source: 'manual' })).catch(() => {
+    showError({ title: 'Entry saved', message: 'Your entry was saved. Open Data Records to view it; the page summary could not be refreshed.' });
+  });
+}
+
 async function saveAll() {
+  if (savingAllRef.current || savingRowsRef.current.size > 0) return;
   if (!canImportRows) {
     showError({
       title: 'Permission required',
@@ -2302,6 +2382,7 @@ async function saveAll() {
     (row) =>
       !isRowCompletelyEmpty(row) &&
       row.status !== 'saved' &&
+      !savedRowsRef.current.has(row.id) &&
       (!isSpreadsheetMode || !isNonActivitySpreadsheetRow(row)),
   );
 
@@ -2336,6 +2417,7 @@ async function saveAll() {
     return;
   }
 
+  savingAllRef.current = true;
   setIsSavingAll(true);
   setRows((prev) =>
     prev.map((row) => {
@@ -2360,43 +2442,31 @@ async function saveAll() {
     }),
   );
 
+  let didSaveRows = false;
   try {
-    const savedRows: Array<{ rowId: string; savedActivityId?: string }> = [];
-
     for (const row of persistableRows) {
       const saved = row.savedActivityId
         ? await updateActivityData(row.savedActivityId, buildActivityPayload(row))
         : await createActivityData(buildActivityPayload(row));
-      savedRows.push({
-        rowId: row.id,
-        savedActivityId: (saved as { id?: string })?.id,
+      didSaveRows = true;
+      // Keep each successful result immediately, even if a later row fails.
+      savedRowsRef.current.add(row.id);
+      updateRowStatus(row.id, {
+        errors: undefined,
+        status: 'saved',
+        savedActivityId: saved?.id,
+        savedRecord: saved,
       });
     }
-
-    setRows((prev) =>
-      prev.map((row) => {
-        const savedRow = savedRows.find((item) => item.rowId === row.id);
-
-        if (!savedRow) return row;
-
-        return {
-          ...row,
-          errors: undefined,
-          status: 'saved',
-          savedActivityId: savedRow.savedActivityId,
-        };
-      }),
-    );
-    await onSuccess({ source: 'manual' });
     toast.success(
       invalidRows.length > 0
-        ? `Spreadsheet rows saved for review. ${invalidRows.length} row${invalidRows.length === 1 ? '' : 's'} still need required fields before saving.`
-        : 'Spreadsheet rows saved for review.',
+        ? `Manual entries saved. ${invalidRows.length} row${invalidRows.length === 1 ? '' : 's'} still need required fields before saving.`
+        : 'Manual entries saved.',
     );
   } catch (err) {
     setRows((prev) =>
       prev.map((row) =>
-        persistableRows.some((item) => item.id === row.id)
+        persistableRows.some((item) => item.id === row.id) && row.status !== 'saved'
           ? {
               ...row,
               status: 'error',
@@ -2411,6 +2481,8 @@ async function saveAll() {
       technicalDetails: err instanceof Error ? err.message : 'Failed to save',
     });
   } finally {
+    if (didSaveRows) notifyManualSave();
+    savingAllRef.current = false;
     setIsSavingAll(false);
   }
 }
@@ -2593,7 +2665,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
           <span>{formatCount(importReviewSummary.total, 'record')} found</span>
           <span>{importReviewSummary.ready} ready for calculation</span>
           <span>{formatCount(importReviewSummary.tracked, 'tracked metric')}</span>
-          <span>{importReviewSummary.review} {importReviewSummary.review === 1 ? 'requires' : 'require'} review</span>
+          <span>{importReviewSummary.review} {importReviewSummary.review === 1 ? 'needs' : 'need'} attention</span>
           <span>{formatCount(importReviewSummary.missingDate, 'record')} missing date</span>
           <span>{formatCount(importReviewSummary.missingQuantity, 'record')} missing quantity</span>
           <span>{formatCount(importReviewSummary.invalidUnit, 'record')} invalid unit</span>
@@ -2704,7 +2776,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
               }}
               style={secondaryButtonStyle}
             >
-              View Calculation Review
+              View Calculation Results
             </button>
             <button
               type="button"
@@ -2768,6 +2840,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
               if (!canImportRows) return;
 
               if (field === 'activityType') {
+                savedRowsRef.current.delete(row.id);
                 setRows((prev) =>
                   prev.map((currentRow) =>
                     currentRow.id === row.id
@@ -2786,7 +2859,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
 
               updateRow(row.id, field as keyof Row, value);
             }}
-            review={
+            review={isSpreadsheetMode ? (
               <div style={draftReviewRowStyle}>
                 {renderPreviewPanel(
                   'Scope',
@@ -2809,7 +2882,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                   renderTreatmentCell(row),
                 )}
               </div>
-            }
+            ) : renderManualCalculationPreview(row)}
             onSave={() => saveRow(row)}
             saveDisabled={isRowSaveDisabled(row) || !canImportRows}
             saveLabel={getRowSaveLabel(row)}
@@ -2818,7 +2891,16 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
             removeAriaLabel={`Clear draft row ${index + 1}`}
             onRemove={() => removeRow(row.id)}
             savedActions={
-              row.status === 'saved' ? (
+              row.status === 'saved' && !isSpreadsheetMode && row.savedRecord ? (
+                <ManualEntryConfirmation
+                  record={row.savedRecord}
+                  onAddAnother={() => {
+                    setRows((prev) => prev.map((current) => current.id === row.id
+                      ? applyFactorToRow(createEmptyRow()) : current));
+                    setEntrySourceType('MANUAL');
+                  }}
+                />
+              ) : row.status === 'saved' ? (
                 <>
                   <button
                     type="button"

@@ -141,7 +141,7 @@ describe('canonical report semantics', () => {
       const text = pdfText(pdf);
       expect(text).toContain('2025-08-01 to 2026-10-14');
       expect(text).toContain('3,285.90');
-      if (profile === 'executive') expect(text).toContain('Structured Source Review');
+      if (profile === 'executive') expect(text).toContain('Structured Source Data Status');
       expect(text).not.toContain('2025 reporting period');
       if (profile === 'technical') {
         expect(text).toContain('3 source inputs');

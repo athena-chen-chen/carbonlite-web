@@ -69,8 +69,8 @@ test('field mapping import retains facilities and missing costs in reports and e
     matchedActivityEmissions: details.map((detail) => ({ ...detail, quantity: detail.activityQuantity, unit: detail.activityUnit, estimatedEmissionsKgCO2e: detail.calculatedEmissionsKgCO2e })),
     conversionFactorsUsed: api.conversionFactors.map((factor) => ({ ...factor, factorId: factor.id, factorName: factor.name, inputUnit: factor.unit, reportingYear: 2026 })),
   };
-  await page.getByRole('link', { name: 'Calculation Review', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Calculation Review' })).toBeVisible();
+  await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Calculation Results' })).toBeVisible();
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
   await page.getByRole('button', { name: 'Generate Report' }).click();
   await page.getByRole('button', { name: /Expand Audit Trail/ }).click();
@@ -84,10 +84,10 @@ test('field mapping import retains facilities and missing costs in reports and e
   await expect(page.getByText('0 of 5 imported activity records include optional cost data')).toBeVisible();
   await expect(page.getByText('5 of 5 imported activity records include optional cost data')).toHaveCount(0);
   await expect(page.getByText(/4 site\/facility groups/)).toBeVisible();
-  const sourceReview = page.getByRole('region', { name: 'Source Dataset Review Status' });
+  const sourceReview = page.getByRole('region', { name: 'Source Data Status' });
   await expect(sourceReview).toContainText('5 of 5');
-  await expect(sourceReview).toContainText('Reviewable Source Rows5');
-  await expect(sourceReview).toContainText('Source Rows Still Requiring Review0');
+  await expect(sourceReview).toContainText('Source Rows Assessed5');
+  await expect(sourceReview).toContainText('Source Rows Still Needing Attention0');
   await expect(sourceReview).not.toContainText('Limited');
   const optional = page.getByText('Optional Data Completeness', { exact: true }).locator('..');
   await expect(optional).toContainText('0%');
@@ -109,7 +109,7 @@ test('field mapping import retains facilities and missing costs in reports and e
   for (const name of new Set(rows.map((row) => row['Location Name']))) expect(csv).toContain(name);
   const pdfPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: /^Export reports$/i }).click();
-  await page.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/ }).click();
+  await page.getByRole('menuitem', { name: /Technical Emissions Report \(PDF\)/ }).click();
   const pdf = await fs.readFile((await (await pdfPromise).path())!);
   const encoded = pdf.toString('latin1');
   expect(encoded).toContain('%PDF');

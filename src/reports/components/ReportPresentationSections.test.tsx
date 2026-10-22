@@ -24,7 +24,7 @@ function readiness(): ReportingReadinessAssessment {
       },
       {
         code: 'SOURCE_REVIEW_COMPLETE',
-        label: 'Source data reviewed',
+        label: 'Source data assessed',
         workflowStageId: 'SOURCE_DATA',
         workflowStageLabel: 'Import',
         status: 'NEEDS_ATTENTION',
@@ -79,8 +79,8 @@ function sourceReview(overrides: Partial<SourceReviewSummary> = {}): SourceRevie
     availability: 'STRUCTURED_REVIEW_AVAILABLE',
     sourceType: 'SPREADSHEET',
     status: 'COMPLETE',
-    evidence: '5 source rows were reviewed.',
-    limitation: 'No unresolved source-review issues are currently recorded for this report scope.',
+    evidence: '5 source rows were assessed.',
+    limitation: 'No unresolved source-data issues are currently recorded for this report scope.',
     sourceFiles: ['review.xlsx'],
     totalRows: 5,
     readyCount: 5,
@@ -126,7 +126,7 @@ describe('report presentation sections', () => {
       />,
     );
 
-    expect(screen.getByText('5 of 5 source rows resolved/imported · 0 require review')).toBeInTheDocument();
+    expect(screen.getByText('5 of 5 source rows resolved/imported · 0 need attention')).toBeInTheDocument();
     expect(screen.getAllByText('5').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('Limited')).not.toBeInTheDocument();
@@ -150,7 +150,7 @@ describe('report presentation sections', () => {
       />,
     );
 
-    expect(screen.getByText('Document source lineage available; structured review counts limited')).toBeInTheDocument();
+    expect(screen.getByText('Document source lineage available; structured validation counts limited')).toBeInTheDocument();
     expect(screen.getAllByText('Limited').length).toBeGreaterThan(0);
     expect(screen.getByText(/Structured unresolved-source-row counts are not available/i)).toBeInTheDocument();
   });

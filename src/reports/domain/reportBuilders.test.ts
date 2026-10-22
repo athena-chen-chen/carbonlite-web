@@ -292,7 +292,7 @@ describe('report domain builders', () => {
     expect(hotspots.excludedRecordCount).toBe(1);
   });
 
-  it('builds factor review and readiness summaries without mutating factor lineage', () => {
+  it('builds factor validation and readiness summaries without mutating factor lineage', () => {
     const factors = [
       factor({ factorId: 'eccc-2026', verified: true, sourceAuthority: 'ECCC' }),
       factor({ factorId: 'custom-unverified', verified: false, sourceAuthority: 'Customer' }),

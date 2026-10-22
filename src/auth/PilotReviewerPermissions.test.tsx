@@ -179,7 +179,7 @@ describe('Pilot Reviewer permission regressions', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('allows pilot reviewer login and read-only data, factor, calculation review, report-data, and feedback paths', async () => {
+  it('allows pilot reviewer login and read-only data, factor, calculation results, report-data, and feedback paths', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
 

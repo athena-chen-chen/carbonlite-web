@@ -1381,8 +1381,8 @@ describe('loadMetricsOverview', () => {
         'Factor Source Year': 2025,
         'Factor Selection Reason': 'GENERIC_JURISDICTION_FALLBACK',
       });
-      expect(naturalGasCsv?.['Review Note']).toContain('Canada-generic ECCC factor');
-      expect(naturalGasCsv?.['Review Note']).not.toContain('CarbonLite system-default factor');
+      expect(naturalGasCsv?.['Validation Note']).toContain('Canada-generic ECCC factor');
+      expect(naturalGasCsv?.['Validation Note']).not.toContain('CarbonLite system-default factor');
     });
 
     it('freezes carbonlite_field_mapping_test.xlsx facility, source, missing-cost, and total contracts', () => {
@@ -1904,7 +1904,7 @@ describe('loadMetricsOverview', () => {
     });
   });
 
-  it('keeps in-scope review records even when no emissions were calculated', async () => {
+  it('keeps in-scope validation records even when no emissions were calculated', async () => {
     const summary = backendSummary();
     vi.mocked(getCalculationSummary).mockResolvedValue({
       ...summary,
@@ -2040,7 +2040,7 @@ describe('loadMetricsOverview', () => {
       activities: [activity], matchedActivityEmissions: [], conversionFactorsUsed: [], records: [],
       calculationDetails: [{ ...backendSummary().calculationDetails[0], activityDataId: 'activity-1', sourceType: 'MANUAL', activityType: 'ELECTRICITY', activityQuantity: 980, activityUnit: 'kWh', recordDate: '2026-10-14', jurisdictionRegion: 'Alberta', factorId: 'electricity-ab', factorValue: .53, factorName: 'Electricity - Alberta', factorInputUnit: 'kWh', calculatedEmission: 519.4, calculatedEmissionsKgCO2e: 519.4, status: 'CALCULATED', calculationStatus: 'CALCULATED', manualSourceProvenance: hasOrigin ? origin : null }],
     } as any);
-    vi.mocked(getAllConversionFactors).mockResolvedValue([{ id: 'electricity-ab', activityType: 'ELECTRICITY', name: 'Electricity - Alberta', type: 'EMISSION', unit: 'kWh', inputUnit: 'kWh', factorValue: .53, resultUnit: 'kgCO2e', jurisdiction: 'Alberta, Canada', region: 'Alberta', country: 'Canada', sourceYear: 2025, sourceAuthority: 'CarbonLite', sourceDocument: 'Default Factors v1.0', isSystemDefault: true, isDefault: true }] as any);
+    vi.mocked(getAllConversionFactors).mockResolvedValue([{ id: 'electricity-ab', activityType: 'ELECTRICITY', name: 'Electricity - Alberta', type: 'EMISSION', unit: 'kWh', inputUnit: 'kWh', factorValue: .53, resultUnit: 'kgCO2e', jurisdiction: 'Alberta, Canada', region: 'Alberta', country: 'Canada', sourceYear: 2025, sourceAuthority: 'CarbonLite', sourceDocument: 'CarbonLite Default Factor Library v1.0', isSystemDefault: true, isDefault: true }] as any);
     const overview = await loadMetricsOverview();
     const detail = overview.calculationDetails[0];
     expect(detail.status).toBe('CALCULATED');

@@ -1,6 +1,6 @@
 import { getActivityTypeLabel, getFactorDisplayName } from './activityType';
 import { formatDateOnly } from './dateOnly';
-import { escapeCsvValue } from './reportCsvExport';
+import { escapeCsvValue } from './csv';
 import {
   formatScopeClassification,
   resolveScopeClassification,
@@ -253,13 +253,22 @@ function buildDataRecordsCsvRows(records: DataRecordCsvExportItem[]): DataRecord
   }));
 }
 
+const NUMERIC_CSV_HEADERS = new Set<string>([
+  'Quantity', 'Factor Source Year', 'Calculated Emissions kgCO2e',
+]);
+
 export function buildDataRecordsCsv(records: DataRecordCsvExportItem[]) {
   const rows = buildDataRecordsCsvRows(records);
   return [
     DATA_RECORDS_CSV_HEADERS.join(','),
-    ...rows.map((row) =>
-      DATA_RECORDS_CSV_HEADERS.map((header) => escapeCsvValue(row[header])).join(','),
-    ),
+    ...rows.map((row, index) => {
+      // This column contains a factor name when present, otherwise a numeric value.
+      const hasFactorName = Boolean(formatOptionalValue(getFactorDisplayName(records[index].matchedFactorName)));
+      return DATA_RECORDS_CSV_HEADERS.map((header) => escapeCsvValue(row[header],
+        NUMERIC_CSV_HEADERS.has(header) || (header === 'Emission Factor' && !hasFactorName)
+          ? 'number' : 'text',
+      )).join(',');
+    }),
   ].join('\n');
 }
 

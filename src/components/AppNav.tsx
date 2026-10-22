@@ -17,7 +17,7 @@ const navItems = [
   { to: '/organization-profile', label: 'Organization & Boundary' },
   { to: INPUT_DATA_ROUTE, label: 'Input Data', activePaths: [LEGACY_UPLOAD_ROUTE] },
   { to: DATA_RECORDS_ROUTE, label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
-  { to: CALCULATION_REVIEW_ROUTE, label: 'Calculation Review', activePaths: ['/calculation-review'] },
+  { to: CALCULATION_REVIEW_ROUTE, label: 'Calculation Results', activePaths: ['/calculation-review'] },
   { to: REPORTS_ROUTE, label: 'Reports' },
 ] as const;
 

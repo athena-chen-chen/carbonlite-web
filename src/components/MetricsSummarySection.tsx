@@ -538,7 +538,7 @@ export function MetricsSummarySection({
             <strong>{trackedMetricCount}</strong> Tracked {trackedMetricCount === 1 ? 'Metric' : 'Metrics'}
           </div>
           <div>
-            <strong>{recordsRequiringReviewCount}</strong> {recordsRequiringReviewCount === 1 ? 'record' : 'records'} requiring review
+            <strong>{recordsRequiringReviewCount}</strong> {recordsRequiringReviewCount === 1 ? 'record' : 'records'} needing attention
           </div>
           <div>
             <strong>{excludedDueToCalculationIssuesCount}</strong> Excluded Due to Calculation Issues
@@ -555,13 +555,13 @@ export function MetricsSummarySection({
             ))}
           </div>
         ) : (
-          <div style={allIncludedStyle}>No records require calculation review</div>
+          <div style={allIncludedStyle}>No records need attention</div>
         )}
       </div>
 
       {recordsIncludedInGhgTotal > 0 && recordsRequiringReviewCount > 0 && hasBlockingCalculationIssues ? (
         <div style={partialCalculationWarningStyle}>
-          Some records require review and were not included in emissions totals.
+          Some records need attention and were not included in emissions totals.
         </div>
       ) : null}
 
@@ -984,7 +984,7 @@ function CalculationTrailModal({
               />
               <CalculationDetailField label="Included records" value={trail.includedRecords.length} />
               <CalculationDetailField label="Tracked metrics" value={trail.trackedMetrics.length} />
-              <CalculationDetailField label="Records requiring review" value={trail.reviewRecords.length} />
+              <CalculationDetailField label="Records needing attention" value={trail.reviewRecords.length} />
             </div>
           </section>
 
@@ -1026,7 +1026,7 @@ function CalculationTrailModal({
 
           {trail.reviewRecords.length > 0 ? (
             <section style={calculationTrailSectionStyle}>
-              <h3 style={calculationTrailSectionTitleStyle}>Records Requiring Review</h3>
+              <h3 style={calculationTrailSectionTitleStyle}>Records Needing Attention</h3>
               <div style={calculationTrailRecordListStyle}>
                 {trail.reviewRecords.map((detail, index) => (
                   <div key={`review-${index}`} style={calculationTrailReviewCardStyle}>
@@ -1034,7 +1034,7 @@ function CalculationTrailModal({
                     <span>{formatCalculationStatus(detail.status)}</span>
                     <small>
                       {detail.status === 'MISSING_FACTOR'
-                        ? 'No matched factor available. Review required.'
+                        ? 'No matched factor available. Needs attention.'
                         : detail.reason || buildCalculatedFormula(detail)}
                     </small>
                   </div>
@@ -1047,7 +1047,7 @@ function CalculationTrailModal({
             <h3 style={calculationTrailSectionTitleStyle}>Matched Emission Factors</h3>
             {trail.factorSummaries.length === 0 ? (
               <div style={calculationTrailEmptyStyle}>
-                No matched factor available. Review required.
+                No matched factor available. Needs attention.
               </div>
             ) : (
               <div style={calculationTrailFactorGridStyle}>
@@ -1117,7 +1117,7 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
           label="Matched factor"
           value={detail.status === 'CALCULATED' || isTrackedMetricDetail(detail)
             ? formatTraceableFactor(detail)
-            : 'No matched factor available. Review required.'}
+            : 'No matched factor available. Needs attention.'}
         />
         <CalculationDetailField
           label="Activity year used for matching"
@@ -1282,14 +1282,14 @@ function buildTrailFactorSummary(detail: CalculationAuditDetail) {
     jurisdiction: formatFactorJurisdiction(detail),
     value:
       detail.factorValue === null || detail.factorValue === undefined
-        ? 'Source review required'
+        ? 'Source information needed'
         : `${formatFactorValue(detail.factorValue)} ${formatReportFactorUnit(
             detail.factorResultUnit,
             detail.factorInputUnit || detail.normalizedUnit || detail.activityUnit,
           )}`,
     sourceYear: formatSafeValue(sourceYear),
-    sourceAuthority: formatSafeValue(detail.sourceAuthority || detail.factorSource, 'Source review required'),
-    sourceDocument: formatSafeValue(detail.sourceDocument, 'Source review required'),
+    sourceAuthority: formatSafeValue(detail.sourceAuthority || detail.factorSource, 'Source information needed'),
+    sourceDocument: formatSafeValue(detail.sourceDocument, 'Source information needed'),
     provenanceLines: getDisplayFactorProvenanceLines(detail),
     confidence: formatCredibilityLabel(detail.factorConfidenceLevel) || 'Pilot Estimate',
     verification: formatReportVerification({
@@ -1307,7 +1307,7 @@ function formatFactorJurisdiction(detail: CalculationAuditDetail) {
   return getDisplayFactorJurisdiction(detail);
 }
 
-function formatSafeValue(value: unknown, fallback = 'Source review required') {
+function formatSafeValue(value: unknown, fallback = 'Source information needed') {
   const text = String(value ?? '').trim();
   if (!text || ['null', 'undefined', 'nan'].includes(text.toLowerCase())) return fallback;
   return text;
@@ -1597,27 +1597,27 @@ function formatHotspotEstimateConfidence(
   reasonKeys: Set<HotspotFactorQualityReason>,
   hasMixedQuality: boolean,
 ) {
-  if (hasMixedQuality) return 'Mixed factor quality / review required';
-  if (reasonKeys.has('engineering')) return 'Engineering estimate / review required';
+  if (hasMixedQuality) return 'Mixed factor quality / needs attention';
+  if (reasonKeys.has('engineering')) return 'Engineering estimate / needs attention';
   if (reasonKeys.has('pilot') && (reasonKeys.has('priorYear') || reasonKeys.has('proxy'))) {
     return 'Pilot-stage / prior-year estimate';
   }
-  if (reasonKeys.has('pilot')) return 'Pilot estimate / review required';
-  if (reasonKeys.has('placeholder')) return 'Placeholder / review required';
-  if (reasonKeys.has('priorYear') || reasonKeys.has('proxy')) return 'Prior-year estimate / review required';
-  if (reasonKeys.has('unverified')) return 'Internal Review Required';
-  return 'Review required';
+  if (reasonKeys.has('pilot')) return 'Pilot estimate / needs attention';
+  if (reasonKeys.has('placeholder')) return 'Placeholder / needs attention';
+  if (reasonKeys.has('priorYear') || reasonKeys.has('proxy')) return 'Prior-year estimate / needs attention';
+  if (reasonKeys.has('unverified')) return 'Needs attention';
+  return 'Needs attention';
 }
 
 function formatValidationReasonPhrase(estimateConfidence: string) {
   const normalized = estimateConfidence.toLowerCase();
-  if (normalized.includes('engineering')) return 'an engineering estimate requiring review';
+  if (normalized.includes('engineering')) return 'an engineering estimate needing attention';
   if (normalized.includes('pilot-stage') || normalized.includes('pilot estimate')) return 'a pilot-stage estimate';
-  if (normalized.includes('prior-year')) return 'a prior-year estimate requiring review';
-  if (normalized.includes('placeholder')) return 'a placeholder factor requiring review';
+  if (normalized.includes('prior-year')) return 'a prior-year estimate needing attention';
+  if (normalized.includes('placeholder')) return 'a placeholder factor needing attention';
   if (normalized.includes('mixed')) return 'mixed factor quality';
   if (normalized.includes('unverified')) return 'an unverified factor';
-  return 'a factor requiring review';
+  return 'a factor needing attention';
 }
 
 function buildHotspotFocusMessage(
@@ -1732,18 +1732,18 @@ export function formatHotspotExclusionNote(input: HotspotExclusionSummary) {
       : '';
 
   if (trackedMetrics > 0 && reviewRecords === 0) {
-    return `${formatCount(trackedMetrics, 'tracked operational metric')} ${trackedMetrics === 1 ? 'is' : 'are'} excluded from the calculated GHG emissions total. No imported activity records require review.${sourceReviewSentence}`;
+    return `${formatCount(trackedMetrics, 'tracked operational metric')} ${trackedMetrics === 1 ? 'is' : 'are'} excluded from the calculated GHG emissions total. No imported activity records need attention.${sourceReviewSentence}`;
   }
 
   if (trackedMetrics > 0 && reviewRecords > 0) {
-    return `Tracked operational metrics are excluded from the calculated GHG emissions total by design. ${formatCount(reviewRecords, 'imported activity record')} ${reviewRecords === 1 ? 'requires' : 'require'} review before inclusion.${sourceReviewSentence}`;
+    return `Tracked operational metrics are excluded from the calculated GHG emissions total by design. ${formatCount(reviewRecords, 'imported activity record')} ${reviewRecords === 1 ? 'needs' : 'need'} attention before inclusion.${sourceReviewSentence}`;
   }
 
   if (reviewRecords > 0) {
-    return `${formatCount(reviewRecords, 'imported activity record')} ${reviewRecords === 1 ? 'requires' : 'require'} review before inclusion in the calculated GHG emissions total. See Records Requiring Review for details.${sourceReviewSentence}`;
+    return `${formatCount(reviewRecords, 'imported activity record')} ${reviewRecords === 1 ? 'needs' : 'need'} attention before inclusion in the calculated GHG emissions total. See Records Needing Attention for details.${sourceReviewSentence}`;
   }
 
-  return `No tracked metrics or imported activity records requiring review were identified for this report scope.${sourceReviewSentence}`;
+  return `No tracked metrics or imported activity records needing attention were identified for this report scope.${sourceReviewSentence}`;
 }
 
 function mapHotspotExcludedReason(
@@ -1774,7 +1774,7 @@ function buildExcludedHotspotMessage(
   if (reason === 'MISSING_JURISDICTION') {
     return `${displayName} records were excluded because jurisdiction is required for factor matching.`;
   }
-  return `${displayName} records require review before emissions can be calculated.`;
+  return `${displayName} records need attention before emissions can be calculated.`;
 }
 
 function roundDisplay(value: number) {
@@ -2106,7 +2106,7 @@ export function assessCarbonCreditReadiness(input: {
         status: jurisdictionKnown && reviewThresholdPassed ? 'PASS' : 'WARNING',
         message:
           hasReviewBlockers
-            ? 'Resolve records requiring jurisdiction or factor review before using this in carbon credit readiness discussions.'
+            ? 'Resolve records requiring jurisdiction or factor validation before using this in carbon credit readiness discussions.'
             : 'Carbon credit programs and protocols may depend on jurisdiction, project type, and applicable program rules.',
       },
       {
@@ -2223,7 +2223,7 @@ function buildCarbonCreditNextSteps(input: {
   if (!input.hasTraceableFactors) steps.push('Review emission factor source, year, jurisdiction, confidence level, and verification status.');
   if (!input.jurisdictionKnown) steps.push('Confirm jurisdiction and facility location for the reduction activity.');
   if (!input.projectBoundaryDefined) steps.push('Define the activity boundary, facility, and operational scope before professional review.');
-  if (input.recordsRequiringReviewCount > 0) steps.push('Resolve records requiring review before using results in carbon credit discussions.');
+  if (input.recordsRequiringReviewCount > 0) steps.push('Resolve records needing attention before using results in carbon credit discussions.');
   if (!input.protocolKnown) steps.push('Review applicable carbon credit protocols with a qualified sustainability professional or program authority.');
 
   steps.push('Consult a qualified professional before making any carbon credit claim or program submission.');
@@ -2287,7 +2287,7 @@ function ScopeSummaryCard({
           Emissions by Scope
         </h2>
         <p style={summaryHelperTextStyle}>
-          Scope totals include calculated records only. Tracked metrics and records requiring review are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
+          Scope totals include calculated records only. Tracked metrics and records needing attention are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
         </p>
       </div>
       <div style={scopeSummaryGridStyle}>
@@ -2335,7 +2335,7 @@ function DataReadinessCard({
             Reporting Readiness Checklist
           </h2>
           <p style={summaryHelperTextStyle}>
-            CarbonLite checks reporting boundary, source review, required activity data, factor review, calculations, traceability, and reviewer approval as separate evidence-based items.
+            CarbonLite checks reporting boundary, source validation, required activity data, factor validation, calculations, traceability, and reviewer approval as separate evidence-based items.
           </p>
         </div>
         <div style={readinessStatusStyle(assessment.overallStatus)}>
@@ -2348,7 +2348,7 @@ function DataReadinessCard({
       </p>
       <div style={readinessStatsGridStyle}>
         <div><strong>{summary.recordsReadyForCalculation}</strong> calculated {summary.recordsReadyForCalculation === 1 ? 'record' : 'records'}</div>
-        <div><strong>{summary.recordsRequiringReview}</strong> {summary.recordsRequiringReview === 1 ? 'record' : 'records'} require review</div>
+        <div><strong>{summary.recordsRequiringReview}</strong> {summary.recordsRequiringReview === 1 ? 'record' : 'records'} need attention</div>
         <div><strong>{summary.missingFactorCount}</strong> missing {summary.missingFactorCount === 1 ? 'factor' : 'factors'}</div>
         <div><strong>{summary.invalidUnitCount}</strong> invalid {summary.invalidUnitCount === 1 ? 'unit' : 'units'}</div>
         <div><strong>{summary.missingJurisdictionCount}</strong> missing {summary.missingJurisdictionCount === 1 ? 'province' : 'provinces'}</div>
@@ -2361,7 +2361,7 @@ function DataReadinessCard({
         <summary style={readinessDetailsSummaryStyle}>View readiness details</summary>
         <div style={readinessExplanationStyle}>
           <p>
-            Reporting Readiness is a checklist. A complete calculation does not imply that source issues, factor review, reporting boundary, or reviewer approval are complete.
+            Reporting Readiness is a checklist. A complete calculation does not imply that source issues, factor validation, reporting boundary, or reviewer approval are complete.
           </p>
           <p>
             Calculation Coverage is calculated emission-bearing records divided by eligible
@@ -2504,7 +2504,7 @@ function HotspotAnalysisSection({
       title="Emissions Hotspots"
       summary={
         isExpanded
-          ? 'Estimated emissions by activity category. Records requiring review are excluded from hotspot totals.'
+          ? 'Estimated emissions by activity category. Records needing attention are excluded from hotspot totals.'
           : 'Top contributing activity areas are available for review.'
       }
       expanded={isExpanded}
@@ -2675,7 +2675,7 @@ function formatCreditCheckStatus(
 ) {
   const labels: Record<CarbonCreditReadinessAssessment['checklist'][number]['status'], string> = {
     PASS: 'Pass',
-    WARNING: 'Review',
+    WARNING: 'Needs attention',
     MISSING: 'Missing',
     NOT_ASSESSED: 'Not assessed',
   };
@@ -2692,7 +2692,7 @@ function formatExcludedReason(reason: HotspotAnalysis['excludedCategories'][numb
     MISSING_FACTOR: 'Missing factor',
     INVALID_UNIT: 'Invalid unit',
     TRACKED_ONLY: 'Tracked metric',
-    NEEDS_REVIEW: 'Needs review',
+    NEEDS_REVIEW: 'Needs attention',
     MISSING_JURISDICTION: 'Missing jurisdiction',
   };
 
@@ -2724,7 +2724,7 @@ function CalculationSummaryEmptyState({
       <div style={calculationEmptyTitleStyle}>No calculated emissions yet.</div>
       <div>
         Records exist, but emissions could not be calculated because some records
-        require missing factors or data review.
+        require missing factors or data validation.
       </div>
       {informationalIssueGroups.length > 0 ? (
         <div style={trackedMetricListStyle}>
@@ -2902,7 +2902,7 @@ function formatDetailJurisdiction(detail: CalculationAuditDetail) {
 function formatFactorSetValue(value?: string | null) {
   const text = String(value ?? '').trim();
   if (!text || ['null', 'undefined', 'nan'].includes(text.toLowerCase())) return 'Not specified';
-  if (/source review required|internal review required|review required/i.test(text)) return 'Not specified';
+  if (/source information needed|source review required|internal review required|review required/i.test(text)) return 'Not specified';
   return text;
 }
 

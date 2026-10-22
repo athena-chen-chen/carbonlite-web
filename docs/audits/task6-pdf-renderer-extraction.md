@@ -37,7 +37,7 @@ Shared layout helpers covered:
 
 Technical section helpers were `drawInventoryBoundaryPdfSection`, `drawRegulatoryReportingReferencePdfSection`, `drawEmissionsHotspotsPdfSection`, `drawFactorDetailsPdfSection`, `buildFactorDetailText`, `estimateFactorDetailBlockHeight`, and `drawFactorDetailBlock`.
 
-PDF display helpers formatted source-review counts/files/issues/actions/appendices, boundary values/status/date, hotspot levels/exclusion reasons, optional-data counts, readiness table rows, facility activity summaries/thresholds, scope descriptions, and executive limitations/priorities.
+PDF display helpers formatted source-data counts/files/issues/actions/appendices, boundary values/status/date, hotspot levels/exclusion reasons, optional-data counts, readiness table rows, facility activity summaries/thresholds, scope descriptions, and executive limitations/priorities.
 
 ### Closure and side-effect dependencies
 

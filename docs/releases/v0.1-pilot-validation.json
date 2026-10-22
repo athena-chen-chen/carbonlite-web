@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-22",
+  "timezone": "America/Edmonton",
+  "scope": "Reviewed product source unchanged; closure documentation and read-only operator SQL added. No commit, tag or deploy.",
+  "frontend": {
+    "focusedTests": {
+      "passed": 468,
+      "failed": 0,
+      "files": 32
+    },
+    "typecheck": "PASS",
+    "productionBuild": "PASS",
+    "buildWarning": "Existing large-bundle warning; build succeeds. Build sanity only; deployment environment not certified."
+  },
+  "backend": {
+    "backendE2e": {
+      "passed": 50,
+      "failed": 0,
+      "files": 3
+    },
+    "backendSafety": {
+      "passed": 33,
+      "failed": 0,
+      "files": 2
+    },
+    "backendUnit": {
+      "passed": 66,
+      "failed": 0,
+      "files": 3
+    },
+    "typecheck": "PASS",
+    "nestProductionBuild": "PASS",
+    "criticalCounts": {
+      "F05Concurrency": 14,
+      "F12Eligibility": 20,
+      "F20Safety": 33,
+      "F21ApiValidation": 16,
+      "F21DtoUnit": 57,
+      "F21CollectionBoundary": 1,
+      "F23Health": 8
+    },
+    "localHealthyDatabaseEndpoints": [
+      {
+        "path": "/api/health",
+        "status": 200
+      },
+      {
+        "path": "/api/health/live",
+        "status": 200
+      },
+      {
+        "path": "/api/health/ready",
+        "status": 200
+      }
+    ],
+    "databaseFailureSimulation": "Existing health mocks: readiness 503, liveness 200; no real DB interruption.",
+    "testDatabase": "F20-approved localhost carbonlite_ci_test only"
+  },
+  "notRerun": [
+    "Entire historical test suite",
+    "Previously known out-of-scope authorization payload / Data Records loading assertions",
+    "New production or pilot baseline replay",
+    "Pilot smoke or source restart/redeploy durability test",
+    "Provider-console settings, live factors/admin inventory, backup restore"
+  ],
+  "pilotDatabaseQueriesExecuted": false,
+  "productCodeChanged": false,
+  "operatorSqlVerification": "Static review only; no pilot database was identified and no new operator SQL was executed.",
+  "credentialPatternScan": "No private-key, provider-secret, or JWT-literal candidates found in the captured source manifests; no secret values printed."
+}

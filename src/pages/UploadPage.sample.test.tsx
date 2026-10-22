@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   UploadPage,
   buildDocumentImportActivityPayload,
@@ -181,6 +181,9 @@ vi.mock('../components/ExcelInputTable', () => ({
         <p>Enter one activity record manually when no file is available.</p>
         <button type="button">Add activity record</button>
         <strong>No manual activity rows yet.</strong>
+        <button type="button" onClick={() => void onSuccess?.({ source: 'manual', savedCount: 1 })}>
+          Mock manual save
+        </button>
       </div>
     ),
 }));
@@ -458,6 +461,175 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(getAllConversionFactors).mockResolvedValue(defaultConversionFactors as any);
   });
 
+  // Exercise the real documents service beneath the page, with actual 20-item API pages.
+  async function paginatedSources() {
+    const service = await vi.importActual<typeof import('../services/documents')>('../services/documents');
+    let sources = Array.from({ length: 25 }, (_, i) => ({
+      id: `paged-${i + 1}`, organizationId: 'org-1', fileName: `paged-${i + 1}.xlsx`, fileUrl: '',
+      type: 'SPREADSHEET', status: i === 24 ? 'REVIEW_REQUIRED' : 'IMPORTED', importedRecordCount: 3,
+      createdAt: new Date(Date.UTC(2026, 6, 25 - i)).toISOString(), updatedAt: '2026-07-25T00:00:00Z',
+    }));
+    const fetchPages = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(String(input));
+      if (!url.pathname.endsWith('/documents')) throw new Error(`Unexpected request ${url.pathname}`);
+      const page = Number(url.searchParams.get('page') || 1);
+      return new Response(JSON.stringify({
+        items: sources.slice((page - 1) * 20, page * 20), page, pageSize: 20,
+        total: sources.length, totalPages: Math.ceil(sources.length / 20),
+      }), { status: 200 });
+    });
+    vi.mocked(getDocuments).mockImplementation(service.getDocuments);
+    return { fetchPages, get: () => sources, set: (next: typeof sources) => { sources = next; } };
+  }
+
+  it('F14: expands all 25 sources, opens later-page details, and scopes calculation results across pages', async () => {
+    await paginatedSources();
+    render(<MemoryRouter><UploadPage /><LocationStateProbe /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand document list (25)' }));
+    expect(screen.getAllByRole('row')).toHaveLength(26);
+    const older = screen.getByLabelText('Select document paged-25.xlsx');
+    expect(older).toBeEnabled();
+    expect(within(older.closest('tr')!).getByText('Needs Review')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Open document actions for paged-25.xlsx' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'View Details' }));
+    expect(within(screen.getByRole('dialog')).getByText('paged-25.xlsx')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Close document details' }));
+    await userEvent.click(older);
+    await userEvent.click(screen.getByLabelText('Select document paged-1.xlsx'));
+    await userEvent.click(screen.getByRole('button', { name: 'View Calculation Results' }));
+    expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({
+      reportScope: 'selectedDocuments', selectedDocumentIds: ['paged-1', 'paged-25'],
+    });
+  });
+
+  it('F14: deletes a later-page source while retaining all other sources and the correct count', async () => {
+    const collection = await paginatedSources();
+    vi.mocked(deleteDocument).mockImplementation(async id => {
+      collection.set(collection.get().filter(source => source.id !== id));
+      return { deletedDocument: true, deletedActivityRecords: 0 };
+    });
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand document list (25)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open document actions for paged-25.xlsx' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete Source Document' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete Source Document' }));
+    await waitFor(() => expect(screen.queryByLabelText('Select document paged-25.xlsx')).not.toBeInTheDocument());
+    expect(deleteDocument).toHaveBeenCalledWith('paged-25');
+    expect(screen.getAllByRole('row')).toHaveLength(25);
+    expect(screen.getByText('paged-24.xlsx')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse document list' }));
+    expect(screen.getByRole('button', { name: 'Expand document list (24)' })).toBeInTheDocument();
+  });
+
+  it('F14: keeps later-page Retry Extraction reachable and refreshes every page', async () => {
+    const collection = await paginatedSources();
+    collection.set(collection.get().map(source => source.id === 'paged-25' ? { ...source, type: 'PDF', status: 'EXTRACTION_FAILED' } : source));
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: 'paged-25', status: 'REVIEW_REQUIRED', parsedActivities: [],
+      sourceRowCount: 0, extractedRowCount: 0, possibleMissingRows: false, warning: null,
+    });
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand document list (25)' }));
+    await userEvent.click(within(screen.getByText('paged-25.xlsx').closest('tr')!).getByRole('button', { name: 'Retry Extraction' }));
+    await waitFor(() => expect(extractDocument).toHaveBeenCalledWith('paged-25'));
+    await waitFor(() => expect(collection.fetchPages).toHaveBeenCalledTimes(4));
+    expect(await screen.findByText('paged-24.xlsx')).toBeInTheDocument();
+  });
+
+  it('F14: shows an error for page 2 failure, keeps loading through page 2, and retries without remount', async () => {
+    const collection = await paginatedSources();
+    const succeed = collection.fetchPages.getMockImplementation()!;
+    let finish!: (response: Response) => void;
+    collection.fetchPages.mockImplementationOnce(succeed).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+    await waitFor(() => expect(collection.fetchPages).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Loading input sources...')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    await act(async () => { finish(new Response('temporarily unavailable', { status: 503 })); });
+    await screen.findByText('Input sources could not be fully loaded.');
+    expect(screen.queryByText('No data sources to review yet.')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading input sources' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand document list (25)' }));
+    expect(screen.getByText('paged-25.xlsx')).toBeInTheDocument();
+  });
+
+  it('F14: upload refresh retains the older pages and increases the total', async () => {
+    const collection = await paginatedSources();
+    const uploaded = { ...collection.get()[0], id: 'paged-new', fileName: 'new.pdf', type: 'PDF', status: 'UPLOADED' };
+    vi.mocked(uploadDocument).mockImplementation(async () => { collection.set([uploaded, ...collection.get()]); return uploaded; });
+    vi.mocked(extractDocument).mockResolvedValue({
+      documentId: uploaded.id, status: 'REVIEW_REQUIRED', parsedActivities: [],
+      sourceRowCount: 0, extractedRowCount: 0, possibleMissingRows: false, warning: null,
+    });
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+    await screen.findByRole('button', { name: 'Expand document list (25)' });
+    await userEvent.upload(document.getElementById('document-upload-input') as HTMLInputElement, new File(['bill'], 'new.pdf', { type: 'application/pdf' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand document list (26)' }));
+    expect(screen.getAllByRole('row')).toHaveLength(27);
+    expect(screen.getByText('paged-25.xlsx')).toBeInTheDocument();
+    expect(within(screen.getAllByRole('row')[1]).getByText('new.pdf')).toBeInTheDocument();
+  });
+
+  it.each(['success', 'failure'] as const)('route restoration B wins after late A %s', async (outcome) => {
+    const docA = { id: 'route-A', fileName: 'A.pdf', fileUrl: '', type: 'PDF', status: 'REVIEW_REQUIRED', createdAt: '2026-03-01', updatedAt: '2026-03-01' };
+    const docB = { ...docA, id: 'route-B', fileName: 'B.pdf' };
+    vi.mocked(getDocuments).mockResolvedValue({ items: [docA, docB], page: 1, pageSize: 20, total: 2, totalPages: 1 });
+    let resolveA!: (value: Awaited<ReturnType<typeof getDocumentExtraction>>) => void;
+    let rejectA!: (error: Error) => void;
+    let resolveB!: (value: Awaited<ReturnType<typeof getDocumentExtraction>>) => void;
+    vi.mocked(getDocumentExtraction)
+      .mockReturnValueOnce(new Promise((yes, no) => { resolveA = yes; rejectA = no; }))
+      .mockReturnValueOnce(new Promise((yes) => { resolveB = yes; }));
+    function RouteSwitch() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/input-data?view=review&documentId=route-B')}>Switch review route</button>;
+    }
+    render(<MemoryRouter initialEntries={['/input-data?view=review&documentId=route-A']}><RouteSwitch /><UploadPage /></MemoryRouter>);
+    await waitFor(() => expect(getDocumentExtraction).toHaveBeenCalledWith('route-A'));
+    await userEvent.click(screen.getByRole('button', { name: 'Switch review route' }));
+    await waitFor(() => expect(getDocumentExtraction).toHaveBeenCalledWith('route-B'));
+    const response = (id: string, marker: string) => ({ documentId: id, status: 'REVIEW_REQUIRED', parsedActivities: [{ activityType: 'WATER', quantity: 18, unit: 'm3', recordDate: '2026-03-01', sourceReference: marker }], sourceRowCount: 1, extractedRowCount: 1, possibleMissingRows: false, warning: null });
+    await act(async () => resolveB(response('route-B', 'B-only')));
+    expect(await screen.findByDisplayValue('B-only')).toBeInTheDocument();
+    await act(async () => outcome === 'success' ? resolveA(response('route-A', 'A-only')) : rejectA(new Error('late failure')));
+    expect(screen.getByDisplayValue('B-only')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('A-only')).not.toBeInTheDocument();
+    expect(screen.queryByText('Extraction preview could not be loaded. Please retry extraction.')).not.toBeInTheDocument();
+  });
+
+  it('reset during upload prevents a late upload from starting obsolete extraction', async () => {
+    let finishUpload!: (value: Awaited<ReturnType<typeof uploadDocument>>) => void;
+    vi.mocked(uploadDocument).mockReturnValueOnce(new Promise((resolve) => { finishUpload = resolve; }));
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+    await userEvent.upload(document.getElementById('document-upload-input') as HTMLInputElement, new File(['bill'], 'pending.pdf', { type: 'application/pdf' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(1));
+    act(() => window.dispatchEvent(new Event('carbonlite:demo-data-reset')));
+    await act(async () => finishUpload({ id: 'obsolete-upload', fileName: 'pending.pdf', fileUrl: '', type: 'PDF', status: 'UPLOADED', createdAt: '2026-03-01', updatedAt: '2026-03-01' }));
+    expect(extractDocument).not.toHaveBeenCalled();
+    expect(screen.queryByText('Draft Records Review')).not.toBeInTheDocument();
+    expect(screen.queryByText('Upload completed. Extracting data now...')).not.toBeInTheDocument();
+  });
+
+  it.each(['factor', 'imported'] as const)('route-restored review recovers from a transient %s lookup failure without remount', async (lookup) => {
+    const source = { id: 'lookup-retry', fileName: 'lookup-retry.csv', fileUrl: '', type: 'SPREADSHEET', status: 'REVIEW_REQUIRED', createdAt: '2026-03-01', updatedAt: '2026-03-01' };
+    vi.mocked(getDocuments).mockResolvedValue({ items: [source], page: 1, pageSize: 20, total: 1, totalPages: 1 });
+    vi.mocked(getDocumentExtraction).mockResolvedValue({ documentId: source.id, status: 'REVIEW_REQUIRED', parsedActivities: [{ activityType: 'ELECTRICITY', quantity: 980, unit: 'kWh', recordDate: '2026-03-01', jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', sourceRow: 2, sourceReference: 'LOOKUP-RECOVERED' }], sourceRowCount: 1, extractedRowCount: 1, possibleMissingRows: false, warning: null });
+    if (lookup === 'factor') vi.mocked(getAllConversionFactors).mockRejectedValueOnce(new Error('temporary outage'));
+    else vi.mocked(getAllActivityData).mockRejectedValueOnce(new Error('temporary outage'));
+    render(<MemoryRouter initialEntries={['/input-data?view=review&documentId=lookup-retry']}><UploadPage /></MemoryRouter>);
+    const error = lookup === 'factor'
+      ? 'Conversion factors could not be loaded. Please try again.'
+      : 'Imported records could not be checked. Please retry the review before importing.';
+    expect(await screen.findByText(error)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Review Rows', exact: true }));
+    expect(await screen.findByDisplayValue('LOOKUP-RECOVERED')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm Import', exact: true })).toBeEnabled());
+    expect(screen.queryByText(error)).not.toBeInTheDocument();
+    expect(lookup === 'factor' ? getAllConversionFactors : getAllActivityData).toHaveBeenCalledTimes(2);
+  });
+
   it('classifies tracked-only Water rows as importable tracked metrics, not review errors', () => {
     const row = {
       selected: true,
@@ -483,7 +655,7 @@ describe('UploadPage sample workflow', () => {
     expect(classifyDraftRow(row)).toBe('TRACKED_METRIC');
   });
 
-  it('classifies Diesel 240 kg unit mismatch rows as requiring review before confirm import', () => {
+  it('classifies Diesel 240 kg unit mismatch rows as needing attention before confirm import', () => {
     const row = {
       selected: true,
       documentId: 'doc-diesel',
@@ -981,6 +1153,10 @@ describe('UploadPage sample workflow', () => {
     expect(
       screen.getAllByLabelText(/Select preview row/i).filter((checkbox) => (checkbox as HTMLInputElement).checked),
     ).toHaveLength(0);
+    const unchangedConfirm = screen.getByRole('button', { name: 'Confirm Import' });
+    expect(unchangedConfirm).toBeDisabled();
+    await userEvent.click(unchangedConfirm);
+    expect(confirmDocumentImport).toHaveBeenCalledTimes(2);
   }, 30000);
 
   it('rejects unit mismatch import payloads even when stale included signals are present', () => {
@@ -1318,7 +1494,7 @@ describe('UploadPage sample workflow', () => {
     expect(await screen.findByText(/sample data is already loaded/i)).toBeInTheDocument();
     expect(screen.getByText(/pilot reviewer accounts use preloaded sample data/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /data records/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /calculation review/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^calculation results$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reports/i })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /upload documents/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /load sample data/i })).not.toBeInTheDocument();
@@ -1467,6 +1643,21 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText(/Calculated: 2 · Tracked metrics: 1 · Requires review: 6 · .*Selected for import: 3/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeEnabled();
     expect(screen.getByText('Spreadsheet rows saved for review. 3 records ready to import; 6 source rows remain in Input Review.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Clear All' }));
+    expect(screen.getAllByLabelText(/Select preview row/).filter(checkbox => (checkbox as HTMLInputElement).checked)).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Select All' }));
+    expect(screen.getAllByLabelText(/Select preview row/).filter(checkbox => (checkbox as HTMLInputElement).checked)).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Confirm Import' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Add Row' }));
+    expect(screen.getByText('Extracted rows: 10')).toBeInTheDocument();
+    const addedRow = screen.getByLabelText('Select preview row 10').closest('tr')!;
+    expect(within(addedRow).getByRole('checkbox')).toBeDisabled();
+    fireEvent.change(within(addedRow).getByPlaceholderText('Optional site or facility'), { target: { value: 'New facility' } });
+    expect(within(addedRow).getByDisplayValue('New facility')).toBeInTheDocument();
+    await userEvent.click(within(addedRow).getByRole('button', { name: 'Delete' }));
+    expect(screen.getByText('Extracted rows: 9')).toBeInTheDocument();
+
   });
 
   it('uses the current Save All source document id when duplicate filenames exist', async () => {
@@ -1632,7 +1823,7 @@ describe('UploadPage sample workflow', () => {
             pathname: INPUT_DATA_ROUTE,
             state: {
               flashMessage:
-                'Activity data saved. Review saved records in Data Records, Calculation Review, or Reports.',
+                'Activity data saved. Review saved records in Data Records, Calculation Results, or Reports.',
             },
           },
         ]}
@@ -1645,11 +1836,11 @@ describe('UploadPage sample workflow', () => {
 
     expect(await screen.findByText(/Activity data saved/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', DATA_RECORDS_ROUTE);
-    expect(screen.getByRole('link', { name: 'Calculation Review' })).toHaveAttribute('href', CALCULATION_REVIEW_ROUTE);
+    expect(screen.getByRole('link', { name: 'Calculation Results' })).toHaveAttribute('href', CALCULATION_REVIEW_ROUTE);
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', REPORTS_ROUTE);
   });
 
-  it('renders post-import review actions as pointer semantic buttons with unchanged destinations', async () => {
+  it('offers calculation results after import without a direct report shortcut', async () => {
     function renderPostImportBanner() {
       return render(
         <MemoryRouter
@@ -1679,26 +1870,13 @@ describe('UploadPage sample workflow', () => {
       );
     }
 
-    const firstRender = renderPostImportBanner();
-
-    const calculationReviewButton = await screen.findByRole('button', {
-      name: 'View Calculation Review',
-    });
-    const reportsButton = screen.getByRole('button', { name: 'View Reports' });
-
+    renderPostImportBanner();
+    const calculationReviewButton = (await screen.findAllByRole('button', { name: 'View Calculation Results' }))
+      .find((button) => button.classList.contains('input-data-post-import-action'))!;
     expect(calculationReviewButton).toHaveClass('cursor-pointer');
-    expect(calculationReviewButton).toHaveClass('input-data-post-import-action');
-    expect(reportsButton).toHaveClass('cursor-pointer');
-    expect(reportsButton).toHaveClass('input-data-post-import-action');
-
+    expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
     await userEvent.click(calculationReviewButton);
     expect(screen.getByTestId('location')).toHaveTextContent(CALCULATION_REVIEW_ROUTE);
-
-    firstRender.unmount();
-    renderPostImportBanner();
-
-    await userEvent.click(await screen.findByRole('button', { name: 'View Reports' }));
-    expect(screen.getByTestId('location')).toHaveTextContent(REPORTS_ROUTE);
   });
 
   it('renders the Input Review row action menu in a fixed portal', async () => {
@@ -1806,6 +1984,98 @@ describe('UploadPage sample workflow', () => {
     });
   });
 
+  it.each(['same trigger', 'outside pointer', 'Escape', 'focus outside', 'scroll'] as const)(
+    'keeps menu refs and parent close behavior for %s',
+    async (dismissal) => {
+      vi.mocked(getDocuments).mockResolvedValue({
+        items: [{
+          ...failedDocument, id: 'menu-source', fileName: 'menu-source.pdf',
+          status: 'IMPORTED', importedRecordCount: 3,
+        }],
+        page: 1, pageSize: 20, total: 1, totalPages: 1,
+      });
+      render(<MemoryRouter><UploadPage /></MemoryRouter>);
+      const trigger = await screen.findByRole('button', { name: 'Open document actions for menu-source.pdf' });
+      expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await userEvent.click(trigger);
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      const menu = screen.getByRole('menu', { name: 'More actions for menu-source.pdf' });
+      expect(menu.parentElement).toBe(document.body);
+      // The parent's ref must recognize both the trigger and portal as inside.
+      fireEvent.pointerDown(menu);
+      fireEvent.focusIn(within(menu).getByRole('menuitem', { name: 'View Details' }));
+      expect(screen.getByRole('menu')).toBe(menu);
+      if (dismissal === 'same trigger') await userEvent.click(trigger);
+      if (dismissal === 'outside pointer') fireEvent.pointerDown(document.body);
+      if (dismissal === 'Escape') await userEvent.keyboard('{Escape}');
+      if (dismissal === 'focus outside') screen.getByRole('button', { name: 'Load Sample Data' }).focus();
+      if (dismissal === 'scroll') fireEvent.scroll(window);
+      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    },
+  );
+
+  it.each(['Close document details', 'Close', 'Escape'])(
+    'keeps the parent details close behavior for %s',
+    async (closeAction) => {
+      vi.mocked(getDocuments).mockResolvedValue({
+        items: [{ ...failedDocument, id: 'details-source', fileName: 'details.pdf', status: 'IMPORTED', importedRecordCount: 3 }],
+        page: 1, pageSize: 20, total: 1, totalPages: 1,
+      });
+      render(<MemoryRouter><UploadPage /></MemoryRouter>);
+      await userEvent.click(await screen.findByRole('button', { name: 'Open document actions for details.pdf' }));
+      await userEvent.click(screen.getByRole('menuitem', { name: 'View Details' }));
+      const dialog = screen.getByRole('dialog', { name: 'Document Details' });
+      expect(within(dialog).getAllByRole('term').map(field => field.textContent)).toEqual([
+        'File name', 'Type', 'Status', 'Created date', 'Source row count', 'Extracted row count', 'Imported record count',
+      ]);
+      expect(within(dialog).getByText('Imported record count').nextElementSibling).toHaveTextContent('3');
+      expect(within(dialog).getByText('Status').nextElementSibling).toHaveTextContent('Imported');
+      expect(within(dialog).getByText('Source row count').nextElementSibling).toHaveTextContent('-');
+      if (closeAction === 'Escape') await userEvent.keyboard('{Escape}');
+      else await userEvent.click(within(dialog).getByRole('button', { name: closeAction, exact: true }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    },
+  );
+
+  it('keeps the View Imported Records navigation and document scope in UploadPage', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [{ ...failedDocument, id: 'records-source', fileName: 'records.pdf', status: 'IMPORTED', importedRecordCount: 3 }],
+      page: 1, pageSize: 20, total: 1, totalPages: 1,
+    });
+    render(<MemoryRouter><UploadPage /><LocationStateProbe /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: 'View Imported Records' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/activity-records?documentId=records-source');
+    expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({
+      sourceDocumentId: 'records-source', sourceDocumentName: 'records.pdf',
+    });
+  });
+
+  it('keeps delete pending state and does not add Escape dismissal', async () => {
+    let finishDelete!: (result: Awaited<ReturnType<typeof deleteDocument>>) => void;
+    vi.mocked(deleteDocument).mockReturnValueOnce(new Promise(resolve => { finishDelete = resolve; }));
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [{ ...failedDocument, id: 'pending-delete', fileName: 'pending.pdf', status: 'IMPORTED', importedRecordCount: 3 }],
+      page: 1, pageSize: 20, total: 1, totalPages: 1,
+    });
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: 'Open document actions for pending.pdf' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete Source Document' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Delete source document?' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Source Document', exact: true }));
+    expect(deleteDocument).toHaveBeenCalledWith('pending-delete');
+    expect(screen.getByRole('button', { name: 'Deleting...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    finishDelete({ deletedDocument: true, deletedActivityRecords: 0 });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText('No data sources to review yet.')).toBeInTheDocument();
+    expect(createActivityData).not.toHaveBeenCalled();
+  });
+
   it('deletes an unimported source document after confirmation', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
@@ -1854,7 +2124,7 @@ describe('UploadPage sample workflow', () => {
       screen.getByText('Upload documents or import a spreadsheet to create reviewable activity data.'),
     ).toBeInTheDocument();
     expect(screen.queryByText('Source document deleted.')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'View Calculation Review' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
     expect(screen.queryByText('ready-invoice.pdf')).not.toBeInTheDocument();
   });
@@ -1928,7 +2198,7 @@ describe('UploadPage sample workflow', () => {
     expect(
       screen.queryByText('Source document removed from Review Data. Imported records were kept.'),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'View Calculation Review' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
     expect(screen.queryByText('imported-source.xlsx')).not.toBeInTheDocument();
     expect(deleteDocument).toHaveBeenCalledTimes(1);
@@ -2010,7 +2280,7 @@ describe('UploadPage sample workflow', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Delete Source Document$/i }));
 
     expect(await screen.findByText('No data sources to review yet.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'View Calculation Review' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
 
     const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
@@ -2171,21 +2441,49 @@ describe('UploadPage sample workflow', () => {
     const partial = screen.getByLabelText('Select document partial-upload.xlsx');
     const imported = screen.getByLabelText('Select document imported-upload.xlsx');
     expect(empty).toBeDisabled();
-    expect(empty).toHaveAccessibleDescription('No imported records are available for calculation review yet.');
+    expect(empty).toHaveAccessibleDescription('No imported records are available for calculation results yet.');
     expect(partial).toBeEnabled();
     expect(imported).toBeEnabled();
     expect(within(partial.closest('tr')!).getByText('Needs Review')).toBeInTheDocument();
     expect(within(partial.closest('tr')!).getByRole('button', { name: 'Review Rows' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Review Selected Data' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
+    expect(screen.getByText('Select one or more files with imported records.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Generate Report' })).not.toBeInTheDocument();
     await userEvent.click(partial);
-    expect(screen.getByRole('button', { name: 'Generate Report' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeEnabled();
     await userEvent.click(screen.getByLabelText('Select visible documents'));
     expect(empty).not.toBeChecked();
     expect(partial).toBeChecked();
     expect(imported).toBeChecked();
-    await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('/reports');
+    await userEvent.click(screen.getByRole('button', { name: 'View Calculation Results' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/metrics-summary');
     expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({ reportScope: 'selectedDocuments', selectedDocumentIds: ['doc-partial', 'doc-imported'] });
+  });
+
+  it('keeps document selection through expanding and collapsing the Review Data list', async () => {
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: Array.from({ length: 4 }, (_, index) => ({
+        id: `scope-${index}`, fileName: `scope-${index}.xlsx`, fileUrl: '', type: 'SPREADSHEET',
+        status: 'IMPORTED', importedRecordCount: 3, fileSize: 100,
+        createdAt: '2026-07-20T00:00:00.000Z', updatedAt: '2026-07-20T00:00:00.000Z',
+      })),
+      page: 1, pageSize: 20, total: 4, totalPages: 1,
+    });
+    render(<MemoryRouter><UploadPage /><LocationStateProbe /></MemoryRouter>);
+    await screen.findByText('scope-0.xlsx');
+    expect(screen.queryByText('scope-3.xlsx')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Expand document list (4)' }));
+    await userEvent.click(screen.getByLabelText('Select document scope-3.xlsx'));
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse document list' }));
+    expect(screen.queryByText('scope-3.xlsx')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Expand document list (4)' }));
+    expect(screen.getByLabelText('Select document scope-3.xlsx')).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'View Calculation Results' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/metrics-summary');
+    expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({
+      reportScope: 'selectedDocuments', selectedDocumentIds: ['scope-3'],
+    });
   });
 
   it('opens Manual Entry when route state requests manual input focus', async () => {
@@ -2205,6 +2503,27 @@ describe('UploadPage sample workflow', () => {
     expect(await screen.findByRole('heading', { name: /^Manual Entry$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Manual Entry/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('heading', { name: /^Upload Documents$/i })).not.toBeInTheDocument();
+    const manualContainer = screen.getByRole('heading', { name: /^Manual Entry$/i }).parentElement!;
+    expect(manualContainer).toHaveAttribute('tabindex', '-1');
+    expect(manualContainer).toHaveFocus();
+    expect(manualContainer.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(screen.getByRole('heading', { name: 'Review Data', level: 2 })).toBeInTheDocument();
+  });
+
+  it('keeps manual save feedback and metrics invalidation in UploadPage', async () => {
+    render(
+      <MemoryRouter initialEntries={[{ pathname: INPUT_DATA_ROUTE, state: { focusInputMethod: 'manual' } }]}>
+        <LocationProbe />
+        <UploadPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Mock manual save' }));
+
+    expect(sessionStorage.getItem('carbonliteMetricsStale')).toBe('true');
+    expect(screen.getByTestId('location')).toHaveTextContent(INPUT_DATA_ROUTE);
+    expect(screen.getByText(/Activity data saved\. Review saved records in/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Review Data', level: 2 })).toBeInTheDocument();
   });
 
   it('keeps upload, spreadsheet import, and manual entry mode content distinct', async () => {
@@ -2215,7 +2534,7 @@ describe('UploadPage sample workflow', () => {
     );
 
     expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
-    expect(screen.getByText(/Supported files: PDF, JPG, PNG, HEIC/i)).toBeInTheDocument();
+    expect(screen.getByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Download CSV template/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Add activity record/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Document Type/i })).not.toBeInTheDocument();
@@ -2238,7 +2557,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByRole('button', { name: /Add activity record/i })).toBeInTheDocument();
     expect(screen.getByText('No manual activity rows yet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Download CSV template/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Supported files: PDF, JPG, PNG, HEIC/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).not.toBeInTheDocument();
   });
 
   it('loads sample files without enabling a hidden demo mode', async () => {
@@ -2272,7 +2591,7 @@ describe('UploadPage sample workflow', () => {
 
     expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
     expect(screen.getAllByText(/Upload utility bills, fuel invoices, water bills, travel documents/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Supported files: PDF, JPG, PNG, HEIC/i)).toBeInTheDocument();
+    expect(screen.getByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Use Sample JSON/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Use Sample CSV/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/CSV, XLSX/i)).not.toBeInTheDocument();
@@ -2865,7 +3184,7 @@ describe('UploadPage sample workflow', () => {
     expect(vi.mocked(confirmDocumentImport).mock.calls[0][1]).toHaveLength(1);
   });
 
-  it('keeps unsupported electricity provinces in JSON preview for factor review', async () => {
+  it('keeps unsupported electricity provinces in JSON preview for factor validation', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {
@@ -3679,7 +3998,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByTestId('location-state')).toHaveTextContent(
       JSON.stringify({
         flashMessage:
-          'Import completed successfully. The selected records have been saved as Data Records. 1 record imported. 0 records require review. Opening Data Records...',
+          'Import completed successfully. The selected records have been saved as Data Records. 1 record imported. 0 records need attention. Opening Data Records...',
         sourceDocumentIds: ['complete-import-doc'],
         inputReviewDocumentId: 'complete-import-doc',
         inputReviewPath: '/input-data?documentId=complete-import-doc&view=review',

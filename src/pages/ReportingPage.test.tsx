@@ -71,7 +71,7 @@ async function openExportMenu() {
 
 async function downloadTechnicalReviewPackage() {
   await openExportMenu();
-  await userEvent.click(screen.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/i }));
+  await userEvent.click(screen.getByRole('menuitem', { name: /Technical Emissions Report \(PDF\)/i }));
 }
 
 function enmaxMissingCostOverview() {
@@ -284,7 +284,7 @@ async function renderGeneratedSourceReviewSection(sourceFileNames: string[]) {
 
   await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
   await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
-  return screen.getByRole('region', { name: /Source Dataset Review Status/i });
+  return screen.getByRole('region', { name: /Source Data Status/i });
 }
 
 function getSourceReviewMetricValue(section: HTMLElement, label: string, value: string) {
@@ -487,6 +487,35 @@ describe('ReportingPage audit trail', () => {
     localStorage.clear();
     delete (jsPDF.API as any).save;
     delete (jsPDF.API as any).text;
+  });
+
+  it.each(['success', 'failure'] as const)('disables every export while a new date request loads and after its %s', async (outcome) => {
+    const { container } = render(<MemoryRouter><ReportingPage /></MemoryRouter>);
+    const trigger = screen.getByRole('button', { name: /^Export reports$/i });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await openExportMenu();
+    const items = screen.getAllByRole('menuitem');
+    expect(items).toHaveLength(3);
+    items.forEach((item) => expect(item).toBeEnabled());
+    const nextOverview = await vi.mocked(loadMetricsOverview).mock.results[0].value;
+    let resolve!: (value: typeof nextOverview) => void;
+    let reject!: (error: Error) => void;
+    vi.mocked(loadMetricsOverview).mockReturnValueOnce(new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const start = container.querySelector<HTMLInputElement>('input[type="date"]')!;
+    fireEvent.change(start, { target: { value: '2026-04-01' } });
+    fireEvent.blur(start);
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(2));
+    expect(trigger).toBeDisabled();
+    items.forEach((item) => expect(item).toBeDisabled());
+    await act(async () => outcome === 'success' ? resolve(nextOverview) : reject(new Error('B failed')));
+    if (outcome === 'success') {
+      expect(trigger).toBeEnabled();
+      items.forEach((item) => expect(item).toBeEnabled());
+    } else {
+      expect(trigger).toBeDisabled();
+      items.forEach((item) => expect(item).toBeDisabled());
+      expect(screen.getByText(/Unable to generate|could not|failed|try again/i)).toBeInTheDocument();
+    }
   });
 
   it('prevents date edits until the default range loads so initialization cannot overwrite the selected period', async () => {
@@ -735,9 +764,9 @@ describe('ReportingPage audit trail', () => {
 
     const sourceFileCard = sourceFileValue.closest('div');
     expect(sourceFileCard).toHaveStyle('min-width: 0');
-    expect(sourceReviewSection).toHaveTextContent('Reviewable Source Rows');
+    expect(sourceReviewSection).toHaveTextContent('Source Rows Assessed');
     expect(sourceReviewSection).toHaveTextContent('Rows Resolved / Imported');
-    expect(sourceReviewSection).toHaveTextContent('Source Rows Still Requiring Review');
+    expect(sourceReviewSection).toHaveTextContent('Source Rows Still Needing Attention');
   });
 
   it('wraps and clamps long source filenames without widening the Source Files card', async () => {
@@ -765,7 +794,7 @@ describe('ReportingPage audit trail', () => {
 
     const sourceFileCard = sourceFileValue.closest('div');
     expect(sourceFileCard).toHaveStyle('min-width: 0');
-    expect(getSourceReviewMetricValue(sourceReviewSection, 'Reviewable Source Rows', '2')).toBeInTheDocument();
+    expect(getSourceReviewMetricValue(sourceReviewSection, 'Source Rows Assessed', '2')).toBeInTheDocument();
     expect(getSourceReviewMetricValue(sourceReviewSection, 'Rows Resolved / Imported', '1 of 2')).toBeInTheDocument();
   });
 
@@ -814,11 +843,11 @@ describe('ReportingPage audit trail', () => {
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
-    const sourceReviewSection = screen.getByRole('region', { name: /Source Dataset Review Status/i });
+    const sourceReviewSection = screen.getByRole('region', { name: /Source Data Status/i });
 
-    expect(getSourceReviewMetricValue(sourceReviewSection, 'Reviewable Source Rows', '5')).toBeInTheDocument();
+    expect(getSourceReviewMetricValue(sourceReviewSection, 'Source Rows Assessed', '5')).toBeInTheDocument();
     expect(getSourceReviewMetricValue(sourceReviewSection, 'Rows Resolved / Imported', '5 of 5')).toBeInTheDocument();
-    expect(getSourceReviewMetricValue(sourceReviewSection, 'Source Rows Still Requiring Review', '0')).toBeInTheDocument();
+    expect(getSourceReviewMetricValue(sourceReviewSection, 'Source Rows Still Needing Attention', '0')).toBeInTheDocument();
     expect(sourceReviewSection).not.toHaveTextContent('Limited');
     expect(sourceReviewSection).not.toHaveTextContent(/document import/i);
   });
@@ -987,13 +1016,13 @@ describe('ReportingPage audit trail', () => {
     await waitFor(() => expect(screen.queryAllByText(/2 calculated/i).length).toBeGreaterThan(0));
     await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
     const dataQualitySection = screen.getByRole('region', { name: /Data Quality Notes/i });
-    expect(dataQualitySection).toHaveTextContent('Imported Activity Records Requiring Review');
-    expect(dataQualitySection).toHaveTextContent('Source Rows Still Requiring Review');
+    expect(dataQualitySection).toHaveTextContent('Imported Activity Records Needing Attention');
+    expect(dataQualitySection).toHaveTextContent('Source Rows Still Needing Attention');
     expect(dataQualitySection).toHaveTextContent('6');
 
-    const sourceReviewSection = screen.getByRole('region', { name: /Source Dataset Review Status/i });
-    expect(sourceReviewSection).toHaveTextContent('3 of 9 source rows resolved/imported · 6 require review');
-    expect(sourceReviewSection).toHaveTextContent('Reviewable Source Rows');
+    const sourceReviewSection = screen.getByRole('region', { name: /Source Data Status/i });
+    expect(sourceReviewSection).toHaveTextContent('3 of 9 source rows resolved/imported · 6 need attention');
+    expect(sourceReviewSection).toHaveTextContent('Source Rows Assessed');
     expect(sourceReviewSection).toHaveTextContent('Rows Resolved / Imported');
     expect(sourceReviewSection).toHaveTextContent('3 of 9');
     expect(sourceReviewSection).toHaveTextContent('MARCH-ELEC-002');
@@ -1004,8 +1033,8 @@ describe('ReportingPage audit trail', () => {
     const pdfBodies = vi.mocked(autoTable).mock.calls.map(([, options]) =>
       JSON.stringify((options as { body?: unknown[][] } | undefined)?.body ?? []),
     );
-    expect(pdfBodies.some((body) => body.includes('Source Rows Still Requiring Review') && body.includes('6'))).toBe(true);
-    expect(pdfBodies.join(' ')).not.toContain('No records require review for this report scope');
+    expect(pdfBodies.some((body) => body.includes('Source Rows Still Needing Attention') && body.includes('6'))).toBe(true);
+    expect(pdfBodies.join(' ')).not.toContain('No records need attention for this report scope');
     const sourceRowsPdfBody = pdfBodies.find((body) => body.includes('MARCH-ELEC-002')) ?? '';
     expect(sourceRowsPdfBody).toContain('MARCH-GAS-003');
     expect(sourceRowsPdfBody).toContain('MARCH-FUEL-004');
@@ -1287,7 +1316,7 @@ describe('ReportingPage audit trail', () => {
 
     const appendixCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
-      return headers.includes('Source / Import Method') && headers.includes('Review Note');
+      return headers.includes('Source / Import Method') && headers.includes('Validation Note');
     });
     expect(appendixCall).toBeDefined();
 
@@ -1718,11 +1747,11 @@ describe('ReportingPage audit trail', () => {
     expect(reportInfo.get('Generated With')).toBe('CarbonLite Pilot Demo v0.1');
     expect(reportInfo.get('Prepared By')).toBe('CarbonLite');
     expect(reportInfo.get('Reviewer')).toBe('Not yet assigned');
-    expect(reportInfo.get('Review Status')).toBe('Not reviewed');
+    expect(reportInfo.get('Reviewer Sign-off Status')).toBe('Not reviewed');
     expect(reportInfo.get('Generated With')).not.toBe(reportInfo.get('Report Version'));
   });
 
-  it('offers separate Executive Summary and Technical Review Package PDF outputs from the same report snapshot', async () => {
+  it('offers separate Executive Summary and Technical Emissions Report PDF outputs from the same report snapshot', async () => {
     render(
       <MemoryRouter>
         <ReportingPage />
@@ -1757,11 +1786,11 @@ describe('ReportingPage audit trail', () => {
     await downloadTechnicalReviewPackage();
     const technicalReportInfoCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return body.some((row) => row[0] === 'Output Profile' && row[1] === 'Technical Review Package');
+      return body.some((row) => row[0] === 'Output Profile' && row[1] === 'Technical Emissions Report');
     });
     const traceabilityCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
-      return headers.includes('Calculation') && headers.includes('Review Note');
+      return headers.includes('Calculation') && headers.includes('Validation Note');
     });
     expect(technicalReportInfoCall).toBeDefined();
     expect(traceabilityCall).toBeDefined();
@@ -1914,12 +1943,12 @@ describe('ReportingPage audit trail', () => {
     expect(tableBodies.join(' ')).toContain('Top Estimated Contributors');
     expect(renderedText).toContain('Emissions Overview');
     expect(renderedText).toContain('Reporting Readiness');
-    expect(renderedText).toContain('Key Review Priorities');
+    expect(renderedText).toContain('Key Attention Priorities');
     expect(tableBodies.join(' ')).toContain('Assign a reviewer and complete report review before formal use.');
     expect(tableBodies.join(' ')).not.toContain('Complete reviewer review before formal use.');
     expect(renderedText).toContain('Limitations');
     expect(tableBodies.join(' ')).toContain('579.40 kg CO2e');
-    expect(tableBodies.join(' ')).toContain('6 require review');
+    expect(tableBodies.join(' ')).toContain('6 need attention');
 
     delete (jsPDF.API as any).save;
     delete (jsPDF.API as any).text;
@@ -1949,9 +1978,9 @@ describe('ReportingPage audit trail', () => {
     expect(savedPageCounts).toEqual([2]);
     expect(tableBodies).toContain('338.06 kg CO2e');
     expect(tableBodies).toContain(
-      'Review both emission factors before formal use; replace pilot-stage factors where appropriate.',
+      'Validate both emission factors before formal use; replace pilot-stage factors where appropriate.',
     );
-    expect(tableBodies).not.toContain('Review or replace 2 pilot-stage emission factors.');
+    expect(tableBodies).not.toContain('Validate or replace 2 pilot-stage emission factors.');
   });
 
   it('renders ENMAX optional cost completeness as missing and uses document Appendix B wording', async () => {
@@ -1996,7 +2025,7 @@ describe('ReportingPage audit trail', () => {
     expect(allSplitText).toContain('Environment and Climate Change Canada');
     expect(allPdfTables).toContain('49.44');
     expect(allSplitText).toContain(
-      'Structured unresolved source-review rows are not available for this document import.',
+      'Structured unresolved source-data rows are not available for this document import.',
     );
     expect(allSplitText).not.toContain('Source spreadsheet rows');
     expect(savedPageCounts).toEqual([3]);
@@ -2124,13 +2153,13 @@ describe('ReportingPage audit trail', () => {
 
     const calculationQualityCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const body = (options as { body?: unknown[][] } | undefined)?.body ?? [];
-      return body.some((row) => row.includes('Imported Activity Review Reasons'));
+      return body.some((row) => row.includes('Imported Activity Attention Reasons'));
     });
     expect(calculationQualityCall).toBeDefined();
     const calculationQualityBody = JSON.stringify(
       (calculationQualityCall?.[1] as { body?: unknown[][] } | undefined)?.body ?? [],
     );
-    expect(calculationQualityBody).toContain('Imported Activity Review Reasons');
+    expect(calculationQualityBody).toContain('Imported Activity Attention Reasons');
     expect(calculationQualityBody).not.toContain('"Review Reasons"');
   });
 
@@ -2154,7 +2183,7 @@ describe('ReportingPage audit trail', () => {
 
     expect(screen.getByRole('menu', { name: /Export report/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /Executive Summary \(PDF\)/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Technical Emissions Report \(PDF\)/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /Data Export \(CSV\)/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('menuitem', { name: /Data Export \(CSV\)/i }));
@@ -2726,19 +2755,19 @@ describe('ReportingPage audit trail', () => {
 
     const traceabilityCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
-      return headers.includes('Calculation') && headers.includes('Review Note');
+      return headers.includes('Calculation') && headers.includes('Validation Note');
     });
     const sourceEvidenceCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
-      return headers.includes('Source Input') && headers.includes('Review Note');
+      return headers.includes('Source Input') && headers.includes('Validation Note');
     });
     const sourceEvidenceSummaryCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
       const headers = (options as { head?: string[][] } | undefined)?.head?.[0] ?? [];
       return (
 	        headers.includes('Source Input') &&
 	        headers.includes('Included GHG Records') &&
-	        headers.includes('Imported Review Records') &&
-	        !headers.includes('Review Note')
+	        headers.includes('Imported Records Needing Attention') &&
+	        !headers.includes('Validation Note')
       );
     });
     const factorSummaryCall = vi.mocked(autoTable).mock.calls.find(([, options]) => {
@@ -2789,7 +2818,7 @@ describe('ReportingPage audit trail', () => {
       'Record-Level References',
       'Included GHG Records',
       'Tracked Metrics',
-      'Imported Review Records',
+      'Imported Records Needing Attention',
     ]);
     expect(factorSummaryCall?.[1]).toMatchObject({
       rowPageBreak: 'avoid',
@@ -2846,8 +2875,8 @@ it('shows Golden A imported records separately from unresolved rows in a selecte
   await waitFor(() => expect(context).toHaveTextContent('Imported records: 3 · Unresolved source rows: 6'));
   expect(context).toHaveTextContent('carbonlite_needs_review_test.xlsx');
   expect(context).toHaveTextContent('Unresolved source rows remain excluded until corrected and imported.');
-  expect(within(context).getByRole('link', { name: 'Review Calculations' })).toHaveAttribute('href', '/metrics-summary');
-  expect(loadMetricsOverview).toHaveBeenCalledWith({ recalculate: true, selectedDocumentIds: ['doc-partial'] });
+  expect(within(context).getByRole('link', { name: 'View Calculation Results' })).toHaveAttribute('href', '/metrics-summary');
+  expect(loadMetricsOverview).toHaveBeenCalledWith({ recalculate: true, requireSourceReviewRows: true, selectedDocumentIds: ['doc-partial'] });
   // Both source completeness and calculation coverage remain independently represented.
   expect(report.inventory).toMatchObject({ importedRecordCount: 3, includedRecordCount: 2, trackedMetricCount: 1, totalKgCO2e: 579.4 });
   expect(report.sourceReview.needsReviewCount).toBe(6);

@@ -22,7 +22,7 @@ export function ExecutiveSummarySection({
       <Fact label="Estimated Emissions" value={executiveSummary.estimatedEmissions} />
       <Fact label="Records Included in GHG Total" value={String(executiveSummary.recordsIncluded)} />
       <Fact label="Tracked Operational Metrics" value={String(executiveSummary.trackedMetrics)} />
-      <Fact label="Records Requiring Review" value={String(executiveSummary.recordsRequiringReview)} />
+      <Fact label="Records Needing Attention" value={String(executiveSummary.recordsRequiringReview)} />
       <Fact label="Primary Activity Types" value={executiveSummary.primaryActivityTypes} />
       <Fact label="Missing Factor Count" value={String(executiveSummary.missingFactorCount)} />
       <Fact label="Calculation Coverage" value={executiveSummary.dataQualityCoverage} />

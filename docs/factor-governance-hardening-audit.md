@@ -62,7 +62,7 @@ Selection metadata is persisted as:
 
 ## Source Authority Semantics
 
-`sourceAuthority` identifies the publisher of the factor source, not CarbonLite's review status. Internal pilot factors should use `CarbonLite` and keep `sourceDocument` such as `CarbonLite MVP Default Factors v1.0`, `verificationStatus` as `Internal Review Required`, and confidence as pilot/low/placeholder as appropriate.
+`sourceAuthority` identifies the publisher of the factor source, not CarbonLite's review status. Internal pilot factors should use `CarbonLite` and keep `sourceDocument` such as `CarbonLite Default Factor Library v1.0`, `verificationStatus` as `Internal Review Required`, and confidence as pilot/low/placeholder as appropriate.
 
 `SYSTEM` means CarbonLite-provided, not official. Official source provenance and CarbonLite review status remain separate.
 

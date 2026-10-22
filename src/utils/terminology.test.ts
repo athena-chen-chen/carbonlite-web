@@ -25,7 +25,7 @@ describe('canonical terminology', () => {
     expect(formatCalculationStatusLabel('INVALID_QUANTITY')).toBe('Invalid Quantity');
     expect(formatCalculationStatusLabel('MISSING_ACTIVITY_TYPE')).toBe('Missing Activity Type');
     expect(formatCalculationStatusLabel('SOME_NEW_ISSUE')).toBe('Some New Issue');
-    expect(formatCalculationStatusLabel('SKIPPED_NEEDS_REVIEW')).toBe('Needs Review');
+    expect(formatCalculationStatusLabel('SKIPPED_NEEDS_REVIEW')).toBe('Needs Attention');
     expect(formatReportTreatmentLabel('INCLUDED')).toBe('Included in GHG Total');
     expect(formatReportTreatmentLabel('TRACKED_ONLY')).toBe('Tracked Metric');
     expect(formatReportTreatmentLabel('EXCLUDED')).toBe('Excluded');

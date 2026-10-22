@@ -1,0 +1,436 @@
+{
+  "checkedOn": "2026-10-18 America/Edmonton",
+  "environment": "guarded Neon development through localhost UI and API",
+  "runtimeBugReproduced": false,
+  "existingFixVerified": true,
+  "originalWorkbookSha256": "d72851e703b3f1ffbf5b07c4212c044ddc88b53944811d8c1b7fb2def3010dc5",
+  "historicalFailure": {
+    "documents": 2,
+    "persistedActivities": 8,
+    "gasolinePresent": false,
+    "fingerprint": "0abc092c3c8274c8eda2a9ed0b26a1851cbb37ef64f1ffd909dbddfd9c068e58"
+  },
+  "cases": [
+    {
+      "filenameVariant": "Renamed",
+      "raw": {
+        "Service Date": 46058,
+        "Record Category": "Gasoline",
+        "Consumption": 350,
+        "UOM": "L",
+        "Region": "British Columbia",
+        "Location Name": "Vancouver Fleet",
+        "Original Document": "fuel_card_feb.csv"
+      },
+      "extraction": {
+        "sourceRows": 5,
+        "extractedRows": 5
+      },
+      "review": {
+        "stage": "gasoline-review-eligibility",
+        "selected": true,
+        "confirmEligible": true,
+        "activityType": "GASOLINE",
+        "unit": "L",
+        "sourceReference": "fuel_card_feb.csv"
+      },
+      "payload": {
+        "rowCount": 5,
+        "gasoline": {
+          "activity": "GASOLINE",
+          "quantity": 350,
+          "unit": "L",
+          "province": "British Columbia",
+          "facility": "Vancouver Fleet",
+          "sourceReference": "fuel_card_feb.csv",
+          "sourceRow": 4,
+          "sourceSheet": "Operations_2026",
+          "matchingStatus": "MATCHED",
+          "calculationStatus": "CALCULATED",
+          "reportTreatment": "INCLUDED",
+          "factorValue": 2.31,
+          "calculatedEmissions": 808.5,
+          "included": true
+        }
+      },
+      "backend": {
+        "received": true,
+        "filtered": false,
+        "persisted": true,
+        "normalizedUnit": "liters",
+        "matchedBy": "SYSTEM_COUNTRY_YEAR",
+        "selectionReason": "GENERIC_JURISDICTION_FALLBACK",
+        "selectionExplanation": "No British Columbia-specific factor was available. A Canada (Generic) factor was used. No exact 2026 factor was available. The 2025 factor was selected according to the configured prior-year fallback policy.",
+        "factorId": "72960476-10cf-41e4-9aa3-1e02bde56616",
+        "factorValue": 2.31,
+        "sourceYear": 2025,
+        "region": "Canada (Generic)"
+      },
+      "identity": {
+        "physicalKeyTemplate": "<documentId>::row:4",
+        "legacyKeyTemplate": "<documentId>::fuel_card_feb.csv::GASOLINE::2026-02-05::350::L",
+        "documentRelation": true,
+        "importBatchRelation": true,
+        "facilityId": null,
+        "facilityName": "Vancouver Fleet",
+        "sourceReference": "fuel_card_feb.csv",
+        "gasolineCount": 1
+      },
+      "repeatedConfirm": [
+        {
+          "stage": "repeat-confirm",
+          "kind": "NeedsReview",
+          "imported": 0
+        },
+        {
+          "stage": "repeat-confirm",
+          "kind": "FieldMapping",
+          "imported": 0
+        }
+      ],
+      "goldenC": {
+        "records": 5,
+        "calculated": 5,
+        "tracked": 0,
+        "total": 2428.44,
+        "scopes": {
+          "SCOPE_3": 537.2,
+          "SCOPE_1": 1228.74,
+          "SCOPE_2": 662.5
+        },
+        "facilities": {
+          "Corporate Travel": 492.2,
+          "Toronto Sales Trip": 45,
+          "Vancouver Fleet": 808.5,
+          "Calgary HQ": 1082.74
+        }
+      },
+      "twoWorkbook": {
+        "records": 8,
+        "calculated": 7,
+        "tracked": 1,
+        "total": 3007.84,
+        "scopes": {
+          "SCOPE_3": 597.2,
+          "SCOPE_2": 1181.9,
+          "SCOPE_1": 1228.74
+        },
+        "facilities": {
+          "Toronto Client Visit": 60,
+          "Calgary HQ": 1602.14,
+          "Corporate Travel": 492.2,
+          "Toronto Sales Trip": 45,
+          "Vancouver Fleet": 808.5
+        }
+      }
+    },
+    {
+      "filenameVariant": "Original",
+      "raw": {
+        "Service Date": 46058,
+        "Record Category": "Gasoline",
+        "Consumption": 350,
+        "UOM": "L",
+        "Region": "British Columbia",
+        "Location Name": "Vancouver Fleet",
+        "Original Document": "fuel_card_feb.csv"
+      },
+      "extraction": {
+        "sourceRows": 5,
+        "extractedRows": 5
+      },
+      "review": {
+        "stage": "gasoline-review-eligibility",
+        "selected": true,
+        "confirmEligible": true,
+        "activityType": "GASOLINE",
+        "unit": "L",
+        "sourceReference": "fuel_card_feb.csv"
+      },
+      "payload": {
+        "rowCount": 5,
+        "gasoline": {
+          "activity": "GASOLINE",
+          "quantity": 350,
+          "unit": "L",
+          "province": "British Columbia",
+          "facility": "Vancouver Fleet",
+          "sourceReference": "fuel_card_feb.csv",
+          "sourceRow": 4,
+          "sourceSheet": "Operations_2026",
+          "matchingStatus": "MATCHED",
+          "calculationStatus": "CALCULATED",
+          "reportTreatment": "INCLUDED",
+          "factorValue": 2.31,
+          "calculatedEmissions": 808.5,
+          "included": true
+        }
+      },
+      "backend": {
+        "received": true,
+        "filtered": false,
+        "persisted": true,
+        "normalizedUnit": "liters",
+        "matchedBy": "SYSTEM_COUNTRY_YEAR",
+        "selectionReason": "GENERIC_JURISDICTION_FALLBACK",
+        "selectionExplanation": "No British Columbia-specific factor was available. A Canada (Generic) factor was used. No exact 2026 factor was available. The 2025 factor was selected according to the configured prior-year fallback policy.",
+        "factorId": "72960476-10cf-41e4-9aa3-1e02bde56616",
+        "factorValue": 2.31,
+        "sourceYear": 2025,
+        "region": "Canada (Generic)"
+      },
+      "identity": {
+        "physicalKeyTemplate": "<documentId>::row:4",
+        "legacyKeyTemplate": "<documentId>::fuel_card_feb.csv::GASOLINE::2026-02-05::350::L",
+        "documentRelation": true,
+        "importBatchRelation": true,
+        "facilityId": null,
+        "facilityName": "Vancouver Fleet",
+        "sourceReference": "fuel_card_feb.csv",
+        "gasolineCount": 1
+      },
+      "repeatedConfirm": [
+        {
+          "stage": "repeat-confirm",
+          "kind": "NeedsReview",
+          "imported": 0
+        },
+        {
+          "stage": "repeat-confirm",
+          "kind": "FieldMapping",
+          "imported": 0
+        }
+      ],
+      "goldenC": {
+        "records": 5,
+        "calculated": 5,
+        "tracked": 0,
+        "total": 2428.44,
+        "scopes": {
+          "SCOPE_3": 537.2,
+          "SCOPE_1": 1228.74,
+          "SCOPE_2": 662.5
+        },
+        "facilities": {
+          "Corporate Travel": 492.2,
+          "Toronto Sales Trip": 45,
+          "Vancouver Fleet": 808.5,
+          "Calgary HQ": 1082.74
+        }
+      },
+      "twoWorkbook": {
+        "records": 8,
+        "calculated": 7,
+        "tracked": 1,
+        "total": 3007.84,
+        "scopes": {
+          "SCOPE_3": 597.2,
+          "SCOPE_2": 1181.9,
+          "SCOPE_1": 1228.74
+        },
+        "facilities": {
+          "Toronto Client Visit": 60,
+          "Calgary HQ": 1602.14,
+          "Corporate Travel": 492.2,
+          "Toronto Sales Trip": 45,
+          "Vancouver Fleet": 808.5
+        }
+      }
+    }
+  ],
+  "factorCandidates": [
+    {
+      "id": "72960476-10cf-41e4-9aa3-1e02bde56616",
+      "name": "Gasoline combustion",
+      "activityType": "GASOLINE",
+      "unit": "liters",
+      "factorValue": "2.31",
+      "country": "Canada",
+      "region": null,
+      "jurisdiction": "Canada (Generic)",
+      "sourceYear": 2025,
+      "verified": false,
+      "isSystemDefault": true,
+      "applicability": null,
+      "emissionBasis": null
+    }
+  ],
+  "governedCandidates": [
+    {
+      "id": "factor_version_83ff331ba2fe8cfb05cb0727bdfd3c55",
+      "version": "v1-83ff331b",
+      "factorValue": "2.31",
+      "inputUnit": "liters",
+      "jurisdictionCountry": null,
+      "jurisdictionRegion": null,
+      "factorYear": null,
+      "status": "DRAFT",
+      "confidenceLevel": "DEMO",
+      "verified": false,
+      "applicability": null,
+      "emissionBasis": null,
+      "factor": {
+        "id": "factor_672814aba889909bd5d07866bd654798",
+        "isSystem": false,
+        "isActive": true,
+        "activityType": "GASOLINE"
+      },
+      "source": {
+        "isActive": true,
+        "sourceDocument": "gasoline-standard-2025"
+      }
+    },
+    {
+      "id": "factor_version_dc505ba9628140a8887f4c0f37ee31de",
+      "version": "v1-dc505ba9",
+      "factorValue": "2.31",
+      "inputUnit": "liters",
+      "jurisdictionCountry": null,
+      "jurisdictionRegion": null,
+      "factorYear": null,
+      "status": "DRAFT",
+      "confidenceLevel": "DEMO",
+      "verified": false,
+      "applicability": null,
+      "emissionBasis": null,
+      "factor": {
+        "id": "factor_672814aba889909bd5d07866bd654798",
+        "isSystem": false,
+        "isActive": true,
+        "activityType": "GASOLINE"
+      },
+      "source": {
+        "isActive": true,
+        "sourceDocument": "CarbonLite MVP Default Factors v1.0"
+      }
+    },
+    {
+      "id": "cmqzqzbwt0003gdltz5mch3pt",
+      "version": "demo-v1-liters",
+      "factorValue": "2.31",
+      "inputUnit": "liters",
+      "jurisdictionCountry": "Canada",
+      "jurisdictionRegion": "Canada (Generic)",
+      "factorYear": 2025,
+      "status": "DRAFT",
+      "confidenceLevel": "DEMO",
+      "verified": false,
+      "applicability": null,
+      "emissionBasis": null,
+      "factor": {
+        "id": "demo-factor-gasoline",
+        "isSystem": true,
+        "isActive": true,
+        "activityType": "GASOLINE"
+      },
+      "source": {
+        "isActive": true,
+        "sourceDocument": "CarbonLite MVP Default Factors v1.0"
+      }
+    },
+    {
+      "id": "cmr75gurs0003gdjbw3dg3r6g",
+      "version": "demo-2025-liters-canada-generic",
+      "factorValue": "2.31",
+      "inputUnit": "liters",
+      "jurisdictionCountry": "Canada",
+      "jurisdictionRegion": "Canada (Generic)",
+      "factorYear": 2025,
+      "status": "DRAFT",
+      "confidenceLevel": "DEMO",
+      "verified": false,
+      "applicability": null,
+      "emissionBasis": null,
+      "factor": {
+        "id": "demo-factor-gasoline-canada-generic",
+        "isSystem": true,
+        "isActive": true,
+        "activityType": "GASOLINE"
+      },
+      "source": {
+        "isActive": true,
+        "sourceDocument": "CarbonLite MVP Default Factors v1.0"
+      }
+    }
+  ],
+  "sourceHashes": {
+    "../carbonlite-api/src/document-extraction/document-extraction.service.ts": "d1fd01fcc6d97e7bf283106502d68fa9c8a7707360f8b6a4b7261c57c2b05125",
+    "../carbonlite-api/src/document-extraction/spreadsheet-activity-rows.ts": "be3e38c869bd907740cdeaad94b1bf0a788294154a44dc6bd19b638ed6ecf9fa",
+    "apps/web-e2e/tests/real-api/field-mapping-import-regression.spec.ts": "80a4381ecc6f72e1f363de308c1fba3074ae41b36e4f5a9966f858ad43e2c08f"
+  },
+  "manualEntry": {
+    "persistedCount": 1,
+    "activity": "GASOLINE",
+    "quantity": 350,
+    "unit": "L",
+    "region": "British Columbia",
+    "facility": "Vancouver Fleet",
+    "sourceReference": "fuel_card_feb.csv",
+    "sourceType": "MANUAL",
+    "linkedDocument": null,
+    "normalizedUnit": "liters",
+    "factorValue": 2.31,
+    "emissions": 808.5,
+    "scope": "SCOPE_1",
+    "matchedBy": "SYSTEM_COUNTRY_YEAR"
+  },
+  "partialConfirm": {
+    "reviewableRows": 9,
+    "initialImported": 3,
+    "initialUnresolved": 6,
+    "correctedImported": 1,
+    "repeatedImported": 0,
+    "finalPersisted": 4,
+    "result": "PASS"
+  },
+  "validation": {
+    "frontend": {
+      "files": 87,
+      "tests": 1087,
+      "result": "PASS"
+    },
+    "backend": {
+      "suites": 24,
+      "tests": 256,
+      "result": "PASS"
+    },
+    "realBrowser": {
+      "finalFileCases": 2,
+      "manualComparison": 1,
+      "partialConfirm": 1,
+      "result": "PASS"
+    },
+    "typecheck": "PASS",
+    "build": "PASS"
+  },
+  "integrity": {
+    "directDatabaseAndDocumentScope": [
+      {
+        "filenameVariant": "Original",
+        "directDbRecords": 8,
+        "gasolineRecords": 1,
+        "gasolineValue": 808.5,
+        "factorValue": 2.31,
+        "documentScopedRecords": 5,
+        "documentScopedCalculated": 5,
+        "documentScopedTotal": 2428.44
+      },
+      {
+        "filenameVariant": "Renamed",
+        "directDbRecords": 8,
+        "gasolineRecords": 1,
+        "gasolineValue": 808.5,
+        "factorValue": 2.31,
+        "documentScopedRecords": 5,
+        "documentScopedCalculated": 5,
+        "documentScopedTotal": 2428.44
+      }
+    ],
+    "historicalFailedImportsUnchanged": true,
+    "historicalFingerprint": "0abc092c3c8274c8eda2a9ed0b26a1851cbb37ef64f1ffd909dbddfd9c068e58",
+    "retiredSyntheticAccounts": 9,
+    "retiredSessionsRejected": true,
+    "productionModified": false,
+    "schemaModified": false
+  }
+}

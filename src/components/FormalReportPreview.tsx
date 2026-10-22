@@ -65,7 +65,7 @@ export const FORMAL_REPORT_DISCLAIMER =
 export const FORMAL_REPORT_METHODOLOGY = [
   'CarbonLite uses one six-stage workflow: Define Reporting Boundary; Collect & Upload Source Data; Review & Resolve Data Issues; Validate Factors & Calculations; Review Results; Generate & Review Report.',
   'Emissions are calculated from imported or manually entered activity data and configured emission factors. CarbonLite applies factor matching based on activity type, unit, jurisdiction, and reporting year.',
-  'Records without valid factors, units, quantities, dates, or required jurisdiction are excluded from emissions totals and listed as records requiring review. Tracked metrics are not included in calculated emissions totals.',
+  'Records without valid factors, units, quantities, dates, or required jurisdiction are excluded from emissions totals and listed as records needing attention. Tracked metrics are not included in calculated emissions totals.',
   'Source documents, source references, and factor metadata should be reviewed before using report outputs for internal, consultant, or external reporting workflows.',
   FORMAL_REPORT_DISCLAIMER,
 ];
@@ -323,8 +323,8 @@ export function formatExecutiveSummaryPreview(
   if (summary.recordsRequiringReview > 0) {
     parts.push(
       `${summary.recordsRequiringReview} ${
-        summary.recordsRequiringReview === 1 ? 'requires' : 'require'
-      } review`,
+        summary.recordsRequiringReview === 1 ? 'needs' : 'need'
+      } attention`,
     );
   }
 
@@ -533,8 +533,8 @@ export function buildSourceEvidenceSummaryRows(
   const summaryBySource = new Map<string, SourceEvidenceSummaryRow>();
 
   sourceEvidenceRows.forEach((row) => {
-    const sourceFile = row.sourceFile || 'Source Review Required';
-    const sourceType = row.sourceType || 'Source Review Required';
+    const sourceFile = row.sourceFile || 'Source Information Needed';
+    const sourceType = row.sourceType || 'Source Information Needed';
     const importMethod = row.importMethod || sourceType;
     const key = [sourceFile, sourceType, importMethod].join('::');
 
@@ -570,7 +570,7 @@ export function buildSourceEvidenceSummaryRows(
 
     if (row.reportTreatment === 'Included in GHG Total' || row.reportTreatment === 'Included') summary.includedRecords += 1;
     else if (row.reportTreatment === 'Tracked Metric' || row.reportTreatment === 'Tracked Only') summary.trackedMetrics += 1;
-    else if (row.reportTreatment === 'Needs Review' || row.reportTreatment === 'Requires Review') summary.recordsRequiringReview += 1;
+    else if (row.reportTreatment === 'Needs Attention' || row.reportTreatment === 'Needs Review' || row.reportTreatment === 'Requires Review') summary.recordsRequiringReview += 1;
   });
 
   return Array.from(summaryBySource.values());
@@ -657,7 +657,7 @@ function formatSourceEvidenceReference(input: {
 
   if (!sourceFile || !rawReference) return formattedReference;
   if (formattedReference === 'Manual Entry') return formattedReference;
-  if (/^source (file unavailable|review required)$/i.test(formattedReference)) return formattedReference;
+  if (/^source (file unavailable|review required|information needed)$/i.test(formattedReference)) return formattedReference;
 
   const normalizedRaw = rawReference.toLowerCase();
   const normalizedFormatted = formattedReference.toLowerCase();
@@ -682,17 +682,17 @@ function isGenericSourceEvidenceReference(value: string) {
 }
 
 function formatSourceEvidenceStatus(detail?: CalculationAuditDetail) {
-  if (!detail) return 'Source Review Required';
+  if (!detail) return 'Source Information Needed';
   if (isTrackedMetricDetail(detail)) return 'Tracked Metric';
   if (detail.status === 'CALCULATED') return 'Calculated';
   return formatCalculationStatus(detail.matchingStatus || detail.calculationStatus || detail.status);
 }
 
 function formatSourceEvidenceTreatment(detail?: CalculationAuditDetail) {
-  if (!detail) return 'Source Review Required';
+  if (!detail) return 'Source Information Needed';
   if (isTrackedMetricDetail(detail)) return 'Tracked Metric';
   if (detail.status === 'CALCULATED') return 'Included in GHG Total';
-  if (isRecordRequiringCorrection(detail)) return 'Needs Review';
+  if (isRecordRequiringCorrection(detail)) return 'Needs Attention';
   return 'Excluded';
 }
 
@@ -993,7 +993,7 @@ export function FormalReportPreview({
         sectionId="calculation-quality"
         expanded={expandedSections['calculation-quality']}
         onToggle={toggleSection}
-        summary={`${reportCountSummary.processedRecords} calculated · ${formatCount(primarySkippedReasons.trackedOnly, 'tracked operational metric')} · ${executiveSummary.recordsRequiringReview} requiring review`}
+        summary={`${reportCountSummary.processedRecords} calculated · ${formatCount(primarySkippedReasons.trackedOnly, 'tracked operational metric')} · ${executiveSummary.recordsRequiringReview} needing attention`}
       >
         <CalculationQualitySection
           reportCountSummary={reportCountSummary}
@@ -1072,11 +1072,11 @@ export function FormalReportPreview({
       </ReportSection>
 
       <ReportSection
-        title="L. Records Requiring Review"
+        title="L. Records Needing Attention"
         sectionId="records-review"
         expanded={expandedSections['records-review']}
         onToggle={toggleSection}
-        summary={`${formatCount(reviewRecordCount, 'record')} ${reviewRecordCount === 1 ? 'requires' : 'require'} review${trackedMetricCount ? ` · ${formatCount(trackedMetricCount, 'tracked metric')}` : ''}`}
+        summary={`${formatCount(reviewRecordCount, 'record')} ${reviewRecordCount === 1 ? 'needs' : 'need'} attention${trackedMetricCount ? ` · ${formatCount(trackedMetricCount, 'tracked metric')}` : ''}`}
       >
         <RecordsRequiringReviewSection
           calculationDetails={calculationDetails}

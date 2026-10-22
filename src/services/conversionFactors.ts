@@ -232,7 +232,7 @@ const PILOT_ELECTRICITY_FACTORS: ConversionFactorItem[] = PILOT_SUPPORTED_PROVIN
     sourceName: 'CarbonLite Pilot Electricity Factors',
     sourceReference: `CarbonLite pilot ${province.code} electricity factor`,
     sourceAuthority: 'CarbonLite',
-    sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+    sourceDocument: 'CarbonLite Default Factor Library v1.0',
     sourceYear: 2026,
     effectiveYear: 2026,
     sourceUrl: '/methodology/default-factors',

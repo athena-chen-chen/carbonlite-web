@@ -26,7 +26,7 @@ Use this checklist before inviting external pilot reviewers or stepping away fro
 - [ ] Pilot Reviewer sees the banner: `Pilot review account · Sample data only · Not for formal reporting`
 - [ ] Pilot Reviewer sees `CarbonLite Sample Workspace`.
 - [ ] Data Records shows 10 sample records.
-- [ ] Calculation Review total is `37,285 kgCO2e`.
+- [ ] Calculation Results total is `37,285 kgCO2e`.
 - [ ] Reports page loads and shows the sample report.
 - [ ] Factors page loads in read-only mode.
 

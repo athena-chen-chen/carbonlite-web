@@ -114,11 +114,11 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     dataReadinessSummary,
   );
   doc.setProperties({
-    title: `CarbonLite Technical Review Package - ${documentControl.reportId}`,
+    title: `CarbonLite Technical Emissions Report - ${documentControl.reportId}`,
     subject: `Report ID ${documentControl.reportId}; ${documentControl.reportVersion}; ${documentControl.reviewStatus}`,
     author: 'CarbonLite',
     creator: documentControl.generatedWith,
-    keywords: `CarbonLite, technical review package, ${documentControl.reportId}, ${documentControl.reviewStatus}`,
+    keywords: `CarbonLite, technical emissions report, ${documentControl.reportId}, ${documentControl.reviewStatus}`,
   });
   drawReportPdfCover(doc, {
     organizationName,
@@ -142,7 +142,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
       ['Imported Activity Records', reportCountSummary.totalRecordsFound],
       ['Records Included in GHG Total', executiveSummary.recordsIncluded],
       ['Tracked Metrics', executiveSummary.trackedMetrics],
-      ['Imported Activity Records Requiring Review', executiveSummary.recordsRequiringReview],
+      ['Imported Activity Records Needing Attention', executiveSummary.recordsRequiringReview],
       ['Unresolved Source Rows Remaining in Input Review', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)],
       ['Primary Activity Types', executiveSummary.primaryActivityTypes],
       ['Missing Factor Count', primarySkippedReasons.missingFactor],
@@ -162,12 +162,12 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
       ['Imported Activity Records', reportCountSummary.totalRecordsFound],
       ['Records Included in GHG Total', reportCountSummary.processedRecords],
       ['Tracked Metrics', primarySkippedReasons.trackedOnly],
-      ['Imported Activity Records Requiring Review', executiveSummary.recordsRequiringReview],
+      ['Imported Activity Records Needing Attention', executiveSummary.recordsRequiringReview],
       ['Unresolved Source Rows Remaining in Input Review', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)],
       ['Missing Factors', primarySkippedReasons.missingFactor],
       ['Missing Jurisdiction', primarySkippedReasons.missingJurisdiction],
       ['Invalid Unit', primarySkippedReasons.invalidUnit],
-      ['Imported Activity Review Reasons', formatReviewReasons(primarySkippedReasons)],
+      ['Imported Activity Attention Reasons', formatReviewReasons(primarySkippedReasons)],
       [
         'Calculation Coverage',
         calculationCoverage,
@@ -176,20 +176,20 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
   });
 
   nextY = (doc as any).lastAutoTable.finalY + 12;
-  drawPdfSectionTitle(doc, 'Source Dataset Review Status', nextY);
+  drawPdfSectionTitle(doc, 'Source Data Status', nextY);
   autoTablePdf(doc, {
     startY: nextY + 6,
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
-    head: [['Source Review Measure', 'Value']],
+    head: [['Source Data Measure', 'Value']],
     body: [
       ['Source Files', formatSourceReviewFiles(sourceReviewSummary)],
-      ['Reviewable Source Rows', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.totalRows)],
+      ['Source Rows Assessed', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.totalRows)],
       ['Rows Resolved / Imported', sourceReviewSummary.available ? `${sourceReviewSummary.resolvedCount} of ${sourceReviewSummary.totalRows}` : formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.importedCount ?? 0)],
       ['Emission Rows Eligible for Import', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.readyCount)],
       ['Tracked Operational Rows', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.trackedOnlyCount)],
-      ['Source Rows Still Requiring Review', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)],
-      ['Review Count Distinction', getSourceReviewSectionNote(sourceReviewSummary)],
+      ['Source Rows Still Needing Attention', formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)],
+      ['Status Count Distinction', getSourceReviewSectionNote(sourceReviewSummary)],
       ['Source Dataset Resolution', formatSourceReviewStatus(sourceReviewSummary)],
     ],
     styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
@@ -265,7 +265,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
       ...(scopeSummary.Unclassified > 0
         ? [[
             'Unclassified',
-            'Calculated records requiring scope review',
+            'Calculated records requiring scope validation',
             formatEmissionsWithUnit(scopeSummary.Unclassified),
             `${
               totalEstimatedEmissionsKgCO2e > 0
@@ -434,7 +434,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
       'Calculation',
       'Scope',
       'Status',
-      'Review Note',
+      'Validation Note',
     ]],
     body: calculationDetails.length
       ? calculationDetails.map((item) => [
@@ -496,7 +496,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
       'Record-Level References',
       'Included GHG Records',
       'Tracked Metrics',
-      'Imported Review Records',
+      'Imported Records Needing Attention',
     ]],
     body: sourceEvidenceSummaryRows.length
       ? sourceEvidenceSummaryRows.map((item) => [
@@ -553,11 +553,11 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
         `Stage ${getWorkflowStage('SOURCE_DATA').step}: ${getWorkflowStage('SOURCE_DATA').title}`,
         sourceFiles.length
           ? sourceFiles.join(', ')
-          : 'Source evidence requires review. The original file or source reference was not available.',
+          : 'Source evidence needs attention. The original file or source reference was not available.',
       ],
       [
         `Stage ${getWorkflowStage('DATA_ISSUES').step}: ${getWorkflowStage('DATA_ISSUES').title}`,
-        `${reportCountSummary.processedRecords} emissions records and ${calculationDetails.filter(isTrackedMetricDetail).length} tracked metric were imported; ${formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)} unresolved source rows remain in Input Review. ${calculationDetails.filter(isRecordRequiringCorrection).length} imported activity records require review.`,
+        `${reportCountSummary.processedRecords} emissions records and ${calculationDetails.filter(isTrackedMetricDetail).length} tracked metric were imported; ${formatSourceReviewCount(sourceReviewSummary, sourceReviewSummary.needsReviewCount)} unresolved source rows remain in Input Review. ${calculationDetails.filter(isRecordRequiringCorrection).length} imported activity records need attention.`,
       ],
       [
         `Stage ${getWorkflowStage('REPORT').step}: ${getWorkflowStage('REPORT').title}`,
@@ -579,7 +579,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
   }
 
   doc.setFontSize(14);
-  doc.text('Imported Activity Records Requiring Review', 14, nextY + 10);
+  doc.text('Imported Activity Records Needing Attention', 14, nextY + 10);
   const reviewRows = calculationDetails.filter(isRecordRequiringCorrection);
   const trackedMetricRows = calculationDetails.filter(isTrackedMetricDetail);
   doc.setFont('helvetica', 'normal');
@@ -587,7 +587,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
   doc.setTextColor(71, 85, 105);
   const reviewNoteY = drawPdfTextBlock(
     doc,
-    'Unresolved source rows have not been imported into ActivityData and are not counted as imported activity records requiring review.',
+    'Unresolved source rows have not been imported into ActivityData and are not counted as imported activity records needing attention.',
     PDF_MARGIN_MM,
     nextY + 16,
     getPdfAppendixUsableWidth(doc),
@@ -604,11 +604,11 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
           formatDisplayNumber(item.activityQuantity),
           formatReportUnit(item.activityUnit, item),
           formatCalculationStatus(item.status),
-          item.matchingMessage || item.reason || 'Review this record before calculation.',
+          item.matchingMessage || item.reason || 'Correct this record before calculation.',
           formatRecordSource(item),
           item.status === 'MISSING_FACTOR' ? 'Create factor' : 'Fix record',
         ])
-      : [['No imported activity records require review for this report scope.', '', '', '', '', '', '']],
+      : [['No imported activity records need attention for this report scope.', '', '', '', '', '', '']],
     styles: { fontSize: 6.5, cellPadding: 1.5 },
     headStyles: { fillColor: [15, 23, 42] },
   });
@@ -690,7 +690,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
       'Source Reference',
       'Status',
       'Treatment',
-      'Review Note',
+      'Validation Note',
     ]],
     body: sourceEvidenceRows.length
       ? sourceEvidenceRows.map((item) => [
@@ -730,7 +730,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     nextY += 14;
   }
 
-  drawPdfSectionTitle(doc, 'Appendix B: Source Rows Requiring Review', nextY);
+  drawPdfSectionTitle(doc, 'Appendix B: Source Rows Needing Attention', nextY);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.2);
   doc.setTextColor(71, 85, 105);
@@ -772,7 +772,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
             formatSourceReviewIssue(row),
             formatSourceReviewAction(row),
           ])
-        : [['No source rows require review for this report scope.', '', '', '', '', '', '', '', '']]
+        : [['No source rows need attention for this report scope.', '', '', '', '', '', '', '', '']]
       : [[getSourceReviewAppendixEmptyMessage(sourceReviewSummary), '', '', '', '', '', '', '', '']],
     styles: { fontSize: 6.4, cellPadding: 1.1, valign: 'top', overflow: 'linebreak' },
     headStyles: { fillColor: [146, 64, 14] },
@@ -818,7 +818,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
             : 'Not assessed or not detected',
         ],
         ['Baseline Data', carbonCreditReadiness.checklist.find((item) => item.key === 'baseline-data')?.status ?? 'Not assessed'],
-        ['Records Requiring Review', dataReadinessSummary.recordsRequiringReview],
+        ['Records Needing Attention', dataReadinessSummary.recordsRequiringReview],
         ['Tracked Operational Metrics', dataReadinessSummary.trackedOnlyCount],
         ['Disclaimer', CARBON_CREDIT_READINESS_DISCLAIMER],
       ],

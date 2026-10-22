@@ -6,6 +6,11 @@ import {
 } from './unitNormalization';
 
 describe('unit normalization', () => {
+  it.each(['L', 'l', 'liter', 'liters', 'litre', 'litres'])('normalizes fuel source unit %s without a mismatch', unit => {
+    expect(normalizeUnitForDisplay(unit)).toEqual({ status: 'valid', value: 'liters' });
+    expect(normalizeUnitKey(unit)).toBe('liters');
+  });
+
   it('normalizes common unit variants for display', () => {
     expect(normalizeUnitForDisplay('LTR')).toEqual({ status: 'valid', value: 'liters' });
     expect(normalizeUnitForDisplay('m³')).toEqual({ status: 'valid', value: 'm3' });

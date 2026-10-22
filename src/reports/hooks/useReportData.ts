@@ -83,18 +83,16 @@ export function useReportData({
   url,
   regulatoryThresholdReferences = [],
 }: UseReportDataInput) {
-  const currentUserRef = useRef<ReturnType<typeof getCurrentUser>>(getCurrentUser());
-  const currentUser = currentUserRef.current;
+  const currentUser = getCurrentUser();
   const currentWorkspaceId = getOrganizationId(currentUser);
   const organizationName = getOrganizationName(currentUser);
   const initialSelectedRecordIds = useMemo(
     () =>
-      (routeState?.selectedActivityRecordIds ?? routeState?.selectedRecordIds ?? [])
-        .filter((id): id is string => typeof id === 'string'),
+      normalizeIds(routeState?.selectedActivityRecordIds ?? routeState?.selectedRecordIds ?? []),
     [routeState?.selectedActivityRecordIds, routeState?.selectedRecordIds],
   );
   const initialSelectedDocumentIds = useMemo(
-    () => (routeState?.selectedDocumentIds ?? []).filter((id): id is string => typeof id === 'string'),
+    () => normalizeIds(routeState?.selectedDocumentIds ?? []),
     [routeState?.selectedDocumentIds],
   );
 
@@ -118,18 +116,34 @@ export function useReportData({
   const [organizationProfile, setOrganizationProfile] = useState(() =>
     loadOrganizationProfile(getCurrentUser()),
   );
-  const [reportScope, setReportScope] = useState<ReportScope>(
-    initialSelectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
+  const selectedRecordIds = initialSelectedRecordIds;
+  const selectedDocumentIds = initialSelectedDocumentIds;
+  const restoredScope: ReportScope =
+    selectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
       ? 'selectedDocuments'
-      : initialSelectedRecordIds.length
-      ? 'selectedRecords'
-      : 'dateRange',
-  );
-  const [selectedRecordIds] = useState<string[]>(initialSelectedRecordIds);
-  const [selectedDocumentIds] = useState<string[]>(initialSelectedDocumentIds);
+      : selectedRecordIds.length ? 'selectedRecords' : 'dateRange';
+  const [scopeSelection, setScopeSelection] = useState({ routeState, scope: restoredScope });
+  // Route restoration must change identity in this render, before effects start fetching.
+  const reportScope = scopeSelection.routeState === routeState ? scopeSelection.scope : restoredScope;
+  function setReportScope(scope: ReportScope) {
+    setScopeSelection({ routeState, scope });
+  }
   const dateCommitTimerRef = useRef<number | null>(null);
   const inFlightRequestKeyRef = useRef<string | null>(null);
-  const latestRequestKeyRef = useRef<string | null>(null);
+  const requestGenerationRef = useRef(0);
+  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
+  const request = {
+    recalculate: true,
+    requireSourceReviewRows: true,
+    ...(reportScope === 'selectedRecords'
+      ? { selectedActivityRecordIds: selectedRecordIds }
+      : reportScope === 'selectedDocuments'
+      ? { selectedDocumentIds }
+      : { dateFrom: periodStart, dateTo: periodEnd }),
+  };
+  const requestedIdentity = JSON.stringify({ workspaceId: currentWorkspaceId, scope: reportScope, ...request });
+  const isCurrentData = loadedIdentity === requestedIdentity;
+  const isExportReady = dateRangeReady && !loading && !error && isCurrentData;
   const outputGeneratedDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const reportScopeLabel = getReportScopeLabel(
@@ -207,30 +221,24 @@ export function useReportData({
   );
 
   async function loadReportData() {
-    const request = {
-      recalculate: true,
-      ...(reportScope === 'selectedRecords'
-        ? { selectedActivityRecordIds: selectedRecordIds }
-        : reportScope === 'selectedDocuments'
-        ? { selectedDocumentIds }
-        : { dateFrom: periodStart, dateTo: periodEnd }),
-    };
-    const requestKey = JSON.stringify(request);
-
+    const requestKey = requestedIdentity;
     if (inFlightRequestKeyRef.current === requestKey) return;
     inFlightRequestKeyRef.current = requestKey;
-    latestRequestKeyRef.current = requestKey;
+    const generation = ++requestGenerationRef.current;
     const endTiming = startDevTiming('loadReportData');
     setLoading(true);
     setError(null);
 
     try {
       const overview = await loadMetricsOverview(request);
-      if (latestRequestKeyRef.current !== requestKey) return;
+      if (requestGenerationRef.current !== generation) return;
 
+      const nextActivities = overview.activities.map(row => ({ ...row, recordDate: row.recordDate ?? '' }));
+      const nextEmissions = overview.matchedActivityEmissions.map(row => ({ ...row, factorId: row.factorId ?? '' }));
+      // React batches these updates: data and identity become visible together.
       setSummary(overview.summary);
-      setActivities(overview.activities.map(row => ({ ...row, recordDate: row.recordDate ?? '' })));
-      setMatchedActivityEmissions(overview.matchedActivityEmissions.map(row => ({ ...row, factorId: row.factorId ?? '' })));
+      setActivities(nextActivities);
+      setMatchedActivityEmissions(nextEmissions);
       setConversionFactorsUsed(overview.conversionFactorsUsed);
       setCalculationDetails(overview.calculationDetails);
       setSourceReviewRows(overview.sourceReviewRows ?? []);
@@ -244,8 +252,9 @@ export function useReportData({
         missingFactorRecords: overview.missingFactorRecords,
         skippedReasons: overview.skippedReasons,
       });
+      setLoadedIdentity(requestKey);
     } catch {
-      if (latestRequestKeyRef.current !== requestKey) return;
+      if (requestGenerationRef.current !== generation) return;
 
       void trackActivityEvent({
         eventName: 'REPORT_GENERATION_FAILED',
@@ -263,10 +272,8 @@ export function useReportData({
       });
       setError(getUserFriendlyErrorMessage(null, 'reportGeneration'));
     } finally {
-      if (inFlightRequestKeyRef.current === requestKey) {
+      if (requestGenerationRef.current === generation) {
         inFlightRequestKeyRef.current = null;
-      }
-      if (latestRequestKeyRef.current === requestKey) {
         setLoading(false);
       }
       endTiming();
@@ -276,15 +283,12 @@ export function useReportData({
   useEffect(() => {
     if (!dateRangeReady) return;
     void loadReportData();
-  }, [
-    dateRangeReady,
-    reloadKey,
-    periodStart,
-    periodEnd,
-    reportScope,
-    selectedRecordIds.join('|'),
-    selectedDocumentIds.join('|'),
-  ]);
+    return () => {
+      // A generation also distinguishes A → B → A and same-key retries.
+      requestGenerationRef.current += 1;
+      inFlightRequestKeyRef.current = null;
+    };
+  }, [dateRangeReady, reloadKey, requestedIdentity]);
 
   useEffect(() => {
     initializeDateRange();
@@ -393,6 +397,10 @@ export function useReportData({
     report,
     loading,
     error,
+    requestedIdentity,
+    loadedIdentity,
+    isCurrentData,
+    isExportReady,
     dateRangeReady,
     isPreparingReportData: !dateRangeReady || loading,
     refetch: loadReportData,
@@ -438,4 +446,8 @@ function isValidDateInput(value: string) {
 
 function getDefaultFallbackStartDate() {
   return `${new Date().getFullYear() - 1}-01-01`;
+}
+
+function normalizeIds(ids: string[]) {
+  return [...new Set(ids.filter((id): id is string => typeof id === 'string'))].sort();
 }

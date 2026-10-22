@@ -22,10 +22,10 @@ export function buildSourceReviewSummary(input: {
     availability: 'STRUCTURED_REVIEW_AVAILABLE',
     sourceType: 'SPREADSHEET',
     status: needsReviewRows.length > 0 ? 'NEEDS_ATTENTION' : 'COMPLETE',
-    evidence: `${totalRows} source ${totalRows === 1 ? 'row was' : 'rows were'} reviewed.`,
+    evidence: `${totalRows} source ${totalRows === 1 ? 'row was' : 'rows were'} assessed.`,
     limitation: needsReviewRows.length > 0
-      ? `${needsReviewRows.length} source ${needsReviewRows.length === 1 ? 'row still requires' : 'rows still require'} review.`
-      : 'No unresolved source-review issues are currently recorded for this report scope.',
+      ? `${needsReviewRows.length} source ${needsReviewRows.length === 1 ? 'row still needs' : 'rows still need'} attention.`
+      : 'No unresolved source-data issues are currently recorded for this report scope.',
     sourceFiles: uniqueReviewValues(reviewRows.map((row) => row.sourceFileName)),
     totalRows,
     readyCount: readyRows.length,
@@ -52,8 +52,8 @@ function buildUnstructuredSourceReviewSummary(
       availability: 'STRUCTURED_REVIEW_AVAILABLE',
       sourceType: 'SPREADSHEET',
       status: 'COMPLETE',
-      evidence: `${totalRows} source ${totalRows === 1 ? 'row was' : 'rows were'} reviewed.`,
-      limitation: 'No unresolved source-review issues are currently recorded for this report scope.',
+      evidence: `${totalRows} source ${totalRows === 1 ? 'row was' : 'rows were'} assessed.`,
+      limitation: 'No unresolved source-data issues are currently recorded for this report scope.',
       sourceDocumentCount: uniqueReviewValues(
         spreadsheetLineageDetails.map((detail) => detail.sourceDocumentId || detail.sourceFileName),
       ).length,
@@ -102,7 +102,7 @@ function buildUnstructuredSourceReviewSummary(
     sourceType: 'MANUAL',
     status: 'NOT_APPLICABLE',
     evidence: 'No source document is associated with this report scope.',
-    limitation: 'Source-document review is not applicable to manually entered records.',
+    limitation: 'Source data validation is not applicable to manually entered records.',
     sourceDocumentCount: 0,
     importedCount: calculationDetails.length,
     sourceFiles: [],

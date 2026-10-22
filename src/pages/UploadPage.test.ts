@@ -38,7 +38,7 @@ const albertaElectricity2025Factor = {
   jurisdictionCountry: 'Canada',
   jurisdictionRegion: 'Alberta',
   sourceAuthority: 'CarbonLite',
-  sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+  sourceDocument: 'CarbonLite Default Factor Library v1.0',
   factorVersion: 'v1.0',
   verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
   confidenceLevel: 'LOW',
@@ -426,7 +426,7 @@ describe('document import factor matching metadata', () => {
       matchedFactorSourceYear: 2025,
       matchedFactorVersion: 'v1.0',
       matchedFactorSourceAuthority: 'CarbonLite',
-      matchedFactorSourceDocument: 'CarbonLite MVP Default Factors v1.0',
+      matchedFactorSourceDocument: 'CarbonLite Default Factor Library v1.0',
       matchedFactorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
       matchedFactorConfidenceLevel: 'LOW',
       factorSelectionReason: 'PILOT_DEFAULT_FALLBACK',
@@ -798,7 +798,7 @@ describe('formatSourceReference', () => {
       'Spreadsheet import',
     );
     expect(formatDocumentSourceTypeLabel({ fileName: 'utility.pdf' })).toBe('PDF extraction');
-    expect(formatDocumentSourceTypeLabel({ fileName: '' })).toBe('Source review required');
+    expect(formatDocumentSourceTypeLabel({ fileName: '' })).toBe('Source information needed');
   });
 });
 

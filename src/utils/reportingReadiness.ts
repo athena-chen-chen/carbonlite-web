@@ -143,7 +143,7 @@ function buildSourceDataReviewedItem(summary?: SourceReviewReadinessSummary | nu
   if (summary?.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
     return withWorkflowStage('SOURCE_DATA', {
       code: 'SOURCE_REVIEW_COMPLETE',
-      label: 'Source data reviewed',
+      label: 'Source data assessed',
       status: 'LIMITED',
       evidence: summary.evidence ||
         `Source document lineage is available for ${summary.importedCount ?? 0} imported ${summary.importedCount === 1 ? 'record' : 'records'}.`,
@@ -154,7 +154,7 @@ function buildSourceDataReviewedItem(summary?: SourceReviewReadinessSummary | nu
   if (!summary?.available) {
     return withWorkflowStage('SOURCE_DATA', {
       code: 'SOURCE_REVIEW_COMPLETE',
-      label: 'Source data reviewed',
+      label: 'Source data assessed',
       status: 'NOT_APPLICABLE',
       evidence: summary?.evidence || 'No source document is associated with this report scope.',
       critical: false,
@@ -163,9 +163,9 @@ function buildSourceDataReviewedItem(summary?: SourceReviewReadinessSummary | nu
 
   return withWorkflowStage('SOURCE_DATA', {
     code: 'SOURCE_REVIEW_COMPLETE',
-    label: 'Structured source rows reviewed',
+    label: 'Structured source rows assessed',
     status: 'COMPLETE',
-    evidence: `${summary.totalRows} structured source ${summary.totalRows === 1 ? 'row was' : 'rows were'} reviewed.`,
+    evidence: `${summary.totalRows} structured source ${summary.totalRows === 1 ? 'row was' : 'rows were'} assessed.`,
     critical: false,
   });
 }
@@ -187,7 +187,7 @@ function buildSourceIssuesResolvedItem(summary?: SourceReviewReadinessSummary | 
       code: 'SOURCE_ISSUES_RESOLVED',
       label: 'Source issues resolved',
       status: 'NOT_APPLICABLE',
-      evidence: summary?.limitation || 'Source-document review is not applicable to manually entered records.',
+      evidence: summary?.limitation || 'Source data validation is not applicable to manually entered records.',
       critical: false,
     });
   }
@@ -199,7 +199,7 @@ function buildSourceIssuesResolvedItem(summary?: SourceReviewReadinessSummary | 
     status: complete ? 'COMPLETE' : 'NEEDS_ATTENTION',
     evidence: complete
       ? `${summary.resolvedCount} of ${summary.totalRows} source ${summary.totalRows === 1 ? 'row is' : 'rows are'} resolved/imported.`
-      : `${summary.resolvedCount} of ${summary.totalRows} source ${summary.totalRows === 1 ? 'row is' : 'rows are'} resolved/imported; ${summary.needsReviewCount} still require review.`,
+      : `${summary.resolvedCount} of ${summary.totalRows} source ${summary.totalRows === 1 ? 'row is' : 'rows are'} resolved/imported; ${summary.needsReviewCount} still need attention.`,
     action: complete ? undefined : `Resolve ${summary.needsReviewCount} ${summary.needsReviewCount === 1 ? 'row' : 'rows'} in Input Review.`,
     critical: true,
   });
@@ -260,7 +260,7 @@ function buildFactorsReviewedItem(calculationDetails: CalculationAuditDetail[]):
   if (usedFactors.length === 0) {
     return withWorkflowStage('FACTORS_CALCULATIONS', {
       code: 'FACTORS_REVIEWED',
-      label: 'Emission factors reviewed',
+      label: 'Emission factor validation',
       status: 'NOT_APPLICABLE',
       evidence: 'No emission factors are used in calculated records.',
       critical: true,
@@ -270,14 +270,14 @@ function buildFactorsReviewedItem(calculationDetails: CalculationAuditDetail[]):
   const requiringReview = usedFactors.filter(factorRequiresReview);
   return withWorkflowStage('FACTORS_CALCULATIONS', {
     code: 'FACTORS_REVIEWED',
-    label: 'Emission factors reviewed',
+    label: 'Emission factor validation',
     status: requiringReview.length === 0 ? 'COMPLETE' : 'NEEDS_ATTENTION',
     evidence: requiringReview.length === 0
       ? `All ${usedFactors.length} record-level factor usages have reviewed or verified status.`
-      : `${usedFactors.length} calculated ${usedFactors.length === 1 ? 'record uses an emission factor' : 'records use emission factors'}; ${requiringReview.length} record-level factor ${requiringReview.length === 1 ? 'usage requires' : 'usages require'} review before formal use.`,
+      : `${usedFactors.length} calculated ${usedFactors.length === 1 ? 'record uses an emission factor' : 'records use emission factors'}; ${requiringReview.length} record-level factor ${requiringReview.length === 1 ? 'usage needs' : 'usages need'} attention before formal use.`,
     action: requiringReview.length === 0
       ? undefined
-      : 'Review all factors and replace pilot-stage factors where appropriate.',
+      : 'Validate all factors and replace pilot-stage factors where appropriate.',
     critical: true,
   });
 }
@@ -314,7 +314,7 @@ function buildTraceabilityItem(calculationDetails: CalculationAuditDetail[]): Re
       code: 'TRACEABILITY_COMPLETE',
       label: 'Calculation traceability complete',
       status: 'NOT_APPLICABLE',
-      evidence: 'No calculated emissions records are available for traceability review.',
+      evidence: 'No calculated emissions records are available for traceability validation.',
       critical: true,
     });
   }

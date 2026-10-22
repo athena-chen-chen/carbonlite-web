@@ -22,7 +22,7 @@ test('@db @smoke authenticates seeded user and loads primary app routes', async 
   await expect(page).toHaveURL(/\/upload$/);
   await expect(page.getByRole('heading', { name: /upload & extract carbon data/i })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Calculation Review', exact: true }).click();
+  await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
   await expect(page).toHaveURL(/\/metrics-summary$/);
 
   await page.getByRole('link', { name: 'Reports', exact: true }).click();

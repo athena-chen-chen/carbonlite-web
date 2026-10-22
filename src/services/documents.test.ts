@@ -356,7 +356,7 @@ describe('getDocuments', () => {
     vi.restoreAllMocks();
   });
 
-  it('filters uploaded documents by current organization when tenant metadata is present', async () => {
+  it('rejects an incomplete tenant-filtered collection without rewriting the server total', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({ email: 'viewer@example.com', role: 'VIEWER', organizationId: 'org-1' }),
@@ -398,10 +398,7 @@ describe('getDocuments', () => {
       ),
     );
 
-    await expect(getDocuments()).resolves.toMatchObject({
-      items: [expect.objectContaining({ id: 'doc-1', organizationId: 'org-1' })],
-      total: 1,
-    });
+    await expect(getDocuments()).rejects.toThrow('incomplete');
   });
 
   it('returns no uploaded documents without an authenticated company context', async () => {
@@ -435,7 +432,6 @@ describe('getDocuments', () => {
     await expect(getDocuments()).resolves.toMatchObject({
       items: [],
       total: 0,
-      totalPages: 1,
     });
   });
 });

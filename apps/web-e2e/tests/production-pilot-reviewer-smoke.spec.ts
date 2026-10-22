@@ -93,10 +93,10 @@ test.describe('Production Pilot Reviewer smoke', () => {
       await expect(page.getByRole('row').filter({ hasText: 'Water' }).first()).toContainText(/Tracked Metric|Tracked Only/i);
     });
 
-    await test.step('Calculation Review shows golden total', async () => {
-      await page.getByRole('link', { name: 'Calculation Review', exact: true }).click();
+    await test.step('Calculation Results shows golden total', async () => {
+      await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
 
-      await expect(page.getByRole('heading', { name: 'Calculation Review' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Calculation Results' })).toBeVisible();
       await expect(page.getByText(/37,285 kg CO2e|37,285 kgCO2e/).first()).toBeVisible();
     });
 

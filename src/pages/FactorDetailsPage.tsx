@@ -488,7 +488,7 @@ export function FactorDetailsPage() {
         ) : null}
 
         {version.isSystem && !version.verified ? (
-          <Card title="CarbonLite Factor Review" style={fullWidthCardStyle}>
+          <Card title="CarbonLite Factor Validation" style={fullWidthCardStyle}>
             <div style={reviewNoticeStyle}>
               This system factor is included for pilot validation and should be reviewed
               before regulatory, client-facing, or compliance reporting.
@@ -585,7 +585,7 @@ export function FactorDetailsPage() {
             <Info label="Reviewed At" value={formatShortDate(version.reviewedAt)} />
             <Info label="Approval Source" value={displayValue(version.approvalSource)} />
             <Info label="Production Ready" value={ready ? 'Yes' : 'No'} />
-            <Info label="Review Notes" value={displayValue(version.reviewNotes)} wide />
+            <Info label="Reviewer Notes" value={displayValue(version.reviewNotes)} wide />
           </InfoGrid>
         </Card>
 

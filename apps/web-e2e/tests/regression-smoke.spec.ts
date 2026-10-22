@@ -235,7 +235,7 @@ test('@smoke ENMAX report CSV keeps missing Cost CAD cells blank', async ({ page
 
   const technicalDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: /^Export reports$/i }).click();
-  await page.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/i }).click();
+  await page.getByRole('menuitem', { name: /Technical Emissions Report \(PDF\)/i }).click();
   const technicalPath = await (await technicalDownloadPromise).path();
   expect(technicalPath).toBeTruthy();
   expect(countPdfPages(await fs.readFile(technicalPath ?? ''))).toBe(9);

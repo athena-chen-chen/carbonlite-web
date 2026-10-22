@@ -139,7 +139,7 @@ export default function PilotReviewersPage() {
       </header>
 
       <section style={noticeStyle}>
-        Pilot reviewers use sample data only. They can view records, Calculation Review, reports, and
+        Pilot reviewers use sample data only. They can view records, Calculation Results, reports, and
         submit feedback, but cannot upload, import, edit, delete, reset demo data, edit factors, or access admin pages.
       </section>
 

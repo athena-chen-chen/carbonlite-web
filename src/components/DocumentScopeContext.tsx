@@ -24,8 +24,8 @@ export function DocumentScopeContext({ selectedDocumentIds, importedRecordCount,
         {' · '}Unresolved source rows: {loading ? 'Loading…' : sourceReview.available ? sourceReview.needsReviewCount : 'Not available'}
       </p>
       <p style={{ margin: '0 0 8px', fontSize: 14 }}>Calculations and reports include imported records only. Unresolved source rows remain excluded until corrected and imported.</p>
-      <Link to={destination === 'report' ? '/reports' : '/metrics-summary'} state={{ reportScope: 'selectedDocuments', selectedDocumentIds }}>
-        {destination === 'report' ? 'Generate Report' : 'Review Calculations'}
+      <Link style={destination === 'report' ? { display: 'inline-block', padding: '10px 16px', borderRadius: 8, background: '#047857', color: '#fff', fontWeight: 700, textDecoration: 'none' } : undefined} to={destination === 'report' ? '/reports' : '/metrics-summary'} state={{ reportScope: 'selectedDocuments', selectedDocumentIds }}>
+        {destination === 'report' ? 'Generate Report' : 'View Calculation Results'}
       </Link>
     </section>
   );

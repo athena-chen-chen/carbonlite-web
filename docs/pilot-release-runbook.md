@@ -16,7 +16,7 @@ Before a release freeze, record both repository SHAs, exact dirty-file manifest 
 
 ## Workflow and current supported inputs
 
-Define organization/boundary → upload or enter source data → review rows and resolve issues → confirm eligible rows → review Activity Records, Calculation Review, factor provenance, audit history, and readiness → export Executive Summary PDF, Technical Review Package PDF, and CSV → log out/in and verify persistence.
+Define organization/boundary → upload or enter source data → review rows and resolve issues → confirm eligible rows → review Activity Records, Calculation Results, factor provenance, audit history, and readiness → export Executive Summary PDF, Technical Emissions Report PDF, and CSV → log out/in and verify persistence.
 
 The UI accepts PDF, CSV, XLSX/XLS, JPG/JPEG, PNG, and JSON. Spreadsheet parsing is available through Import Spreadsheet; JSON has a structured parser. PDF/image extraction uses OpenAI. Acceptance of a file extension does not establish extraction quality for that file. HEIC is unsupported. Review current usage, dates, units, province, and source evidence before importing. Charges without operational quantities are not waste weights.
 

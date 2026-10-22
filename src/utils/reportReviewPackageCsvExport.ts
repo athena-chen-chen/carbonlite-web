@@ -9,7 +9,7 @@ import { getActivityTypeLabel, getFactorDisplayName } from './activityType';
 import { formatDateOnly } from './dateOnly';
 import { formatCredibilityLabel } from './factorCredibility';
 import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
-import { escapeCsvValue } from './reportCsvExport';
+import { escapeCsvValue } from './csv';
 import {
   getDisplayFactorVersion,
   formatReportSourceReference,
@@ -37,10 +37,20 @@ export type ReviewPackageCsvKind =
 
 type CsvPrimitive = string | number;
 
+const NUMERIC_CSV_HEADERS = new Set<string>([
+  'Quantity', 'Scope 1 kgCO2e', 'Scope 2 kgCO2e', 'Scope 3 kgCO2e', 'Total kgCO2e',
+  'Included Records', 'Tracked Metrics', 'Records Needing Attention', 'Total Quantity',
+  'Factor Value', 'Source Year', 'Effective Year', 'Activity Year Used For Matching',
+  'Factor Effective Year', 'Calculated Emissions kgCO2e', 'Source Row',
+  'Activity Version', 'Factor Source Year', 'Calculation Version',
+]);
+
 function buildCsv(headers: readonly string[], rows: CsvPrimitive[][]) {
   return [
     headers.join(','),
-    ...rows.map((row) => headers.map((_, index) => escapeCsvValue(row[index] ?? '')).join(',')),
+    ...rows.map((row) => headers.map((header, index) =>
+      escapeCsvValue(row[index] ?? '', NUMERIC_CSV_HEADERS.has(header) ? 'number' : 'text'),
+    ).join(',')),
   ].join('\n');
 }
 
@@ -219,7 +229,7 @@ export function buildReviewPackageSiteFacilityBreakdownCsv(
       'Total kgCO2e',
       'Included Records',
       'Tracked Metrics',
-      'Records Requiring Review',
+      'Records Needing Attention',
     ],
     rows.map((row) => [
       row.siteFacility || 'Unassigned',
@@ -476,7 +486,7 @@ export function getReviewPackageCsvFileName(kind: ReviewPackageCsvKind, date = n
     'factor-source-summary': 'carbonlite-factor-source-summary',
     'calculation-traceability': 'carbonlite-calculation-traceability',
     'audit-evidence': 'carbonlite-audit-evidence',
-    'records-requiring-review': 'carbonlite-records-requiring-review',
+    'records-requiring-review': 'carbonlite-records-needing-attention',
   };
 
   return `${nameByKind[kind]}-${dateText}.csv`;

@@ -149,7 +149,7 @@ export function drawEmissionsHotspotsPdfSection(
   ) + 2;
   y = drawPdfTextBlock(
     doc,
-    'Hotspot analysis only includes records that were successfully calculated. Records requiring review, tracked-only metrics, missing factors, invalid units, or missing jurisdiction are excluded from hotspot totals and listed separately.',
+    'Hotspot analysis only includes records that were successfully calculated. Records needing attention, tracked-only metrics, missing factors, invalid units, or missing jurisdiction are excluded from hotspot totals and listed separately.',
     14,
     y,
   ) + 4;
@@ -300,14 +300,14 @@ export function drawEmissionsHotspotsPdfSection(
       startY: y,
       head: [hasOnlyTrackedMetrics
         ? ['Operational Metric', 'Treatment', 'Records']
-        : ['Category', 'Treatment / Review Reason', 'Records']],
+        : ['Category', 'Treatment / Attention Reason', 'Records']],
       body: analysis.excludedCategories.length
         ? analysis.excludedCategories.map((item) => [
             item.displayName,
             formatExcludedReasonForPdf(item.reason),
             item.excludedRecordCount,
           ])
-        : [['Records requiring review', 'Needs review', analysis.excludedRecordCount]],
+        : [['Records needing attention', 'Needs attention', analysis.excludedRecordCount]],
       styles: { fontSize: 7, cellPadding: 1.5 },
       headStyles: { fillColor: [146, 64, 14] },
     });

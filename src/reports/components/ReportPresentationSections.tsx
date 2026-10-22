@@ -269,7 +269,7 @@ export function ReportActions({
               onClick={onExportTechnical}
               style={exportMenuItemStyle(exportDisabled)}
             >
-              Technical Review Package (PDF)
+              Technical Emissions Report (PDF)
             </button>
             <button
               type="button"
@@ -375,7 +375,7 @@ export function CalculationQualitySection({
     <CollapsibleReportSection
       id="data-quality-notes-report-section"
       title="Data Quality Notes"
-      summary={`${readinessSummary.recordsReadyForCalculation} calculated · ${readinessSummary.recordsRequiringReview} imported requiring review`}
+      summary={`${readinessSummary.recordsReadyForCalculation} calculated · ${readinessSummary.recordsRequiringReview} imported needing attention`}
       expanded={expanded}
       onToggle={onToggle}
     >
@@ -388,9 +388,9 @@ export function CalculationQualitySection({
           detail={formatOptionalDataCompletenessDetail(readinessSummary)}
         />
         <DataQualityNote label="Calculated Records" value={readinessSummary.recordsReadyForCalculation} />
-        <DataQualityNote label="Imported Activity Records Requiring Review" value={readinessSummary.recordsRequiringReview} />
+        <DataQualityNote label="Imported Activity Records Needing Attention" value={readinessSummary.recordsRequiringReview} />
         <DataQualityNote
-          label="Source Rows Still Requiring Review"
+          label="Source Rows Still Needing Attention"
           value={formatSourceReviewCount(sourceReview, sourceReview.needsReviewCount)}
         />
         <DataQualityNote label="Tracked Operational Metrics" value={readinessSummary.trackedOnlyCount} />
@@ -412,7 +412,7 @@ export function CalculationQualitySection({
       </div>
       {readinessSummary.recordsRequiringReview > 0 ? (
         <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
-          Review reasons: {primarySkippedReasonsText}.
+          Attention reasons: {primarySkippedReasonsText}.
         </p>
       ) : readinessSummary.trackedOnlyCount > 0 ? (
         <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
@@ -420,7 +420,7 @@ export function CalculationQualitySection({
         </p>
       ) : null}
       <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
-        Hotspot analysis is based only on calculated records. Records requiring review are excluded until fixed.
+        Hotspot analysis is based only on calculated records. Records needing attention are excluded until fixed.
       </p>
     </CollapsibleReportSection>
   );
@@ -438,21 +438,21 @@ export function SourceDatasetReviewSection({
   return (
     <CollapsibleReportSection
       id="source-dataset-review-status-report-section"
-      title="Source Dataset Review Status"
+      title="Source Data Status"
       summary={formatSourceReviewStatus(data)}
       expanded={expanded}
       onToggle={onToggle}
     >
       <div style={dataQualityNotesGridStyle}>
         <DataQualityNote label="Source Files" value={formatSourceReviewFiles(data)} />
-        <DataQualityNote label="Reviewable Source Rows" value={formatSourceReviewCount(data, data.totalRows)} />
+        <DataQualityNote label="Source Rows Assessed" value={formatSourceReviewCount(data, data.totalRows)} />
         <DataQualityNote
           label="Rows Resolved / Imported"
           value={data.available ? `${data.resolvedCount} of ${data.totalRows}` : formatSourceReviewCount(data, data.importedCount ?? 0)}
         />
         <DataQualityNote label="Emission Rows Eligible for Import" value={formatSourceReviewCount(data, data.readyCount)} />
         <DataQualityNote label="Tracked Operational Rows" value={formatSourceReviewCount(data, data.trackedOnlyCount)} />
-        <DataQualityNote label="Source Rows Still Requiring Review" value={formatSourceReviewCount(data, data.needsReviewCount)} />
+        <DataQualityNote label="Source Rows Still Needing Attention" value={formatSourceReviewCount(data, data.needsReviewCount)} />
       </div>
       <p style={{ color: reportsPalette.secondaryText, lineHeight: 1.6, marginTop: 10 }}>
         {getSourceReviewSectionNote(data)}
@@ -594,7 +594,7 @@ export function CarbonCreditReadinessSection({
               : 'Not assessed or not detected'
           }
         />
-        <DataQualityNote label="Records Requiring Review" value={recordsRequiringReview} />
+        <DataQualityNote label="Records Needing Attention" value={recordsRequiringReview} />
         <DataQualityNote label="Tracked Operational Metrics" value={trackedOnlyCount} />
       </div>
       <p style={{ color: reportsPalette.infoText, lineHeight: 1.7, marginTop: 12 }}>
@@ -634,7 +634,7 @@ export function ScopeBreakdownSection({
         <Card title="Scope 2" subtitle={scopeLabelByName['Scope 2']} value={formatEmissionsWithUnit(scopeSummary['Scope 2'])} icon="⚡" />
         <Card title="Scope 3" subtitle={scopeLabelByName['Scope 3']} value={formatEmissionsWithUnit(scopeSummary['Scope 3'])} icon="🌍" />
         {scopeSummary.Unclassified > 0 ? (
-          <Card title="Unclassified" subtitle="Requires scope review" value={formatEmissionsWithUnit(scopeSummary.Unclassified)} icon="?" />
+          <Card title="Unclassified" subtitle="Requires scope validation" value={formatEmissionsWithUnit(scopeSummary.Unclassified)} icon="?" />
         ) : null}
       </div>
       {unclassifiedCalculatedRecordCount > 0 ? (
@@ -837,17 +837,17 @@ function getSourceReviewSectionNote(summary: SourceReviewSummary) {
     return 'Source document lineage is available for imported records. Structured unresolved-source-row counts are not available for this document import.';
   }
   if (!summary.available) {
-    return 'Source-document review is not applicable when this report scope contains manually entered records with no associated source document.';
+    return 'Source data validation is not applicable when this report scope contains manually entered records with no associated source document.';
   }
-  return 'Source dataset review status is joined by source document ID. Unresolved source rows remain in spreadsheet review history and are not imported into ActivityData or included in emissions totals.';
+  return 'Source data status is linked by source document ID. Unresolved source rows remain in spreadsheet review history and are not imported into ActivityData or included in emissions totals.';
 }
 
 function formatSourceReviewStatus(summary: SourceReviewSummary) {
   if (summary.availability === 'DOCUMENT_LINEAGE_AVAILABLE') {
-    return 'Document source lineage available; structured review counts limited';
+    return 'Document source lineage available; structured validation counts limited';
   }
   if (!summary.available) return 'Not applicable for manual-only report scope';
-  return `${summary.resolvedCount} of ${summary.totalRows} source rows resolved/imported · ${summary.needsReviewCount} require review`;
+  return `${summary.resolvedCount} of ${summary.totalRows} source rows resolved/imported · ${summary.needsReviewCount} need attention`;
 }
 
 function formatSourceReviewIssue(row: SpreadsheetReviewRowItem) {
@@ -856,14 +856,14 @@ function formatSourceReviewIssue(row: SpreadsheetReviewRowItem) {
     return issues.map((issue) => issue.message || issue.code).filter(Boolean).join('; ');
   }
 
-  return row.calculationMessage || row.status || 'Review required';
+  return row.calculationMessage || row.status || 'Needs attention';
 }
 
 function formatSourceReviewIssueType(row: SpreadsheetReviewRowItem) {
   const issue = row.issues?.[0];
   return formatCalculationStatusLabel(
     issue?.code || row.calculationStatus || row.matchingStatus || row.status || 'NEEDS_REVIEW',
-  ) || 'Needs Review';
+  ) || 'Needs Attention';
 }
 
 function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
@@ -873,10 +873,10 @@ function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
     return 'Add the missing province/jurisdiction and re-import or update the row.';
   }
   if (issueType.includes('UNIT')) {
-    return 'Correct the unit to a supported factor unit and rerun review.';
+    return 'Correct the unit to a supported factor unit and rerun validation.';
   }
   if (issueType.includes('QUANTITY')) {
-    return 'Enter a numeric quantity and rerun review.';
+    return 'Enter a numeric quantity and rerun validation.';
   }
   if (issueType.includes('ACTIVITY')) {
     return 'Map the raw activity to a supported activity type.';
@@ -885,7 +885,7 @@ function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
     return 'Add or select a matching emissions factor before including in GHG totals.';
   }
 
-  return 'Review and correct this source row before importing it into the report scope.';
+  return 'Correct this source row before importing it into the report scope.';
 }
 
 function Card({

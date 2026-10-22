@@ -38,7 +38,7 @@ describe('factor provenance display', () => {
       .toEqual(['Factor Version: 2026.1']);
   });
   it('assigns a version from the existing document title only to that document', () => {
-    expect(getDisplayFactorVersionLines({ sourceDocument: 'CarbonLite MVP Default Factors v1.0' }))
+    expect(getDisplayFactorVersionLines({ sourceDocument: 'CarbonLite Default Factor Library v1.0' }))
       .toEqual(['Source Document Version: v1.0']);
     expect(getDisplayFactorVersionLines({ sourceDocument: 'CarbonLite default factors' })).toEqual([]);
     const lines = getDisplayFactorProvenanceLines({ sourceDocument: 'Handbook', factorProvenance: { sourceVersion: '3.2', applicability: 'REFERENCE_ONLY', emissionBasis: 'CO2_COMPONENT' } });
@@ -59,7 +59,7 @@ describe('factor provenance display', () => {
   it('uses the same truthful version labels in Technical PDF factor text', () => {
     const text = buildFactorDetailText({ factorId: 'electricity', factorVersionId: 'cmv8vg8eu0009gd3sxfn0w9z7',
       factorName: 'Electricity - Alberta', factorValue: .53, inputUnit: 'kWh', resultUnit: 'kgCO2e',
-      sourceAuthority: 'CarbonLite System Defaults', sourceDocument: 'CarbonLite MVP Default Factors v1.0', factorType: 'System' });
+      sourceAuthority: 'CarbonLite System Defaults', sourceDocument: 'CarbonLite Default Factor Library v1.0', factorType: 'System' });
     expect(text).toContain('Source Document Version: v1.0');
     expect(text).not.toContain('cmv8vg8eu0009gd3sxfn0w9z7');
     expect(text).not.toMatch(/\nVersion:|\nFactor Version:/);

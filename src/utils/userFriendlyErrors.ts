@@ -37,7 +37,7 @@ const contextMessages: Record<ErrorMessageContext, string> = {
   conversionFactors: 'We could not update emission factors. Please refresh the page and try again.',
   organizationProfile:
     'Organization profile could not be saved. Please try again.',
-  calculationReview: 'We could not load the calculation review. Please refresh the page and try again.',
+  calculationReview: 'We could not load the calculation results. Please refresh the page and try again.',
   reportGeneration: 'We could not generate the report. Please try again after confirming imported records are available.',
   csvExport: 'We could not export the CSV file. Please try again.',
   pdfExport: 'We could not generate the PDF report. Please try again.',

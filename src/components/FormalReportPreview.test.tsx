@@ -389,7 +389,7 @@ describe('FormalReportPreview', () => {
     expect(screen.getAllByText('fuel-invoice.pdf').length).toBeGreaterThan(0);
     expect(screen.getAllByText('PDF').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Document Extraction').length).toBeGreaterThan(0);
-    expect(screen.getByText('L. Records Requiring Review')).toBeInTheDocument();
+    expect(screen.getByText('L. Records Needing Attention')).toBeInTheDocument();
     expect(screen.getByText('M. Methodology and Limitations')).toBeInTheDocument();
     expect(screen.getByText(FORMAL_REPORT_DISCLAIMER)).toBeInTheDocument();
     expect(FORMAL_REPORT_METHODOLOGY).toContain(FORMAL_REPORT_DISCLAIMER);
@@ -548,7 +548,7 @@ describe('FormalReportPreview', () => {
     expect(screen.queryByText('Draft')).not.toBeInTheDocument();
   });
 
-  it('keeps calculation traceability readable with review notes instead of dense factor metadata columns', () => {
+  it('keeps calculation traceability readable with validation notes instead of dense factor metadata columns', () => {
     render(
       <CalculationTraceabilitySection
         calculationDetails={[
@@ -579,14 +579,14 @@ describe('FormalReportPreview', () => {
       />,
     );
 
-    expect(screen.getByRole('columnheader', { name: 'Review Note' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Validation Note' })).toBeInTheDocument();
     expect(screen.getByText('12,500 kWh × 0.53 kg CO₂e/kWh = 6,625 kg CO₂e')).toBeInTheDocument();
     expect(screen.getByText('Prior-year factor used; review before formal reporting.')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Version' })).not.toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Assumptions' })).not.toBeInTheDocument();
   });
 
-  it('keeps electricity and accommodation fallback review notes factually distinct', () => {
+  it('keeps electricity and accommodation fallback validation notes factually distinct', () => {
     const electricityNote = formatTraceabilityReviewNote({
       activityDataId: 'activity-march-elec-001',
       activityType: 'ELECTRICITY',
@@ -721,7 +721,7 @@ describe('Version 1 report presentation data', () => {
     });
   });
 
-  it('separates tracked-only Water from records requiring review in preview counts', () => {
+  it('separates tracked-only Water from records needing attention in preview counts', () => {
     const calculationDetails = [
       ...Array.from({ length: 9 }, (_, index) => ({
         activityDataId: `activity-${index}`,
@@ -786,7 +786,7 @@ describe('Version 1 report presentation data', () => {
       '37,285 kg CO₂e · 9 included · 1 tracked metric',
     );
     expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 require review');
-    expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 requires review');
+    expect(formatExecutiveSummaryPreview(summary)).not.toContain('1 needs attention');
 
     render(
       <FormalReportPreview
@@ -811,8 +811,8 @@ describe('Version 1 report presentation data', () => {
 
     expect(screen.getAllByText('Records Included in GHG Total').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Tracked Operational Metrics').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Records Requiring Review').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Records Requiring Review')[0].parentElement).toHaveTextContent('0');
+    expect(screen.getAllByText('Records Needing Attention').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Records Needing Attention')[0].parentElement).toHaveTextContent('0');
     expect(screen.queryByText('Records Skipped')).not.toBeInTheDocument();
     expect(screen.queryByText(/Skipped reasons/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Tracked operational metrics are retained for review/i)).toBeInTheDocument();
@@ -1033,7 +1033,7 @@ describe('Version 1 report presentation data', () => {
     expect(screen.getByText('MARCH-HOTEL-010 · Line item 11')).toBeInTheDocument();
   });
 
-  it('shows singular grammar for one true record requiring review', () => {
+  it('shows singular grammar for one true record needing attention', () => {
     const summary = buildReportExecutiveSummary({
       totalEstimatedEmissionsKgCO2e: 37285,
       countSummary: {
@@ -1065,7 +1065,7 @@ describe('Version 1 report presentation data', () => {
     expect(summary.recordsRequiringReview).toBe(1);
     expect(summary.trackedMetrics).toBe(0);
     expect(formatExecutiveSummaryPreview(summary)).toBe(
-      '37,285 kg CO₂e · 9 included · 1 requires review',
+      '37,285 kg CO₂e · 9 included · 1 needs attention',
     );
   });
 
@@ -1118,7 +1118,7 @@ describe('Version 1 report presentation data', () => {
         inputUnit: 'km',
         resultUnit: 'kgCO2e',
         sourceAuthority: 'CarbonLite',
-        sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+        sourceDocument: 'CarbonLite Default Factor Library v1.0',
         sourceYear: 2025,
         factorType: 'System',
         verified: false,
@@ -1226,8 +1226,8 @@ describe('buildSourceEvidenceRows', () => {
         sourceReference: 'utility.pdf · Page 2 · Line item 3',
         sourceType: 'PDF',
         importMethod: 'Document Extraction',
-        matchingStatus: 'Source Review Required',
-        reportTreatment: 'Source Review Required',
+        matchingStatus: 'Source Information Needed',
+        reportTreatment: 'Source Information Needed',
         notes: 'Metered usage 500 kWh',
       },
       {
@@ -1239,8 +1239,8 @@ describe('buildSourceEvidenceRows', () => {
         sourceReference: 'Manual Entry',
         sourceType: 'Manual Entry',
         importMethod: 'Manual Entry',
-        matchingStatus: 'Source Review Required',
-        reportTreatment: 'Source Review Required',
+        matchingStatus: 'Source Information Needed',
+        reportTreatment: 'Source Information Needed',
         notes: '',
       },
     ]);
@@ -1269,14 +1269,14 @@ describe('buildSourceEvidenceRows', () => {
         sourceReference: 'Not provided',
         sourceType: 'Spreadsheet',
         importMethod: 'File Import',
-        matchingStatus: 'Source Review Required',
-        reportTreatment: 'Source Review Required',
+        matchingStatus: 'Source Information Needed',
+        reportTreatment: 'Source Information Needed',
         notes: '',
       },
     ]);
   });
 
-  it('marks tracked-only Water as source evidence without requiring review', () => {
+  it('marks tracked-only Water as source evidence without needing attention', () => {
     const rows = buildSourceEvidenceRows(
       [
         {
@@ -1385,7 +1385,7 @@ describe('buildSourceEvidenceRows', () => {
 });
 
 describe('report data quality and source consistency', () => {
-  it('does not count tracked-only Water as requiring review', () => {
+  it('does not count tracked-only Water as needing attention', () => {
     const summary = buildDataReadinessSummary([
       {
         activityDataId: 'electricity-1',

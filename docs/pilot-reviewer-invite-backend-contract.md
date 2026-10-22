@@ -96,7 +96,7 @@ Pilot reviewers may:
 
 - view the sample dashboard
 - view sample activity records
-- view Calculation Review and Calculation Trail
+- view Calculation Results and Calculation Trail
 - view sample reports
 - download sample PDF/CSV if enabled
 - submit feedback

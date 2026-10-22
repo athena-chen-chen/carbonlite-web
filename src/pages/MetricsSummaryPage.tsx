@@ -1,3 +1,4 @@
+import { escapeCsvValue } from '../utils/csv';
 import { DocumentScopeContext } from '../components/DocumentScopeContext';
 import { buildSourceReviewSummary } from '../reports/domain/buildSourceReviewSummary';
 import type { SpreadsheetReviewRowItem } from '../services/spreadsheetReviewRows';
@@ -242,7 +243,7 @@ export function MetricsSummaryPage() {
       setLastUpdated(new Date());
     } catch (err) {
       if (requestSequence === requestSequenceRef.current) {
-        setError('Unable to load calculation review. Please try again.');
+        setError('Unable to load calculation results. Please try again.');
       }
     } finally {
       if (inFlightRequestKeyRef.current === requestKey) {
@@ -335,14 +336,6 @@ export function MetricsSummaryPage() {
 
 //   URL.revokeObjectURL(url);
 // }
-function escapeCSV(value: unknown) {
-  const text = String(value ?? '');
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
 function handleDownloadCSV() {
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
@@ -367,7 +360,7 @@ function handleDownloadCSV() {
   ];
 
   const csv = rows
-    .map((row) => row.map(escapeCSV).join(','))
+    .map((row) => row.map((value: unknown, index: number) => escapeCsvValue(value, index === 4 ? 'number' : 'text')).join(','))
     .join('\n');
 
   const blob = new Blob([csv], {
@@ -378,7 +371,7 @@ function handleDownloadCSV() {
   const link = document.createElement('a');
 
   link.href = url;
-  link.download = `carbonlite-calculation-review-${new Date()
+  link.download = `carbonlite-calculation-results-${new Date()
     .toISOString()
     .slice(0, 10)}.csv`;
 
@@ -394,7 +387,7 @@ function handleDownloadPDF() {
   const doc = new jsPDF();
 
   doc.setFontSize(18);
-  doc.text('CarbonLite Calculation Review', 14, 20);
+  doc.text('CarbonLite Calculation Results', 14, 20);
 
   doc.setFontSize(10);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
@@ -423,7 +416,7 @@ function handleDownloadPDF() {
   });
 
   doc.save(
-    `carbonlite-calculation-review-${new Date().toISOString().slice(0, 10)}.pdf`,
+    `carbonlite-calculation-results-${new Date().toISOString().slice(0, 10)}.pdf`,
   );
 }
   const totalsByMetric = buildMetricsSummaryTableRows({
@@ -453,9 +446,17 @@ function handleDownloadPDF() {
       data-testid={showPilotReviewerWelcome ? 'pilot-reviewer-welcome-panel' : undefined}
       style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}
     >
-      <PageHeader title="Calculation Review" headingRef={headingRef} />
+      <PageHeader title="Calculation Results" headingRef={headingRef} />
+      {selectedDocumentIds.length === 0 || selectedRecordIds.length > 0 ? (
+        <Link to="/reports" state={selectedRecordIds.length ? {
+          reportScope: 'selectedRecords', selectedActivityRecordIds: selectedRecordIds,
+        } : undefined} style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 8, background: '#047857', color: '#fff', fontWeight: 700, textDecoration: 'none', marginBottom: 20 }}>
+          Generate Report
+        </Link>
+      ) : null}
       {selectedDocumentIds.length > 0 && selectedRecordIds.length === 0 ? (
         <DocumentScopeContext selectedDocumentIds={selectedDocumentIds} importedRecordCount={activities.length}
+          sourceFileNames={(calculationDetails ?? []).flatMap((record) => record.sourceFileName ? [record.sourceFileName] : [])}
           sourceReview={buildSourceReviewSummary({ rows: sourceReviewRows, calculationDetails: calculationDetails ?? [] })}
           loading={!dateRangeReady || loading || lastUpdated === null} destination="report" />
       ) : null}
@@ -563,7 +564,7 @@ function handleDownloadPDF() {
       <div style={statusBarStyle}>
         <div style={statusTextStyle}>
           {isInitialLoading
-            ? 'Preparing calculation review...'
+            ? 'Preparing calculation results...'
             : isRefreshing
             ? 'Refreshing metrics...'
             : lastUpdated
@@ -613,7 +614,7 @@ function handleDownloadPDF() {
       </div>
       {isInitialLoading ? (
         <div role="status" aria-live="polite" style={loadingNoticeStyle}>
-          Preparing calculation review...
+          Preparing calculation results...
           {isSlowLoadingSummary ? (
             <div style={slowLoadingTextStyle}>
               Still loading — this may take a few seconds.
@@ -721,7 +722,7 @@ function PilotReviewerWelcomePanel() {
           <span style={pilotReviewerDescriptionStyle}> — review emission factor transparency and assumptions</span>
         </li>
         <li>
-          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Calculation Review</Link>
+          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Calculation Results</Link>
           <span style={pilotReviewerDescriptionStyle}> — review totals, hotspots, and calculation trail</span>
         </li>
         <li>

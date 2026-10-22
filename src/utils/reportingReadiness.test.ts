@@ -25,7 +25,7 @@ function detail(overrides: Partial<CalculationAuditDetail> = {}): CalculationAud
     factorInputUnit: 'kWh',
     factorResultUnit: 'kgCO2e/kWh',
     sourceAuthority: 'CarbonLite',
-    sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+    sourceDocument: 'CarbonLite Default Factor Library v1.0',
     sourceYear: 2025,
     factorVerified: false,
     factorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
@@ -130,7 +130,7 @@ describe('buildReportingReadinessAssessment', () => {
         sourceType: 'MANUAL',
         status: 'NOT_APPLICABLE',
         evidence: 'No source document is associated with this report scope.',
-        limitation: 'Source-document review is not applicable to manually entered records.',
+        limitation: 'Source data validation is not applicable to manually entered records.',
         totalRows: 0,
         resolvedCount: 0,
         needsReviewCount: 0,
@@ -192,11 +192,11 @@ describe('buildReportingReadinessAssessment', () => {
     expect(itemStatus(assessment, 'SOURCE_REVIEW_COMPLETE')).toBe('COMPLETE');
     expect(itemStatus(assessment, 'SOURCE_ISSUES_RESOLVED')).toBe('NEEDS_ATTENTION');
     expect(assessment.items.map((item) => item.evidence).join(' ')).toContain(
-      '3 of 9 source rows are resolved/imported; 6 still require review.',
+      '3 of 9 source rows are resolved/imported; 6 still need attention.',
     );
   });
 
-  it('uses requested singular grammar for factor and traceability review text', () => {
+  it('uses requested singular grammar for factor and traceability validation text', () => {
     const assessment = buildReportingReadinessAssessment({
       calculationDetails: [detail()],
     });
@@ -204,9 +204,9 @@ describe('buildReportingReadinessAssessment', () => {
     expect(assessment.items.find((item) => item.code === 'FACTORS_SELECTED')?.evidence)
       .toBe('1 of 1 eligible emissions record has a matched emission factor.');
     expect(assessment.items.find((item) => item.code === 'FACTORS_REVIEWED')?.evidence)
-      .toBe('1 calculated record uses an emission factor; 1 record-level factor usage requires review before formal use.');
+      .toBe('1 calculated record uses an emission factor; 1 record-level factor usage needs attention before formal use.');
     expect(assessment.items.find((item) => item.code === 'FACTORS_REVIEWED')?.action)
-      .toBe('Review all factors and replace pilot-stage factors where appropriate.');
+      .toBe('Validate all factors and replace pilot-stage factors where appropriate.');
     expect(assessment.items.find((item) => item.code === 'TRACEABILITY_COMPLETE')?.evidence)
       .toBe('Required source, factor, and result lineage is present for the calculated emissions record.');
   });

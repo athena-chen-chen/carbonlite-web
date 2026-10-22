@@ -25,9 +25,17 @@ describe('extracted PDF renderers', () => {
     expect(executive.getNumberOfPages()).toBe(2);
     expect(technical.getNumberOfPages()).toBe(9);
     expect(executive.output()).toContain(`/Title (CarbonLite Executive Summary - ${report.documentControl.reportId})`);
-    expect(technical.output()).toContain(`/Title (CarbonLite Technical Review Package - ${report.documentControl.reportId})`);
+    expect(technical.output()).toContain(`/Title (CarbonLite Technical Emissions Report - ${report.documentControl.reportId})`);
     const executiveText = text(executive);
     const technicalText = text(technical);
+    expect(technicalText).toContain('Technical Emissions Report');
+    expect(technical.output()).not.toMatch(/technical review package/i);
+    expect(getReportPdfFileName('TECHNICAL_REVIEW', report.documentControl, report.outputGeneratedDate))
+      .toMatch(/^carbonlite-technical-emissions-report-.*\.pdf$/);
+    expect(technicalText).toContain('Source Data Status');
+    expect(technicalText).toContain('Validation Note');
+    expect(technicalText).toContain('Reviewer Sign-off');
+    expect(technicalText).toContain('Not reviewed');
     for (const value of [scenario.total, ...scenario.scopes]) {
       expect(executiveText).toContain(value);
       expect(technicalText).toContain(value);
@@ -67,26 +75,28 @@ describe('extracted PDF renderers', () => {
 
   it('renders limited document lineage without reclassifying source review', () => {
     const { report } = goldenReport('enmax');
-    const limited = { ...report.sourceReview, availability: 'DOCUMENT_LINEAGE_AVAILABLE' as const, available: false, limitation: 'Structured source-review counts are not available for this document import.' };
+    const limited = { ...report.sourceReview, availability: 'DOCUMENT_LINEAGE_AVAILABLE' as const, available: false, limitation: 'Structured source-data counts are not available for this document import.' };
     const input = { ...report, sourceReview: limited, sourceReviewSummary: limited };
     expect(text(buildExecutiveSummaryPdf(input))).toContain('Document source lineage available');
     expect(text(buildTechnicalReviewPdf(input))).toContain('Limited');
   });
 });
 
-describe('methodology provenance in Technical Review Package', () => {
+describe('methodology provenance in Technical Emissions Report', () => {
   it.each(scenarios)('keeps internal version IDs out of $name provenance without changing totals', scenario => {
     const { report } = goldenReport(scenario.name);
     const factor = report.factorReview.factors[0] ?? { ...goldenReport('enmax').report.factorReview.factors[0] };
     if (!report.factorReview.factors.length) report.factorReview.factors.push(factor);
     factor.factorVersionId = 'cmv8vg8eu0009gd3sxfn0w9z7';
     factor.factorVersion = factor.factorVersionId;
-    factor.sourceDocument = 'CarbonLite MVP Default Factors v1.0';
+    factor.sourceDocument = 'CarbonLite Default Factor Library v1.0';
     factor.factorProvenance = { sourceVersion: 'v1.0' };
     const pdf = buildTechnicalReviewPdf(report);
     const contents = text(pdf);
     expect(contents).toContain(scenario.total);
     expect(contents).toContain('Source Document Version: v1.0');
+    expect(contents).toContain('CarbonLite Default Factor Library v1.0');
+    expect(contents).not.toContain('CarbonLite MVP Default Factors v1.0');
     expect(contents).not.toContain(factor.factorVersionId);
     expect(pdf.getNumberOfPages()).toBe(9);
     if (process.env.P2_CAPTURE_PDFS) {
