@@ -814,7 +814,7 @@ describe('findBestConversionFactorMatch', () => {
   it.each([
     [2025, false],
     [2026, true],
-  ])('matches the exact Manual Entry Alberta diagnostic factor for record year %s', (recordYear, usedFallback) => {
+  ])('rejects the demo Manual Entry Alberta diagnostic factor for record year %s without authorization', (recordYear) => {
     const match = findBestConversionFactorMatch({
       activityType: 'ELECTRICITY',
       inputUnit: 'kWh',
@@ -838,12 +838,11 @@ describe('findBestConversionFactorMatch', () => {
       ],
     });
 
-    expect(match?.factor.id).toBe('cmr75gv6l0007gdjbs0bz4d3j');
-    expect(match?.factorYear).toBe(2025);
-    expect(match?.usedPriorYearFallback).toBe(usedFallback);
+    // The historical placeholder option cannot authorize demo calculation.
+    expect(match).toBeUndefined();
   });
 
-  it('does not treat placeholder wording in confidence as factor eligibility', () => {
+  it('rejects placeholder confidence without demo authorization', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'ELECTRICITY',
       inputUnit: 'kWh',
@@ -868,8 +867,7 @@ describe('findBestConversionFactorMatch', () => {
       ],
     });
 
-    expect(match?.factor.id).toBe('electricity-ab-low-placeholder-label');
-    expect(match?.selectionReason).toBe('PILOT_DEFAULT_FALLBACK');
+    expect(match).toBeUndefined();
   });
 
   it('keeps province-required electricity placeholders ineligible for matching', () => {
@@ -901,7 +899,7 @@ describe('findBestConversionFactorMatch', () => {
   it.each([
     ['British Columbia', 'bc-factor', 0.02],
     ['Ontario', 'on-factor', 0.12],
-  ])('matches the Manual Entry %s diagnostic-style factor', (province, id, factorValue) => {
+  ])('rejects the demo Manual Entry %s diagnostic-style factor without authorization', (province, id, factorValue) => {
     const match = findBestConversionFactorMatch({
       activityType: 'ELECTRICITY',
       inputUnit: 'kWh',
@@ -925,9 +923,7 @@ describe('findBestConversionFactorMatch', () => {
       ],
     });
 
-    expect(match?.factor.id).toBe(id);
-    expect(match?.factorYear).toBe(2025);
-    expect(match?.usedPriorYearFallback).toBe(true);
+    expect(match).toBeUndefined();
   });
 
   it('marks a future-year electricity factor as proxy when no exact or prior factor exists', () => {
@@ -1073,7 +1069,7 @@ describe('findBestConversionFactorMatch', () => {
     expect(match?.selectionExplanation).toContain('Factor year matched activity year 2026');
   });
 
-  it('marks prior-year and pilot default fallback selection metadata', () => {
+  it('rejects pilot default fallback without demo authorization', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'GROUND_TRANSPORT',
       inputUnit: 'km',
@@ -1083,12 +1079,7 @@ describe('findBestConversionFactorMatch', () => {
       factors: pilotConversionFactors,
     });
 
-    expect(match?.factor.id).toBe('pilot-ground-transport-canada-2025');
-    expect(match?.usedPriorYearFallback).toBe(true);
-    expect(match?.usedGenericJurisdictionFallback).toBe(true);
-    expect(match?.usedPilotDefaultFallback).toBe(true);
-    expect(match?.selectionReason).toBe('PILOT_DEFAULT_FALLBACK');
-    expect(match?.selectionExplanation).toContain('CarbonLite pilot/default factor');
+    expect(match).toBeUndefined();
   });
 
   it('uses the exact activity year factor when 2025 and 2026 factors are available', () => {
@@ -1192,7 +1183,7 @@ describe('findBestConversionFactorMatch', () => {
     },
   );
 
-  it('matches pilot Ground Transport km records as Scope 3 without province', () => {
+  it('rejects pilot Ground Transport km records without demo authorization', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'Ground Transport',
       inputUnit: 'KM',
@@ -1203,11 +1194,7 @@ describe('findBestConversionFactorMatch', () => {
       factors: pilotConversionFactors,
     });
 
-    expect(match?.factor.name).toBe('Ground Transport - Canada - 2025');
-    expect(match?.factor.factorValue).toBe(0.2);
-    expect(match?.factor.defaultScope).toBe('SCOPE_3');
-    expect(match?.sourceLabel).toBe('System Default Factor');
-    expect(match?.usedPriorYearFallback).toBe(true);
+    expect(match).toBeUndefined();
   });
 
   it('matches a Canada - National Ground Transport factor when the record has no province', () => {

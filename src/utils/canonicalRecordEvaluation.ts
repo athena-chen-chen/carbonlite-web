@@ -82,6 +82,7 @@ export type ActivityRecordEvaluationInput = {
   jurisdictionRegion?: string | null;
   recordYear?: number | null;
   organizationId?: string | null;
+  allowDemoFactorsForCalculations?: boolean;
   allowPlaceholderConfidence?: boolean;
   factors: MatchableConversionFactor[];
   unitConversions?: MatchableUnitConversion[];
@@ -229,6 +230,7 @@ export function evaluateActivityRecord(
     recordYear: input.recordYear,
     quantity,
     organizationId: input.organizationId,
+    allowDemoFactorsForCalculations: input.allowDemoFactorsForCalculations,
     allowPlaceholderConfidence: input.allowPlaceholderConfidence,
     factors: input.factors,
     unitConversions: input.unitConversions,
@@ -242,7 +244,8 @@ export function evaluateActivityRecord(
       jurisdictionRegion: input.jurisdictionRegion,
       recordYear: input.recordYear,
       organizationId: input.organizationId,
-      allowPlaceholderConfidence: input.allowPlaceholderConfidence,
+      allowDemoFactorsForCalculations: input.allowDemoFactorsForCalculations,
+    allowPlaceholderConfidence: input.allowPlaceholderConfidence,
       factors: input.factors,
     }).filter((compatibleUnit) => compatibleUnit.toLowerCase() !== normalizedUnit.toLowerCase());
 

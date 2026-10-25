@@ -1,3 +1,4 @@
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../test/legitimateFactorMetadata';
 import {
   hasImportedRecords,
   FILE_MISSING_EXPLANATION,
@@ -37,12 +38,11 @@ const albertaElectricity2025Factor = {
   effectiveYear: 2025,
   jurisdictionCountry: 'Canada',
   jurisdictionRegion: 'Alberta',
-  sourceAuthority: 'CarbonLite',
-  sourceDocument: 'CarbonLite Default Factor Library v1.0',
+  ...LEGITIMATE_OFFICIAL_FACTOR,
   factorVersion: 'v1.0',
   verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
   confidenceLevel: 'LOW',
-  assumptions: 'Pilot default electricity factor.',
+  assumptions: 'Historical arithmetic only; numerical methodology is outside this test.',
   isSystemDefault: true,
   isDefault: true,
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -425,11 +425,11 @@ describe('document import factor matching metadata', () => {
       matchedFactorUnit: 'kgCO2e/kWh',
       matchedFactorSourceYear: 2025,
       matchedFactorVersion: 'v1.0',
-      matchedFactorSourceAuthority: 'CarbonLite',
-      matchedFactorSourceDocument: 'CarbonLite Default Factor Library v1.0',
+      matchedFactorSourceAuthority: LEGITIMATE_OFFICIAL_FACTOR.sourceAuthority,
+      matchedFactorSourceDocument: LEGITIMATE_OFFICIAL_FACTOR.sourceDocument,
       matchedFactorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
       matchedFactorConfidenceLevel: 'LOW',
-      factorSelectionReason: 'PILOT_DEFAULT_FALLBACK',
+      factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
       calculatedEmissionsKgCO2e: excelEvaluation.calculatedEmissionsKgCO2e,
     });
     expect(documentPayload.notes).not.toMatch(/Missing Factor/i);

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../test/legitimateFactorMetadata';
 import { resolve, join } from 'node:path';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -32,6 +33,7 @@ vi.mock('../services/auth', () => ({
   getCurrentUser: vi.fn(() => ({
     id: 'user-1',
     organizationId: 'org-1',
+    allowDemoFactorsForCalculations: false,
   })),
   getOrganizationId: vi.fn(() => 'org-1'),
 }));
@@ -53,7 +55,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'liters',
           factorValue: 2.68,
           resultUnit: 'kgCO2e',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2025,
           isSystemDefault: true,
           isDefault: true,
@@ -69,7 +71,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'kWh',
           factorValue: 0.53,
           resultUnit: 'kgCO2e/kWh',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2025,
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Alberta',
@@ -88,7 +90,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'kWh',
           factorValue: 0.02,
           resultUnit: 'kgCO2e/kWh',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2025,
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'British Columbia',
@@ -107,7 +109,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'kWh',
           factorValue: 0.12,
           resultUnit: 'kgCO2e/kWh',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2025,
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Ontario',
@@ -126,7 +128,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'm3',
           factorValue: 1.89,
           resultUnit: 'kgCO2e',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2026,
           isSystemDefault: true,
           isDefault: true,
@@ -166,7 +168,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'liters',
           factorValue: 2.31,
           resultUnit: 'kgCO2e',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2026,
           isSystemDefault: true,
           isDefault: true,
@@ -182,7 +184,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'km',
           factorValue: 0.16,
           resultUnit: 'kgCO2e',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2026,
           isSystemDefault: true,
           isDefault: true,
@@ -198,7 +200,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'nights',
           factorValue: 18,
           resultUnit: 'kgCO2e',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2026,
           isSystemDefault: true,
           isDefault: true,
@@ -214,11 +216,10 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'km',
           factorValue: 0.2,
           resultUnit: 'kgCO2e',
-          sourceAuthority: 'CarbonLite',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2025,
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Canada',
-          confidenceLevel: 'Pilot Estimate',
           verificationStatus: 'Internal Review Required',
           verified: false,
           isSystemDefault: true,
@@ -383,9 +384,9 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(workbook.Workbook?.WBProps?.date1904).toBe(system === '1904');
     expect(workbook.Sheets.Dates.B2.v).toBe(system === '1904' ? 44575 : 46037);
     vi.mocked(getAllConversionFactors).mockResolvedValue([2022, 2026].map(sourceYear => ({
-      id: `f22-electricity-${sourceYear}`, name: `Synthetic Alberta ${sourceYear}`, type: 'EMISSION',
+      id: `f22-electricity-${sourceYear}`, name: `Electricity - Alberta - ${sourceYear}`, type: 'EMISSION',
       activityType: 'ELECTRICITY', inputUnit: 'kWh', unit: 'kWh', factorValue: 0.53,
-      resultUnit: 'kgCO2e/kWh', sourceAuthority: 'Demo / Placeholder', sourceYear,
+      resultUnit: 'kgCO2e/kWh', ...LEGITIMATE_OFFICIAL_FACTOR, sourceYear,
       jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta',
       isSystemDefault: true, isDefault: true, verified: false,
       createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
@@ -846,7 +847,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     vi.mocked(getAllConversionFactors).mockResolvedValueOnce([{
       id: 'diesel-combustion', name: 'Diesel combustion', type: 'EMISSION', activityType: 'DIESEL',
       unit: 'L', inputUnit: 'L', factorValue: 2.68, resultUnit: 'kgCO2e', sourceYear: 2025,
-      jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', sourceAuthority: 'CarbonLite System Defaults',
+      jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', sourceAuthority: 'Customer measurement laboratory',
       sourceDocument: 'Diesel methodology', assumptions: 'Review combustion assumptions before formal reporting.',
       verificationStatus: 'INTERNAL_REVIEW_REQUIRED', confidenceLevel: 'MEDIUM', isSystemDefault: true, isDefault: true,
     } as any]);
@@ -867,7 +868,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     for (const title of ['Factor Status', 'Matched Factor', 'Report Treatment']) {
       expect(within(row).queryByText(title, { exact: true })).not.toBeInTheDocument();
     }
-    const provenance = within(preview).getByText('Source: CarbonLite System Defaults');
+    const provenance = within(preview).getByText('Source: Customer measurement laboratory');
     expect(provenance).not.toBeVisible();
     expect(within(preview).getByText('Internal Review Required')).not.toBeVisible();
     expect(within(preview).getByText('Medium Confidence')).not.toBeVisible();
@@ -1202,7 +1203,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(row).getByText('Included in GHG Total')).toBeInTheDocument();
   });
 
-  it('matches a valid manual electricity row with the Alberta pilot factor', async () => {
+  it('matches a valid manual electricity row with a legitimate Alberta factor', async () => {
     vi.mocked(getAllConversionFactors).mockResolvedValueOnce([
         {
           id: 'factor-electricity-ab',
@@ -1213,7 +1214,7 @@ describe('ExcelInputTable empty activity row UX', () => {
           unit: 'kWh',
           factorValue: 0.12,
           resultUnit: 'kgCO2e',
-          sourceAuthority: 'Demo / Placeholder',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2026,
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Alberta',
@@ -1294,7 +1295,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(row).queryByText('No factor found')).not.toBeInTheDocument();
   });
 
-  it.each(['2025-07-20', '2026-07-20'])('matches the exact Manual Entry Alberta diagnostic factor for %s', async (recordDate) => {
+  it.each(['2025-07-20', '2026-07-20'])('rejects the demo Manual Entry Alberta diagnostic factor for %s without authorization', async (recordDate) => {
     vi.mocked(getAllConversionFactors).mockResolvedValueOnce([
       {
         id: 'factor-electricity-sk-2026',
@@ -1343,12 +1344,16 @@ describe('ExcelInputTable empty activity row UX', () => {
       'Alberta',
     );
 
-    expect(within(row).getByText('Ready to save')).toBeInTheDocument();
-    expect(within(row).getByText('Electricity - Alberta')).toBeInTheDocument();
-    expect(within(row).getByText('Estimated emissions: 53 kg CO₂e')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
-    expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
-    expect(within(row).queryByText('No factor found')).not.toBeInTheDocument();
+    expect(within(row).getByText('Missing Factor', { exact: true })).toBeInTheDocument();
+    expect(within(row).queryByText('Ready to save')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Estimated emissions: 53 kg CO₂e')).not.toBeInTheDocument();
+    // Manual entries may be saved for review, but never as calculated emissions.
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    await waitFor(() => expect(createActivityData).toHaveBeenCalledTimes(1));
+    expect(createActivityData).toHaveBeenCalledWith(expect.objectContaining({
+      matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED', calculatedEmissionsKgCO2e: undefined, matchedFactorId: undefined,
+    }));
   });
 
   it('matches exact-year Alberta electricity when factor data uses display labels, province code, and spaced unit text', async () => {
@@ -1454,7 +1459,14 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(String(vi.mocked(createActivityData).mock.calls[0][0].notes)).not.toMatch(/Missing Factor|No conversion factor/i);
   });
 
-  it('matches Ground Transport as Scope 3 without province and calculates the pilot estimate', async () => {
+  it('rejects the Ground Transport pilot estimate without demo authorization', async () => {
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([{
+      id: 'factor-ground-transport', name: 'Ground Transport - Canada - 2025',
+      type: 'EMISSION', activityType: 'GROUND_TRANSPORT', unit: 'km', inputUnit: 'km',
+      factorValue: 0.2, resultUnit: 'kgCO2e', sourceAuthority: 'CarbonLite', sourceYear: 2025,
+      jurisdictionCountry: 'Canada', jurisdictionRegion: 'Canada', confidenceLevel: 'Pilot Estimate',
+      verificationStatus: 'Internal Review Required', isSystemDefault: true, isDefault: true,
+    } as any]);
     renderTable();
 
     const row = await addEmptyRow();
@@ -1464,14 +1476,16 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '100');
 
-    await waitFor(() => {
-      expect(within(row).getByText('Ready to save')).toBeInTheDocument();
-    });
-    expect(within(row).queryByRole('combobox', { name: /Province required for electricity records/i })).not.toBeInTheDocument();
-    expect(within(row).getByText('Ground Transport - Canada - 2025')).toBeInTheDocument();
-    expect(within(row).getByText('Scope 3')).toBeInTheDocument();
-    expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
-    expect(within(row).getByText('Estimated emissions: 20 kg CO₂e')).toBeInTheDocument();
+    expect(within(row).getByText('Missing Factor', { exact: true })).toBeInTheDocument();
+    expect(within(row).queryByText('Ready to save')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Estimated emissions: 20 kg CO₂e')).not.toBeInTheDocument();
+    // Manual entries may be saved for review, but never as calculated emissions.
+    await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
+    await waitFor(() => expect(createActivityData).toHaveBeenCalledTimes(1));
+    expect(createActivityData).toHaveBeenCalledWith(expect.objectContaining({
+      matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED', calculatedEmissionsKgCO2e: undefined, matchedFactorId: undefined,
+    }));
   });
 
   it('calculates Natural Gas GJ with the Canada-generic ECCC factor', async () => {

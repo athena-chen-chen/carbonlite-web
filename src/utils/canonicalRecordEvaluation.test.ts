@@ -1,3 +1,4 @@
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../test/legitimateFactorMetadata';
 import { evaluateActivityRecord, isImportEligible } from './canonicalRecordEvaluation';
 import {
   findBestConversionFactorMatch,
@@ -19,10 +20,7 @@ const factors: MatchableConversionFactor[] = [
     jurisdictionRegion: 'Alberta',
     sourceYear: 2025,
     factorVersion: 'v1.0',
-    sourceAuthority: 'CarbonLite pilot defaults',
-    sourceReference: 'Pilot factor set',
-    verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
-    confidenceLevel: 'PILOT_ESTIMATE',
+    ...LEGITIMATE_OFFICIAL_FACTOR,
   },
   {
     id: 'factor-hotel-canada-2025',
@@ -38,10 +36,7 @@ const factors: MatchableConversionFactor[] = [
     jurisdictionRegion: 'Canada (Generic)',
     sourceYear: 2025,
     factorVersion: 'v1.0',
-    sourceAuthority: 'CarbonLite pilot defaults',
-    sourceReference: 'Pilot factor set',
-    verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
-    confidenceLevel: 'PILOT_ESTIMATE',
+    ...LEGITIMATE_OFFICIAL_FACTOR,
   },
   {
     id: 'factor-diesel-liters-2025',

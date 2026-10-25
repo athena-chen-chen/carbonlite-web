@@ -46,6 +46,7 @@ const DEACTIVATED_ACCOUNT_MESSAGE =
   'This account has been deactivated. Please contact hello@carbonliteapp.ca.';
 
 export type AuthUser = {
+  allowDemoFactorsForCalculations?: boolean;
   id?: string;
   email: string;
   role?: 'OWNER' | 'ADMIN' | 'EDITOR' | 'MEMBER' | 'VIEWER' | 'REVIEWER' | 'USER';

@@ -1,3 +1,5 @@
+import { isFactorAllowedForWorkspace, type FactorWorkspacePolicy } from './factorCalculationPolicy';
+import { getCurrentUser } from '../services/auth';
 import { isInventoryFactorEligible, type FactorGovernance } from './factorGovernance';
 import { normalizeUnitKey } from './unitNormalization';
 import {
@@ -226,6 +228,7 @@ export function findBestConversionFactorMatch(input: {
   recordYear?: number | null;
   quantity?: number | null;
   organizationId?: string | null;
+  allowDemoFactorsForCalculations?: boolean;
   allowPlaceholderConfidence?: boolean;
   factors: MatchableConversionFactor[];
   unitConversions?: MatchableUnitConversion[];
@@ -236,6 +239,7 @@ export function findBestConversionFactorMatch(input: {
   const region = normalizeJurisdictionRegion(input.jurisdictionRegion);
   const recordYear = input.recordYear ?? null;
   const organizationId = String(input.organizationId ?? '').trim();
+  const policy = resolveWorkspacePolicy(input);
 
   if (!activityType || !inputUnit) return undefined;
   if (activityType === 'ELECTRICITY' && !region) return undefined;
@@ -245,7 +249,7 @@ export function findBestConversionFactorMatch(input: {
 
     return (
       factorKind === 'EMISSION' &&
-      isUsableFactor(factor) &&
+      isUsableFactor(factor, policy) &&
       normalizeFactorActivityType(factor) === activityType &&
       !(activityType === 'ELECTRICITY' && isPlaceholderFactor(factor, input.allowPlaceholderConfidence)) &&
       normalizeUnit(getFactorInputUnit(factor)) === inputUnit &&
@@ -361,11 +365,13 @@ function findBestConversionAssistedMatch(input: {
   recordYear: number | null;
   quantity?: number | null;
   organizationId: string;
+  allowDemoFactorsForCalculations?: boolean;
   allowPlaceholderConfidence?: boolean;
   factors: MatchableConversionFactor[];
   unitConversions?: MatchableUnitConversion[];
 }): ConversionFactorMatch | undefined {
   if (!input.unitConversions?.length) return undefined;
+  const policy = resolveWorkspacePolicy(input);
 
   const candidateFactors = input.factors.filter((factor) => {
     const factorKind = String(factor.type ?? 'EMISSION').trim().toUpperCase();
@@ -373,7 +379,7 @@ function findBestConversionAssistedMatch(input: {
 
     return (
       factorKind === 'EMISSION' &&
-      isUsableFactor(factor) &&
+      isUsableFactor(factor, policy) &&
       normalizeFactorActivityType(factor) === input.activityType &&
       !(input.activityType === 'ELECTRICITY' && isPlaceholderFactor(factor, input.allowPlaceholderConfidence)) &&
       factorUnit &&
@@ -399,6 +405,7 @@ function findBestConversionAssistedMatch(input: {
         recordYear: input.recordYear,
         quantity: input.quantity,
         unitConversions: input.unitConversions ?? [],
+        ...resolveWorkspacePolicy(input),
       });
 
       return conversion
@@ -443,6 +450,8 @@ export function findBestUnitConversionMatch(input: {
   recordYear?: number | null;
   quantity?: number | null;
   unitConversions: MatchableUnitConversion[];
+  organizationId?: string | null;
+  allowDemoFactorsForCalculations?: boolean;
 }): UnitConversionMatch | undefined {
   const activityType = normalizeActivityType(input.activityType);
   const fromUnit = normalizeUnit(input.fromUnit);
@@ -453,8 +462,10 @@ export function findBestUnitConversionMatch(input: {
 
   if (!activityType || !fromUnit || !toUnit || fromUnit === toUnit) return undefined;
 
+  const policy = resolveWorkspacePolicy(input);
   const conversion = input.unitConversions
     .filter((candidate) => (
+      isFactorAllowedForWorkspace(candidate, policy) &&
       isUsableUnitConversion(candidate) &&
       normalizeActivityType(candidate.activityType) === activityType &&
       normalizeUnit(candidate.fromUnit) === fromUnit &&
@@ -541,6 +552,7 @@ export function getCompatibleFactorUnitLabels(input: {
   jurisdictionRegion?: string | null;
   recordYear?: number | null;
   organizationId?: string | null;
+  allowDemoFactorsForCalculations?: boolean;
   allowPlaceholderConfidence?: boolean;
   factors: MatchableConversionFactor[];
 }) {
@@ -549,6 +561,7 @@ export function getCompatibleFactorUnitLabels(input: {
   const region = normalizeJurisdictionRegion(input.jurisdictionRegion);
   const recordYear = input.recordYear ?? null;
   const organizationId = String(input.organizationId ?? '').trim();
+  const policy = resolveWorkspacePolicy(input);
 
   if (!activityType) return [];
   if (activityType === 'ELECTRICITY' && !region) return [];
@@ -566,7 +579,7 @@ export function getCompatibleFactorUnitLabels(input: {
       return (
         isAllowedScope &&
         factorKind === 'EMISSION' &&
-        isUsableFactor(factor) &&
+        isUsableFactor(factor, policy) &&
         normalizeFactorActivityType(factor) === activityType &&
         !(activityType === 'ELECTRICITY' && isPlaceholderFactor(factor, input.allowPlaceholderConfidence)) &&
         factorYearMatches(getFactorYear(factor), recordYear) &&
@@ -724,8 +737,9 @@ function normalizeStatus(value?: string | null) {
   return String(value ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
 }
 
-function isUsableFactor(factor: MatchableConversionFactor) {
+function isUsableFactor(factor: MatchableConversionFactor, policy: FactorWorkspacePolicy) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
+  if (!isFactorAllowedForWorkspace(factor, policy) || (currentVersion && !isFactorAllowedForWorkspace(currentVersion, policy))) return false;
   if (!isInventoryFactorEligible(factor) || (currentVersion && !isInventoryFactorEligible(currentVersion))) return false;
   const status = String(
     currentVersion?.factorStatus ??
@@ -1233,4 +1247,15 @@ function titleCase(value: string) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+/** The server remains authoritative; absent/stale client policy fails closed. */
+function resolveWorkspacePolicy(input: FactorWorkspacePolicy) {
+  const user = getCurrentUser();
+  const organizationId = input.organizationId || user?.organizationId;
+  return {
+    organizationId,
+    allowDemoFactorsForCalculations: input.allowDemoFactorsForCalculations ??
+      (Boolean(organizationId) && organizationId === user?.organizationId && user?.allowDemoFactorsForCalculations === true),
+  };
 }

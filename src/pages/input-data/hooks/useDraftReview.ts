@@ -1,3 +1,5 @@
+import { isFactorAllowedForWorkspace } from '../../../utils/factorCalculationPolicy';
+import { getCurrentUser, getOrganizationId } from '../../../services/auth';
 import { calculateMetrics } from '../../../services/metrics';
 import { useEffect, useRef, useState } from 'react';
 import { DuplicateDocumentImportError, confirmDocumentImport, extractDocument, getDocumentExtraction, type ConfirmImportResponse } from '../../../services/documentExtraction';
@@ -208,6 +210,11 @@ export function useDraftReview({ documents, uploading, canImportData, canSetProv
     hasBulkProvince &&
     !isProcessing;
   function buildSampleReviewRows() {
+    const user = getCurrentUser();
+    if (!isFactorAllowedForWorkspace({ isDemo: true }, {
+      organizationId,
+      allowDemoFactorsForCalculations: getOrganizationId(user) === organizationId && user?.allowDemoFactorsForCalculations === true,
+    })) return [];
     return buildEditableParsedActivities(
       sampleParsedActivities,
       sampleDocuments[0],
@@ -218,6 +225,16 @@ export function useDraftReview({ documents, uploading, canImportData, canSetProv
     }));
   }
 
+  function permitsSavedMatch(item: EditableParsedActivity, factors: ConversionFactorItem[] = []) {
+    const user = getCurrentUser();
+    const policy = { organizationId, allowDemoFactorsForCalculations: getOrganizationId(user) === organizationId && user?.allowDemoFactorsForCalculations === true };
+    const factor = factors.find(candidate => candidate.id === item.matchedFactorId);
+    return (!factor || isFactorAllowedForWorkspace(factor, policy)) && isFactorAllowedForWorkspace({
+      name: item.matchedFactorName, confidenceLevel: item.matchedFactorConfidenceLevel,
+      sourceAuthority: item.matchedFactorSourceAuthority, sourceDocument: item.matchedFactorSourceDocument,
+    }, policy);
+  }
+
   async function enrichDraftRowsWithCalculationStatus(
     rows: EditableParsedActivity[],
     options: { preserveSelection?: boolean } = {},
@@ -225,11 +242,11 @@ export function useDraftReview({ documents, uploading, canImportData, canSetProv
     if (rows.length === 0) return rows;
 
     const conversionFactors = await getEmissionConversionFactors();
-    if (conversionFactors.length === 0) return rows;
+    if (conversionFactors.length === 0 && rows.every(item => permitsSavedMatch(item, conversionFactors))) return rows;
 
   
     return rows.map((item) => {
-      if (isCanonicalReadyReviewRow(item)) {
+      if (isCanonicalReadyReviewRow(item) && permitsSavedMatch(item, conversionFactors)) {
         const alreadyImported = isParsedActivityAlreadyImported(item);
         return {
           ...item,
@@ -403,7 +420,7 @@ export function useDraftReview({ documents, uploading, canImportData, canSetProv
     rows: SpreadsheetReviewRowInput[],
     document: { id: string; fileName: string; createdAt?: string | null },
   ) {
-    return buildEditableParsedActivities(
+    const draftRows = buildEditableParsedActivities(
       rows.map((row) => ({
         ...row,
         country: row.jurisdictionCountry,
@@ -420,6 +437,9 @@ export function useDraftReview({ documents, uploading, canImportData, canSetProv
       document,
       { preserveRows: true },
     );
+    return draftRows.some(item => !permitsSavedMatch(item))
+      ? enrichDraftRowsWithCalculationStatus(draftRows)
+      : draftRows;
   }
 
   function isSampleDocumentId(documentId: string) {

@@ -335,3 +335,50 @@ it('factor failure during confirm preflight is controlled and can recover on a l
   expect(confirmDocumentImport).toHaveBeenCalledTimes(1);
   expect(getAllConversionFactors).toHaveBeenCalledTimes(2);
 });
+
+
+it.each([false, true])('keeps demo policy across delete and same-file re-import (demo=%s)', async allowDemoFactorsForCalculations => {
+  const previousUser = localStorage.getItem('currentUser');
+  localStorage.setItem('currentUser', JSON.stringify({ email: 'policy@example.com', organizationId: 'org-1', allowDemoFactorsForCalculations }));
+  try {
+    const pilot = { ...document, fileName: 'policy.pdf' };
+    const replacement = { ...pilot, id: 'policy-reimport' };
+    const rows = [{ activityType: 'ELECTRICITY', quantity: 980, unit: 'kWh', recordDate: '2026-09-30', sourceRow: 1,
+      jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta (AB)' }] as ParsedActivity[];
+    vi.mocked(extractDocument).mockResolvedValueOnce(extraction(pilot.id, rows)).mockResolvedValueOnce(extraction(replacement.id, rows));
+    vi.mocked(getAllConversionFactors).mockResolvedValue([{ ...factor('ELECTRICITY', 'Alberta', .53), confidenceLevel: 'DEMO' }]);
+    const { result } = renderHook(() => useDraftReview({ ...options(), documents: [pilot, replacement] }));
+    for (const source of [pilot, replacement]) {
+      await act(() => result.current.actions.extractDocuments([source]));
+      expect(result.current.state.parsedActivities[0]).toMatchObject({
+        calculationStatus: allowDemoFactorsForCalculations ? 'CALCULATED' : 'MISSING_FACTOR',
+        calculatedEmissionsKgCO2e: allowDemoFactorsForCalculations ? 519.4 : null,
+        selected: allowDemoFactorsForCalculations,
+      });
+      act(() => result.current.actions.removeSourceDocument(source.id));
+      expect(result.current.state.parsedActivities).toEqual([]);
+    }
+  } finally {
+    if (previousUser === null) localStorage.removeItem('currentUser'); else localStorage.setItem('currentUser', previousUser);
+  }
+});
+
+it('does not preserve a canonical-ready saved draft when its matched source is synthetic', async () => {
+  vi.mocked(getAllConversionFactors).mockResolvedValue([{ ...factor('GASOLINE', 'Alberta', 2.31), sourceAuthority: 'Synthetic RC fixture' }]);
+  const { result } = await saved([savedRow({ status: 'READY', matchingStatus: 'MATCHED', calculationStatus: 'CALCULATED', reportTreatment: 'INCLUDED',
+    matchedFactorId: 'GASOLINE-Alberta', matchedFactorSourceAuthority: 'Synthetic RC fixture', calculatedEmissionsKgCO2e: 2.31 })]);
+  expect(result.current.state.parsedActivities[0]).toMatchObject({ calculationStatus: 'MISSING_FACTOR', selected: false, calculatedEmissionsKgCO2e: null });
+});
+
+
+it.each([false, true])('requires the explicit workspace opt-in for built-in sample review (demo=%s)', allowDemoFactorsForCalculations => {
+  const previousUser = localStorage.getItem('currentUser');
+  localStorage.setItem('currentUser', JSON.stringify({ email: 'policy@example.com', organizationId: 'org-1', allowDemoFactorsForCalculations }));
+  try {
+    const { result } = renderHook(() => useDraftReview(options()));
+    act(() => result.current.actions.loadSampleReview());
+    expect(result.current.state.parsedActivities.length > 0).toBe(allowDemoFactorsForCalculations);
+  } finally {
+    if (previousUser === null) localStorage.removeItem('currentUser'); else localStorage.setItem('currentUser', previousUser);
+  }
+});
