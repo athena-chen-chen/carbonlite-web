@@ -66,6 +66,57 @@ const FACTOR_ERROR = 'Conversion factors could not be loaded. Please try again.'
 const IMPORTED_ERROR = 'Imported records could not be checked. Please retry the review before importing.';
 const trackedRow = (rowId = 'water-1', sourceRow = 2) => savedRow({ rowId, sourceRow, status: 'TRACKED_ONLY', activityType: 'WATER', quantity: 18, unit: 'm3' });
 
+it.each([
+  ['new-source', 'Alberta'],
+  ['new-source', 'Alberta (AB)'],
+  ['source', 'Alberta (AB)'],
+])('matches pilot electricity after deletion and same-file re-import (%s, %s)', async (replacementId, province) => {
+  const pilot = { ...document, fileName: 'pilot.pdf', createdAt: '2026-10-25' };
+  const replacement = { ...pilot, id: replacementId };
+  const catalog = [
+    factor('ELECTRICITY', 'Alberta', .53),
+    factor('GASOLINE', 'Canada', 2.31),
+    factor('DIESEL', 'Canada', 2.68),
+    { ...factor('NATURAL_GAS', 'Canada', 49.44), inputUnit: 'GJ', unit: 'GJ' },
+    { ...factor('HOTEL', 'Canada', 15), inputUnit: 'nights', unit: 'nights', defaultScope: 'SCOPE_3' },
+  ] as typeof factors;
+  const rows = (region: string) => [
+    ['ELECTRICITY', 980, 'kWh'], ['NATURAL_GAS', 8.5, 'GJ'], ['GASOLINE', 350, 'L'],
+    ['WATER', 18, 'm3'], ['HOTEL', 4, 'nights'], ['DIESEL', 240, 'kg'],
+  ].map(([activityType, quantity, unit], index) => ({
+    activityType, quantity, unit, recordDate: '2026-09-30', sourceRow: index + 1,
+    jurisdictionCountry: 'Canada', jurisdictionRegion: { value: region, confidence: 'high' },
+  })) as unknown as ParsedActivity[];
+  // PDF extraction returns raw fields, without backend calculation statuses.
+  vi.mocked(extractDocument)
+    .mockResolvedValueOnce(extraction(pilot.id, rows('Alberta')))
+    .mockResolvedValueOnce(extraction(replacement.id, rows(province)));
+  vi.mocked(getAllConversionFactors).mockResolvedValue(catalog);
+  const { result } = renderHook(() => useDraftReview({ ...options(), documents: [pilot, replacement] }));
+  const assertPilot = () => {
+    const reviewRows = result.current.state.parsedActivities;
+    expect(reviewRows.map(row => row.calculationStatus)).toEqual([
+      'CALCULATED', 'CALCULATED', 'CALCULATED', 'TRACKED_ONLY', 'CALCULATED', 'UNIT_MISMATCH',
+    ]);
+    expect(reviewRows[0]).toMatchObject({
+      jurisdictionRegion: { value: 'Alberta' }, matchingStatus: 'MATCHED',
+      matchedFactorValue: .53, calculatedEmissionsKgCO2e: 519.4,
+    });
+    expect(result.current.validation.importValidationIssues).toEqual([]);
+  };
+  await act(() => result.current.actions.extractDocuments([pilot]));
+  assertPilot();
+  act(() => result.current.actions.removeSourceDocument(pilot.id));
+  expect(result.current.state.parsedActivities).toEqual([]);
+  expect(result.current.state.previewDocumentIds).toEqual([]);
+  expect(result.current.state.importedRecordKeys).toEqual([]);
+  await act(() => result.current.actions.extractDocuments([replacement]));
+  assertPilot();
+  expect(result.current.state.parsedActivities.every(row => row.documentId === replacement.id)).toBe(true);
+  expect(getAllConversionFactors).toHaveBeenCalledTimes(1);
+  expect(extractDocument).toHaveBeenCalledTimes(2);
+});
+
 it('factor failure is not cached or classified as missing; a new edit retries without remount', async () => {
   const { result, p } = await saved();
   vi.mocked(getAllConversionFactors).mockRejectedValueOnce(new Error('temporary outage')).mockResolvedValueOnce(factors);

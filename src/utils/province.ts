@@ -64,6 +64,16 @@ export function normalizeProvince(value?: string | null): string | null {
   const normalized = normalizeJurisdictionRegion(value);
   if (!normalized) return null;
 
+  // PDF extraction can return both the province name and its abbreviation.
+  // Accept the pair only when both parts identify the same known province.
+  const nameWithCode = normalized.match(/^(.+?)\s*\(([a-z]{2})\)$/i);
+  if (nameWithCode) {
+    const province = CANADIAN_PROVINCES.find((candidate) =>
+      candidate.value.toLowerCase() === nameWithCode[1].trim().toLowerCase() &&
+      candidate.abbreviation.toLowerCase() === nameWithCode[2].toLowerCase());
+    if (province) return province.value;
+  }
+
   const alias = PROVINCE_ALIAS_MAP[normalized.toLowerCase()];
   return alias ?? normalized;
 }

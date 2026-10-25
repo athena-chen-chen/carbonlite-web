@@ -14,6 +14,10 @@ describe('province helpers', () => {
     ['B.C.', 'British Columbia'],
     ['British Columbia', 'British Columbia'],
     ['AB', 'Alberta'],
+    ['Alberta (AB)', 'Alberta'],
+    [' alberta (ab) ', 'Alberta'],
+    ['British Columbia (BC)', 'British Columbia'],
+    ['Ontario (ON)', 'Ontario'],
     ['ON', 'Ontario'],
     ['Sk', 'Saskatchewan'],
     ['Qc', 'Quebec'],
@@ -27,6 +31,14 @@ describe('province helpers', () => {
   it('formats province labels safely', () => {
     expect(getProvinceLabel('BC')).toBe('British Columbia');
     expect(getProvinceLabel('')).toBe('Not specified');
+  });
+
+  it('preserves conflicting and unknown province/code pairs for review', () => {
+    for (const value of ['Alberta (BC)', 'Alberta (XX)', 'Unknown (AB)']) {
+      expect(isSupportedPilotProvince(value)).toBe(false);
+    }
+    expect(normalizeProvince('')).toBeNull();
+    expect(isSupportedPilotProvince('Manitoba (MB)')).toBe(false);
   });
 
   it('defines current pilot province coverage in one place', () => {
