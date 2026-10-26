@@ -12,6 +12,13 @@ const provenance: FactorProvenanceSnapshot = {
 const match = (factors: Parameters<typeof findBestConversionFactorMatch>[0]['factors'], inputUnit = 'kWh') => findBestConversionFactorMatch({ activityType: 'ELECTRICITY', inputUnit, quantity: 980, jurisdictionRegion: 'Alberta', jurisdictionCountry: 'Canada', recordYear: 2026, factors });
 
 describe('inventory eligibility', () => {
+  it('fails closed for known reference-only methods and unsafe result dimensions', () => {
+    expect(isInventoryFactorEligible({ id: 'eccc-natural-gas-canada-generic-gj-2025', resultUnit: 'kgCO2e' })).toBe(false);
+    expect(isInventoryFactorEligible({ resultUnit: 'kgCO2e', methodologyProvenance: { sourceVersion: 'ECCC_REFERENCE_2026' } })).toBe(false);
+    expect(isInventoryFactorEligible({ inputUnit: 'L', resultUnit: 'g CO2/L' })).toBe(false);
+    expect(isInventoryFactorEligible({ inputUnit: 'kWh', resultUnit: 'kgCO2e/GJ' })).toBe(false);
+    expect(isInventoryFactorEligible({ inputUnit: 'litres', resultUnit: 'kgCO2e/L' })).toBe(true);
+  });
   it.each([undefined, null, 'CORPORATE_INVENTORY'] as const)('keeps legacy/inventory eligibility %s', applicability => {
     expect(match([{ ...inventory, applicability }])?.factor.id).toBe('inventory');
   });
@@ -35,11 +42,10 @@ describe('inventory eligibility', () => {
     expect(isInventoryFactorEligible({ emissionBasis: 'DIRECT_CO2E', resultUnit: 'kgCO2e' })).toBe(true);
     expect(match([{ ...inventory, methodologyProvenance: { sectorApplicability: ['Industrial'] } }])).toBeUndefined();
   });
-  it('retains direct GJ precedence and refuses invented HHV conversion', () => {
-    const gas = { ...inventory, activityType: 'NATURAL_GAS', id: 'gas', name: 'Natural Gas', region: 'Canada (Generic)', sourceAuthority: 'Environment and Climate Change Canada', unit: 'GJ', factorValue: 49.44, methodologyProvenance: { quantityBasis: 'ENERGY_HHV' as const } };
+  it('rejects the approximate Table A8 GJ reference and refuses invented HHV conversion', () => {
+    const gas = { ...inventory, activityType: 'NATURAL_GAS', id: 'eccc-natural-gas-canada-generic-gj-2025', name: 'Natural Gas', region: 'Canada (Generic)', sourceAuthority: 'Environment and Climate Change Canada', unit: 'GJ', factorValue: 49.44, methodologyProvenance: { sourceVersion: 'ECCC_EPR_2025_TABLE_A8', quantityBasis: 'ENERGY_HHV' as const } };
     const input = { activityType: 'NATURAL_GAS', quantity: 3, jurisdictionRegion: 'Alberta', jurisdictionCountry: 'Canada', recordYear: 2026, factors: [gas] };
-    expect(findBestConversionFactorMatch({ ...input, inputUnit: 'GJ' })?.factor.id).toBe('gas');
-    expect(3 * gas.factorValue).toBe(148.32);
+    expect(findBestConversionFactorMatch({ ...input, inputUnit: 'GJ' })).toBeUndefined();
     expect(findBestConversionFactorMatch({ ...input, inputUnit: 'm3' })).toBeUndefined();
   });
 });

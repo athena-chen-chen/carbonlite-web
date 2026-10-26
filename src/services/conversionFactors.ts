@@ -278,28 +278,31 @@ const OFFICIAL_ELECTRICITY_FACTORS: ConversionFactorItem[] = Object.entries(
     factorValue: values[province.code],
     resultUnit: 'kgCO2e',
     sourceName: 'ECCC electricity consumption intensity reference',
-    sourceReference: `ECCC ${year} electricity consumption intensity reference`,
+    sourceReference: `Table ${Number(year) === 2025 ? '5.2' : '5.3'}; federal offset applicability ${year}; NIR historical data through ${Number(year) === 2025 ? 2022 : 2023}`,
     sourceAuthority: 'Environment and Climate Change Canada',
-    sourceDocument: 'ECCC electricity consumption intensity reference',
-    sourceYear: Number(year),
+    sourceDocument: 'Emission factors and reference values, version 4.0 (September 2026)',
+    sourceYear: 2026,
     effectiveYear: Number(year),
-    sourceUrl: '/methodology/eccc-electricity-reference',
+    sourceUrl: 'https://www.canada.ca/en/environment-climate-change/services/climate-change/pricing-pollution-how-it-will-work/output-based-pricing-system/federal-greenhouse-gas-offset-system/emission-factors-reference-values.html',
     factorVersion: `ECCC_REFERENCE_${year}`,
     factorSet: `ECCC_REFERENCE_${year}`,
-    factorStatus: 'ACTIVE',
+    factorStatus: 'REFERENCE_ONLY',
     confidence: 'HIGH',
     confidenceLevel: 'HIGH',
     verificationStatus: 'ACTIVE',
-    boundary: 'Purchased electricity consumption intensity.',
+    boundary: 'Electricity consumption intensity published in a federal offset-program context; that context does not itself establish CarbonLite SMB Scope 2 automatic-use policy.',
     assumptions:
-      'Official reference factor provided for source transparency. Pilot default factors remain preserved for the golden sample dataset.',
+      'The year is federal offset applicability, not a measured annual corporate grid-intensity year. CarbonLite retains this as reference-only because it has not adopted and documented a sufficiently authoritative corporate-inventory methodology for automatic use.',
     methodology:
-      'Reference electricity consumption intensity factor for purchased electricity.',
+      'Published g CO2e/kWh divided by 1000 to kg CO2e/kWh. Corporate Scope 2 use requires separate NIR boundary and vintage review.',
     isPilotEstimate: false,
-    consultantReviewRecommended: false,
+    consultantReviewRecommended: true,
     verified: true,
     notes:
-      'Reference factor added as a separate versioned factor set; it does not overwrite CarbonLite pilot defaults.',
+      'The value is numerically source-valid. Reference-only status is a CarbonLite governance decision, not a claim that ECCC prohibits corporate-inventory use. No upstream/lifecycle or marginal-grid substitution is made.',
+    applicability: 'REFERENCE_ONLY',
+    emissionBasis: 'DIRECT_CO2E',
+    methodologyProvenance: { sourceVersion: 'ECCC_OFFSET_EFR_V4_2026', sourceTable: Number(year) === 2025 ? '5.2' : '5.3', factorYear: Number(year) },
     isDefault: false,
     isSystemDefault: true,
     defaultScope: 'SCOPE_2',
@@ -376,9 +379,9 @@ const ECCC_NATURAL_GAS_GJ_FACTOR: ConversionFactorItem = {
   sourceUrl: 'https://www.canada.ca/en/environment-climate-change/services/climate-change/greenhouse-gas-emissions/projections/2025-report.html',
   factorVersion: 'ECCC_EPR_2025_TABLE_A8',
   factorSet: 'ECCC_EPR_2025_TABLE_A8',
-  factorStatus: 'ACTIVE',
+  factorStatus: 'REFERENCE_ONLY',
   confidence: 'HIGH',
-  boundary: 'Canada-generic direct Natural Gas combustion CO2e estimate by energy consumed.',
+  boundary: 'Approximate national projection-model reference; corporate combustion, HHV and GWP applicability not established.',
   assumptions:
     'ECCC Table A8 national Natural Gas CO2e estimate. The source identifies this as an approximate estimate and notes that actual emission factors may vary by year, sector, and province.',
   methodology:
@@ -389,8 +392,11 @@ const ECCC_NATURAL_GAS_GJ_FACTOR: ConversionFactorItem = {
   consultantReviewRecommended: true,
   verified: false,
   notes:
-    'Canada-generic fallback estimate from ECCC Table A8. Not Alberta-specific, facility-specific, or compliance-certified.',
-  isDefault: true,
+    'Reference only. No reviewed corporate HHV/sector/province method is available; do not use as an automatic GJ fallback.',
+  applicability: 'REFERENCE_ONLY',
+  emissionBasis: 'DIRECT_CO2E',
+  methodologyProvenance: { sourceVersion: 'ECCC_EPR_2025_TABLE_A8', sourceTable: 'A8' },
+  isDefault: false,
   isSystemDefault: true,
   defaultScope: 'SCOPE_1',
   scope: 'SCOPE_1',
@@ -540,12 +546,9 @@ function getOfficialElectricityFactorsForParams(params?: {
   const activityType = normalizeActivityType(params?.activityType);
   if (activityType && activityType !== 'ELECTRICITY') return [];
 
-  if (
-    params?.sourceYear &&
-    !Object.prototype.hasOwnProperty.call(OFFICIAL_ELECTRICITY_FACTOR_VALUES, params.sourceYear)
-  ) {
-    return [];
-  }
+  // sourceYear is the publication year. effectiveYear carries the federal
+  // offset applicability year; do not silently conflate the two.
+  if (params?.sourceYear && params.sourceYear !== 2026) return [];
 
   const jurisdictionFilter = String(params?.jurisdiction ?? '').trim();
   const searchFilter = String(params?.search ?? '').trim().toLowerCase();

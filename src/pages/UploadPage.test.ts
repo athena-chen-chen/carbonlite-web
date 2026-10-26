@@ -551,7 +551,7 @@ describe('document import factor matching metadata', () => {
     });
   });
 
-  it('uses service period year instead of upload or record date for imported bill factor matching', () => {
+  it('preserves service period year while reference-only electricity remains missing factor', () => {
     const payload = buildDocumentImportActivityPayload({
       item: buildImportRow({
         activityType: { value: 'Electricity', confidence: 'high' },
@@ -607,10 +607,10 @@ describe('document import factor matching metadata', () => {
     expect(payload).toMatchObject({
       recordDate: '2026-01-15',
       recordYear: 2025,
-      matchedFactorId: 'eccc-electricity-ab-2025',
-      matchedFactorSourceYear: 2025,
-      calculatedEmissionsKgCO2e: 175.42,
-      calculationStatus: 'CALCULATED',
+      matchedFactorId: undefined,
+      matchedFactorSourceYear: undefined,
+      calculatedEmissionsKgCO2e: undefined,
+      calculationStatus: 'MISSING_FACTOR',
     });
   });
 

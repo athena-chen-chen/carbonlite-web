@@ -194,7 +194,7 @@ try {
     activityType: 'DIESEL',
     jurisdiction: 'Canada (Generic)',
     region: 'Canada',
-    unit: 'L',
+    unit: 'liters',
     factorValue: 2.68,
   });
 
@@ -204,7 +204,7 @@ try {
     activityType: 'GASOLINE',
     jurisdiction: 'Canada (Generic)',
     region: 'Canada',
-    unit: 'L',
+    unit: 'liters',
     factorValue: 2.31,
   });
 

@@ -535,7 +535,7 @@ describe('findBestConversionFactorMatch', () => {
     expect(match?.selectionExplanation).not.toContain('m3');
   });
 
-  it('matches Alberta Natural Gas GJ records to the ECCC Canada-generic direct factor without conversion', () => {
+  it('rejects the Table A8 reference and uses only an approved provenance-backed conversion', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'NATURAL_GAS',
       inputUnit: 'GJ',
@@ -599,17 +599,16 @@ describe('findBestConversionFactorMatch', () => {
       ],
     });
 
-    expect(match?.factor.id).toBe('eccc-natural-gas-canada-generic-gj-2025');
-    expect(match?.factor.factorValue).toBe(49.44);
-    expect(match?.isConversionAssisted).toBe(false);
-    expect(match?.conversion).toBeUndefined();
-    expect(match?.selectionReason).toBe('GENERIC_JURISDICTION_FALLBACK');
-    expect(match?.selectionExplanation).toContain('Activity jurisdiction is Alberta, Canada.');
-    expect(match?.selectionExplanation).toContain('No Alberta-specific direct GJ factor was available');
-    expect(match?.selectionExplanation).toContain('2025 Canada-generic factor was selected.');
-    expect(match?.selectionExplanation).not.toContain('Jurisdiction matched Canada, Canada');
-    expect(match?.reviewRecommended).toBe(true);
-    expect(Number(match?.factor.factorValue) * 3).toBe(148.32);
+    expect(match?.factor.id).toBe('natural-gas-m3-ab-2025');
+    expect(match?.factor.factorValue).toBe(1.89);
+    expect(match?.isConversionAssisted).toBe(true);
+    expect(match?.conversion).toMatchObject({
+      conversionValue: 25,
+      convertedQuantity: 75,
+      fromUnit: 'GJ',
+      toUnit: 'm3',
+      sourceAuthority: 'Test authority',
+    });
   });
 
   it.each([
@@ -1023,6 +1022,7 @@ describe('findBestConversionFactorMatch', () => {
         jurisdictionRegion: province,
         recordYear: 2026,
         organizationId: 'org-1',
+        allowDemoFactorsForCalculations: true,
         factors: pilotConversionFactors,
       });
 
@@ -1031,7 +1031,7 @@ describe('findBestConversionFactorMatch', () => {
     },
   );
 
-  it('keeps ECCC reference electricity factors versioned separately and prefers them over pilot defaults when equally applicable', () => {
+  it('keeps ECCC references versioned separately but excludes them from corporate matching', () => {
     expect(ecccReferenceElectricityFactors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1039,9 +1039,11 @@ describe('findBestConversionFactorMatch', () => {
           factorValue: 0.49,
           factorSet: 'ECCC_REFERENCE_2025',
           sourceName: 'ECCC electricity consumption intensity reference',
-          effectiveYear: 2025,
           confidence: 'HIGH',
-          factorStatus: 'ACTIVE',
+          factorStatus: 'REFERENCE_ONLY',
+          sourceYear: 2026,
+          effectiveYear: 2025,
+          applicability: 'REFERENCE_ONLY',
         }),
         expect.objectContaining({
           id: 'eccc-electricity-ab-2026',
@@ -1059,14 +1061,15 @@ describe('findBestConversionFactorMatch', () => {
       jurisdictionRegion: 'Alberta',
       recordYear: 2026,
       organizationId: 'org-1',
+      allowDemoFactorsForCalculations: true,
       factors: pilotConversionFactors,
     });
 
-    expect(match?.factor.id).toBe('eccc-electricity-ab-2026');
-    expect(match?.factor.factorValue).toBe(0.438);
-    expect(match?.factor.factorSet).toBe('ECCC_REFERENCE_2026');
-    expect(match?.selectionReason).toBe('EXACT_MATCH');
-    expect(match?.selectionExplanation).toContain('Factor year matched activity year 2026');
+    expect(match?.factor.id).toBe('factor-electricity-ab');
+    expect(match?.factor.factorValue).toBe(0.53);
+    expect(match?.factor.factorSet).toBe('PILOT_DEFAULT_V0_1');
+    expect(match?.selectionReason).toBe('PILOT_DEFAULT_FALLBACK');
+    expect(match?.selectionExplanation).toContain('pilot/default factor');
   });
 
   it('rejects pilot default fallback without demo authorization', () => {
@@ -1113,13 +1116,10 @@ describe('findBestConversionFactorMatch', () => {
     });
 
     expect(activityYear2025).toMatchObject({ year: 2025, source: 'servicePeriodEndDate' });
-    expect(match2025?.factor.id).toBe('eccc-electricity-ab-2025');
-    expect(match2025?.factor.factorValue).toBe(0.49);
-    expect(match2025?.exactYearMatch).toBe(true);
-    expect(match2025?.usedProxyFactor).toBe(false);
-    expect(match2026?.factor.id).toBe('eccc-electricity-ab-2026');
-    expect(match2026?.factor.factorValue).toBe(0.438);
-    expect(match2026?.exactYearMatch).toBe(true);
+    expect(match2025).toBeUndefined();
+    expect(match2026).toBeUndefined();
+    expect(ecccReferenceElectricityFactors.find((factor) => factor.id === 'eccc-electricity-ab-2025')?.factorValue).toBe(0.49);
+    expect(ecccReferenceElectricityFactors.find((factor) => factor.id === 'eccc-electricity-ab-2026')?.factorValue).toBe(0.438);
   });
 
   it('does not use upload date for activity-year matching', () => {
@@ -1159,11 +1159,7 @@ describe('findBestConversionFactorMatch', () => {
       factors: ecccReferenceElectricityFactors,
     });
 
-    expect(match?.factor.id).toBe('eccc-electricity-ab-2025');
-    expect(match?.exactYearMatch).toBe(false);
-    expect(match?.usedProxyFactor).toBe(true);
-    expect(match?.reviewRecommended).toBe(true);
-    expect(match?.proxyReason).toContain('No exact 2024 factor was available');
+    expect(match).toBeUndefined();
   });
 
   it.each(pilotUnsupportedElectricityProvinces)(

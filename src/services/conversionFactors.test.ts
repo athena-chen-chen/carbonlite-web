@@ -100,10 +100,12 @@ describe('conversion factor traceability API payloads', () => {
           factorValue: 0.49,
           factorSet: 'ECCC_REFERENCE_2025',
           sourceName: 'ECCC electricity consumption intensity reference',
-          effectiveYear: 2025,
           confidence: 'HIGH',
-          factorStatus: 'ACTIVE',
-          boundary: 'Purchased electricity consumption intensity.',
+          factorStatus: 'REFERENCE_ONLY',
+          boundary: 'Electricity consumption intensity published in a federal offset-program context; that context does not itself establish CarbonLite SMB Scope 2 automatic-use policy.',
+          sourceYear: 2026,
+          effectiveYear: 2025,
+          applicability: 'REFERENCE_ONLY',
         }),
         expect.objectContaining({
           name: 'Electricity - Alberta - 2026 Reference',
@@ -225,6 +227,7 @@ describe('conversion factor traceability API payloads', () => {
     });
     expect(alberta.items.map((item) => item.name)).toEqual([
       'Electricity - Alberta - 2026',
+      'Electricity - Alberta - 2025 Reference',
       'Electricity - Alberta - 2026 Reference',
     ]);
 
@@ -234,14 +237,17 @@ describe('conversion factor traceability API payloads', () => {
     });
     expect(bc.items.map((item) => item.factorValue)).toEqual([0.02, 0.015, 0.018]);
 
-    const official2025 = await getConversionFactors({
+    const published2026 = await getConversionFactors({
       activityType: 'ELECTRICITY',
-      sourceYear: 2025,
+      sourceYear: 2026,
     });
-    expect(official2025.items.map((item) => item.factorSet)).toEqual([
+    expect(published2026.items.filter((item) => item.factorSet?.startsWith('ECCC_REFERENCE')).map((item) => item.factorSet)).toEqual([
       'ECCC_REFERENCE_2025',
       'ECCC_REFERENCE_2025',
       'ECCC_REFERENCE_2025',
+      'ECCC_REFERENCE_2026',
+      'ECCC_REFERENCE_2026',
+      'ECCC_REFERENCE_2026',
     ]);
 
     const unsupported = await getConversionFactors({

@@ -114,14 +114,14 @@ describe('Task 8 official Alberta suitability boundaries', () => {
     expect(match(scenarios[3], [{ ...candidate, id: 'governed', currentActiveVersion: candidate }])).toBeUndefined();
   });
 
-  it('keeps the actual ECCC GJ fallback and introduces no universal GJ/m3 conversion', async () => {
+  it('retains the ECCC GJ value as reference-only and introduces no universal GJ/m3 conversion', async () => {
     vi.mocked(apiFetch).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 });
     const response = await getConversionFactors({ activityType: 'NATURAL_GAS' });
     const result = match(scenarios[1], [...componentCandidates, ...response.items]);
-    expect(result?.factor.name).toBe('Natural Gas - Canada Generic');
-    expect(result?.factor.factorValue).toBe(49.44);
-    expect(3 * Number(result?.factor.factorValue)).toBe(148.32);
-    expect(result?.conversion).toBeUndefined();
+    expect(response.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Natural Gas - Canada Generic', factorValue: 49.44, applicability: 'REFERENCE_ONLY' }),
+    ]));
+    expect(result).toBeUndefined();
     expect(match({ ...scenarios[1], inputUnit: 'm3', quantity: 100 }, [...componentCandidates, ...response.items])).toBeUndefined();
   });
 
