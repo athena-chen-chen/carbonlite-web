@@ -1,4 +1,5 @@
 import { LEGITIMATE_OFFICIAL_FACTOR } from '../test/legitimateFactorMetadata';
+import { pilotConversionFactors } from '../test/pilotEmissionsFixture';
 import { evaluateActivityRecord, isImportEligible } from './canonicalRecordEvaluation';
 import {
   findBestConversionFactorMatch,
@@ -7,11 +8,11 @@ import {
 
 const factors: MatchableConversionFactor[] = [
   {
-    id: 'factor-electricity-ab-2025',
+    id: 'test-approved-corporate-electricity-ab-2025',
     factorType: 'SYSTEM',
     isSystem: true,
     type: 'EMISSION',
-    name: 'Electricity - Alberta',
+    name: 'Test-approved corporate electricity - Alberta',
     activityType: 'ELECTRICITY',
     inputUnit: 'kWh',
     resultUnit: 'kgCO2e',
@@ -90,7 +91,7 @@ describe('canonical activity record evaluation', () => {
       calculationStatus: 'CALCULATED',
       reportTreatment: 'INCLUDED',
       importEligible: true,
-      matchedFactorName: 'Electricity - Alberta',
+      matchedFactorName: 'Test-approved corporate electricity - Alberta',
       matchedFactorSourceYear: 2025,
       calculatedEmissionsKgCO2e: 519.4,
     });
@@ -116,6 +117,31 @@ describe('canonical activity record evaluation', () => {
       matchedFactorSourceYear: 2025,
       calculatedEmissionsKgCO2e: 60,
     });
+  });
+
+  it('fails closed when the only Alberta electricity candidate is the unsupported pilot estimate', () => {
+    const evaluation = evaluateActivityRecord({
+      activityType: 'Electricity',
+      quantity: 980,
+      unit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      allowDemoFactorsForCalculations: true,
+      factors: pilotConversionFactors,
+    });
+
+    expect(evaluation).toMatchObject({
+      status: 'NEEDS_REVIEW',
+      matchingStatus: 'MISSING_FACTOR',
+      calculationStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED',
+      importEligible: false,
+      calculatedEmissionsKgCO2e: null,
+    });
+    expect(evaluation.matchedFactorId).toBeUndefined();
+    expect(evaluation.issues.map((issue) => issue.code)).toContain('MISSING_FACTOR');
   });
 
   it('classifies golden needs-review rows as not import eligible with specific issue codes', () => {

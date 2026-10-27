@@ -1206,7 +1206,7 @@ describe('ExcelInputTable empty activity row UX', () => {
   it('matches a valid manual electricity row with a legitimate Alberta factor', async () => {
     vi.mocked(getAllConversionFactors).mockResolvedValueOnce([
         {
-          id: 'factor-electricity-ab',
+          id: 'test-approved-electricity-ab',
           name: 'Electricity - Alberta',
           type: 'EMISSION',
           activityType: 'ELECTRICITY',

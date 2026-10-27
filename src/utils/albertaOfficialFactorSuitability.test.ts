@@ -13,7 +13,8 @@ vi.mock('../services/api', () => ({ apiFetch: vi.fn() }));
 // Test specimens only: no library admission, seed or database connection.
 // Source locations and complete component sets are in the Task 8 decision record.
 const frozenCorporateFactors: MatchableConversionFactor[] = [
-  { id: 'pilot-electricity', name: 'Electricity - Alberta', activityType: 'ELECTRICITY', unit: 'kWh', factorValue: 0.53 },
+  { id: 'test-approved-electricity', name: 'Test-approved corporate electricity - Alberta', activityType: 'ELECTRICITY', unit: 'kWh', factorValue: 0.53,
+    applicability: 'CORPORATE_INVENTORY', sourceAuthority: 'Example inventory agency', sourceDocument: 'Approved corporate factor' },
   { id: 'pilot-gas', name: 'Natural Gas - Canada Generic', activityType: 'NATURAL_GAS', unit: 'GJ', factorValue: 49.44, region: 'Canada (Generic)' },
   { id: 'pilot-gasoline', name: 'Gasoline combustion', activityType: 'GASOLINE', unit: 'L', factorValue: 2.31 },
   { id: 'pilot-diesel', name: 'Diesel combustion', activityType: 'DIESEL', unit: 'L', factorValue: 2.68 },
@@ -49,7 +50,7 @@ const componentCandidates = [
 ].map(factor => official({ name: factor.id, emissionBasis: 'CO2_COMPONENT', ...factor } as MatchableConversionFactor));
 
 const scenarios = [
-  { activityType: 'ELECTRICITY', quantity: 1000, inputUnit: 'kWh', factorId: 'pilot-electricity', total: 530 },
+  { activityType: 'ELECTRICITY', quantity: 1000, inputUnit: 'kWh', factorId: 'test-approved-electricity', total: 530 },
   { activityType: 'NATURAL_GAS', quantity: 3, inputUnit: 'GJ', factorId: 'pilot-gas', total: 148.32 },
   { activityType: 'GASOLINE', quantity: 100, inputUnit: 'L', factorId: 'pilot-gasoline', total: 231 },
   { activityType: 'DIESEL', quantity: 100, inputUnit: 'L', factorId: 'pilot-diesel', total: 268 },
@@ -78,9 +79,24 @@ describe('Task 8 official Alberta suitability boundaries', () => {
       expect(isApiInventoryFactorEligible(version)).toBe(false);
       for (const shape of [version, governed]) {
         expect(match(scenarios[0], [shape])).toBeUndefined();
-        expect(match(scenarios[0], [shape, ...frozenCorporateFactors])?.factor.id).toBe('pilot-electricity');
+        expect(match(scenarios[0], [shape, ...frozenCorporateFactors])?.factor.id).toBe('test-approved-electricity');
       }
     }
+  });
+
+  it('does not silently fall back among the pilot estimate, EGDF, or ECCC reference values', () => {
+    const unsupportedPilot = {
+      ...frozenCorporateFactors[0], id: 'factor-electricity-ab', name: 'Electricity - Alberta pilot',
+      factorSet: 'PILOT_DEFAULT_V0_1', applicability: undefined,
+      sourceAuthority: 'CarbonLite', sourceDocument: 'CarbonLite MVP Default Factors v1.0',
+    };
+    const ecccReferences = [0.49, 0.438].map((factorValue, index) => official({
+      id: `eccc-electricity-ab-${2025 + index}`, name: `ECCC Alberta reference ${factorValue}`,
+      activityType: 'ELECTRICITY', unit: 'kWh', resultUnit: 'kgCO2e', factorValue,
+      applicability: 'REFERENCE_ONLY', sourceAuthority: 'Environment and Climate Change Canada',
+    }));
+
+    expect(match(scenarios[0], [unsupportedPilot, ...offsetCandidates, ...ecccReferences])).toBeUndefined();
   });
 
   it.each(scenarios)('resolves same-unit, same-jurisdiction $activityType applicability collisions before ranking', scenario => {

@@ -647,7 +647,7 @@ describe('findBestConversionFactorMatch', () => {
       organizationId: 'org-1',
       factors: [
         {
-          id: 'factor-electricity-ab',
+          id: 'test-approved-electricity-ab',
           organizationId: null,
           name: 'Electricity - Alberta - 2025',
           type: 'EMISSION',
@@ -664,7 +664,7 @@ describe('findBestConversionFactorMatch', () => {
       ],
     });
 
-    expect(match?.factor.id).toBe('factor-electricity-ab');
+    expect(match?.factor.id).toBe('test-approved-electricity-ab');
     expect(match?.selectionExplanation).toContain('Jurisdiction matched Alberta, Canada.');
     expect(match?.selectionExplanation).not.toContain('Alberta, Alberta');
     expect(match?.selectionExplanation).not.toContain('Canada, Canada');
@@ -1012,7 +1012,7 @@ describe('findBestConversionFactorMatch', () => {
     expect(match).toBeUndefined();
   });
 
-  it.each(pilotFactorCoverage)(
+  it.each(pilotFactorCoverage.filter(province => province !== 'Alberta'))(
     'matches current pilot electricity factor coverage for %s',
     (province) => {
       const match = findBestConversionFactorMatch({
@@ -1030,6 +1030,21 @@ describe('findBestConversionFactorMatch', () => {
       expect(match?.sourceLabel).toBe('System Default Factor');
     },
   );
+
+  it('fails closed for unsupported Alberta pilot electricity even with demo authorization', () => {
+    const match = findBestConversionFactorMatch({
+      activityType: 'ELECTRICITY',
+      inputUnit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      allowDemoFactorsForCalculations: true,
+      factors: pilotConversionFactors,
+    });
+
+    expect(match).toBeUndefined();
+  });
 
   it('keeps ECCC references versioned separately but excludes them from corporate matching', () => {
     expect(ecccReferenceElectricityFactors).toEqual(
@@ -1065,11 +1080,7 @@ describe('findBestConversionFactorMatch', () => {
       factors: pilotConversionFactors,
     });
 
-    expect(match?.factor.id).toBe('factor-electricity-ab');
-    expect(match?.factor.factorValue).toBe(0.53);
-    expect(match?.factor.factorSet).toBe('PILOT_DEFAULT_V0_1');
-    expect(match?.selectionReason).toBe('PILOT_DEFAULT_FALLBACK');
-    expect(match?.selectionExplanation).toContain('pilot/default factor');
+    expect(match).toBeUndefined();
   });
 
   it('rejects pilot default fallback without demo authorization', () => {

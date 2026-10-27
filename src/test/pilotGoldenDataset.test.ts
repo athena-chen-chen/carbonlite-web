@@ -14,7 +14,6 @@ type Scope = 'SCOPE_1' | 'SCOPE_2' | 'SCOPE_3';
 
 const goldenDatasetPath = resolve(process.cwd(), 'apps/web-e2e/fixtures/pilot-golden-dataset.csv');
 const factorRegistry: Record<string, { factorValue: number; scope: Scope }> = {
-  'ELECTRICITY:Alberta:kWh': { factorValue: 0.53, scope: 'SCOPE_2' },
   'ELECTRICITY:British Columbia:kWh': { factorValue: 0.02, scope: 'SCOPE_2' },
   'ELECTRICITY:Ontario:kWh': { factorValue: 0.12, scope: 'SCOPE_2' },
   'NATURAL_GAS::m3': { factorValue: 1.89, scope: 'SCOPE_1' },
@@ -84,7 +83,7 @@ describe('pilot golden dataset fixture', () => {
     ]);
   });
 
-  it('preserves golden dataset calculation totals and tracked-only Water treatment', () => {
+  it('fails closed for Alberta electricity while preserving supported calculations and tracked-only Water', () => {
     const rows = parseGoldenDataset();
     const scopeTotals = {
       SCOPE_1: 0,
@@ -126,22 +125,20 @@ describe('pilot golden dataset fixture', () => {
       ? normalizeQuantityForFactor(mwhElectricity)
       : null;
 
-    expect(includedGhgRecords).toBe(9);
+    expect(includedGhgRecords).toBe(7);
     expect(trackedOperationalMetrics).toBe(1);
-    expect(recordsRequiringReview).toBe(0);
+    expect(recordsRequiringReview).toBe(2);
     expect(waterRow).toEqual(
       expect.objectContaining({ activityType: 'Water', quantity: 100, unit: 'm3' }),
     );
 
     expect(scopeTotals.SCOPE_1).toBe(3313);
-    expect(scopeTotals.SCOPE_2).toBe(33247);
+    expect(scopeTotals.SCOPE_2).toBe(122);
     expect(scopeTotals.SCOPE_3).toBe(725);
-    expect(totalCalculatedEmissions).toBe(37285);
+    expect(totalCalculatedEmissions).toBe(4160);
 
     expect(usageTotals.electricity).toBe(63600);
     expect(normalizedMwhElectricity).toEqual({ quantity: 50000, unit: 'kWh' });
-    expect(
-      normalizedMwhElectricity && normalizedMwhElectricity.quantity * 0.53,
-    ).toBe(26500);
+    expect(mwhElectricity && factorRegistry[getFactorKey(mwhElectricity)]).toBeUndefined();
   });
 });

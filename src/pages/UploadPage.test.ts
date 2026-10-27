@@ -22,12 +22,13 @@ import {
   extractProvinceFromAddress,
 } from './UploadPage';
 import { evaluateActivityRecord } from '../utils/canonicalRecordEvaluation';
+import { pilotConversionFactors } from '../test/pilotEmissionsFixture';
 
-const albertaElectricity2025Factor = {
-  id: 'factor-electricity-ab-2025',
+const approvedTestAlbertaElectricityFactor = {
+  id: 'test-approved-corporate-electricity-ab-2025',
   organizationId: null,
   factorType: 'SYSTEM',
-  name: 'Electricity - Alberta',
+  name: 'Test-approved corporate electricity - Alberta',
   type: 'EMISSION',
   activityType: 'ELECTRICITY',
   inputUnit: 'kWh',
@@ -375,7 +376,7 @@ describe('document import factor matching metadata', () => {
   });
 
   it('uses the same canonical selector and evaluator for equivalent Excel and document electricity records', () => {
-    const factors = [albertaElectricity2025Factor] as any;
+    const factors = [approvedTestAlbertaElectricityFactor] as any;
     const excelEvaluation = evaluateActivityRecord({
       activityType: 'Electricity',
       quantity: 980,
@@ -408,7 +409,7 @@ describe('document import factor matching metadata', () => {
       matchingStatus: 'MATCHED',
       calculationStatus: 'CALCULATED',
       reportTreatment: 'INCLUDED',
-      matchedFactorName: 'Electricity - Alberta',
+      matchedFactorName: 'Test-approved corporate electricity - Alberta',
       matchedFactorSourceYear: 2025,
       calculatedEmissionsKgCO2e: 519.4,
     });
@@ -435,6 +436,51 @@ describe('document import factor matching metadata', () => {
     expect(documentPayload.notes).not.toMatch(/Missing Factor/i);
   });
 
+  it('keeps unsupported Alberta pilot electricity in review for Excel and document paths', () => {
+    const factors = pilotConversionFactors as any;
+    const input = {
+      activityType: 'Electricity',
+      quantity: 980,
+      unit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      recordYear: 2026,
+      organizationId: 'org-1',
+      allowDemoFactorsForCalculations: true,
+      factors,
+    };
+    const excelEvaluation = evaluateActivityRecord(input);
+    const documentPayload = buildDocumentImportActivityPayload({
+      item: buildImportRow({
+        activityType: { value: input.activityType, confidence: 'high' },
+        recordDate: { value: '2026-05-31', confidence: 'high' },
+        quantity: { value: input.quantity, confidence: 'high' },
+        unit: { value: input.unit, confidence: 'high' },
+        jurisdictionCountry: { value: input.jurisdictionCountry, confidence: 'high' },
+        jurisdictionRegion: { value: input.jurisdictionRegion, confidence: 'high' },
+      }),
+      documentId: 'doc-enmax-unsupported-electricity',
+      sourceFileName: 'enmax-electricity.pdf',
+      importBatchId: 'document-doc-enmax-unsupported-electricity',
+      organizationId: 'org-1',
+      allowDemoFactorsForCalculations: true,
+      conversionFactors: factors,
+    });
+
+    expect(excelEvaluation).toMatchObject({
+      status: 'NEEDS_REVIEW', matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED', importEligible: false,
+      calculatedEmissionsKgCO2e: null,
+    });
+    expect(documentPayload).toMatchObject({
+      matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      reportTreatment: 'EXCLUDED',
+    });
+    expect(excelEvaluation.matchedFactorId).toBeUndefined();
+    expect(documentPayload.matchedFactorId).toBeUndefined();
+    expect(documentPayload.calculatedEmissionsKgCO2e).toBeUndefined();
+  });
+
   it('calculates document electricity quantities generically without depending on the golden 980 kWh row', () => {
     const payload = buildDocumentImportActivityPayload({
       item: buildImportRow({
@@ -449,7 +495,7 @@ describe('document import factor matching metadata', () => {
       sourceFileName: 'enmax-electricity.pdf',
       importBatchId: 'document-doc-enmax-electricity',
       organizationId: 'org-1',
-      conversionFactors: [albertaElectricity2025Factor] as any,
+      conversionFactors: [approvedTestAlbertaElectricityFactor] as any,
     });
 
     expect(payload).toMatchObject({
@@ -457,7 +503,7 @@ describe('document import factor matching metadata', () => {
       matchingStatus: 'MATCHED',
       calculationStatus: 'CALCULATED',
       reportTreatment: 'INCLUDED',
-      matchedFactorName: 'Electricity - Alberta',
+      matchedFactorName: 'Test-approved corporate electricity - Alberta',
       matchedFactorValue: 0.53,
       matchedFactorSourceYear: 2025,
       calculatedEmissionsKgCO2e: 265,
@@ -484,7 +530,7 @@ describe('document import factor matching metadata', () => {
       sourceFileName: 'carbonlite_needs_review_test.xlsx',
       importBatchId: 'document-doc-golden-spreadsheet',
       organizationId: 'org-1',
-      conversionFactors: [albertaElectricity2025Factor] as any,
+      conversionFactors: [approvedTestAlbertaElectricityFactor] as any,
     });
 
     expect(payload).toMatchObject({
@@ -511,7 +557,7 @@ describe('document import factor matching metadata', () => {
       sourceFileName: 'electricity-bill.pdf',
       importBatchId: 'document-doc-electricity-missing-province',
       organizationId: 'org-1',
-      conversionFactors: [albertaElectricity2025Factor] as any,
+      conversionFactors: [approvedTestAlbertaElectricityFactor] as any,
     });
 
     expect(payload).toMatchObject({
@@ -539,14 +585,14 @@ describe('document import factor matching metadata', () => {
       sourceFileName: 'electricity-bill.pdf',
       importBatchId: `document-doc-electricity-${unit}`,
       organizationId: 'org-1',
-      conversionFactors: [albertaElectricity2025Factor] as any,
+      conversionFactors: [approvedTestAlbertaElectricityFactor] as any,
     });
 
     expect(payload).toMatchObject({
       activityType: 'ELECTRICITY',
       matchingStatus: 'MATCHED',
       calculationStatus: 'CALCULATED',
-      matchedFactorName: 'Electricity - Alberta',
+      matchedFactorName: 'Test-approved corporate electricity - Alberta',
       calculatedEmissionsKgCO2e: 265,
     });
   });

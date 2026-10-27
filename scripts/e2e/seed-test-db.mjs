@@ -38,7 +38,8 @@ async function upsertFactor(input) {
       confidenceLevel: input.confidenceLevel ?? 'E2E_TEST',
       verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
       verified: false,
-      isDefault: true,
+      applicability: input.applicability ?? null,
+      isDefault: input.isDefault ?? true,
       isSystemDefault: true,
       notes: input.notes ?? 'Deterministic E2E factor. Not for production reporting.',
     },
@@ -62,7 +63,8 @@ async function upsertFactor(input) {
       confidenceLevel: input.confidenceLevel ?? 'E2E_TEST',
       verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
       verified: false,
-      isDefault: true,
+      applicability: input.applicability ?? null,
+      isDefault: input.isDefault ?? true,
       isSystemDefault: true,
       notes: input.notes ?? 'Deterministic E2E factor. Not for production reporting.',
     },
@@ -174,6 +176,9 @@ try {
     region: 'Alberta',
     unit: 'kWh',
     factorValue: 0.53,
+    applicability: 'REFERENCE_ONLY',
+    isDefault: false,
+    notes: 'Historical E2E pilot reference only. Not eligible for automatic Scope 2 calculation.',
   });
 
   await upsertFactor({

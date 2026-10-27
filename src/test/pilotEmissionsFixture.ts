@@ -129,9 +129,11 @@ export const pilotConversionFactors: MatchableConversionFactor[] = [
     sourceYear: 2026,
     effectiveYear: 2026,
     boundary: 'Purchased electricity consumption intensity for pilot workflow validation.',
-    notes: 'Preserved pilot default factor used by CarbonLite Pilot Demo v0.1 golden dataset.',
+    notes: 'Historical pilot reference only. No approved corporate-inventory methodology authorizes automatic Scope 2 use.',
+    factorStatus: 'REFERENCE_ONLY',
+    applicability: 'REFERENCE_ONLY',
     isSystemDefault: true,
-    isDefault: true,
+    isDefault: false,
     verified: true,
   },
   {
