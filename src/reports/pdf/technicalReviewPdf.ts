@@ -139,7 +139,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     head: [['Executive Summary', 'Value']],
     body: [
       ['Estimated Emissions', executiveSummary.estimatedEmissions],
-      ['Imported Activity Records', reportCountSummary.totalRecordsFound],
+      ['Imported Activity Records', canonicalData.inventory.importedRecordCount],
       ['Records Included in GHG Total', executiveSummary.recordsIncluded],
       ['Tracked Metrics', executiveSummary.trackedMetrics],
       ['Imported Activity Records Needing Attention', executiveSummary.recordsRequiringReview],
@@ -159,7 +159,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     startY: nextY + 6,
     head: [['Quality Measure', 'Value']],
     body: [
-      ['Imported Activity Records', reportCountSummary.totalRecordsFound],
+      ['Imported Activity Records', canonicalData.inventory.importedRecordCount],
       ['Records Included in GHG Total', reportCountSummary.processedRecords],
       ['Tracked Metrics', primarySkippedReasons.trackedOnly],
       ['Imported Activity Records Needing Attention', executiveSummary.recordsRequiringReview],

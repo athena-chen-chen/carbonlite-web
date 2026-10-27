@@ -81,7 +81,7 @@ export function buildExecutiveSummaryPdf(canonicalData: CanonicalReportData): js
       ['Scope 1', formatEmissionsWithUnit(pdfScopeSummary['Scope 1'])],
       ['Scope 2', formatEmissionsWithUnit(pdfScopeSummary['Scope 2'])],
       ['Scope 3', formatEmissionsWithUnit(pdfScopeSummary['Scope 3'])],
-      ['Imported Activity Records', reportCountSummary.totalRecordsFound],
+      ['Imported Activity Records', canonicalData.inventory.importedRecordCount],
       ['Records Included in GHG Total', reportCountSummary.processedRecords],
       [
         'Calculation Coverage',

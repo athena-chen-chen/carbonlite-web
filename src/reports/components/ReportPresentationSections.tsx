@@ -851,6 +851,9 @@ function formatSourceReviewStatus(summary: SourceReviewSummary) {
 }
 
 function formatSourceReviewIssue(row: SpreadsheetReviewRowItem) {
+  if (isUnsupportedAlbertaElectricityRow(row)) {
+    return 'Not calculated: no approved corporate-inventory electricity factor is available for Alberta. Reference-only factors are not eligible.';
+  }
   const issues = row.issues ?? [];
   if (issues.length > 0) {
     return issues.map((issue) => issue.message || issue.code).filter(Boolean).join('; ');
@@ -867,6 +870,9 @@ function formatSourceReviewIssueType(row: SpreadsheetReviewRowItem) {
 }
 
 function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
+  if (isUnsupportedAlbertaElectricityRow(row)) {
+    return 'Keep this row in Needs Review until an approved corporate-inventory electricity factor is available.';
+  }
   const issueType = formatSourceReviewIssueType(row).toUpperCase();
 
   if (issueType.includes('PROVINCE') || issueType.includes('JURISDICTION')) {
@@ -886,6 +892,17 @@ function formatSourceReviewAction(row: SpreadsheetReviewRowItem) {
   }
 
   return 'Correct this source row before importing it into the report scope.';
+}
+
+function isUnsupportedAlbertaElectricityRow(row: SpreadsheetReviewRowItem) {
+  const issueCode = String(
+    row.issues?.[0]?.code || row.calculationStatus || row.matchingStatus || '',
+  ).toUpperCase();
+  return (
+    String(row.activityType ?? row.rawActivityType ?? '').toUpperCase() === 'ELECTRICITY' &&
+    /^(alberta|ab)$/i.test(String(row.jurisdictionRegion ?? '').trim()) &&
+    issueCode.includes('FACTOR')
+  );
 }
 
 function Card({

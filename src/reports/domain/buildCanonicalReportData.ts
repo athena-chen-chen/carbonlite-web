@@ -19,11 +19,11 @@ import { buildSourceReviewSummary } from './buildSourceReviewSummary';
 export function buildCanonicalReportData(input: BuildCanonicalReportDataInput): CanonicalReportData {
   input = { ...input, reportingPeriod: { ...input.reportingPeriod, label: buildReportingPeriodLabel(input.reportingPeriod) } };
   const sourceEvidenceRows = buildSourceEvidenceRows(input.activities, input.calculationDetails);
-  const reportTotals = buildReportTotals(input);
   const sourceReview = buildSourceReviewSummary({
     rows: input.reviewRows,
     calculationDetails: input.calculationDetails,
   });
+  const reportTotals = buildReportTotals(input, sourceReview);
   const calculationQuality = buildCalculationQuality(input.calculationDetails);
   const scopeBreakdown = buildScopeBreakdown(input.calculationDetails);
   const facilityBreakdown = buildFacilityBreakdown(input.calculationDetails);

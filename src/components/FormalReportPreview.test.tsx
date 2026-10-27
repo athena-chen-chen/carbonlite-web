@@ -640,6 +640,32 @@ describe('FormalReportPreview', () => {
     expect(hotelNote).toBe('Canada-generic and prior-year fallback used; review before formal reporting.');
   });
 
+  it('explains unsupported Alberta electricity without presenting it as zero or an approved factor', () => {
+    const note = formatTraceabilityReviewNote({
+      activityDataId: 'unsupported-alberta-electricity',
+      activityType: 'ELECTRICITY',
+      recordDate: '2026-03-01',
+      dateEstimated: false,
+      reportingYear: 2026,
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      activityQuantity: 980,
+      activityUnit: 'kWh',
+      factorName: null,
+      factorValue: null,
+      calculatedEmissionsKgCO2e: null,
+      calculationStatus: 'MISSING_FACTOR',
+      matchingStatus: 'MISSING_FACTOR',
+      status: 'MISSING_FACTOR',
+    });
+
+    expect(note).toContain('Not calculated');
+    expect(note).toContain('no approved corporate-inventory electricity factor');
+    expect(note).toContain('Reference-only factors are not eligible');
+    expect(note).not.toContain('0.53');
+    expect(note).not.toContain('0 kg');
+  });
+
   it('shows empty states when no records or factors are available', async () => {
     render(
       <FormalReportPreview

@@ -502,6 +502,12 @@ export function formatTraceabilityReviewNote(detail: CalculationAuditDetail) {
   const shouldMentionPriorYear = usedPriorYear || explanationMentionsPriorYear;
 
   if (matchingStatus === 'MISSING_FACTOR' || detail.status === 'MISSING_FACTOR') {
+    if (
+      isElectricityActivity(detail.activityType) &&
+      /^(alberta|ab)$/i.test(cleanText(detail.jurisdictionRegion))
+    ) {
+      return 'Not calculated: no approved corporate-inventory electricity factor is available for Alberta. Reference-only factors are not eligible.';
+    }
     return 'Factor required before inclusion.';
   }
 

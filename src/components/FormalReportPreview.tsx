@@ -12,6 +12,7 @@ import {
   type ActivityUsageTotals,
 } from '../utils/activityAggregation';
 import type { CalculationAuditDetail } from '../services/metrics';
+import type { SpreadsheetReviewRowItem } from '../services/spreadsheetReviewRows';
 import { formatCalculationStatus, formatFactorValue } from '../utils/calculationTraceability';
 import { formatCredibilityLabel } from '../utils/factorCredibility';
 import { formatCount, formatDisplayNumber, formatEmissionsUnit, formatEmissionsWithUnit } from '../utils/numberFormatting';
@@ -176,6 +177,7 @@ export type ReportSkippedReasonSummary = {
 export function buildPrimarySkippedReasonSummary(
   calculationDetails: CalculationAuditDetail[] = [],
   fallback?: MetricsCountSummary,
+  sourceReviewRows: SpreadsheetReviewRowItem[] = [],
 ): ReportSkippedReasonSummary {
   const reasons: ReportSkippedReasonSummary = {
     missingFactor: 0,
@@ -216,7 +218,21 @@ export function buildPrimarySkippedReasonSummary(
     }
   });
 
-  if (calculationDetails.length === 0 && fallback) {
+  sourceReviewRows
+    .filter((row) => String(row.status ?? '').toUpperCase() === 'NEEDS_REVIEW')
+    .forEach((row) => {
+      const code = String(
+        row.issues?.[0]?.code || row.calculationStatus || row.matchingStatus || '',
+      ).toUpperCase();
+
+      if (code.includes('FACTOR')) reasons.missingFactor += 1;
+      else if (code.includes('PROVINCE') || code.includes('JURISDICTION')) reasons.missingJurisdiction += 1;
+      else if (code.includes('UNIT')) reasons.invalidUnit += 1;
+      else if (code.includes('QUANTITY')) reasons.invalidQuantity += 1;
+      else reasons.missingData += 1;
+    });
+
+  if (calculationDetails.length === 0 && sourceReviewRows.length === 0 && fallback) {
     reasons.missingFactor = fallback.skippedReasons?.missingFactor ?? fallback.missingFactorRecords ?? 0;
     reasons.outsideScope = fallback.skippedReasons?.outsideScope ?? 0;
     reasons.outsideDateRange = fallback.skippedReasons?.outsideDateRange ?? 0;
@@ -229,18 +245,20 @@ export function buildPrimarySkippedReasonSummary(
 export function buildReportCountSummary(
   countSummary: MetricsCountSummary,
   calculationDetails: CalculationAuditDetail[] = [],
+  sourceReviewSummary?: SourceReviewReadinessSummary | null,
 ): MetricsCountSummary {
-  if (calculationDetails.length === 0) return countSummary;
+  if (calculationDetails.length === 0 && !sourceReviewSummary?.needsReviewCount) return countSummary;
 
-  const primaryReasons = buildPrimarySkippedReasonSummary(calculationDetails, countSummary);
+  const sourceReviewRows = (sourceReviewSummary?.needsReviewRows ?? []) as SpreadsheetReviewRowItem[];
+  const primaryReasons = buildPrimarySkippedReasonSummary(calculationDetails, countSummary, sourceReviewRows);
   const processedRecords = calculationDetails.filter((detail) => detail.status === 'CALCULATED').length;
-  const skippedRecords = calculationDetails.filter(
-    (detail) => detail.status !== 'CALCULATED' && detail.status !== 'OUTSIDE_SCOPE',
-  ).length;
+  const importedNeedsReview = calculationDetails.filter(isRecordRequiringCorrection).length;
+  const unresolvedSourceRows = sourceReviewSummary?.needsReviewCount ?? 0;
+  const skippedRecords = importedNeedsReview + unresolvedSourceRows;
 
   return {
     ...countSummary,
-    totalRecordsFound: calculationDetails.length,
+    totalRecordsFound: calculationDetails.length + unresolvedSourceRows,
     processedRecords,
     skippedRecords,
     missingFactorRecords: primaryReasons.missingFactor,
@@ -262,11 +280,13 @@ export function buildReportExecutiveSummary({
   countSummary,
   matchedActivityEmissions,
   calculationDetails = [],
+  sourceReviewSummary,
 }: {
   totalEstimatedEmissionsKgCO2e: number;
   countSummary: MetricsCountSummary;
   matchedActivityEmissions: FormalActivityEmission[];
   calculationDetails?: CalculationAuditDetail[];
+  sourceReviewSummary?: SourceReviewReadinessSummary | null;
 }): ReportExecutiveSummary {
   const primaryActivityTypes = Array.from(
     new Set(
@@ -286,7 +306,8 @@ export function buildReportExecutiveSummary({
     ? calculationDetails.filter(isTrackedMetricDetail).length
     : 0;
   const recordsRequiringReview = calculationDetails.length > 0
-    ? calculationDetails.filter(isRecordRequiringCorrection).length
+    ? calculationDetails.filter(isRecordRequiringCorrection).length +
+      (sourceReviewSummary?.needsReviewCount ?? 0)
     : countSummary.skippedRecords;
 
   return {
@@ -780,8 +801,12 @@ export function FormalReportPreview({
       REPORT_SECTION_IDS.map((id) => [id, DEFAULT_EXPANDED_REPORT_SECTIONS.has(id)]),
     ),
   );
-  const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails);
-  const primarySkippedReasons = buildPrimarySkippedReasonSummary(calculationDetails, reportCountSummary);
+  const reportCountSummary = buildReportCountSummary(countSummary, calculationDetails, sourceReviewSummary);
+  const primarySkippedReasons = buildPrimarySkippedReasonSummary(
+    calculationDetails,
+    reportCountSummary,
+    (sourceReviewSummary?.needsReviewRows ?? []) as SpreadsheetReviewRowItem[],
+  );
   const reviewRecordCount = calculationDetails.filter(isRecordRequiringCorrection).length;
   const trackedMetricCount = calculationDetails.filter(isTrackedMetricDetail).length;
   const emissionFactorsUsed = buildEmissionFactorsUsedInventory(
@@ -798,6 +823,7 @@ export function FormalReportPreview({
     countSummary: reportCountSummary,
     matchedActivityEmissions,
     calculationDetails,
+    sourceReviewSummary,
   });
   const dataReadinessSummary = buildDataReadinessSummary(calculationDetails);
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);

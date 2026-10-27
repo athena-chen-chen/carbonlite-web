@@ -4,6 +4,7 @@ import type { CalculationAuditDetail } from '../../services/metrics';
 import type { SpreadsheetReviewRowItem } from '../../services/spreadsheetReviewRows';
 import { buildInventoryBoundary } from '../../constants/inventoryBoundary';
 import { buildCanonicalReportData } from './buildCanonicalReportData';
+import { buildPilotCsvRows } from '../../utils/reportCsvExport';
 import type { BuildCanonicalReportDataInput } from './reportTypes';
 
 function detail(input: Partial<CalculationAuditDetail>): CalculationAuditDetail {
@@ -533,5 +534,140 @@ describe('buildCanonicalReportData', () => {
       ['Corporate Travel', 492.2],
       ['Toronto Sales Trip', 45],
     ]);
+  });
+
+  it('reconciles the current Golden A, C, and combined paid-pilot reporting state', () => {
+    const goldenADetails = [
+      detail({
+        activityDataId: 'fresh-a-hotel',
+        activityType: 'HOTEL',
+        activityQuantity: 4,
+        activityUnit: 'nights',
+        calculatedEmissionsKgCO2e: 60,
+        factorValue: 15,
+        factorDefaultScope: 'SCOPE_3',
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceSheetName: 'Messy_Operations',
+        sourceRow: 11,
+        sourceDocumentId: 'fresh-doc-a',
+      }),
+      detail({
+        activityDataId: 'fresh-a-water',
+        activityType: 'WATER',
+        activityQuantity: 18,
+        activityUnit: 'm3',
+        calculatedEmissionsKgCO2e: null,
+        status: 'TRACKED_ONLY',
+        calculationStatus: 'TRACKED_ONLY',
+        matchingStatus: 'TRACKED_ONLY',
+        sourceType: 'SPREADSHEET',
+        sourceFileName: 'carbonlite_needs_review_test.xlsx',
+        sourceSheetName: 'Messy_Operations',
+        sourceRow: 8,
+        sourceDocumentId: 'fresh-doc-a',
+      }),
+    ];
+    const goldenCDetails = [
+      detail({ activityDataId: 'fresh-c-gas', activityType: 'NATURAL_GAS', activityQuantity: 8.5, activityUnit: 'GJ', factorValue: 49.44, calculatedEmissionsKgCO2e: 420.24, factorDefaultScope: 'SCOPE_1', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 3, sourceDocumentId: 'fresh-doc-c' }),
+      detail({ activityDataId: 'fresh-c-gasoline', activityType: 'GASOLINE', activityQuantity: 350, activityUnit: 'L', factorValue: 2.31, calculatedEmissionsKgCO2e: 808.5, factorDefaultScope: 'SCOPE_1', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 4, sourceDocumentId: 'fresh-doc-c' }),
+      detail({ activityDataId: 'fresh-c-hotel', activityType: 'HOTEL', activityQuantity: 3, activityUnit: 'nights', factorValue: 15, calculatedEmissionsKgCO2e: 45, factorDefaultScope: 'SCOPE_3', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 5, sourceDocumentId: 'fresh-doc-c' }),
+      detail({ activityDataId: 'fresh-c-air', activityType: 'AIR_TRAVEL', activityQuantity: 4280, activityUnit: 'km', factorValue: 0.115, calculatedEmissionsKgCO2e: 492.2, factorDefaultScope: 'SCOPE_3', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 6, sourceDocumentId: 'fresh-doc-c' }),
+    ];
+    const albertaIssue = [{
+      code: 'MISSING_FACTOR',
+      field: 'factor',
+      message: 'No matching emission factor is available for this record.',
+    }];
+    const goldenAReviewRows = [
+      reviewRow({ id: 'a-electricity', sourceDocumentId: 'fresh-doc-a', sourceFileName: 'carbonlite_needs_review_test.xlsx', status: 'NEEDS_REVIEW', sourceRow: 2, activityType: 'ELECTRICITY', jurisdictionRegion: 'Alberta', quantity: 980, unit: 'kWh', issues: albertaIssue, calculationStatus: 'MISSING_FACTOR' }),
+      reviewRow({ id: 'a-water', sourceDocumentId: 'fresh-doc-a', sourceFileName: 'carbonlite_needs_review_test.xlsx', status: 'TRACKED_ONLY', sourceRow: 8, activityType: 'WATER' }),
+      reviewRow({ id: 'a-hotel', sourceDocumentId: 'fresh-doc-a', sourceFileName: 'carbonlite_needs_review_test.xlsx', status: 'READY', sourceRow: 11, activityType: 'HOTEL' }),
+      ...[3, 4, 5, 6, 7, 9].map((sourceRow) => reviewRow({ id: `a-review-${sourceRow}`, sourceDocumentId: 'fresh-doc-a', sourceFileName: 'carbonlite_needs_review_test.xlsx', status: 'NEEDS_REVIEW', sourceRow, issues: [{ code: 'NEEDS_REVIEW', field: 'row', message: 'Review required before import.' }] })),
+    ];
+    const goldenCReviewRows = [
+      reviewRow({ id: 'c-electricity', sourceDocumentId: 'fresh-doc-c', sourceFileName: 'carbonlite_field_mapping_test.xlsx', status: 'NEEDS_REVIEW', sourceRow: 2, activityType: 'ELECTRICITY', jurisdictionRegion: 'Alberta', quantity: 1250, unit: 'kWh', issues: albertaIssue, calculationStatus: 'MISSING_FACTOR' }),
+      ...[3, 4, 5, 6].map((sourceRow) => reviewRow({ id: `c-ready-${sourceRow}`, sourceDocumentId: 'fresh-doc-c', sourceFileName: 'carbonlite_field_mapping_test.xlsx', status: 'READY', sourceRow })),
+    ];
+    const makeReport = (
+      calculationDetails: CalculationAuditDetail[],
+      reviewRows: SpreadsheetReviewRowItem[],
+    ) => buildCanonicalReportData(inputFor({ calculationDetails, reviewRows }));
+
+    const goldenA = makeReport(goldenADetails, goldenAReviewRows);
+    const goldenC = makeReport(goldenCDetails, goldenCReviewRows);
+    const combined = makeReport(
+      [...goldenADetails, ...goldenCDetails],
+      [...goldenAReviewRows, ...goldenCReviewRows],
+    );
+    const csvTotal = buildPilotCsvRows(combined).reduce(
+      (sum, row) => sum + Number(row['Calculated Emissions kgCO2e'] || 0),
+      0,
+    );
+
+    expect(goldenA.inventory.totalKgCO2e).toBe(60);
+    expect(goldenC.inventory.totalKgCO2e).toBe(1765.94);
+    expect(combined.inventory.totalKgCO2e).toBe(1825.94);
+    expect(combined.scopeBreakdown.totals).toEqual({
+      'Scope 1': 1228.74,
+      'Scope 2': 0,
+      'Scope 3': 597.2,
+      Unclassified: 0,
+    });
+    expect(combined.inventory).toMatchObject({
+      importedRecordCount: 6,
+      includedRecordCount: 5,
+      trackedMetricCount: 1,
+      importedNeedsReviewCount: 0,
+    });
+    expect(combined.reportCountSummary).toMatchObject({
+      totalRecordsFound: 14,
+      processedRecords: 5,
+      skippedRecords: 8,
+    });
+    expect(combined.executiveSummary).toMatchObject({
+      recordsIncluded: 5,
+      recordsSkipped: 8,
+      trackedMetrics: 1,
+      recordsRequiringReview: 8,
+    });
+    expect(combined.sourceReview).toMatchObject({
+      totalRows: 14,
+      readyCount: 5,
+      trackedOnlyCount: 1,
+      needsReviewCount: 8,
+    });
+    expect(csvTotal).toBe(1825.94);
+    expect(combined.calculationDetails.some((row) => row.activityType === 'ELECTRICITY')).toBe(false);
+
+    const afterIncludedDelete = makeReport(
+      [...goldenADetails, ...goldenCDetails].filter((row) => row.activityDataId !== 'fresh-c-gas'),
+      [...goldenAReviewRows, ...goldenCReviewRows],
+    );
+    const afterIncludedDeleteCsvTotal = buildPilotCsvRows(afterIncludedDelete).reduce(
+      (sum, row) => sum + Number(row['Calculated Emissions kgCO2e'] || 0),
+      0,
+    );
+    expect(afterIncludedDelete.inventory).toMatchObject({
+      totalKgCO2e: 1405.7,
+      includedRecordCount: 4,
+      trackedMetricCount: 1,
+    });
+    expect(afterIncludedDelete.reportCountSummary).toMatchObject({
+      processedRecords: 4,
+      skippedRecords: 8,
+    });
+    expect(afterIncludedDeleteCsvTotal).toBe(1405.7);
+
+    const afterNeedsReviewDelete = makeReport(
+      [...goldenADetails, ...goldenCDetails],
+      [...goldenAReviewRows, ...goldenCReviewRows].filter((row) => row.id !== 'a-review-3'),
+    );
+    expect(afterNeedsReviewDelete.inventory.totalKgCO2e).toBe(1825.94);
+    expect(afterNeedsReviewDelete.reportCountSummary).toMatchObject({
+      processedRecords: 5,
+      skippedRecords: 7,
+    });
+    expect(afterNeedsReviewDelete.sourceReview.needsReviewCount).toBe(7);
   });
 });

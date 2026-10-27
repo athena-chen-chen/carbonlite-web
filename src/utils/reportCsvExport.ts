@@ -394,7 +394,9 @@ export function buildPilotCsvRows(input: CsvInput): PilotCsvRow[] {
       'Calculated Emissions kgCO2e': isTrackedMetricDetail(detail) ? '' : csvNumber(calculatedEmissions),
       'Calculated Emissions Display': isTrackedMetricDetail(detail)
         ? 'Tracked Metric'
-        : `${displayNumber(calculatedEmissions)} kgCO2e`,
+        : detail.status === 'CALCULATED'
+        ? `${displayNumber(calculatedEmissions)} kgCO2e`
+        : 'Not calculated',
       'Source File': getSourceFile(detail),
       'Source Sheet': String(detail.sourceSheetName ?? '').trim(),
       'Source Row': csvNumber(detail.sourceRow),

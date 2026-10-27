@@ -1100,7 +1100,11 @@ function CalculationTrailRecordCard({ detail }: { detail: CalculationAuditDetail
           </div>
         </div>
         <span style={calculationTrailEmissionBadgeStyle}>
-          {formatEmissionsWithUnit(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0)}
+          {detail.status === 'CALCULATED'
+            ? formatEmissionsWithUnit(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission ?? 0)
+            : isTrackedMetricDetail(detail)
+            ? 'Tracked metric'
+            : 'Not calculated'}
         </span>
       </div>
 

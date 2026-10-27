@@ -360,6 +360,38 @@ describe('pilot CSV export', () => {
     expect(rows[0]['Source Reference']).toBe('MARCH-ELEC-001');
   });
 
+  it('distinguishes an uncalculated Alberta electricity record from a calculated zero', () => {
+    const [uncalculated, zero] = buildPilotCsvRows([
+      {
+        ...calculatedDetail({
+          activityDataId: 'unsupported-alberta-electricity',
+          activityType: 'ELECTRICITY',
+          jurisdictionRegion: 'Alberta',
+          activityQuantity: 980,
+          activityUnit: 'kWh',
+          calculatedEmissionsKgCO2e: null,
+        }),
+        status: 'MISSING_FACTOR' as const,
+        calculationStatus: 'MISSING_FACTOR' as const,
+        matchingStatus: 'MISSING_FACTOR' as const,
+        factorName: null,
+        factorValue: null,
+      },
+      calculatedDetail({
+        activityDataId: 'calculated-zero',
+        activityType: 'NATURAL_GAS',
+        calculatedEmissionsKgCO2e: 0,
+      }),
+    ]);
+
+    expect(uncalculated['Calculated Emissions kgCO2e']).toBe('');
+    expect(uncalculated['Calculated Emissions Display']).toBe('Not calculated');
+    expect(uncalculated['Validation Note']).toContain('no approved corporate-inventory electricity factor');
+    expect(uncalculated['Matched Factor Value']).toBe('');
+    expect(zero['Calculated Emissions kgCO2e']).toBe('0');
+    expect(zero['Calculated Emissions Display']).toBe('0 kgCO2e');
+  });
+
   it('exports golden report records with jurisdiction lineage, costs, source rows, and tracked-only null semantics', () => {
     const goldenReportRecords = [
       calculatedDetail({

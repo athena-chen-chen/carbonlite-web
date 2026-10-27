@@ -155,6 +155,39 @@ describe('report presentation sections', () => {
     expect(screen.getByText(/Structured unresolved-source-row counts are not available/i)).toBeInTheDocument();
   });
 
+  it('renders unsupported Alberta electricity as uncalculated Needs Review source data', () => {
+    render(
+      <SourceDatasetReviewSection
+        data={sourceReview({
+          status: 'NEEDS_ATTENTION',
+          totalRows: 1,
+          readyCount: 0,
+          resolvedCount: 0,
+          needsReviewCount: 1,
+          resolutionPercent: 0,
+          needsReviewRows: [{
+            id: 'unsupported-ab-electricity',
+            status: 'NEEDS_REVIEW',
+            activityType: 'ELECTRICITY',
+            quantity: 980,
+            unit: 'kWh',
+            jurisdictionCountry: 'Canada',
+            jurisdictionRegion: 'Alberta',
+            calculationStatus: 'MISSING_FACTOR',
+            issues: [{ code: 'MISSING_FACTOR', field: 'factor', message: 'No matching emission factor is available.' }],
+          }],
+        })}
+        expanded
+        onToggle={noop}
+      />,
+    );
+
+    expect(screen.getByText(/Not calculated: no approved corporate-inventory electricity factor/i)).toBeInTheDocument();
+    expect(screen.getByText(/Keep this row in Needs Review/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0\.53/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 kg/i)).not.toBeInTheDocument();
+  });
+
   it('renders canonical facility groups without applying facility fallback rules', () => {
     render(
       <FacilityBreakdownSection

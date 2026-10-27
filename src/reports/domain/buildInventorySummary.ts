@@ -9,7 +9,7 @@ export function buildInventorySummary(input: {
   totalEstimatedEmissionsKgCO2e: number;
 }): InventorySummary {
   return {
-    importedRecordCount: input.reportCountSummary.totalRecordsFound,
+    importedRecordCount: input.calculationDetails.length,
     includedRecordCount: input.reportCountSummary.processedRecords,
     trackedMetricCount: input.calculationDetails.filter(isTrackedMetricDetail).length,
     importedNeedsReviewCount: input.calculationDetails.filter(isRecordRequiringCorrection).length,
