@@ -42,9 +42,9 @@ test('selected file wins over inherited URL and disables demo auth and Neon fixt
     assert.equal(env.LOCAL_DEMO_AUTH_ENABLED, 'false');
     assert.equal(env.ALLOW_TASK7_DEV_FIXTURES, 'false');
     assert.equal(env.DEMO_RESET_ENABLED, 'false');
-    // Exercise the backend's actual dotenv version, not only the wrapper object.
+    // Exercise the repository-pinned dotenv version, not a developer-machine sibling.
     const require = createRequire(path.resolve('package.json'));
-    const dotenv = require.resolve('../carbonlite-api/node_modules/dotenv/config.js');
+    const dotenv = require.resolve('dotenv/config.js');
     const child = spawnSync(process.execPath, ['-r', dotenv, '-e',
       'process.exit(process.env.DATABASE_URL.includes("ep-development.neon.tech") && process.env.LOCAL_DEMO_AUTH_ENABLED === "false" ? 0 : 1)'],
     { env, encoding: 'utf8' });

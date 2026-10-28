@@ -9,7 +9,7 @@ on:
 jobs:
   real-api-smoke:
     name: Playwright real API smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     services:
@@ -36,6 +36,8 @@ jobs:
       FRONTEND_URL: http://127.0.0.1:4173
       JWT_SECRET: carbonlite-e2e-jwt-secret
       NODE_ENV: test
+      # The deterministic smoke does not call OpenAI; this only permits API startup.
+      OPENAI_API_KEY: carbonlite-ci-placeholder-not-a-secret
 
     steps:
       - name: Check out web repository
