@@ -1,0 +1,54 @@
+name: Nightly E2E
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+      timezone: America/Edmonton
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  frontend-validation:
+    name: Frontend tests, typecheck, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Keep routine full validation here; local development should prefer focused tests.
+      - name: Run deterministic regression suite
+        run: pnpm test --maxWorkers=2
+
+      - name: Run critical browser regressions
+        run: pnpm test:regression
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build production bundle
+        run: pnpm build
