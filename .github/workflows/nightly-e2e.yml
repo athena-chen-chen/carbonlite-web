@@ -18,12 +18,22 @@ jobs:
     name: Frontend tests, typecheck, and build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: carbonlite-web
 
     steps:
-      - name: Check out repository
+      - name: Check out web repository
         uses: actions/checkout@v4
         with:
           ref: release/v0.1-pilot
+          path: carbonlite-web
+
+      - name: Check out API repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/carbonlite-api
+          path: carbonlite-api
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -35,9 +45,20 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          cache-dependency-path: |
+            carbonlite-web/pnpm-lock.yaml
+            carbonlite-api/pnpm-lock.yaml
 
-      - name: Install dependencies
+      - name: Install web dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install API dependencies
+        working-directory: carbonlite-api
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        working-directory: carbonlite-api
+        run: pnpm exec prisma generate
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium

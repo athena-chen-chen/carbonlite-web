@@ -11,10 +11,21 @@ jobs:
     name: Unit, build, and critical workflow smoke tests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: carbonlite-web
 
     steps:
-      - name: Check out repository
+      - name: Check out web repository
         uses: actions/checkout@v4
+        with:
+          path: carbonlite-web
+
+      - name: Check out API repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/carbonlite-api
+          path: carbonlite-api
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -26,9 +37,20 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          cache-dependency-path: |
+            carbonlite-web/pnpm-lock.yaml
+            carbonlite-api/pnpm-lock.yaml
 
-      - name: Install dependencies
+      - name: Install web dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install API dependencies
+        working-directory: carbonlite-api
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        working-directory: carbonlite-api
+        run: pnpm exec prisma generate
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
@@ -41,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: carbonlite-playwright-report
-          path: apps/web-e2e/playwright-report
+          path: carbonlite-web/apps/web-e2e/playwright-report
           retention-days: 7
 
       - name: Upload Playwright failure artifacts
@@ -49,5 +71,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: carbonlite-playwright-test-results
-          path: apps/web-e2e/test-results
+          path: carbonlite-web/apps/web-e2e/test-results
           retention-days: 7
