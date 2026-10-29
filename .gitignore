@@ -36,6 +36,10 @@ test-results/
 blob-report/
 **/playwright/.auth/
 
+# Temporary/generated artifacts
+artifacts/
+downloads/
+
 # Downloaded application exports at the repository root. Do not ignore fixture
 # or documentation PDFs/CSVs elsewhere, or globally ignore binary extensions.
 /carbonlite-pilot-data-readiness-report-*.pdf
@@ -56,3 +60,8 @@ blob-report/
 /output/reports/report-correctness/executive.pdf
 /output/reports/report-correctness/technical.pdf
 /output/reports/report-correctness/activity-records.csv
+
+# Generated CarbonLite exports/reports
+carbonlite-technical-emissions-report-*.pdf
+carbonlite-formal-emissions-report-*.pdf
+carbonlite-*-report-*.csv

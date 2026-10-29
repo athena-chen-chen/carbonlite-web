@@ -107,7 +107,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
     await expect(page.getByRole('heading', { name: 'Data Records' })).toBeVisible();
     await expect(page.getByRole('main').getByText('Import completed successfully')).toBeVisible();
 
-    await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
+    await page.getByRole('link', { name: 'Calculation Review', exact: true }).click();
     await expect(page).toHaveURL(/\/metrics-summary$/);
     await expect(page.getByText('85.60 kg CO₂e').first()).toBeVisible();
     await expect(page.getByText('4,280 kWh').first()).toBeVisible();
@@ -136,7 +136,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
 
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: /^Export reports$/i }).click();
-    await page.getByRole('menuitem', { name: /Technical Emissions Report \(PDF\)/i }).click();
+    await page.getByRole('menuitem', { name: /Technical Review Package \(PDF\)/i }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(
       /^carbonlite-technical-emissions-report-.*\.pdf$/,
