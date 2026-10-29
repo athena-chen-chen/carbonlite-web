@@ -24,7 +24,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
 
   async function expectExtractedPreview() {
     await expect(page.getByRole('heading', {
-      name: 'Review & Edit Data Before Import',
+      name: 'Draft Records Review',
     })).toBeVisible();
     await expect(page.getByText('Extracted rows: 1')).toBeVisible();
     const previewRow = page.getByRole('row').filter({
@@ -39,13 +39,13 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
     const documentRow = page.getByRole('row').filter({
       hasText: 'enmax-electricity.csv',
     });
-    await documentRow.getByRole('button', { name: 'Preview Data' }).click();
+    await documentRow.getByRole('button', { name: 'Review Rows' }).click();
     await expectExtractedPreview();
   }
 
   await test.step('upload document', async () => {
     await page.goto('/upload');
-    await expect(page.getByRole('heading', { name: /upload & extract carbon data/i }))
+    await expect(page.getByRole('heading', { name: 'Input Data' }))
       .toBeVisible();
 
     await page.locator('#document-upload-input').setInputFiles(fixturePath);
@@ -66,7 +66,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
     });
 
     await expectExtractedPreview();
-    await expect(documentRow).toContainText('Ready for Review');
+    await expect(documentRow).toContainText('Needs Review');
     expect(api.extractionRequests).toBe(1);
   });
 
@@ -76,7 +76,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
 
     await page.getByRole('link', { name: 'Calculation Review', exact: true }).click();
     await expect(page).toHaveURL(/\/metrics-summary$/);
-    await page.getByRole('link', { name: 'Upload', exact: true }).click();
+    await page.getByRole('link', { name: 'Input Data', exact: true }).click();
     await openPersistedPreview();
 
     await page.evaluate(() => {
@@ -103,10 +103,15 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
 
   await test.step('import activity records once and generate metrics', async () => {
     await page.getByRole('button', { name: 'Confirm Import' }).click();
+    await expect(page).toHaveURL(/\/data-records$/);
+    await expect(page.getByRole('heading', { name: 'Data Records' })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Import completed successfully')).toBeVisible();
+
+    await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
     await expect(page).toHaveURL(/\/metrics-summary$/);
-    await expect(page.getByText('2140 kg CO2e')).toBeVisible();
-    await expect(page.getByText('4280 kWh')).toBeVisible();
-    await expect(page.getByText('1 records included in summary')).toBeVisible();
+    await expect(page.getByText('85.60 kg CO₂e').first()).toBeVisible();
+    await expect(page.getByText('4,280 kWh').first()).toBeVisible();
+    await expect(page.getByText('Records Included in GHG Total')).toBeVisible();
 
     expect(api.importRequests).toBe(1);
     expect(api.activities).toHaveLength(1);
@@ -114,27 +119,27 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
   });
 
   await test.step('confirm imported document status', async () => {
-    await page.getByRole('link', { name: 'Upload', exact: true }).click();
+    await page.getByRole('link', { name: 'Input Data', exact: true }).click();
     const documentRow = page.getByRole('row').filter({
       hasText: 'enmax-electricity.csv',
     });
     await expect(documentRow).toContainText('Imported');
-    await expect(documentRow.getByRole('button', { name: 'View Records' })).toBeVisible();
+    await expect(documentRow.getByRole('button', { name: 'View Imported Records' })).toBeVisible();
     expect(api.activities).toHaveLength(1);
   });
 
   await test.step('generate report and export PDF', async () => {
     await page.getByRole('link', { name: 'Reports', exact: true }).click();
     await expect(page).toHaveURL(/\/reports$/);
-    await expect(page.getByText('2140 kg CO2e')).toBeVisible();
-    await expect(page.getByText('4280 kWh')).toBeVisible();
-    await expect(page.getByText('Emissions Summary Report')).toBeVisible();
+    await expect(page.getByText('85.60 kg CO₂e').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /C\. Executive Summary/ })).toBeVisible();
 
     const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Download PDF' }).click();
+    await page.getByRole('button', { name: /^Export reports$/i }).click();
+    await page.getByRole('menuitem', { name: /Technical Emissions Report \(PDF\)/i }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(
-      /^carbonlite-ai-emissions-report-\d{4}-\d{2}-\d{2}\.pdf$/,
+      /^carbonlite-technical-emissions-report-.*\.pdf$/,
     );
     expect(api.summaryRequests).toBeGreaterThanOrEqual(2);
   });

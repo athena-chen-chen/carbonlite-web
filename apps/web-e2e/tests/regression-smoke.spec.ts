@@ -52,7 +52,7 @@ test('@smoke retry extraction restores a failed document to review', async ({ pa
   failures.assertClean(api.unexpectedRequests);
 });
 
-test('@smoke deleting a document removes its related imported records', async ({ page }) => {
+test('@smoke deleting an imported source keeps its related activity records', async ({ page }) => {
   const api = createCarbonLiteApiState();
   seedImportedDocument(api);
   const failures = monitorCriticalFailures(page);
@@ -63,24 +63,28 @@ test('@smoke deleting a document removes its related imported records', async ({
   const documentRow = page.getByRole('row').filter({
     hasText: 'enmax-electricity.csv',
   });
-  await documentRow.getByRole('button', {
+  await expect(documentRow).toBeVisible();
+  const actionMenuButton = documentRow.getByRole('button', {
+    name: 'Open document actions for enmax-electricity.csv',
+  });
+  await actionMenuButton.focus();
+  await actionMenuButton.press('Enter');
+  await expect(page.getByRole('menu', {
     name: 'More actions for enmax-electricity.csv',
-  }).click();
-  await documentRow.getByRole('button', { name: 'Delete' }).click();
+  })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Delete Source Document' }).click();
 
   const dialog = page.getByRole('dialog', {
-    name: 'Delete this document and its imported activity records?',
+    name: 'Delete source document?',
   });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: 'Delete' }).click();
+  await expect(dialog).toContainText('will NOT delete the imported Activity Records');
+  await dialog.getByRole('button', { name: 'Delete Source Document' }).click();
 
-  await expect(page.getByText(
-    'Document deleted. 1 related activity record removed.',
-  )).toBeVisible();
   await expect(documentRow).toHaveCount(0);
   expect(api.documentDeleteRequests).toBe(1);
   expect(api.documents).toHaveLength(0);
-  expect(api.activities).toHaveLength(0);
+  expect(api.activities).toHaveLength(1);
   failures.assertClean(api.unexpectedRequests);
 });
 
@@ -100,12 +104,8 @@ test('@smoke missing uploaded files explain re-upload and keep delete available'
     hasText: 'old-enmax-electricity.csv',
   });
   await expect(documentRow).toContainText('Re-upload Required');
-  await expect(documentRow).toContainText('SPREADSHEET');
-  await expect(documentRow).toContainText('113');
+  await expect(documentRow).toContainText('Spreadsheet import');
 
-  await expect(documentRow.getByRole('button', {
-    name: 'Re-upload Required',
-  })).toBeDisabled();
   await expect(documentRow.getByRole('button', {
     name: /extract/i,
   })).toHaveCount(0);
@@ -113,17 +113,9 @@ test('@smoke missing uploaded files explain re-upload and keep delete available'
     name: /preview data/i,
   })).toHaveCount(0);
 
-  await documentRow.locator(
-    'span[title="The original uploaded file is no longer available. Please upload it again."]',
-  ).click();
-  await expect(page.getByText(
-    'This file is no longer available. Please upload it again.',
-  )).toBeVisible();
-
-  await documentRow.getByRole('button', {
-    name: 'More actions for old-enmax-electricity.csv',
-  }).click();
-  await expect(documentRow.getByRole('button', { name: 'Delete' })).toBeVisible();
+  await expect(documentRow.getByRole('button', { name: 'Upload Again' }))
+    .toHaveAttribute('title', 'The original uploaded file is no longer available. Please upload it again.');
+  await expect(documentRow.getByRole('button', { name: 'Delete Source Document' })).toBeVisible();
   failures.assertClean(api.unexpectedRequests);
 });
 
@@ -138,22 +130,21 @@ test('@smoke reports show first-report empty state for an empty organization', a
     name: 'No reporting data found.',
   })).toBeVisible();
   await expect(page.getByText(
-    'Upload and import activity data to generate your first emissions report.',
+    'Add and import activity data to generate your first emissions report.',
   )).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Go to Upload' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Go to Input Data' })).toBeVisible();
 
   await expect(page.getByRole('button', { name: 'Generate Report' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Download PDF' })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: /^Export reports$/i })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Export reports$/i })).toHaveAttribute(
     'title',
     'Generate a report before exporting.',
   );
-  await expect(page.getByText('Emissions Summary Report')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /C\. Executive Summary/ })).toHaveCount(0);
   await expect(page.getByText('Scope Breakdown')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Go to Upload' }).click();
-  await expect(page).toHaveURL(/\/upload$/);
+  await page.getByRole('button', { name: 'Go to Input Data' }).click();
+  await expect(page).toHaveURL(/\/input-data$/);
   failures.assertClean(api.unexpectedRequests);
 });
 
@@ -165,8 +156,8 @@ test('@smoke reports show selected-period empty state separately from no data', 
   await installCarbonLiteApiMock(page, api);
 
   await page.goto('/reports');
-  await expect(page.getByText('Emissions Summary Report')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /C\. Executive Summary/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Export reports$/i })).toBeEnabled();
 
   const dateInputs = page.locator('input[type="date"]');
   await dateInputs.nth(0).fill('2025-01-01');
@@ -177,10 +168,9 @@ test('@smoke reports show selected-period empty state separately from no data', 
   await expect(page.getByRole('heading', {
     name: 'No reporting data found.',
   })).toHaveCount(0);
-  await expect(page.getByText('Emissions Summary Report')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /C\. Executive Summary/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Generate Report' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Export reports$/i })).toBeDisabled();
   failures.assertClean(api.unexpectedRequests);
 });
 
@@ -194,10 +184,9 @@ test('@smoke reports generate content and enable exports from activity records',
   await page.goto('/reports');
   await page.getByRole('button', { name: 'Generate Report' }).click();
 
-  await expect(page.getByText('Emissions Summary Report')).toBeVisible();
-  await expect(page.getByText('Calculation Traceability')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /C\. Executive Summary/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /J\. Calculation Traceability/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Export reports$/i })).toBeEnabled();
   failures.assertClean(api.unexpectedRequests);
 });
 
@@ -288,7 +277,7 @@ test('@smoke data records Columns menu opens and toggles columns', async ({ page
   failures.assertClean(api.unexpectedRequests);
 });
 
-test('@smoke conversion factors load, create, and delete', async ({ page }) => {
+test('@smoke emission factors load as read-only for standard users', async ({ page }) => {
   const api = createCarbonLiteApiState();
   const failures = monitorCriticalFailures(page);
   await authenticateTestUser(page);
@@ -296,40 +285,16 @@ test('@smoke conversion factors load, create, and delete', async ({ page }) => {
 
   await page.goto('/conversion-factors');
   await expect(page.getByRole('heading', {
-    name: 'Conversion Factor Library',
+    name: 'Emission Factor Library',
   })).toBeVisible();
   const systemRow = page.getByRole('row').filter({
-    hasText: 'Electricity - Alberta - 2026',
+    hasText: 'Electricity - British Columbia - 2026',
   });
   await expect(systemRow).toBeVisible();
-  await expect(systemRow.getByText('Verified', { exact: true })).toBeVisible();
-
-  await page.getByRole('button', { name: '+ Add Custom Factor' }).click();
-  const factorForm = page.locator('form').filter({
-    has: page.getByRole('heading', { name: 'Add Custom Factor' }),
-  });
-  await factorForm.getByLabel('Name', { exact: true }).fill('Custom diesel regression factor');
-  await factorForm.locator('select').nth(1).selectOption('DIESEL');
-  await factorForm.getByLabel('Input Unit', { exact: true }).fill('L');
-  await factorForm.getByLabel('Jurisdiction / Region', { exact: true }).fill('Alberta, Canada');
-  await factorForm.getByLabel('Factor Value', { exact: true }).fill('2.68');
-  await factorForm.getByLabel('Source Authority', { exact: true }).fill('Regression fixture');
-  await factorForm.getByLabel('Source Year', { exact: true }).fill('2026');
-  await factorForm.getByRole('button', {
-    name: 'Create Conversion Factor',
-  }).click();
-
-  await expect(page.getByText('Conversion factor created successfully.')).toBeVisible();
-  const customRow = page.getByRole('row').filter({
-    hasText: 'Custom diesel regression factor',
-  });
-  await expect(customRow).toContainText('Custom');
-  expect(api.factorCreateRequests).toBe(1);
-
-  page.once('dialog', (dialog) => dialog.accept());
-  await customRow.getByRole('button', { name: 'Delete' }).click();
-  await expect(page.getByText('Conversion factor deleted successfully.')).toBeVisible();
-  await expect(customRow).toHaveCount(0);
-  expect(api.factorDeleteRequests).toBe(1);
+  await expect(systemRow).toContainText('VERIFIED');
+  await expect(systemRow.getByText('Read-only')).toBeVisible();
+  await expect(page.getByText(/Only Owners and Admins can create, edit, or delete/)).toBeVisible();
+  expect(api.factorCreateRequests).toBe(0);
+  expect(api.factorDeleteRequests).toBe(0);
   failures.assertClean(api.unexpectedRequests);
 });
