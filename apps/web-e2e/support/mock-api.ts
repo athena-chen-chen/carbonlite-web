@@ -63,6 +63,8 @@ type TestConversionFactor = {
   confidenceLevel: string;
   verificationStatus: string;
   verified: boolean;
+  applicability?: string;
+  emissionBasis?: string;
   notes: string;
   isDefault: boolean;
   isSystemDefault: boolean;
@@ -197,15 +199,22 @@ export async function installCarbonLiteApiMock(
     if (method === 'DELETE' && path.startsWith('/documents/')) {
       state.documentDeleteRequests += 1;
       const documentId = path.split('/').pop();
-      const deletedActivityRecords = state.activities.filter(
+      const document = state.documents.find((item) => item.id === documentId);
+      const preservesImportedRecords = document?.status === 'IMPORTED';
+      const relatedActivities = state.activities.filter(
         (activity) => activity.sourceDocumentId === documentId,
-      ).length;
+      );
+      const deletedActivityRecords = preservesImportedRecords
+        ? 0
+        : relatedActivities.length;
       state.documents = state.documents.filter(
         (document) => document.id !== documentId,
       );
-      state.activities = state.activities.filter(
-        (activity) => activity.sourceDocumentId !== documentId,
-      );
+      if (!preservesImportedRecords) {
+        state.activities = state.activities.filter(
+          (activity) => activity.sourceDocumentId !== documentId,
+        );
+      }
       await fulfillJson(route, {
         deletedDocument: true,
         deletedActivityRecords,
@@ -343,8 +352,8 @@ export async function installCarbonLiteApiMock(
             activityDataId: 'activity-1',
             metricType: 'CARBON_EMISSION',
             metricResultId: 'metric-1',
-            factorId: 'factor-electricity-ab-2026',
-            value: '2140',
+            factorId: 'factor-electricity-bc-2026',
+            value: '85.6',
             unit: 'kgCO2e',
           },
         ],
@@ -480,7 +489,7 @@ function buildImportedActivity(): TestActivity {
     quantity: 4280,
     unit: 'kWh',
     jurisdictionCountry: 'Canada',
-    jurisdictionRegion: 'Alberta',
+    jurisdictionRegion: 'British Columbia',
     sourceType: 'AI_EXTRACTION',
     sourceReference: 'enmax-electricity.csv',
     sourceRow: 2,
@@ -695,7 +704,6 @@ function getActivityRecordImportKey(activity: TestActivity, documents: TestDocum
 
 function buildSystemConversionFactors(): TestConversionFactor[] {
   return [
-    buildSystemConversionFactor('AB', 'Alberta', 0.53),
     buildSystemConversionFactor('BC', 'British Columbia', 0.02),
     buildSystemConversionFactor('ON', 'Ontario', 0.12),
     {
@@ -730,7 +738,7 @@ function buildSystemConversionFactors(): TestConversionFactor[] {
 }
 
 function buildSystemConversionFactor(
-  code: 'AB' | 'BC' | 'ON',
+  code: 'BC' | 'ON',
   province: string,
   factorValue: number,
 ): TestConversionFactor {
@@ -744,17 +752,19 @@ function buildSystemConversionFactor(
     unit: 'kWh',
     factorValue,
     resultUnit: 'kgCO2e',
-    sourceName: 'E2E verified fixture',
-    sourceReference: 'Playwright calculation fixture',
-    sourceAuthority: 'E2E verified fixture',
-    sourceDocument: 'Playwright calculation fixture',
+    sourceName: 'Example inventory agency',
+    sourceReference: 'Published inventory factors',
+    sourceAuthority: 'Example inventory agency',
+    sourceDocument: 'Published inventory factors',
     sourceYear: 2026,
     sourceUrl: '',
     methodology: 'Quantity multiplied by factor value.',
     confidenceLevel: 'high',
-    verificationStatus: 'Verified',
+    verificationStatus: 'VERIFIED',
     verified: true,
-    notes: `Regression smoke fixture for ${code}.`,
+    applicability: 'CORPORATE_INVENTORY',
+    emissionBasis: 'DIRECT_CO2E',
+    notes: `Reviewed corporate-inventory factor for ${code}.`,
     isDefault: true,
     isSystemDefault: true,
     defaultScope: 'SCOPE_2',
@@ -849,7 +859,7 @@ function buildCalculationSummary(
   const hasRecords = activities.length > 0;
   const totalRecordsFound = allActivities.length;
   const records = hasRecords ? activities.length : 0;
-  const emissions = hasRecords ? 2268.4 : 0;
+  const emissions = hasRecords ? 85.6 : 0;
   const electricity = hasRecords ? 4280 : 0;
   const outsideDateRange = totalRecordsFound - records;
 
@@ -910,23 +920,23 @@ function buildCalculationSummary(
             sourceType: 'AI_EXTRACTION',
             sourceReference: 'enmax-electricity.csv',
             notes: 'Imported from document extraction.',
-            factorId: 'factor-electricity-ab-2026',
+            factorId: 'factor-electricity-bc-2026',
           },
         ]
       : [],
     conversionFactorsUsed: hasRecords
       ? [
           {
-            factorId: 'factor-electricity-ab-2026',
+            factorId: 'factor-electricity-bc-2026',
             activityType: 'ELECTRICITY',
-            factorName: 'Electricity - Alberta - 2026',
-            factorValue: 0.53,
+            factorName: 'Electricity - British Columbia - 2026',
+            factorValue: 0.02,
             inputUnit: 'kWh',
             resultUnit: 'kgCO2e',
-            jurisdiction: 'Alberta, Canada',
+            jurisdiction: 'British Columbia, Canada',
             reportingYear: 2026,
-            sourceAuthority: 'E2E verified fixture',
-            sourceDocument: 'Playwright calculation fixture',
+            sourceAuthority: 'Example inventory agency',
+            sourceDocument: 'Published inventory factors',
             sourceUrl: null,
             sourceYear: 2026,
             factorType: 'System',
@@ -943,20 +953,20 @@ function buildCalculationSummary(
             recordDate: '2026-05-31',
             dateEstimated: false,
             reportingYear: 2026,
-            jurisdiction: 'Alberta, Canada',
+            jurisdiction: 'British Columbia, Canada',
             jurisdictionCountry: 'Canada',
-            jurisdictionRegion: 'Alberta',
+            jurisdictionRegion: 'British Columbia',
             activityQuantity: 4280,
             activityUnit: 'kWh',
-            factorId: 'factor-electricity-ab-2026',
-            factorName: 'Electricity - Alberta - 2026',
-            factorValue: 0.53,
+            factorId: 'factor-electricity-bc-2026',
+            factorName: 'Electricity - British Columbia - 2026',
+            factorValue: 0.02,
             factorInputUnit: 'kWh',
             factorResultUnit: 'kgCO2e',
             factorPriority: 'VERIFIED_SYSTEM',
-            factorSource: 'E2E verified fixture',
-            sourceAuthority: 'E2E verified fixture',
-            sourceDocument: 'Playwright calculation fixture',
+            factorSource: 'Example inventory agency',
+            sourceAuthority: 'Example inventory agency',
+            sourceDocument: 'Published inventory factors',
             sourceYear: 2026,
             factorVerified: true,
             factorType: 'System',
@@ -1057,7 +1067,7 @@ function buildExtractionResponse(document: TestDocument) {
             activityType: 'ELECTRICITY',
             quantity: 4280,
             unit: 'kWh',
-            jurisdictionRegion: 'Alberta',
+            jurisdictionRegion: 'British Columbia',
             sourceReference: fileName,
             sourceRow: 2,
           }),
