@@ -4,7 +4,8 @@ import { findBestConversionFactorMatch } from './conversionFactorMatching';
 import { buildFactorDetailText } from '../reports/pdf/pdfSections';
 import { buildPilotCsvRows } from './reportCsvExport';
 
-const inventory = { id: 'inventory', name: 'Electricity - Alberta', activityType: 'ELECTRICITY', unit: 'kWh', factorValue: .53, resultUnit: 'kgCO2e', region: 'Alberta', country: 'Canada', sourceYear: 2026, isSystemDefault: true };
+const approvedGovernance = { applicability: 'CORPORATE_INVENTORY' as const, emissionBasis: 'DIRECT_CO2E' as const, verified: true, verificationStatus: 'VERIFIED' };
+const inventory = { id: 'inventory', name: 'Electricity - Alberta', activityType: 'ELECTRICITY', unit: 'kWh', factorValue: .53, resultUnit: 'kgCO2e', region: 'Alberta', country: 'Canada', sourceYear: 2026, isSystemDefault: true, ...approvedGovernance };
 const provenance: FactorProvenanceSnapshot = {
   sourceAuthority: 'Alberta Environment and Protected Areas', sourceDocument: 'Carbon Offset Emission Factors Handbook', sourceVersion: '3.2', sourceYear: 2025, publishedDate: '2025-08-20', factorYear: 2026,
   applicability: 'ALBERTA_OFFSET_PROJECT', emissionBasis: 'DIRECT_CO2E', methodologyProvenance: { methodologyDocument: 'Alberta Greenhouse Gas Quantification Methodologies', methodologyVersion: '2.3', methodologyMethod: 'Method 1-1', methodologyLevel: 'Level 1 / 2', quantityBasis: 'ENERGY_HHV', gwpSource: 'Reference', gwpVersion: 'AR5' },
@@ -18,13 +19,13 @@ describe('inventory eligibility', () => {
     expect(isInventoryFactorEligible({ resultUnit: 'kgCO2e', methodologyProvenance: { sourceVersion: 'ECCC_REFERENCE_2026' } })).toBe(false);
     expect(isInventoryFactorEligible({ activityType: 'ELECTRICITY', jurisdictionRegion: 'Alberta', factorSet: 'PILOT_DEFAULT_V0_1', resultUnit: 'kgCO2e' })).toBe(false);
     expect(isInventoryFactorEligible({ activityType: 'ELECTRICITY', jurisdiction: 'Alberta, Canada', sourceAuthority: 'CarbonLite System Defaults', sourceDocument: 'CarbonLite Default Factor Library v1.0', resultUnit: 'kgCO2e' })).toBe(false);
-    expect(isInventoryFactorEligible({ activityType: 'ELECTRICITY', jurisdictionRegion: 'Alberta', sourceAuthority: 'Reviewed inventory agency', sourceDocument: 'Approved corporate factor', resultUnit: 'kgCO2e' })).toBe(true);
+    expect(isInventoryFactorEligible({ activityType: 'ELECTRICITY', jurisdictionRegion: 'Alberta', sourceAuthority: 'Reviewed inventory agency', sourceDocument: 'Approved corporate factor', resultUnit: 'kgCO2e', ...approvedGovernance })).toBe(true);
     expect(isInventoryFactorEligible({ inputUnit: 'L', resultUnit: 'g CO2/L' })).toBe(false);
     expect(isInventoryFactorEligible({ inputUnit: 'kWh', resultUnit: 'kgCO2e/GJ' })).toBe(false);
-    expect(isInventoryFactorEligible({ inputUnit: 'litres', resultUnit: 'kgCO2e/L' })).toBe(true);
+    expect(isInventoryFactorEligible({ inputUnit: 'litres', resultUnit: 'kgCO2e/L', ...approvedGovernance })).toBe(true);
   });
-  it.each([undefined, null, 'CORPORATE_INVENTORY'] as const)('keeps legacy/inventory eligibility %s', applicability => {
-    expect(match([{ ...inventory, applicability }])?.factor.id).toBe('inventory');
+  it.each([undefined, null] as const)('fails closed when applicability is %s', applicability => {
+    expect(match([{ ...inventory, applicability }])).toBeUndefined();
   });
   it.each(['ALBERTA_OFFSET_PROJECT', 'ALBERTA_TIER_SGRR', 'REFERENCE_ONLY'] as const)('excludes %s in every ranking position', applicability => {
     expect(match([{ ...inventory, id: 'restricted', applicability }, inventory])?.factor.id).toBe('inventory');
@@ -43,7 +44,7 @@ describe('inventory eligibility', () => {
     expect(isInventoryFactorEligible({ resultUnit })).toBe(false);
   });
   it('keeps direct CO2e and rejects unknown required sectors', () => {
-    expect(isInventoryFactorEligible({ emissionBasis: 'DIRECT_CO2E', resultUnit: 'kgCO2e' })).toBe(true);
+    expect(isInventoryFactorEligible({ emissionBasis: 'DIRECT_CO2E', resultUnit: 'kgCO2e', applicability: 'CORPORATE_INVENTORY', verified: true })).toBe(true);
     expect(match([{ ...inventory, methodologyProvenance: { sectorApplicability: ['Industrial'] } }])).toBeUndefined();
   });
   it('rejects the approximate Table A8 GJ reference and refuses invented HHV conversion', () => {

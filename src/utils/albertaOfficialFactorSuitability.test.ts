@@ -18,7 +18,11 @@ const frozenCorporateFactors: MatchableConversionFactor[] = [
   { id: 'pilot-gas', name: 'Natural Gas - Canada Generic', activityType: 'NATURAL_GAS', unit: 'GJ', factorValue: 49.44, region: 'Canada (Generic)' },
   { id: 'pilot-gasoline', name: 'Gasoline combustion', activityType: 'GASOLINE', unit: 'L', factorValue: 2.31 },
   { id: 'pilot-diesel', name: 'Diesel combustion', activityType: 'DIESEL', unit: 'L', factorValue: 2.68 },
-].map(factor => ({ country: 'Canada', region: 'Alberta', sourceYear: 2025, isSystemDefault: true, resultUnit: 'kgCO2e', ...factor }));
+].map(factor => ({
+  country: 'Canada', region: 'Alberta', sourceYear: 2025, isSystemDefault: true, resultUnit: 'kgCO2e',
+  applicability: 'CORPORATE_INVENTORY' as const, emissionBasis: 'DIRECT_CO2E' as const,
+  verified: true, verificationStatus: 'VERIFIED', ...factor,
+}));
 
 function official(factor: MatchableConversionFactor): MatchableConversionFactor {
   return { country: 'Canada', region: 'Alberta', sourceYear: 2026, isSystemDefault: true,

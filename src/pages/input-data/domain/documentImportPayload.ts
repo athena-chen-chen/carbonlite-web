@@ -125,7 +125,7 @@ export function applyConfirmReviewPayload(
 ): EditableParsedActivity {
   // A rejected current factor must not inherit a saved draft's previous result.
   // This changes review state only; persisted historical snapshots remain intact.
-  const previous = payload.calculationStatus === 'MISSING_FACTOR' ? {
+  const previous = ['MISSING_FACTOR', 'NO_FACTOR_FOUND', 'FACTOR_NOT_APPROVED'].includes(payload.calculationStatus ?? '') ? {
     ...item, matchedFactorId: null, matchedFactorName: null, matchedFactorSourceYear: null,
     matchedFactorValue: null, matchedFactorUnit: null, matchedFactorVersion: null,
     matchedFactorSourceAuthority: null, matchedFactorSourceDocument: null, matchedFactorSourceUrl: null,

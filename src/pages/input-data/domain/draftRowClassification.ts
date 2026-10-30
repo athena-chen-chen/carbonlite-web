@@ -75,6 +75,8 @@ function hasReviewBlockingCalculationSignal(row: Pick<
         'UNIT_MISMATCH',
         'INVALID_UNIT',
         'MISSING_FACTOR',
+        'NO_FACTOR_FOUND',
+        'FACTOR_NOT_APPROVED',
         'MISSING_PROVINCE',
         'MISSING_JURISDICTION',
         'REQUIRES_REVIEW',
@@ -84,6 +86,7 @@ function hasReviewBlockingCalculationSignal(row: Pick<
     ) ||
     message.includes('unit mismatch') ||
     message.includes('missing factor') ||
+    message.includes('not approved for automatic calculation') ||
     message.includes('requires review') ||
     message.includes('excluded from emissions totals')
   );
@@ -158,6 +161,8 @@ function hasBlockingImportStatus(activity: DraftActivityInput) {
       'UNIT_MISMATCH',
       'INVALID_UNIT',
       'MISSING_FACTOR',
+      'NO_FACTOR_FOUND',
+      'FACTOR_NOT_APPROVED',
       'MISSING_PROVINCE',
       'MISSING_JURISDICTION',
       'REQUIRES_REVIEW',

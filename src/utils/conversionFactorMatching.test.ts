@@ -1,7 +1,8 @@
 import {
   buildFactorUnitMismatchMessage,
-  findBestConversionFactorMatch,
-  getCompatibleFactorUnitLabels,
+  findBestConversionFactorMatch as findBestConversionFactorMatchRaw,
+  getCompatibleFactorUnitLabels as getCompatibleFactorUnitLabelsRaw,
+  type MatchableConversionFactor,
   normalizeActivityType,
   normalizeJurisdictionRegion,
   resolveActivityYear,
@@ -13,6 +14,38 @@ import {
   pilotUnsupportedElectricityProvinces,
 } from '../test/pilotEmissionsFixture';
 
+const approvedGovernance = {
+  applicability: 'CORPORATE_INVENTORY' as const,
+  emissionBasis: 'DIRECT_CO2E' as const,
+  verified: true,
+  verificationStatus: 'VERIFIED',
+};
+
+// Most specimens in this matching-focused suite predate structured governance.
+// Give only metadata-free specimens explicit approval; governance test cases
+// that provide any of these fields retain their exact fail-closed semantics.
+function withApprovedTestGovernance(factor: MatchableConversionFactor): MatchableConversionFactor {
+  const hasGovernance = ['applicability', 'emissionBasis', 'verified', 'verificationStatus']
+    .some(key => Object.prototype.hasOwnProperty.call(factor, key));
+  const currentActiveVersion = factor.currentActiveVersion
+    ? withApprovedTestGovernance(factor.currentActiveVersion as MatchableConversionFactor)
+    : factor.currentActiveVersion;
+  const version = factor.version
+    ? withApprovedTestGovernance(factor.version as MatchableConversionFactor)
+    : factor.version;
+  return { ...(hasGovernance ? {} : approvedGovernance), ...factor, currentActiveVersion, version };
+}
+
+const governInput = <T extends { factors: MatchableConversionFactor[] }>(input: T): T => ({
+  ...input,
+  factors: input.factors.map(withApprovedTestGovernance),
+});
+
+const findBestConversionFactorMatch = (input: Parameters<typeof findBestConversionFactorMatchRaw>[0]) =>
+  findBestConversionFactorMatchRaw(governInput(input));
+const getCompatibleFactorUnitLabels = (input: Parameters<typeof getCompatibleFactorUnitLabelsRaw>[0]) =>
+  getCompatibleFactorUnitLabelsRaw(governInput(input));
+
 const systemDiesel = {
   id: 'system-diesel',
   organizationId: null,
@@ -20,6 +53,7 @@ const systemDiesel = {
   type: 'EMISSION',
   activityType: 'DIESEL',
   unit: 'L',
+  resultUnit: 'kgCO2e',
   factorValue: 2.68,
   isSystemDefault: true,
   isDefault: true,
@@ -168,7 +202,7 @@ describe('findBestConversionFactorMatch', () => {
           inputUnit: 'm3',
           factorValue: 1.89,
           resultUnit: 'kgCO2e',
-          status: 'DRAFT',
+          status: 'VERIFIED',
           isSystemDefault: true,
           isDefault: true,
         },
@@ -658,6 +692,8 @@ describe('findBestConversionFactorMatch', () => {
           jurisdictionRegion: 'Alberta',
           sourceYear: 2025,
           verified: true,
+          applicability: 'CORPORATE_INVENTORY',
+          emissionBasis: 'DIRECT_CO2E',
           isSystemDefault: true,
           isDefault: true,
         },
@@ -670,7 +706,7 @@ describe('findBestConversionFactorMatch', () => {
     expect(match?.selectionExplanation).not.toContain('Canada, Canada');
   });
 
-  it('uses the latest available prior-year electricity factor when exact year is unavailable', () => {
+  it('skips an unverified newer prior-year electricity factor', () => {
     const match = findBestConversionFactorMatch({
       activityType: 'Electricity',
       inputUnit: 'KWH',
@@ -713,8 +749,8 @@ describe('findBestConversionFactorMatch', () => {
       ],
     });
 
-    expect(match?.factor.id).toBe('factor-electricity-ab-2025');
-    expect(match?.factorYear).toBe(2025);
+    expect(match?.factor.id).toBe('factor-electricity-ab-2024');
+    expect(match?.factorYear).toBe(2024);
     expect(match?.usedPriorYearFallback).toBe(true);
   });
 
@@ -1013,7 +1049,7 @@ describe('findBestConversionFactorMatch', () => {
   });
 
   it.each(pilotFactorCoverage.filter(province => province !== 'Alberta'))(
-    'matches current pilot electricity factor coverage for %s',
+    'blocks incomplete pilot electricity governance for %s',
     (province) => {
       const match = findBestConversionFactorMatch({
         activityType: 'ELECTRICITY',
@@ -1026,8 +1062,7 @@ describe('findBestConversionFactorMatch', () => {
         factors: pilotConversionFactors,
       });
 
-      expect(match?.factor.name).toContain(`Electricity - ${province}`);
-      expect(match?.sourceLabel).toBe('System Default Factor');
+      expect(match).toBeUndefined();
     },
   );
 

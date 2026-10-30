@@ -8,7 +8,8 @@ import { pilotConversionFactors } from '../test/pilotEmissionsFixture';
 const policy = { organizationId: 'customer', allowDemoFactorsForCalculations: false };
 const official = { id: 'official', name: 'Diesel', activityType: 'DIESEL', unit: 'L', factorValue: 2.68,
   resultUnit: 'kgCO2e', region: 'Alberta', country: 'Canada', sourceYear: 2026, isSystemDefault: true,
-  verified: true, confidenceLevel: 'OFFICIAL_GOVERNMENT', sourceAuthority: 'Environment and Climate Change Canada' };
+  verified: true, verificationStatus: 'VERIFIED', applicability: 'CORPORATE_INVENTORY' as const,
+  emissionBasis: 'DIRECT_CO2E' as const, confidenceLevel: 'OFFICIAL_GOVERNMENT', sourceAuthority: 'Environment and Climate Change Canada' };
 const input = { ...policy, activityType: 'DIESEL', unit: 'L', quantity: 10,
   jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', recordYear: 2026 };
 
@@ -31,17 +32,18 @@ describe('workspace factor policy contract', () => {
   ])('rejects test metadata even with a verified flag: %j', metadata => {
     const factor = { ...official, ...metadata, verified: true };
     expect(isFactorAllowedForWorkspace(factor, policy)).toBe(false);
-    expect(evaluateActivityRecord({ ...input, factors: [factor] }).calculationStatus).toBe('MISSING_FACTOR');
-    expect(evaluateActivityRecord({ ...input, factors: [factor], allowDemoFactorsForCalculations: true }).calculationStatus).toBe('CALCULATED');
+    expect(evaluateActivityRecord({ ...input, factors: [factor] }).calculationStatus).toBe('FACTOR_NOT_APPROVED');
+    const demoStatus = evaluateActivityRecord({ ...input, factors: [factor], allowDemoFactorsForCalculations: true }).calculationStatus;
+    expect(demoStatus).toBe(['SYNTHETIC_TEST', 'TEST_ONLY'].includes(String(metadata.status)) ? 'FACTOR_NOT_APPROVED' : 'CALCULATED');
   });
 
   it.each([false, true])('rejects cross-tenant factors even when demo=%s and a system flag is present', allowDemoFactorsForCalculations => {
-    expect(evaluateActivityRecord({ ...input, allowDemoFactorsForCalculations, factors: [{ ...official, organizationId: 'other' }] }).calculationStatus).toBe('MISSING_FACTOR');
+    expect(evaluateActivityRecord({ ...input, allowDemoFactorsForCalculations, factors: [{ ...official, organizationId: 'other' }] }).calculationStatus).toBe('NO_FACTOR_FOUND');
   });
 
   it('excludes own-tenant synthetic overrides and falls back only to a legitimate factor', () => {
     const synthetic = { ...official, id: 'synthetic', organizationId: 'customer', sourceAuthority: 'Synthetic test only', isSystemDefault: false };
-    expect(evaluateActivityRecord({ ...input, factors: [synthetic] }).calculationStatus).toBe('MISSING_FACTOR');
+    expect(evaluateActivityRecord({ ...input, factors: [synthetic] }).calculationStatus).toBe('FACTOR_NOT_APPROVED');
     expect(evaluateActivityRecord({ ...input, factors: [synthetic, official] }).matchedFactorId).toBe('official');
     expect(evaluateActivityRecord({ ...input, factors: [{ ...official, id: 'custom', organizationId: 'customer', isSystemDefault: false }] }).matchedFactorId).toBe('custom');
   });
@@ -50,7 +52,7 @@ describe('workspace factor policy contract', () => {
     const factor = { ...official, currentActiveVersion: { confidenceLevel: 'DEMO' } };
     expect(findBestConversionFactorMatch({ ...input, inputUnit: 'L', factors: [factor] })).toBeUndefined();
     expect(getCompatibleFactorUnitLabels({ ...input, inputUnit: 'kg', factors: [factor] })).toEqual([]);
-    expect(evaluateActivityRecord({ ...input, unit: 'kg', factors: [factor] }).calculationStatus).toBe('MISSING_FACTOR');
+    expect(evaluateActivityRecord({ ...input, unit: 'kg', factors: [factor] }).calculationStatus).toBe('NO_FACTOR_FOUND');
   });
 
   it('preserves province and tracked-only requirements with demo enabled', () => {
@@ -82,6 +84,7 @@ it('reconciles fresh Golden A and C calculations after Alberta pilot electricity
   ].map(factor => ({
     ...factor, resultUnit: 'kgCO2e', sourceYear: 2026, isSystemDefault: true,
     applicability: 'CORPORATE_INVENTORY' as const,
+    emissionBasis: 'DIRECT_CO2E' as const, verified: true, verificationStatus: 'VERIFIED',
     sourceAuthority: 'Example inventory agency', sourceDocument: 'Approved test-only corporate factor set',
   }));
   const factors = [...pilotConversionFactors, ...approvedTestFactors];

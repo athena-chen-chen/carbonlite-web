@@ -3,6 +3,7 @@ import {
   buildFactorUnitMismatchMessage,
   findBestConversionFactorMatch,
   getCompatibleFactorUnitLabels,
+  getConversionFactorMatchFailureReason,
   getFactorSourceYear,
   getFactorValue,
   type ConversionFactorMatch,
@@ -26,6 +27,8 @@ export type CanonicalRecordIssueCode =
   | 'MISSING_PROVINCE'
   | 'UNIT_MISMATCH'
   | 'MISSING_FACTOR'
+  | 'NO_FACTOR_FOUND'
+  | 'FACTOR_NOT_APPROVED'
   | 'CALCULATION_FAILED';
 
 export type CanonicalRecordIssue = {
@@ -47,6 +50,8 @@ export type CanonicalRecordEvaluation = {
     | 'MATCHED'
     | 'TRACKED_ONLY'
     | 'MISSING_FACTOR'
+    | 'NO_FACTOR_FOUND'
+    | 'FACTOR_NOT_APPROVED'
     | 'MISSING_PROVINCE'
     | 'UNIT_MISMATCH'
     | 'REQUIRES_REVIEW';
@@ -54,6 +59,8 @@ export type CanonicalRecordEvaluation = {
     | 'CALCULATED'
     | 'TRACKED_ONLY'
     | 'MISSING_FACTOR'
+    | 'NO_FACTOR_FOUND'
+    | 'FACTOR_NOT_APPROVED'
     | 'MISSING_PROVINCE'
     | 'UNIT_MISMATCH'
     | 'REQUIRES_REVIEW';
@@ -107,6 +114,8 @@ function buildNeedsReviewEvaluation(input: {
       ? 'UNIT_MISMATCH'
       : primaryIssue?.code === 'MISSING_FACTOR'
       ? 'MISSING_FACTOR'
+      : primaryIssue?.code === 'NO_FACTOR_FOUND' || primaryIssue?.code === 'FACTOR_NOT_APPROVED'
+      ? primaryIssue.code
       : 'REQUIRES_REVIEW');
 
   return {
@@ -269,18 +278,32 @@ export function evaluateActivityRecord(
       });
     }
 
+    const failureReason = getConversionFactorMatchFailureReason({
+      activityType,
+      inputUnit: normalizedUnit,
+      jurisdictionCountry: input.jurisdictionCountry,
+      jurisdictionRegion: input.jurisdictionRegion,
+      organizationId: input.organizationId,
+      allowDemoFactorsForCalculations: input.allowDemoFactorsForCalculations,
+      allowPlaceholderConfidence: input.allowPlaceholderConfidence,
+      factors: input.factors,
+    });
+    const message = failureReason === 'FACTOR_NOT_APPROVED'
+      ? 'Factor found, but it is not approved for automatic calculation.'
+      : 'No matching emission factor is available for this record.';
+
     return buildNeedsReviewEvaluation({
       activityType,
       normalizedUnit,
       issues: [
         {
-          code: 'MISSING_FACTOR',
+          code: failureReason,
           field: 'factor',
-          message: 'No matching emission factor is available for this record.',
+          message,
         },
       ],
-      matchingStatus: 'MISSING_FACTOR',
-      calculationStatus: 'MISSING_FACTOR',
+      matchingStatus: failureReason,
+      calculationStatus: failureReason,
     });
   }
 

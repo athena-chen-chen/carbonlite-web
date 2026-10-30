@@ -66,7 +66,12 @@ function isKnownTestFactor(factor: FactorPolicyMetadata): boolean {
 
 export function isFactorAllowedForWorkspace(factor: FactorPolicyMetadata, policy: FactorWorkspacePolicy = {}): boolean {
   const metadata = [factor, factor.factor, factor.source].filter((value): value is FactorPolicyMetadata => Boolean(value));
-  // Tenant isolation applies even to demo-enabled workspaces and system flags.
-  if (metadata.some(value => value.organizationId && value.organizationId !== policy.organizationId)) return false;
+  if (!isFactorVisibleToWorkspace(factor, policy)) return false;
   return policy.allowDemoFactorsForCalculations === true || !metadata.some(isKnownTestFactor);
+}
+
+export function isFactorVisibleToWorkspace(factor: FactorPolicyMetadata, policy: FactorWorkspacePolicy = {}): boolean {
+  const metadata = [factor, factor.factor, factor.source].filter((value): value is FactorPolicyMetadata => Boolean(value));
+  // Tenant isolation applies even to demo-enabled workspaces and system flags.
+  return !metadata.some(value => value.organizationId && value.organizationId !== policy.organizationId);
 }

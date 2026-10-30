@@ -52,6 +52,7 @@ const factors: MatchableConversionFactor[] = [
     jurisdictionCountry: 'Canada',
     jurisdictionRegion: 'Canada',
     sourceYear: 2025,
+    ...LEGITIMATE_OFFICIAL_FACTOR,
   },
 ];
 
@@ -134,14 +135,14 @@ describe('canonical activity record evaluation', () => {
 
     expect(evaluation).toMatchObject({
       status: 'NEEDS_REVIEW',
-      matchingStatus: 'MISSING_FACTOR',
-      calculationStatus: 'MISSING_FACTOR',
+      matchingStatus: 'FACTOR_NOT_APPROVED',
+      calculationStatus: 'FACTOR_NOT_APPROVED',
       reportTreatment: 'EXCLUDED',
       importEligible: false,
       calculatedEmissionsKgCO2e: null,
     });
     expect(evaluation.matchedFactorId).toBeUndefined();
-    expect(evaluation.issues.map((issue) => issue.code)).toContain('MISSING_FACTOR');
+    expect(evaluation.issues.map((issue) => issue.code)).toContain('FACTOR_NOT_APPROVED');
   });
 
   it('classifies golden needs-review rows as not import eligible with specific issue codes', () => {
@@ -208,6 +209,7 @@ describe('canonical activity record evaluation', () => {
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Canada',
           sourceYear: 2026,
+          ...LEGITIMATE_OFFICIAL_FACTOR,
         },
       ],
     });
@@ -245,6 +247,7 @@ describe('canonical activity record evaluation', () => {
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Alberta',
           sourceYear: 2026,
+          ...LEGITIMATE_OFFICIAL_FACTOR,
         },
       ],
       unitConversions: [
@@ -307,6 +310,7 @@ describe('canonical activity record evaluation', () => {
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'Alberta',
           sourceYear: 2026,
+          ...LEGITIMATE_OFFICIAL_FACTOR,
         },
       ],
       unitConversions: [
@@ -345,6 +349,7 @@ describe('canonical activity record evaluation', () => {
         jurisdictionCountry: 'Canada',
         jurisdictionRegion: 'Alberta',
         sourceYear: 2025,
+        ...LEGITIMATE_OFFICIAL_FACTOR,
       },
       {
         id: 'a-factor',
@@ -359,6 +364,7 @@ describe('canonical activity record evaluation', () => {
         jurisdictionCountry: 'Canada',
         jurisdictionRegion: 'Alberta',
         sourceYear: 2025,
+        ...LEGITIMATE_OFFICIAL_FACTOR,
       },
     ];
 

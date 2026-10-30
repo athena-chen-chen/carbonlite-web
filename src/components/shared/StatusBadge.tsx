@@ -40,6 +40,8 @@ export const STATUS_DISPLAY_MAP: Record<string, BadgeDisplay> = {
   MISSING_PROVINCE: { label: 'Missing Province', tone: 'warning' },
   MISSING_JURISDICTION: { label: 'Missing Province', tone: 'warning' },
   MISSING_FACTOR: { label: 'Missing Factor', tone: 'warning' },
+  NO_FACTOR_FOUND: { label: 'No Factor Found', tone: 'warning' },
+  FACTOR_NOT_APPROVED: { label: 'Factor Not Approved', tone: 'warning' },
   INVALID_UNIT: { label: 'Invalid Unit', tone: 'danger' },
   UNIT_MISMATCH: { label: 'Unit Mismatch', tone: 'danger' },
   MISSING_UNIT: { label: 'Missing Unit', tone: 'danger' },
@@ -69,6 +71,16 @@ export const ISSUE_DISPLAY_MAP: Record<string, BadgeDisplay> = {
     label: 'Missing Factor',
     tone: 'warning',
     description: 'No matching emission factor was found.',
+  },
+  NO_FACTOR_FOUND: {
+    label: 'No Factor Found',
+    tone: 'warning',
+    description: 'No matching emission factor was found.',
+  },
+  FACTOR_NOT_APPROVED: {
+    label: 'Factor Not Approved',
+    tone: 'warning',
+    description: 'Factor found, but it is not approved for automatic calculation.',
   },
   INVALID_UNIT: {
     label: 'Invalid Unit',

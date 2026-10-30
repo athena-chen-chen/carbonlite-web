@@ -208,6 +208,8 @@ export function DraftRecordsReview({
     if (signals.some((signal) => ['MISSING_PROVINCE', 'MISSING_JURISDICTION'].includes(signal))) {
       return 'Missing Province';
     }
+    if (signals.some((signal) => signal === 'FACTOR_NOT_APPROVED')) return 'Factor Not Approved';
+    if (signals.some((signal) => signal === 'NO_FACTOR_FOUND')) return 'No Factor Found';
     if (signals.some((signal) => signal === 'MISSING_FACTOR')) return 'Missing Factor';
     if (signals.some((signal) => ['REQUIRES_REVIEW', 'NEEDS_REVIEW', 'EXCLUDED'].includes(signal))) {
       return 'Needs Review';
@@ -221,6 +223,8 @@ export function DraftRecordsReview({
 
     const label = getStoredReviewLabel(item);
     if (label === 'Unit Mismatch') return 'A matching activity factor exists, but it uses a different unit.';
+    if (label === 'Factor Not Approved') return 'Factor found, but it is not approved for automatic calculation.';
+    if (label === 'No Factor Found') return 'No matching emission factor is available for this record.';
     if (label === 'Missing Factor') return 'No matching emission factor is available for this record.';
     if (label === 'Missing Province') return 'Electricity records require province before factor matching.';
     if (label === 'Needs Review') return 'This row must be reviewed before import.';

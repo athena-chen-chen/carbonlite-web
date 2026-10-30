@@ -1,4 +1,8 @@
-import { isFactorAllowedForWorkspace, type FactorWorkspacePolicy } from './factorCalculationPolicy';
+import {
+  isFactorAllowedForWorkspace,
+  isFactorVisibleToWorkspace,
+  type FactorWorkspacePolicy,
+} from './factorCalculationPolicy';
 import { getCurrentUser } from '../services/auth';
 import { isInventoryFactorEligible, type FactorGovernance } from './factorGovernance';
 import { normalizeUnitKey } from './unitNormalization';
@@ -10,6 +14,7 @@ import { normalizeUnitForDisplay } from './unitNormalization';
 
 export type MatchableConversionFactor = FactorGovernance & {
   id: string;
+  factorId?: string | null;
   organizationId?: string | null;
   factorType?: string | null;
   name: string;
@@ -69,6 +74,13 @@ export type MatchableConversionFactor = FactorGovernance & {
     displayName?: string | null;
     name?: string | null;
     isSystem?: boolean | null;
+    isActive?: boolean | null;
+  } | null;
+  source?: {
+    isActive?: boolean | null;
+    sourceAuthority?: string | null;
+    sourceDocument?: string | null;
+    sourceVersion?: string | null;
   } | null;
 };
 
@@ -161,6 +173,10 @@ export type ConversionFactorMatch = {
   selectionReason: FactorSelectionReason;
   selectionExplanation: string;
 };
+
+export type ConversionFactorMatchFailureReason =
+  | 'NO_FACTOR_FOUND'
+  | 'FACTOR_NOT_APPROVED';
 
 export type ActivityYearResolution = {
   year: number | null;
@@ -300,6 +316,50 @@ export function findBestConversionFactorMatch(input: {
     recordYear,
     organizationId,
   });
+}
+
+/** Explains a failed direct match without changing factor eligibility or selection. */
+export function getConversionFactorMatchFailureReason(input: {
+  activityType?: string | null;
+  inputUnit?: string | null;
+  jurisdictionCountry?: string | null;
+  jurisdictionRegion?: string | null;
+  organizationId?: string | null;
+  allowDemoFactorsForCalculations?: boolean;
+  allowPlaceholderConfidence?: boolean;
+  factors: MatchableConversionFactor[];
+}): ConversionFactorMatchFailureReason {
+  const activityType = normalizeActivityType(input.activityType);
+  const inputUnit = normalizeUnit(input.inputUnit);
+  const country = normalizeJurisdictionCountry(input.jurisdictionCountry) ?? 'Canada';
+  const region = normalizeJurisdictionRegion(input.jurisdictionRegion);
+
+  if (!activityType || !inputUnit || (activityType === 'ELECTRICITY' && !region)) {
+    return 'NO_FACTOR_FOUND';
+  }
+
+  const policy = resolveWorkspacePolicy(input);
+  const candidates = input.factors.filter((factor) => {
+    const factorKind = String(factor.type ?? 'EMISSION').trim().toUpperCase();
+    const currentVersion = factor.currentActiveVersion ?? factor.version;
+    return (
+      factorKind === 'EMISSION' &&
+      isFactorVisibleToWorkspace(factor, policy) &&
+      (!currentVersion || isFactorVisibleToWorkspace(currentVersion, policy)) &&
+      normalizeFactorActivityType(factor) === activityType &&
+      normalizeUnit(getFactorInputUnit(factor)) === inputUnit &&
+      countryMatches(getFactorCountry(factor), country) &&
+      regionCompatibleForActivity(activityType, getFactorRegion(factor), region) &&
+      hasUsableFactorValue(factor)
+    );
+  });
+
+  const hasRejectedCandidate = candidates.some((factor) =>
+    !isUsableFactor(factor, policy) ||
+    (activityType === 'ELECTRICITY' && isPlaceholderFactor(factor, input.allowPlaceholderConfidence)),
+  );
+
+  return hasRejectedCandidate ? 'FACTOR_NOT_APPROVED' : 'NO_FACTOR_FOUND';
 }
 
 function buildConversionFactorMatch(input: {
@@ -740,7 +800,14 @@ function normalizeStatus(value?: string | null) {
 function isUsableFactor(factor: MatchableConversionFactor, policy: FactorWorkspacePolicy) {
   const currentVersion = factor.currentActiveVersion ?? factor.version;
   if (!isFactorAllowedForWorkspace(factor, policy) || (currentVersion && !isFactorAllowedForWorkspace(currentVersion, policy))) return false;
-  if (!isInventoryFactorEligible(factor) || (currentVersion && !isInventoryFactorEligible(currentVersion))) return false;
+  const governedCandidate = currentVersion
+    ? {
+        ...currentVersion,
+        factor: currentVersion.factor ?? factor.factor ?? { isActive: factor.isActive },
+        source: currentVersion.source ?? factor.source,
+      }
+    : factor;
+  if (!isInventoryFactorEligible(governedCandidate)) return false;
   const status = String(
     currentVersion?.factorStatus ??
       currentVersion?.status ??
