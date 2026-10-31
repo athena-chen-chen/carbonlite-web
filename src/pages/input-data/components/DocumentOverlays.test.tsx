@@ -59,11 +59,11 @@ const metadata = [
 
 it('preserves the details dialog semantics, subtitle and all seven metadata fields', () => {
   render(<DocumentDetailsDialog document={document} metadata={metadata} onClose={vi.fn()} />);
-  const dialog = screen.getByRole('dialog', { name: 'Document Details' });
+  const dialog = screen.getByRole('dialog', { name: 'Document details' });
   expect(dialog).toHaveAttribute('aria-modal', 'true');
   expect(dialog).toHaveAttribute('aria-labelledby', 'document-details-title');
   expect(dialog.parentElement).toHaveAttribute('role', 'presentation');
-  expect(screen.getByRole('heading', { name: 'Document Details' })).toHaveAttribute('id', 'document-details-title');
+  expect(screen.getByRole('heading', { name: 'Document details' })).toHaveAttribute('id', 'document-details-title');
   expect(screen.getByText('Metadata for source.xlsx')).toBeInTheDocument();
   expect(within(dialog).getAllByRole('term')).toHaveLength(7);
   expect(within(dialog).getAllByRole('definition')).toHaveLength(7);
@@ -101,7 +101,7 @@ it.each([true, false])('preserves delete copy, semantics and callbacks for impor
   for (const text of isImported ? unimportedCopy : importedCopy) expect(screen.queryByText(text)).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(onCancel).toHaveBeenCalledOnce();
-  await userEvent.click(screen.getByRole('button', { name: isImported ? 'Delete Source Document' : 'Delete', exact: true }));
+  await userEvent.click(screen.getByRole('button', { name: isImported ? 'Delete source document' : 'Delete', exact: true }));
   expect(onConfirm).toHaveBeenCalledOnce();
 });
 

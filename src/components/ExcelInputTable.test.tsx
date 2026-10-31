@@ -308,7 +308,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     return row;
   }
 
-  it('starts with a clear empty state and disabled Save All', async () => {
+  it('starts with a clear empty state and disabled Save all', async () => {
     renderTable();
 
     await waitFor(() => {
@@ -316,7 +316,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
     expect(await screen.findByText('No manual activity rows yet.')).toBeInTheDocument();
     expect(screen.getByText('Click "Add activity record" to begin.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save All' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save all' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Remove row/i })).not.toBeInTheDocument();
     expect(screen.queryByText('No matching factor')).not.toBeInTheDocument();
   });
@@ -398,7 +398,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
     expect(await screen.findByText('9 records found')).toBeInTheDocument();
     expect(screen.getByText('0 records missing date')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
     const payload = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0];
     const actual = payload.rows.map(row => Object.fromEntries(Object.keys(expected[0]).map(key => [key, (row as any)[key]])));
@@ -422,7 +422,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
     fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
     expect(await screen.findByText('5 records found')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
     const rows = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows;
     const dates = rows.map(row => row.recordDate);
@@ -436,7 +436,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     }
   });
 
-  it('keeps Save All available for mixed-quality spreadsheet rows and preserves review issues', async () => {
+  it('keeps Save all available for mixed-quality spreadsheet rows and preserves review issues', async () => {
     renderTable('spreadsheet');
 
     const workbook = XLSX.utils.book_new();
@@ -469,7 +469,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.getByText('1 missing province')).toBeInTheDocument();
     expect(screen.getByText('1 tracked metric')).toBeInTheDocument();
 
-    const saveAllButton = screen.getByRole('button', { name: 'Save All' });
+    const saveAllButton = screen.getByRole('button', { name: 'Save all' });
     expect(saveAllButton).toBeEnabled();
 
     await userEvent.click(saveAllButton);
@@ -568,7 +568,7 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
     expect(await screen.findByDisplayValue('YYC')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
 
     expect(vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows[0]).toMatchObject({
@@ -602,7 +602,7 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
     expect(await screen.findByText('5 records found')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
 
     const rows = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows;
@@ -643,11 +643,11 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
     expect((await screen.findAllByText('Unit Mismatch')).length).toBeGreaterThan(0);
-    await userEvent.type(screen.getByLabelText('Origin Airport'), 'yyc');
-    await userEvent.type(screen.getByLabelText('Destination Airport'), 'lhr');
+    await userEvent.type(screen.getByLabelText('Origin airport'), 'yyc');
+    await userEvent.type(screen.getByLabelText('Destination airport'), 'lhr');
     await userEvent.type(screen.getByLabelText('Passengers'), '2');
-    await userEvent.selectOptions(screen.getByLabelText('Trip Type'), 'ROUND_TRIP');
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.selectOptions(screen.getByLabelText('Trip type'), 'ROUND_TRIP');
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
 
     expect(vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows[0]).toMatchObject({
@@ -684,7 +684,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
 
     expect(await screen.findByText('2 records found')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
 
     await waitFor(() => {
       expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
@@ -729,7 +729,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
 
     expect(await screen.findByText('2 records found')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
 
     await waitFor(() => {
       expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
@@ -774,7 +774,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
 
     expect(await screen.findByText('4 records found')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
 
     await waitFor(() => {
       expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
@@ -867,7 +867,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(await screen.findByText('2 records found')).toBeInTheDocument();
     expect(screen.getByText('0 records missing date')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
 
     await waitFor(() => {
       expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1);
@@ -922,7 +922,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
 
     await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
-    await userEvent.click(await screen.findByRole('button', { name: 'Save All' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save all' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Unable to save records' });
     expect(within(dialog).getByText('We could not save these records. Please review the information and try again.')).toBeInTheDocument();
@@ -942,12 +942,12 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.queryByText('No manual activity rows yet.')).not.toBeInTheDocument();
     expect(screen.queryByText('No matching factor')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Remove row/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save All' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save all' })).toBeDisabled();
     expect(within(row).getByRole('region', { name: 'Calculation preview' })).toBeInTheDocument();
-    for (const title of ['Scope', 'Factor Status', 'Matched Factor', 'Report Treatment']) {
+    for (const title of ['Scope', 'Factor status', 'Matched factor', 'Report treatment']) {
       expect(within(row).queryByText(title, { exact: true })).not.toBeInTheDocument();
     }
-    expect(screen.queryByText('Import Review Summary')).not.toBeInTheDocument();
+    expect(screen.queryByText('Import review summary')).not.toBeInTheDocument();
     expect(screen.queryByText(/Bulk set province for selected imported rows/i)).not.toBeInTheDocument();
   });
 
@@ -961,7 +961,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     } as any]);
     renderTable();
     const row = await addEmptyRow();
-    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'DIESEL');
+    await userEvent.selectOptions(within(row).getByLabelText('Activity type'), 'DIESEL');
     await userEvent.selectOptions(within(row).getByLabelText('Province'), 'Alberta');
     await userEvent.type(within(row).getByLabelText('Quantity'), '100');
     const preview = within(row).getByRole('region', { name: 'Calculation preview' });
@@ -973,7 +973,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(preview).getByText('Included in GHG total')).toBeVisible();
     expect(within(preview).getByText('Ready to save')).toBeVisible();
     expect(within(row).queryByText('Calculated', { exact: true })).not.toBeInTheDocument();
-    for (const title of ['Factor Status', 'Matched Factor', 'Report Treatment']) {
+    for (const title of ['Factor status', 'Matched factor', 'Report treatment']) {
       expect(within(row).queryByText(title, { exact: true })).not.toBeInTheDocument();
     }
     const provenance = within(preview).getByText('Source: Customer measurement laboratory');
@@ -1003,7 +1003,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     vi.mocked(getAllConversionFactors).mockResolvedValueOnce([]);
     renderTable();
     const row = await addEmptyRow();
-    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'GASOLINE');
+    await userEvent.selectOptions(within(row).getByLabelText('Activity type'), 'GASOLINE');
     await userEvent.type(within(row).getByLabelText('Quantity'), '50');
     const preview = within(row).getByRole('region', { name: 'Calculation preview' });
     expect(within(preview).getByText('Missing Factor')).toBeVisible();
@@ -1016,7 +1016,7 @@ describe('ExcelInputTable empty activity row UX', () => {
   it('withholds a valid estimate for invalid quantities and missing dates without changing factor matching', async () => {
     renderTable();
     const row = await addEmptyRow();
-    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'DIESEL');
+    await userEvent.selectOptions(within(row).getByLabelText('Activity type'), 'DIESEL');
     fireEvent.change(within(row).getByLabelText('Quantity'), { target: { value: '-1' } });
     const preview = within(row).getByRole('region', { name: 'Calculation preview' });
     expect(within(preview).getByText('Quantity must be greater than 0')).toBeVisible();
@@ -1081,7 +1081,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     renderTable();
 
     const row = await addEmptyRow();
-    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'NATURAL_GAS');
+    await userEvent.selectOptions(within(row).getByLabelText('Activity type'), 'NATURAL_GAS');
 
     expect(within(row).getByText('Natural gas records require province, activity year, quantity and a supported unit.')).toBeVisible();
     expect(within(row).queryByText(/Electricity records require province/)).not.toBeInTheDocument();
@@ -1114,7 +1114,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     renderTable();
 
     const volumeRow = await addEmptyRow();
-    await userEvent.selectOptions(within(volumeRow).getByLabelText('Activity Type'), 'NATURAL_GAS');
+    await userEvent.selectOptions(within(volumeRow).getByLabelText('Activity type'), 'NATURAL_GAS');
     await userEvent.type(within(volumeRow).getByLabelText('Quantity'), '100');
     await userEvent.selectOptions(within(volumeRow).getByLabelText('Province'), 'Alberta');
     expect(within(volumeRow).getByText('Estimated emissions: 197.2311 kg CO₂e')).toBeVisible();
@@ -1122,7 +1122,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add another manual row' }));
     const rows = screen.getAllByRole('group', { name: /Activity row/ });
     const gjRow = rows[1];
-    await userEvent.selectOptions(within(gjRow).getByLabelText('Activity Type'), 'NATURAL_GAS');
+    await userEvent.selectOptions(within(gjRow).getByLabelText('Activity type'), 'NATURAL_GAS');
     await userEvent.clear(within(gjRow).getByLabelText('Quantity'));
     await userEvent.type(within(gjRow).getByLabelText('Quantity'), '8.5');
     await userEvent.selectOptions(getUnitControl(gjRow), 'GJ');
@@ -1179,14 +1179,14 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(provinceSelect).queryByRole('option', { name: 'Nunavut' })).not.toBeInTheDocument();
   });
 
-  it('shows Clear Draft after a type is selected and returns to empty state after clearing', async () => {
+  it('shows Clear draft after a type is selected and returns to empty state after clearing', async () => {
     renderTable();
 
     const row = await addEmptyRow();
     await userEvent.selectOptions(within(row).getByRole('combobox', { name: /Activity type/i }), 'DIESEL');
 
     const clearDraftButton = await screen.findByRole('button', { name: /Clear draft row 1/i });
-    expect(clearDraftButton).toHaveTextContent('Clear Draft');
+    expect(clearDraftButton).toHaveTextContent('Clear draft');
     expect(screen.queryByRole('button', { name: /Remove row 1/i })).not.toBeInTheDocument();
 
     await userEvent.click(clearDraftButton);
@@ -1312,7 +1312,7 @@ describe('ExcelInputTable empty activity row UX', () => {
         'Imported electricity rows require province-specific factors. Use the bulk action above or edit each imported row before saving.',
       ),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText('Import Review Summary')).not.toBeInTheDocument();
+    expect(screen.queryByText('Import review summary')).not.toBeInTheDocument();
     expect(screen.queryByText(/Bulk set province for selected imported rows/i)).not.toBeInTheDocument();
     expect(within(row).getByText(/Electricity emissions require a province-specific factor/i)).not.toBeVisible();
     expect(within(row).getByText('Not included in GHG total')).toBeInTheDocument();
@@ -1328,7 +1328,7 @@ describe('ExcelInputTable empty activity row UX', () => {
       },
     });
 
-    expect(await screen.findByText('Import Review Summary')).toBeInTheDocument();
+    expect(await screen.findByText('Import review summary')).toBeInTheDocument();
     expect(screen.getByText('1 record found')).toBeInTheDocument();
     expect(screen.getByText('1 missing province')).toBeInTheDocument();
     expect(screen.getByText('Bulk set province for selected imported rows')).toBeInTheDocument();
@@ -1765,7 +1765,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
     expect(within(row).queryByRole('button', { name: /Remove row 1/i })).not.toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'Add another entry' })).toBeInTheDocument();
-    expect(within(row).getByRole('link', { name: 'View in Data Records' })).toBeInTheDocument();
+    expect(within(row).getByRole('link', { name: 'View in data records' })).toBeInTheDocument();
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
@@ -1775,7 +1775,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     } as any));
     renderTable();
     const row = await addEmptyRow();
-    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'GASOLINE');
+    await userEvent.selectOptions(within(row).getByLabelText('Activity type'), 'GASOLINE');
     await userEvent.type(within(row).getByLabelText('Quantity'), '50');
     expect(within(row).getByRole('region', { name: 'Calculation preview' })).toHaveTextContent('Scope 1');
     expect(within(row).getByText('Estimated emissions: 115.50 kg CO₂e')).toBeVisible();
@@ -1787,7 +1787,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(confirmation).getByText('Canada')).toBeInTheDocument();
     expect(within(confirmation).getByText('Calculated')).toBeInTheDocument();
     expect(within(confirmation).getByText('115.50 kgCO2e')).toBeInTheDocument();
-    expect(within(confirmation).getByRole('link', { name: 'View in Data Records' }))
+    expect(within(confirmation).getByRole('link', { name: 'View in data records' }))
       .toHaveAttribute('href', '/activity-records?recordId=gasoline-50');
     expect(createActivityData).toHaveBeenCalledWith(expect.objectContaining({
       quantity: 50, unit: 'L', scope: 'SCOPE_1', calculatedEmissionsKgCO2e: 115.5,
@@ -1798,7 +1798,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.queryByRole('status', { name: 'Manual entry saved' })).not.toBeInTheDocument();
     const cleanRow = await getActivityRow(1);
     expect(within(cleanRow).getByLabelText('Quantity')).toHaveValue(null);
-    expect(within(cleanRow).getByLabelText('Activity Type')).toHaveValue('');
+    expect(within(cleanRow).getByLabelText('Activity type')).toHaveValue('');
     expect(within(otherDraft).getByLabelText('Quantity')).toHaveValue(200);
     expect(createActivityData).toHaveBeenCalledTimes(1);
   });
@@ -1831,7 +1831,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(createActivityData).toHaveBeenCalledTimes(2); // One rejection, one persisted record.
   });
 
-  it('blocks repeated row saves and Save All while a row request is in flight', async () => {
+  it('blocks repeated row saves and Save all while a row request is in flight', async () => {
     let resolveSave!: (record: any) => void;
     vi.mocked(createActivityData).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
     renderTable();
@@ -1839,7 +1839,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     const save = within(row).getByRole('button', { name: /Save row 1/i });
     fireEvent.click(save);
     fireEvent.click(save);
-    fireEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save all' }));
     expect(createActivityData).toHaveBeenCalledTimes(1);
     resolveSave({ ...vi.mocked(createActivityData).mock.calls[0][0], id: 'once' });
     expect(await within(row).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
@@ -1847,12 +1847,12 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(createActivityData).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks repeated Save All and row saves during a batch request', async () => {
+  it('blocks repeated Save all and row saves during a batch request', async () => {
     let resolveSave!: (record: any) => void;
     vi.mocked(createActivityData).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
     renderTable();
     const row = await addValidDieselRow('100');
-    const saveAll = screen.getByRole('button', { name: 'Save All' });
+    const saveAll = screen.getByRole('button', { name: 'Save all' });
     fireEvent.click(saveAll);
     fireEvent.click(saveAll);
     fireEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
@@ -1869,26 +1869,26 @@ describe('ExcelInputTable empty activity row UX', () => {
       </AppDialogProvider></ToastProvider>,
     );
     const row = await addValidDieselRow('100');
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     expect(await within(row).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
     expect(await screen.findByRole('dialog', { name: 'Entry saved' })).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
     expect(createActivityData).toHaveBeenCalledTimes(1);
   });
 
-  it('retains successful Save All rows when a later request fails and skips them on retry', async () => {
+  it('retains successful Save all rows when a later request fails and skips them on retry', async () => {
     vi.mocked(createActivityData)
       .mockImplementationOnce(async (input) => ({ ...input, id: 'first-saved' } as any))
       .mockRejectedValueOnce(new Error('API unavailable'));
     renderTable();
     const firstRow = await addValidDieselRow('100');
     await addValidDieselRow('200');
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     const dialog = await screen.findByRole('dialog', { name: 'Unable to save records' });
     expect(await within(firstRow).findByRole('status', { name: 'Manual entry saved' })).toBeInTheDocument();
     expect(createActivityData).toHaveBeenCalledTimes(2);
     await userEvent.click(within(dialog).getByRole('button', { name: /OK|Close|Got it/i }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     await waitFor(() => expect(screen.getAllByRole('status', { name: 'Manual entry saved' })).toHaveLength(2));
     expect(createActivityData).toHaveBeenCalledTimes(3);
     expect(vi.mocked(createActivityData).mock.calls.map(([input]) => input.quantity)).toEqual([100, 200, 200]);
@@ -1931,7 +1931,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(vi.mocked(createActivityData).mock.calls[0][0].sourceType).not.toBe('EXCEL');
   });
 
-  it('keeps all imported workbook review rows visible before Save All and factor reloads', async () => {
+  it('keeps all imported workbook review rows visible before Save all and factor reloads', async () => {
     renderTable('spreadsheet');
 
     const workbook = XLSX.utils.book_new();
@@ -2022,7 +2022,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(row).getAllByText('Non-activity row').length).toBeGreaterThan(0);
     expect(within(row).getByRole('button', { name: /Save row 1/i })).toBeDisabled();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
     expect(createActivityData).not.toHaveBeenCalled();
     expect(saveSpreadsheetReviewRows).not.toHaveBeenCalled();
   });
@@ -2043,7 +2043,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(within(secondRow).getAllByText('Saved').length).toBeGreaterThan(0);
   });
 
-  it('Save All saves unsaved rows and skips already saved rows', async () => {
+  it('Save all saves unsaved rows and skips already saved rows', async () => {
     renderTable();
 
     const firstRow = await addValidDieselRow('100');
@@ -2053,7 +2053,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     });
 
     await addValidDieselRow('200');
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
 
     await waitFor(() => {
       expect(createActivityData).toHaveBeenCalledTimes(2);
@@ -2066,12 +2066,12 @@ describe('ExcelInputTable empty activity row UX', () => {
     );
   });
 
-  it('shows a centered error dialog when Save All fails', async () => {
+  it('shows a centered error dialog when Save all fails', async () => {
     vi.mocked(createActivityData).mockRejectedValueOnce(new Error('API unavailable'));
     renderTable();
 
     await addValidDieselRow('100');
-    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save all' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Unable to save records' });
     expect(dialog).toHaveAttribute('aria-modal', 'true');

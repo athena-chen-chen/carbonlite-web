@@ -15,17 +15,17 @@ export function InputMethodTabs({
       {[
         {
           key: 'documents' as const,
-          title: 'Upload Documents',
+          title: 'Upload documents',
           text: 'Upload utility bills, fuel invoices, water bills, travel documents, hotel invoices, or operational PDFs.',
         },
         {
           key: 'spreadsheet' as const,
-          title: 'Import Spreadsheet',
+          title: 'Import spreadsheet',
           text: 'Import CSV or Excel activity data from a CarbonLite template or your existing spreadsheet.',
         },
         {
           key: 'manual' as const,
-          title: 'Manual Entry',
+          title: 'Manual entry',
           text: 'Enter one activity record directly when no file is available.',
         },
       ].map((method) => (

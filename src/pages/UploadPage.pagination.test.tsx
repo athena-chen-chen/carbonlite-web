@@ -82,7 +82,7 @@ it('selects imported documents across pages, including a later Needs Review docu
   expect(later.closest('tr')).toHaveTextContent('Needs Review');
   await userEvent.click(screen.getByRole('checkbox', { name: 'Select document source-1.xlsx' }));
   await userEvent.click(later);
-  await userEvent.click(screen.getByRole('button', { name: 'View Calculation Results' }));
+  await userEvent.click(screen.getByRole('button', { name: 'View calculation results' }));
   expect(JSON.parse(screen.getByTestId('scope-state').textContent!)).toEqual({ reportScope: 'selectedDocuments', selectedDocumentIds: ['doc-1', 'doc-25'] });
 });
 

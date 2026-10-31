@@ -48,7 +48,7 @@ export function DocumentUploadPanel({
 }: DocumentUploadPanelProps) {
   return (
     <div style={uploadCardStyle}>
-      <h2 style={{ marginTop: 0 }}>Upload Documents</h2>
+      <h2 style={{ marginTop: 0 }}>Upload documents</h2>
       <p style={{ color: '#666' }}>
         Upload utility bills, fuel invoices, water bills, travel documents, hotel invoices, or operational PDFs.
       </p>
@@ -108,7 +108,7 @@ export function DocumentUploadPanel({
           </div>
         ) : null}
 
-        <div style={uploadWorkflowStyle} aria-label="Input Data local steps">
+        <div style={uploadWorkflowStyle} aria-label="Input data local steps">
           {['Select source document', 'Extract activity data', 'Review parser results', 'Save rows for review'].map((step, index) => (
             <div key={step} style={uploadWorkflowStepStyle}>
               <span style={uploadWorkflowNumberStyle}>{index + 1}</span>
@@ -131,7 +131,7 @@ export function DocumentUploadPanel({
                 : 'Upload the selected document and extract activity data.'
             }
           >
-            {uploadExtractInProgress ? 'Extracting...' : 'Extract Data'}
+            {uploadExtractInProgress ? 'Extracting...' : 'Extract data'}
           </button>
         </div>
       </div>

@@ -85,10 +85,10 @@ describe('AppNav logout flow', () => {
     );
 
     [
-      'Input Data',
-      'Data Records',
-      'Organization & Boundary',
-      'Calculation Results',
+      'Input data',
+      'Data records',
+      'Organization & boundary',
+      'Calculation results',
       'Reports',
     ].forEach((label) => {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href');
@@ -115,11 +115,11 @@ describe('AppNav logout flow', () => {
         </MemoryRouter>,
       );
 
-      expect(screen.getByRole('link', { name: 'Calculation Results' })).toHaveStyle({
+      expect(screen.getByRole('link', { name: 'Calculation results' })).toHaveStyle({
         background: '#111',
         color: '#fff',
       });
-      expect(screen.getByRole('link', { name: 'Input Data' })).toHaveStyle({
+      expect(screen.getByRole('link', { name: 'Input data' })).toHaveStyle({
         background: 'transparent',
         color: '#222',
       });
@@ -141,7 +141,7 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('link', { name: 'Input Data' })).toHaveStyle({
+    expect(screen.getByRole('link', { name: 'Input data' })).toHaveStyle({
       background: '#111',
       color: '#fff',
     });
@@ -167,24 +167,24 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    const workflowLabels = ['Organization & Boundary', 'Input Data', 'Data Records', 'Calculation Results', 'Reports'];
+    const workflowLabels = ['Organization & boundary', 'Input data', 'Data records', 'Calculation results', 'Reports'];
     const links = screen.getAllByRole('link').map((link) => link.textContent);
     expect(links.filter((label) => workflowLabels.includes(label ?? ''))).toEqual(workflowLabels);
-    expect(screen.queryByRole('link', { name: 'Emission Factors' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Emission factors' })).not.toBeInTheDocument();
 
     const settingsButton = screen.getByRole('button', { name: /^Settings\s*▾?$/i });
     await userEvent.click(settingsButton);
 
-    expect(screen.getByRole('menuitem', { name: 'Data Collection Guide' })).toHaveAttribute(
+    expect(screen.getByRole('menuitem', { name: 'Data collection guide' })).toHaveAttribute(
       'href',
       '/data-collection-guide',
     );
-    expect(screen.getByRole('menuitem', { name: 'Emission Factors' })).toHaveAttribute('href', '/conversion-factors');
+    expect(screen.getByRole('menuitem', { name: 'Emission factors' })).toHaveAttribute('href', '/conversion-factors');
 
     await userEvent.click(screen.getByRole('button', { name: /^Admin\s*▾?$/i }));
 
-    expect(screen.queryByRole('menuitem', { name: 'Organization & Boundary' })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Pilot Reviewers' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Organization & boundary' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Pilot reviewers' })).toBeInTheDocument();
   });
 
   it('preserves active Input Review document context from Data Records', () => {
@@ -214,7 +214,7 @@ describe('AppNav logout flow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('link', { name: 'Input Data' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Input data' })).toHaveAttribute(
       'href',
       '/input-data?documentId=document-a&view=review',
     );
@@ -274,16 +274,16 @@ describe('AppNav logout flow', () => {
     await userEvent.click(bannerFeedbackButton);
     expect(feedbackListener).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Input Data' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Input data' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Input Review' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review Guide' })).toHaveAttribute(
       'href',
       '/pilot-review-instructions',
     );
-    expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', '/data-records');
-    expect(screen.getByRole('link', { name: 'Calculation Results' })).toHaveAttribute('href', '/metrics-summary');
+    expect(screen.getByRole('link', { name: 'Data records' })).toHaveAttribute('href', '/data-records');
+    expect(screen.getByRole('link', { name: 'Calculation results' })).toHaveAttribute('href', '/metrics-summary');
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
-    expect(screen.getByRole('button', { name: /^Workspace Info\s*▾?$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Workspace info\s*▾?$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /admin/i })).not.toBeInTheDocument();
 
     window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
@@ -322,11 +322,11 @@ describe('AppNav logout flow', () => {
       'aria-expanded',
       'true',
     );
-    expect(screen.getByRole('menuitem', { name: 'Pilot Reviewers' })).toHaveAttribute(
+    expect(screen.getByRole('menuitem', { name: 'Pilot reviewers' })).toHaveAttribute(
       'href',
       '/admin/pilot-reviewers',
     );
-    expect(screen.getByRole('menuitem', { name: 'Review Instructions' })).toHaveAttribute(
+    expect(screen.getByRole('menuitem', { name: 'Review instructions' })).toHaveAttribute(
       'href',
       '/pilot-review-instructions',
     );

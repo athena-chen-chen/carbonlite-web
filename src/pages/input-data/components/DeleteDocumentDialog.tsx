@@ -63,7 +63,7 @@ export function DeleteDocumentDialog({ isImported, deleting, onCancel, onConfirm
             {deleting
               ? 'Deleting...'
               : isImported
-                ? 'Delete Source Document'
+                ? 'Delete source document'
                 : 'Delete'}
           </button>
         </div>

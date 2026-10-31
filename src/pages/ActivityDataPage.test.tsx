@@ -225,7 +225,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /^Delete/i }));
   }
 
-  it('shows secondary Add More Data navigation to Step 2 while keeping Data Records in Step 3', async () => {
+  it('shows secondary Add more data navigation to Step 2 while keeping Data records in Step 3', async () => {
     render(
       <MemoryRouter initialEntries={['/data-records']}>
         <ToastProvider>
@@ -239,11 +239,11 @@ describe('ActivityDataPage delete flows', () => {
       </MemoryRouter>,
     );
 
-    const addMoreData = screen.getByRole('button', { name: 'Add More Data' });
+    const addMoreData = screen.getByRole('button', { name: 'Add more data' });
     expect(screen.queryByRole('button', { name: /^Add data$/i })).not.toBeInTheDocument();
-    expect(addMoreData).toHaveAccessibleDescription('Go to Step 2 · Add Data');
+    expect(addMoreData).toHaveAccessibleDescription('Go to step 2 · Add data');
     expect(addMoreData).toHaveStyle({ background: '#ffffff', color: '#334155' });
-    expect(screen.getByText('Step 3 of 5 · Resolve Issues')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText('Step 3 of 5 · Resolve issues')).toHaveAttribute('aria-current', 'step');
     expect(screen.queryByRole('group', { name: /Activity row/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save row|Add activity record/i })).not.toBeInTheDocument();
     expect(document.querySelector('input[type="file"]')).not.toBeInTheDocument();
@@ -265,7 +265,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText('Loading activity records...')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading data records')).toBeInTheDocument();
-    ['Total Activity Records', 'Manual Entries', 'Imported'].forEach((title) => {
+    ['Total activity records', 'Manual entries', 'Imported'].forEach((title) => {
       const card = screen.getByText(title).parentElement;
       expect(card).not.toBeNull();
       expect(within(card as HTMLElement).getByText('—')).toBeInTheDocument();
@@ -279,7 +279,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(await screen.findByText('Diesel')).toBeInTheDocument();
     expect(screen.queryByLabelText('Loading data records')).not.toBeInTheDocument();
-    expect(within(screen.getByText('Total Activity Records').parentElement as HTMLElement).getByText('2')).toBeInTheDocument();
+    expect(within(screen.getByText('Total activity records').parentElement as HTMLElement).getByText('2')).toBeInTheDocument();
   });
 
   it('shows a retryable error state when activity records fail to load', async () => {
@@ -302,7 +302,7 @@ describe('ActivityDataPage delete flows', () => {
     expect(await screen.findByText('Diesel')).toBeInTheDocument();
   });
 
-  it('shows Site / Facility values and groups blank records as Unassigned', async () => {
+  it('shows Site / facility values and groups blank records as Unassigned', async () => {
     mockActivityRecords([
       {
         ...records[0],
@@ -333,7 +333,7 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-activity-1');
 
     expect(screen.getByText(/Read-only access:/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Add More Data$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Add more data$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Delete selected/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'View' })).toBeEnabled();
@@ -347,7 +347,7 @@ describe('ActivityDataPage delete flows', () => {
     });
     expect(screen.queryByRole('toolbar', { name: /Selected records actions/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Set Site \/ Facility$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Set Province$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Set province$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^More ▾$/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
     expect(
@@ -368,12 +368,12 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await userEvent.click(
-      screen.getByRole('button', { name: /^Reset Demo Data$/i }),
+      screen.getByRole('button', { name: /^Reset demo data$/i }),
     );
 
-    const dialog = screen.getByRole('dialog', { name: 'Reset Demo Data' });
+    const dialog = screen.getByRole('dialog', { name: 'Reset demo data' });
     const confirmButton = within(dialog).getByRole('button', {
-      name: /^Reset Demo Data$/i,
+      name: /^Reset demo data$/i,
     });
 
     expect(
@@ -516,7 +516,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText('4 records selected · 3 electricity records eligible')).toBeInTheDocument();
 
-    const openProvinceButton = screen.getByRole('button', { name: /^Set Province$/i });
+    const openProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
     expect(openProvinceButton).toBeEnabled();
     await userEvent.click(openProvinceButton);
     const applyProvinceButton = screen.getByRole('button', { name: /^Apply$/i });
@@ -626,7 +626,7 @@ describe('ActivityDataPage delete flows', () => {
       );
     });
 
-    expect(await screen.findByText('Site / Facility updated for 5 records.')).toBeInTheDocument();
+    expect(await screen.findByText('Site / facility updated for 5 records.')).toBeInTheDocument();
     expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
     expect(screen.getByText('5 records selected · 1 electricity record eligible')).toBeInTheDocument();
 
@@ -732,7 +732,7 @@ describe('ActivityDataPage delete flows', () => {
     ).toBeInTheDocument();
   });
 
-  it('hides Set Site / Facility for pilot reviewer accounts', async () => {
+  it('hides Set site / facility for pilot reviewer accounts', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -750,7 +750,7 @@ describe('ActivityDataPage delete flows', () => {
     expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
   });
 
-  it('enables Set Province for 15 selected records when 3 selected electricity records already have province', async () => {
+  it('enables Set province for 15 selected records when 3 selected electricity records already have province', async () => {
     vi.mocked(bulkUpdateActivityProvince).mockResolvedValue({ updatedCount: 3 } as any);
     const fifteenRecords = Array.from({ length: 15 }, (_, index) => {
       const rowNumber = index + 1;
@@ -809,7 +809,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText('15 records selected · 3 electricity records eligible')).toBeInTheDocument();
 
-    const openProvinceButton = screen.getByRole('button', { name: /^Set Province$/i });
+    const openProvinceButton = screen.getByRole('button', { name: /^Set province$/i });
     expect(openProvinceButton).toBeEnabled();
     await userEvent.click(openProvinceButton);
     expect(screen.queryByLabelText(/Site \/ Facility to apply to selected records/i)).not.toBeInTheDocument();
@@ -860,7 +860,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^Set Province$/i }));
+    await user.click(screen.getByRole('button', { name: /^Set province$/i }));
 
     await user.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
@@ -871,12 +871,12 @@ describe('ActivityDataPage delete flows', () => {
     expect(screen.getByRole('button', { name: /^Apply$/i })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: /^Columns$/i }));
-    await user.click(screen.getByRole('checkbox', { name: /Source Reference/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Source reference/i }));
 
     expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Apply$/i })).toBeEnabled();
 
-    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+    await user.click(screen.getByRole('button', { name: /^Export records$/i }));
 
     expect(screen.getByText('2 records selected · 1 electricity record eligible')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Apply$/i })).toBeEnabled();
@@ -911,7 +911,7 @@ describe('ActivityDataPage delete flows', () => {
     });
   });
 
-  it('keeps Set Province disabled when selected rows contain no electricity records', async () => {
+  it('keeps Set province disabled when selected rows contain no electricity records', async () => {
     mockActivityRecords([
       {
         id: 'natural-gas-selected',
@@ -943,7 +943,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(within(dieselRow).getByRole('checkbox'));
 
     expect(screen.getByText('2 records selected · 0 electricity records eligible')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Set Province$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Set province$/i })).toBeDisabled();
     expect(
       screen.queryByRole('combobox', { name: /Province to apply to selected electricity records/i }),
     ).not.toBeInTheDocument();
@@ -972,7 +972,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText('1 record selected · 1 electricity record eligible')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Set province$/i }));
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
@@ -1015,7 +1015,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText('1 record selected · 1 electricity record eligible')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Set province$/i }));
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
@@ -1058,7 +1058,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-electricity-has-province-cancel');
     await userEvent.click(within(row).getByRole('checkbox'));
-    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Set province$/i }));
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
@@ -1093,7 +1093,7 @@ describe('ActivityDataPage delete flows', () => {
 
     expect(screen.getByText('1 record selected · 1 electricity record eligible')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Set province$/i }));
 
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
@@ -1137,14 +1137,14 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     const row = await screen.findByTestId('activity-row-electricity-user-missing-province');
-    expect(screen.getByRole('button', { name: /^Add More Data$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Add more data$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/More actions for/i)).toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('checkbox'));
     await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
     expect(screen.getByRole('menuitem', { name: /^Delete selected\.\.\.$/i })).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: /^More ▾$/i }));
-    await userEvent.click(screen.getByRole('button', { name: /^Set Province$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Set province$/i }));
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: /Province to apply to selected electricity records/i }),
       'Alberta',
@@ -1315,7 +1315,7 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     expect(await screen.findByText('Diesel')).toBeInTheDocument();
-    expect(screen.getByText('Source Reference')).toBeInTheDocument();
+    expect(screen.getByText('Source reference')).toBeInTheDocument();
     expect(screen.getAllByText('Manual Entry').length).toBeGreaterThan(0);
     expect(screen.getByText('PDF Extraction')).toBeInTheDocument();
     expect(
@@ -1352,7 +1352,7 @@ describe('ActivityDataPage delete flows', () => {
 
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
+    const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
     expect(within(dialog).getByText('Calculated')).toBeInTheDocument();
     expect(within(dialog).getByText('Electricity')).toBeInTheDocument();
     expect(within(dialog).getByText('389')).toBeInTheDocument();
@@ -1361,9 +1361,9 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(dialog).getByText('British Columbia')).toBeInTheDocument();
     expect(within(dialog).getByText('Unassigned')).toBeInTheDocument();
     expect(within(dialog).getByText('PDF Extraction')).toBeInTheDocument();
-    expect(within(dialog).getByText('Source File')).toBeInTheDocument();
+    expect(within(dialog).getByText('Source file')).toBeInTheDocument();
     expect(within(dialog).getAllByText('bc hydro.pdf').length).toBeGreaterThan(0);
-    expect(within(dialog).getByText('Source Data Status')).toBeInTheDocument();
+    expect(within(dialog).getByText('Source data status')).toBeInTheDocument();
     expect(within(dialog).getByText('Review required')).toBeInTheDocument();
     expect(within(dialog).queryByText('bc hydro.pdf · Source information needed')).not.toBeInTheDocument();
   });
@@ -1386,7 +1386,7 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await user.click(screen.getAllByRole('checkbox')[1]);
-    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+    await user.click(screen.getByRole('button', { name: /^Export records$/i }));
     await user.click(screen.getByRole('menuitem', { name: /Export selected records/i }));
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
@@ -1436,7 +1436,7 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Diesel');
     await user.selectOptions(screen.getByRole('combobox', { name: /Show/i }), 'tracked-metric');
-    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+    await user.click(screen.getByRole('button', { name: /^Export records$/i }));
     await user.click(screen.getByRole('menuitem', { name: /Export current filtered records/i }));
 
     const csv = await readBlobAsText(exportedBlobs[0]);
@@ -1453,7 +1453,7 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     await screen.findByText('No saved activity records yet. Add data from Input Data to create records for review.');
-    await user.click(screen.getByRole('button', { name: /^Export Records$/i }));
+    await user.click(screen.getByRole('button', { name: /^Export records$/i }));
     await user.click(screen.getByRole('menuitem', { name: /Export all records/i }));
 
     expect(await screen.findByText('No records available to export.')).toBeInTheDocument();
@@ -1481,9 +1481,9 @@ describe('ActivityDataPage delete flows', () => {
     expect(moreColumnsButton).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('menu', { name: /Activity table columns/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('checkbox', { name: /Source Reference/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Source reference/i }));
 
-    expect(screen.queryByRole('columnheader', { name: 'Source Reference' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Source reference' })).not.toBeInTheDocument();
     expect(screen.getByRole('menu', { name: /Activity table columns/i })).toBeInTheDocument();
 
     await user.click(document.body);
@@ -1656,9 +1656,9 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-activity-ab-electricity-location-based');
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
-    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
+    const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
     expect(within(dialog).getByText('Scope 2 — Location-based')).toBeInTheDocument();
-    expect(within(dialog).getByText('Accounting Method')).toBeInTheDocument();
+    expect(within(dialog).getByText('Accounting method')).toBeInTheDocument();
     expect(within(dialog).getByText('Location-based')).toBeInTheDocument();
     expect(within(dialog).getByText('Alberta')).toBeInTheDocument();
     expect(within(dialog).getAllByText('2026')).toHaveLength(2);
@@ -1707,7 +1707,7 @@ describe('ActivityDataPage delete flows', () => {
 
     await userEvent.click(within(row).getByRole('button', { name: /^View$/i }));
 
-    const dialog = await screen.findByRole('dialog', { name: /Activity Record Details/i });
+    const dialog = await screen.findByRole('dialog', { name: /Activity record details/i });
     expect(within(dialog).getAllByText('Business Travel - Accommodation').length).toBeGreaterThan(0);
     expect(within(dialog).getByText('Business Travel - Accommodation - Canada - 2025')).toBeInTheDocument();
     expect(within(dialog).queryByText(/^Hotel$/i)).not.toBeInTheDocument();
@@ -1785,7 +1785,7 @@ describe('ActivityDataPage delete flows', () => {
 
     await screen.findByText('Electricity');
     await userEvent.click(
-      screen.getByRole('button', { name: /^Recalculate Activity Records$/i }),
+      screen.getByRole('button', { name: /^Recalculate activity records$/i }),
     );
 
     await waitFor(() => {
@@ -1823,7 +1823,7 @@ describe('ActivityDataPage delete flows', () => {
     expect(screen.getByText('Electricity')).toBeInTheDocument();
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filter' }));
 
     expect(screen.getByText('Diesel')).toBeInTheDocument();
     expect(screen.getByText('Electricity')).toBeInTheDocument();
@@ -1854,7 +1854,7 @@ describe('ActivityDataPage delete flows', () => {
     expect(await screen.findByText('Electricity')).toBeInTheDocument();
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filter' }));
 
     expect(await screen.findByText('Diesel')).toBeInTheDocument();
     expect(await screen.findByText('Electricity')).toBeInTheDocument();
@@ -1899,7 +1899,7 @@ describe('ActivityDataPage delete flows', () => {
     );
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
+    const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
     expect(within(dialog).getByText('Requires Review')).toBeInTheDocument();
     expect(within(dialog).getByText('Natural Gas')).toBeInTheDocument();
     expect(within(dialog).getByText('Missing unit')).toBeInTheDocument();
@@ -1940,8 +1940,8 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-activity-1');
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
-    expect(within(dialog).getByText('Activity Record Details')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
+    expect(within(dialog).getByText('Activity record details')).toBeInTheDocument();
     expect(within(dialog).getByText('Diesel')).toBeInTheDocument();
     expect(within(dialog).getByText('2026-05-14')).toBeInTheDocument();
     expect(within(dialog).getAllByText('Manual Entry').length).toBeGreaterThan(0);
@@ -1953,7 +1953,7 @@ describe('ActivityDataPage delete flows', () => {
       within(dialog).getByRole('button', { name: 'Close activity record details' }),
     );
 
-    expect(screen.queryByRole('dialog', { name: 'Activity Record Details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Activity record details' })).not.toBeInTheDocument();
   });
 
   it('closes record details with Escape', async () => {
@@ -1962,11 +1962,11 @@ describe('ActivityDataPage delete flows', () => {
     const row = await screen.findByTestId('activity-row-activity-1');
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
 
-    expect(screen.getByRole('dialog', { name: 'Activity Record Details' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Activity record details' })).toBeInTheDocument();
 
     await userEvent.keyboard('{Escape}');
 
-    expect(screen.queryByRole('dialog', { name: 'Activity Record Details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Activity record details' })).not.toBeInTheDocument();
   });
 
   it.each(['2026-07-20', '2026-01-15'])(
@@ -2065,7 +2065,7 @@ describe('ActivityDataPage delete flows', () => {
     const unitInput = screen.getByLabelText('Unit') as HTMLInputElement;
     expect(unitInput).toHaveValue('GJ');
 
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Activity Type/i }), 'ELECTRICITY');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Activity type/i }), 'ELECTRICITY');
     expect(unitInput).toHaveValue('kWh');
 
     await userEvent.click(screen.getByRole('button', { name: /^Save$/i }));

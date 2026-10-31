@@ -80,7 +80,7 @@ export default function DashboardPage() {
           <div className="card-body">
             <div className="card-row">
               <div>
-                <div className="page-title">Total Emissions</div>
+                <div className="page-title">Total emissions</div>
                 <div className="page-hint">Current calculated inventory</div>
               </div>
               <span className="text-[10px] px-2 py-1 rounded-md bg-emerald-600 text-white font-medium">
@@ -107,7 +107,7 @@ export default function DashboardPage() {
         <div className="card">
           <div className="card-body">
             <div className="card-row">
-              <div className="page-title">Emissions by Scope</div>
+              <div className="page-title">Emissions by scope</div>
               <div className="page-hint">kg CO₂e</div>
             </div>
 
@@ -202,7 +202,7 @@ export default function DashboardPage() {
         <div className="card">
           <div className="card-body">
             <div className="card-row">
-              <div className="page-title">Target Progress</div>
+              <div className="page-title">Target progress</div>
               <div className="page-hint">vs 2022 baseline</div>
             </div>
 
@@ -236,7 +236,7 @@ export default function DashboardPage() {
         <div className="card">
           <div className="card-body">
             <div className="card-row">
-              <div className="page-title">Compliance & Filings</div>
+              <div className="page-title">Compliance & filings</div>
               <div className="page-hint">Next 90 days</div>
             </div>
 
@@ -305,7 +305,7 @@ export default function DashboardPage() {
         <div className="card">
           <div className="card-body">
             <div className="card-row">
-              <div className="page-title">Next Required Action</div>
+              <div className="page-title">Next required action</div>
               <div className="page-hint">Assigned to you</div>
             </div>
 
@@ -346,7 +346,7 @@ export default function DashboardPage() {
       <section className="card">
         <div className="card-body">
           <div className="card-row">
-            <div className="page-title">Recent Activity</div>
+            <div className="page-title">Recent activity</div>
             <div className="page-hint">Last 7 changes</div>
           </div>
 

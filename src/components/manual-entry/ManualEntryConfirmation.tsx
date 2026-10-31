@@ -26,7 +26,7 @@ export function ManualEntryConfirmation({ record, onAddAnother }: {
       <span>Your saved record is in Data Records.</span>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
         <a href={record.id ? `/activity-records?recordId=${encodeURIComponent(record.id)}` : '/activity-records'}>
-          View in Data Records
+          View in data records
         </a>
         <button type="button" onClick={onAddAnother}>Add another entry</button>
       </div>

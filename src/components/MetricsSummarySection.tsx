@@ -94,10 +94,10 @@ type CalculationIssueGroup = MissingFactorGroup & {
 };
 
 type CalculationTrailTarget =
-  | { type: 'total'; label: 'Total Calculated Emissions' }
+  | { type: 'total'; label: 'Total calculated emissions' }
   | { type: 'scope'; scope: 'SCOPE_1' | 'SCOPE_2' | 'SCOPE_3'; label: string }
   | { type: 'activity'; activityType: string; label: string }
-  | { type: 'tracked'; label: 'Tracked Metrics' };
+  | { type: 'tracked'; label: 'Tracked metrics' };
 
 export type HotspotAnalysis = {
   totalCalculatedEmissions: number;
@@ -305,7 +305,7 @@ export function buildMetricsSummaryTableRows(input: {
   }
 
   rows.push({
-    metricType: 'Total Calculated Emissions',
+    metricType: 'Total calculated emissions',
     unit: formatEmissionsUnit('kgCO2e'),
     totalValue: formatEmissionsValue(totalEstimatedEmissionsKgCO2e),
     category: 'calculated',
@@ -432,7 +432,7 @@ export function MetricsSummarySection({
     <>
       <div style={gridStyle}>
         <MetricCard
-          title="Fuel Usage"
+          title="Fuel usage"
           value={
             appendReviewNote(
               formatFuelUsageBreakdown(usageTotals.fuelUsageBreakdown),
@@ -459,24 +459,24 @@ export function MetricsSummarySection({
         />
 
         <MetricCard
-          title="Total Calculated Emissions"
+          title="Total calculated emissions"
           value={formatEmissionsWithUnit(totalEstimatedEmissionsKgCO2e)}
           icon="🌱"
           color="#10b981"
           highlight
           loading={isLoading}
           traceText={co2TraceText}
-          traceActionLabel={calculatedDetailsCount > 0 ? 'View Calculation Trail' : undefined}
+          traceActionLabel={calculatedDetailsCount > 0 ? 'View calculation trail' : undefined}
           onTraceAction={() =>
             openCalculationTrail({
               type: 'total',
-              label: 'Total Calculated Emissions',
+              label: 'Total calculated emissions',
             })
           }
         />
 
         <MetricCard
-          title="Records Included in GHG Total"
+          title="Records included in GHG total"
           value={String(recordsIncludedInGhgTotal)}
           icon="📄"
           color="#64748b"
@@ -484,7 +484,7 @@ export function MetricsSummarySection({
         />
 
         <MetricCard
-          title="Tracked Metrics"
+          title="Tracked metrics"
           value={String(trackedMetricCount)}
           icon="📊"
           color="#0f766e"
@@ -519,7 +519,7 @@ export function MetricsSummarySection({
 
       <div style={reconciliationStyle}>
         <div style={reconciliationHeaderStyle}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Record Reconciliation</h2>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Record reconciliation</h2>
           <span
             title="Records included in GHG total are records successfully used in emissions calculations. Tracked metrics are reported separately."
             style={helpBadgeStyle}
@@ -541,7 +541,7 @@ export function MetricsSummarySection({
             <strong>{recordsRequiringReviewCount}</strong> {recordsRequiringReviewCount === 1 ? 'record' : 'records'} needing attention
           </div>
           <div>
-            <strong>{excludedDueToCalculationIssuesCount}</strong> Excluded Due to Calculation Issues
+            <strong>{excludedDueToCalculationIssuesCount}</strong> Excluded due to calculation issues
           </div>
         </div>
         {recordsRequiringReviewCount > 0 ? (
@@ -568,7 +568,7 @@ export function MetricsSummarySection({
       {calculationIssueGroups.length > 0 ? (
         <div style={hasBlockingCalculationIssues ? warningStyle : informationalNotesStyle}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
-            {hasBlockingCalculationIssues ? 'Calculation Issues' : 'Data Quality & Tracked Metrics'}
+            {hasBlockingCalculationIssues ? 'Calculation issues' : 'Data quality & tracked metrics'}
           </div>
           <div style={{ marginBottom: 10 }}>
             {hasBlockingCalculationIssues
@@ -599,11 +599,11 @@ export function MetricsSummarySection({
                       onClick={() =>
                         openCalculationTrail({
                           type: 'tracked',
-                          label: 'Tracked Metrics',
+                          label: 'Tracked metrics',
                         })
                       }
                     >
-                      View Calculation Trail
+                      View calculation trail
                     </button>
                   ) : null}
                   {group.issueType === 'missingFactor' && group.availableUnitsForActivityType.length > 0 ? (
@@ -647,7 +647,7 @@ export function MetricsSummarySection({
 
       <CollapsibleSection
         id="calculation-summary"
-        title="Calculation Summary"
+        title="Calculation summary"
         summary={
           isCalculationSummaryExpanded
             ? 'One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.'
@@ -657,7 +657,7 @@ export function MetricsSummarySection({
         onToggle={() => setIsCalculationSummaryExpanded((expanded) => !expanded)}
         style={tableCardStyle}
         contentStyle={{ marginTop: 14, overflowX: 'auto' }}
-        toggleAriaLabelTitle="Calculation Summary section"
+        toggleAriaLabelTitle="Calculation summary section"
       >
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -755,11 +755,11 @@ export function MetricsSummarySection({
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={thStyle}>Activity</th>
                   <th style={thStyle}>Quantity</th>
-                  <th style={thStyle}>Activity Source</th>
+                  <th style={thStyle}>Activity source</th>
                   <th style={thStyle}>Activity Jurisdiction</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Scope</th>
-                  <th style={thStyle}>Factor Used</th>
+                  <th style={thStyle}>Factor used</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
               </thead>
@@ -853,13 +853,13 @@ function CalculationDetailModal({
             label="Quantity"
             value={`${formatDisplayNumber(detail.activityQuantity)} ${detail.activityUnit}`}
           />
-          <CalculationDetailField label="Activity Source" value={formatCalculationSourceReference(detail)} />
+          <CalculationDetailField label="Activity source" value={formatCalculationSourceReference(detail)} />
           <CalculationDetailField label="Activity Jurisdiction" value={formatDetailJurisdiction(detail)} />
           <CalculationDetailField label="Factor Jurisdiction" value={formatFactorJurisdiction(detail)} />
           <CalculationDetailField label="Status" value={formatCalculationStatus(detail.status)} />
           <CalculationDetailField label="Scope" value={formatCalculationScopeLabel(detail)} />
           <CalculationDetailField
-            label="Factor Used"
+            label="Factor used"
             value={formatDetailFactorUsed(detail)}
           />
           <CalculationDetailField label="Factor Source" value={formatTraceabilitySource(detail)} />
@@ -884,7 +884,7 @@ function CalculationDetailModal({
             fullWidth
           />
           <CalculationDetailField
-            label="Matching Explanation"
+            label="Matching explanation"
             value={formatMatchingMethod(detail)}
             fullWidth
           />
@@ -975,7 +975,7 @@ function CalculationTrailModal({
           style={calculationTrailBodyStyle}
         >
           <section style={calculationTrailSectionStyle}>
-            <h3 style={calculationTrailSectionTitleStyle}>Calculation Summary</h3>
+            <h3 style={calculationTrailSectionTitleStyle}>Calculation summary</h3>
             <div style={calculationTrailSummaryGridStyle}>
               <CalculationDetailField label="Result" value={trail.resultName} />
               <CalculationDetailField
@@ -989,7 +989,7 @@ function CalculationTrailModal({
           </section>
 
           <section style={calculationTrailSectionStyle}>
-            <h3 style={calculationTrailSectionTitleStyle}>Included Activity Records</h3>
+            <h3 style={calculationTrailSectionTitleStyle}>Included activity records</h3>
             {trail.includedRecords.length === 0 ? (
               <div style={calculationTrailEmptyStyle}>
                 No included records are available for this calculation trail.
@@ -1008,7 +1008,7 @@ function CalculationTrailModal({
 
           {trail.trackedMetrics.length > 0 ? (
             <section style={calculationTrailSectionStyle}>
-              <h3 style={calculationTrailSectionTitleStyle}>Tracked Metrics</h3>
+              <h3 style={calculationTrailSectionTitleStyle}>Tracked metrics</h3>
               <div style={calculationTrailRecordListStyle}>
                 {trail.trackedMetrics.map((detail, index) => (
                   <div key={`tracked-${index}`} style={calculationTrailTrackedCardStyle}>
@@ -1215,7 +1215,7 @@ function buildCalculationTrail(
   );
 
   return {
-    title: `${target.label} Calculation Trail`,
+    title: `${target.label} calculation trail`,
     resultName: target.label,
     totalEmissions,
     includedRecords,
@@ -2305,7 +2305,7 @@ function ScopeSummaryCard({
               style={calculationTrailButtonStyle}
               onClick={() => onViewTrail(row.scope, row.label)}
             >
-              View Calculation Trail
+              View calculation trail
             </button>
           </div>
         ))}
@@ -2430,7 +2430,7 @@ function CarbonCreditReadinessPanel({
   return (
     <CollapsibleSection
       id="carbon-credit-readiness"
-      title="Carbon Credit Readiness Notes"
+      title="Carbon credit readiness notes"
       summary={
         isExpanded
           ? 'Check whether an emissions reduction opportunity may need further professional assessment.'
@@ -2439,7 +2439,7 @@ function CarbonCreditReadinessPanel({
       expanded={isExpanded}
       onToggle={onToggle}
       style={creditReadinessCardStyle}
-      toggleAriaLabelTitle="Carbon Credit Readiness Notes section"
+      toggleAriaLabelTitle="Carbon credit readiness notes section"
     >
       <div style={creditReadinessScoreRowStyle}>
         <div style={creditScoreStyle(assessment.readinessLevel)}>
@@ -2505,7 +2505,7 @@ function HotspotAnalysisSection({
   return (
     <CollapsibleSection
       id="emissions-hotspots"
-      title="Emissions Hotspots"
+      title="Emissions hotspots"
       summary={
         isExpanded
           ? 'Estimated emissions by activity category. Records needing attention are excluded from hotspot totals.'
@@ -2514,11 +2514,11 @@ function HotspotAnalysisSection({
       expanded={isExpanded}
       onToggle={onToggle}
       style={hotspotCardStyle}
-      toggleAriaLabelTitle="Emissions Hotspots section"
+      toggleAriaLabelTitle="Emissions hotspots section"
     >
       {analysis.topCategory ? (
         <div style={topHotspotCardStyle}>
-          <div style={topHotspotLabelStyle}>Top Hotspot</div>
+          <div style={topHotspotLabelStyle}>Top hotspot</div>
           <strong>{analysis.topCategory.displayName}</strong>
           <div style={topHotspotValueStyle}>
 	            {formatDisplayNumber(analysis.topCategory.percentageOfTotal)}% of current estimated emissions
@@ -2542,7 +2542,7 @@ function HotspotAnalysisSection({
 
           <div style={hotspotChartStyle} aria-label="Top emission categories">
             <div style={hotspotChartTitleStyle}>
-              <strong>Top Emission Categories</strong>
+              <strong>Top emission categories</strong>
                 <span>Share of current estimated emissions</span>
             </div>
             {analysis.categoryHotspots.map((row) => (
@@ -2567,7 +2567,7 @@ function HotspotAnalysisSection({
                   style={calculationTrailInlineButtonStyle}
                   onClick={() => onViewTrail(row.activityType, row.displayName)}
                 >
-                  View Calculation Trail
+                  View calculation trail
                 </button>
               </div>
             ))}
@@ -2614,7 +2614,7 @@ function HotspotAnalysisSection({
                         style={calculationDetailsButtonStyle}
                         onClick={() => onViewTrail(row.activityType, row.displayName)}
                       >
-                        View Calculation Trail
+                        View calculation trail
                       </button>
                     </td>
                   </tr>
@@ -2732,7 +2732,7 @@ function CalculationSummaryEmptyState({
       </div>
       {informationalIssueGroups.length > 0 ? (
         <div style={trackedMetricListStyle}>
-          <div style={{ fontWeight: 800 }}>Tracked Metrics</div>
+          <div style={{ fontWeight: 800 }}>Tracked metrics</div>
           {informationalIssueGroups.map((group) => (
             <div key={`${group.activityType}-${group.unit}`}>
               {formatActivityTypeLabel(group.activityType)} / {group.unit} — {group.count}{' '}
@@ -2742,7 +2742,7 @@ function CalculationSummaryEmptyState({
         </div>
       ) : null}
       {countSummary.skippedRecords > 0 ? (
-        <div>Review Data Quality & Tracked Metrics above.</div>
+        <div>Review data quality & tracked metrics above.</div>
       ) : null}
     </div>
   );
@@ -3065,16 +3065,16 @@ function MetricCard({
       <div style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{title}</div>
       <div style={{
         marginTop: 6,
-        fontSize: title === 'Fuel Usage' ? 18 : 28,
+        fontSize: title === 'Fuel usage' ? 18 : 28,
         fontWeight: 700,
         color: highlight ? color : '#111',
         whiteSpace: 'pre-line',
-        lineHeight: title === 'Fuel Usage' ? 1.45 : 1.2,
+        lineHeight: title === 'Fuel usage' ? 1.45 : 1.2,
       }}>
         {loading ? (
           <div aria-label={`Loading ${title}`}>
-            <SkeletonLine width={title === 'Fuel Usage' ? '82%' : '64%'} />
-            {title === 'Fuel Usage' ? <SkeletonLine width="58%" /> : null}
+            <SkeletonLine width={title === 'Fuel usage' ? '82%' : '64%'} />
+            {title === 'Fuel usage' ? <SkeletonLine width="58%" /> : null}
           </div>
         ) : (
           value

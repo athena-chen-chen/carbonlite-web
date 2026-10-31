@@ -40,7 +40,7 @@ it.each(['documents', 'spreadsheet', 'manual'] as const)('keeps tab order, selec
   render(<InputMethodTabs activeMethod={activeMethod} onChange={onChange} />);
   const tabs = within(screen.getByRole('tablist', { name: 'Input data methods' })).getAllByRole('tab');
   const methods = ['documents', 'spreadsheet', 'manual'];
-  const labels = ['Upload Documents', 'Import Spreadsheet', 'Manual Entry'];
+  const labels = ['Upload documents', 'Import spreadsheet', 'Manual entry'];
   expect(tabs).toHaveLength(3);
   for (const [index, tab] of tabs.entries()) {
     expect(tab).toHaveTextContent(labels[index]);
@@ -91,10 +91,10 @@ it.each([
     expect(event.defaultPrevented).toBe(false);
   }
   expect(props.onChooseFiles).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Extract Data' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Extract data' })).toBeDisabled();
   if (!disabled.canUploadData) {
     expect(dropzone).toHaveAttribute('title', props.uploadDisabledReason);
-    expect(screen.getByRole('button', { name: 'Extract Data' })).toHaveAttribute('title', props.uploadDisabledReason);
+    expect(screen.getByRole('button', { name: 'Extract data' })).toHaveAttribute('title', props.uploadDisabledReason);
   }
 });
 
@@ -135,7 +135,7 @@ it('keeps filenames, MIME fallbacks, byte sizes, and workflow steps', () => {
     'invoice.pdf · application/pdf · 7 bytes',
     'operations.xlsx · Unknown · 4 bytes',
   ]);
-  const workflow = screen.getByLabelText('Input Data local steps');
+  const workflow = screen.getByLabelText('Input data local steps');
   for (const step of ['Select source document', 'Extract activity data', 'Review parser results', 'Save rows for review']) {
     expect(within(workflow).getByText(step)).toBeInTheDocument();
   }
@@ -144,11 +144,11 @@ it('keeps filenames, MIME fallbacks, byte sizes, and workflow steps', () => {
 it('disables extraction until a file is selected, then delegates extraction', async () => {
   const props = documentProps();
   const { rerender } = render(<DocumentUploadPanel {...props} />);
-  expect(screen.getByRole('button', { name: 'Extract Data' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Extract Data' })).toHaveAttribute('title', 'Select a document before extracting data.');
+  expect(screen.getByRole('button', { name: 'Extract data' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Extract data' })).toHaveAttribute('title', 'Select a document before extracting data.');
   rerender(<DocumentUploadPanel {...props} selectedFiles={selectedFiles().slice(0, 1)} />);
   expect(screen.getByText('Selected file:')).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
   expect(props.onUploadAndExtract).toHaveBeenCalledOnce();
 });
 
@@ -160,7 +160,7 @@ it('preserves the processing label and disabled extraction', () => {
 it('wires spreadsheet templates, mode, success, and source changes to the parent', async () => {
   const props = { onDownloadCsvTemplate: vi.fn(), onDownloadExcelTemplate: vi.fn(), onSuccess: vi.fn(), onSourceChange: vi.fn() };
   render(<SpreadsheetImportPanel {...props} />);
-  expect(screen.getByRole('heading', { name: 'Import Spreadsheet', level: 2 })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Import spreadsheet', level: 2 })).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Download CSV template' }));
   await userEvent.click(screen.getByRole('button', { name: 'Download Excel template' }));
   expect(props.onDownloadCsvTemplate).toHaveBeenCalledOnce();
@@ -180,7 +180,7 @@ it('attaches the parent manual ref to the existing focusable container and prese
   const { container } = render(<ManualEntryPanel containerRef={containerRef} onSuccess={onSuccess} />);
   expect(containerRef.current).toBe(container.firstElementChild);
   expect(containerRef.current).toHaveAttribute('tabindex', '-1');
-  expect(screen.getByRole('heading', { name: 'Manual Entry', level: 2 })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Manual entry', level: 2 })).toBeInTheDocument();
   const tableProps = vi.mocked(ExcelInputTable).mock.calls.at(-1)![0];
   expect(tableProps.mode).toBe('manual');
   const result = { source: 'manual' as const, savedCount: 1 };

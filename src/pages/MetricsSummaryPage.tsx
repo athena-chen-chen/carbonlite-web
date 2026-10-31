@@ -340,10 +340,10 @@ function handleDownloadCSV() {
   const totalsByFacility = summary?.totalsByFacility ?? [];
 
   const rows = [
-    ['Section', 'Metric Type', 'Facility', 'Unit', 'Total Value'],
+    ['Section', 'Metric type', 'Facility', 'Unit', 'Total value'],
 
     ...totalsByMetric.map((item: any) => [
-      'Calculation Summary',
+      'Calculation summary',
       item.metricType,
       '',
       item.unit,
@@ -387,7 +387,7 @@ function handleDownloadPDF() {
   const doc = new jsPDF();
 
   doc.setFontSize(18);
-  doc.text('CarbonLite Calculation Results', 14, 20);
+  doc.text('CarbonLite Calculation results', 14, 20);
 
   doc.setFontSize(10);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
@@ -395,9 +395,9 @@ function handleDownloadPDF() {
 
   autoTable(doc, {
     startY: 45,
-    head: [['Category', 'Metric Type', 'Unit', 'Total Value']],
+    head: [['Category', 'Metric type', 'Unit', 'Total value']],
     body: totalsByMetric.map((item: any) => [
-      item.category === 'calculated' ? 'Calculated Result' : 'Input Data',
+      item.category === 'calculated' ? 'Calculated result' : 'Input data',
       item.metricType,
       item.unit,
       item.totalValue,
@@ -406,7 +406,7 @@ function handleDownloadPDF() {
 
   autoTable(doc, {
     startY: (doc as any).lastAutoTable.finalY + 12,
-    head: [['Facility', 'Metric Type', 'Unit', 'Total Value']],
+    head: [['Facility', 'Metric type', 'Unit', 'Total value']],
     body: totalsByFacility.map((item: any) => [
       item.facilityId ?? 'Unassigned',
       item.metricType,
@@ -446,7 +446,7 @@ function handleDownloadPDF() {
       data-testid={showPilotReviewerWelcome ? 'pilot-reviewer-welcome-panel' : undefined}
       style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}
     >
-      <PageHeader title="Calculation Results" headingRef={headingRef} />
+      <PageHeader title="Calculation results" headingRef={headingRef} />
       {selectedDocumentIds.length === 0 || selectedRecordIds.length > 0 ? (
         <Link to="/reports" state={selectedRecordIds.length ? {
           reportScope: 'selectedRecords', selectedActivityRecordIds: selectedRecordIds,
@@ -471,14 +471,14 @@ function handleDownloadPDF() {
 
       <CollapsibleSection
         id="inventory-boundary"
-        title="Inventory Boundary"
+        title="Inventory boundary"
         summary={inventoryBoundarySummary}
         expanded={isInventoryBoundaryExpanded}
         onToggle={() => setIsInventoryBoundaryExpanded((expanded) => !expanded)}
         style={inventoryBoundaryCardStyle}
         contentStyle={inventoryBoundaryGridStyle}
       >
-        <BoundaryField label="Organization / Workspace" value={inventoryBoundary.organizationWorkspace} />
+        <BoundaryField label="Organization / workspace" value={inventoryBoundary.organizationWorkspace} />
         {inventoryBoundary.industry ? (
           <BoundaryField label="Industry" value={inventoryBoundary.industry} />
         ) : null}
@@ -486,7 +486,7 @@ function handleDownloadPDF() {
           <BoundaryField label="Country" value={inventoryBoundary.country} />
         ) : null}
         {inventoryBoundary.provinceOrTerritory ? (
-          <BoundaryField label="Province / Territory" value={inventoryBoundary.provinceOrTerritory} />
+          <BoundaryField label="Province / territory" value={inventoryBoundary.provinceOrTerritory} />
         ) : null}
         {inventoryBoundary.city ? (
           <BoundaryField label="City" value={inventoryBoundary.city} />
@@ -510,7 +510,7 @@ function handleDownloadPDF() {
 
       <CollapsibleSection
         id="site-facility-breakdown"
-        title="Site / Facility Breakdown"
+        title="Site / facility breakdown"
         summary={
           siteFacilityBreakdownRows.length > 0
             ? `Organization total: ${formatEmissionsWithUnit(siteFacilityRollup.organizationTotalKgCO2e)} · ${siteFacilityBreakdownRows.length} site/facility ${siteFacilityBreakdownRows.length === 1 ? 'group' : 'groups'}`
@@ -528,7 +528,7 @@ function handleDownloadPDF() {
 
       <div style={filterCardStyle}>
         <div>
-          <label style={labelStyle}>Start Date</label>
+          <label style={labelStyle}>Start date</label>
           <input
             type="date"
             value={draftPeriodStart}
@@ -539,7 +539,7 @@ function handleDownloadPDF() {
         </div>
 
         <div>
-          <label style={labelStyle}>End Date</label>
+          <label style={labelStyle}>End date</label>
           <input
             type="date"
             value={draftPeriodEnd}
@@ -667,13 +667,13 @@ function SiteFacilityBreakdownTable({ rows }: { rows: SiteFacilityBreakdownRow[]
       <table style={siteFacilityTableStyle}>
         <thead>
           <tr>
-            <th style={siteFacilityThStyle}>Site / Facility</th>
+            <th style={siteFacilityThStyle}>Site / facility</th>
             <th style={siteFacilityThStyle}>Scope 1</th>
             <th style={siteFacilityThStyle}>Scope 2</th>
             <th style={siteFacilityThStyle}>Scope 3</th>
             <th style={siteFacilityThStyle}>Total</th>
-            <th style={siteFacilityThStyle}>Included Records</th>
-            <th style={siteFacilityThStyle}>Activity Type Breakdown</th>
+            <th style={siteFacilityThStyle}>Included records</th>
+            <th style={siteFacilityThStyle}>Activity type breakdown</th>
           </tr>
         </thead>
         <tbody>
@@ -714,15 +714,15 @@ function PilotReviewerWelcomePanel() {
       <p style={pilotReviewerPathLabelStyle}>Suggested review path:</p>
       <ol style={pilotReviewerListStyle}>
         <li>
-          <Link to="/data-records" style={pilotReviewerLinkStyle}>Data Records</Link>
+          <Link to="/data-records" style={pilotReviewerLinkStyle}>Data records</Link>
           <span style={pilotReviewerDescriptionStyle}> — review sample activity data and source-data issues</span>
         </li>
         <li>
-          <Link to="/conversion-factors" style={pilotReviewerLinkStyle}>Emission Factors (advanced)</Link>
+          <Link to="/conversion-factors" style={pilotReviewerLinkStyle}>Emission factors (advanced)</Link>
           <span style={pilotReviewerDescriptionStyle}> — review emission factor transparency and assumptions</span>
         </li>
         <li>
-          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Calculation Results</Link>
+          <Link to="/metrics-summary" style={pilotReviewerLinkStyle}>Calculation results</Link>
           <span style={pilotReviewerDescriptionStyle}> — review totals, hotspots, and calculation trail</span>
         </li>
         <li>

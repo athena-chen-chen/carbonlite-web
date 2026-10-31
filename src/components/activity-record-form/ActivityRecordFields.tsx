@@ -48,7 +48,7 @@ export function ActivityDetailsFields({
       <div style={sectionLabelStyle}>Activity details</div>
       <div style={fieldRowStyle}>
         <label style={{ ...fieldStyle, ...activityTypeFieldStyle }}>
-          <span>Activity Type</span>
+          <span>Activity type</span>
           <select
             value={values.activityType ?? ''}
             onChange={(event) => onChange('activityType', event.target.value)}
@@ -172,7 +172,7 @@ export function LocationSourceFields({
         />
 
         <label style={{ ...fieldStyle, ...facilityFieldStyle }}>
-          <span>Site / Facility</span>
+          <span>Site / facility</span>
           <input
             value={(facilityField === 'facilityName' ? values.facilityName : values.facilityId) ?? ''}
             onChange={(event) => onChange(facilityField, event.target.value)}
@@ -184,7 +184,7 @@ export function LocationSourceFields({
         </label>
 
         <label style={{ ...fieldStyle, ...sourceReferenceFieldStyle }}>
-          <span>Source Reference</span>
+          <span>Source reference</span>
           <input
             value={values.sourceReference ?? ''}
             onChange={(event) => onChange('sourceReference', event.target.value)}

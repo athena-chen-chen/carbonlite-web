@@ -356,7 +356,7 @@ export function UploadPage() {
   const selectableDocuments = documents.items.filter(hasImportedRecords);
   const selectableVisibleDocuments = visibleDocuments.filter(hasImportedRecords);
   const selectedImportedDocuments = selectedDocuments.filter(hasImportedRecords);
-  const selectedDocumentsActionLabel = 'View Calculation Results';
+  const selectedDocumentsActionLabel = 'View calculation results';
   const isProcessing = upload.uploading || isReviewProcessing;
   const selectedDocumentsActionDisabled =
     selectedImportedDocuments.length === 0 ||
@@ -1194,7 +1194,7 @@ export function UploadPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <PageHeader title="Input Data" headingRef={pageHeadingRef} />
+      <PageHeader title="Input data" headingRef={pageHeadingRef} />
 
       {!canImportData ? (
         <div style={readOnlyNoticeStyle}>
@@ -1253,7 +1253,7 @@ export function UploadPage() {
           disabled={!canImportData}
           style={primaryButtonStyle(!canImportData)}
         >
-          {sampleWorkspaceLoaded ? 'Reload Sample Data' : 'Load Sample Data'}
+          {sampleWorkspaceLoaded ? 'Reload sample data' : 'Load sample data'}
         </button>
       </div> : null}
 
@@ -1344,7 +1344,7 @@ export function UploadPage() {
                   })
                 }
               >
-                View Calculation Results
+                View calculation results
               </button>
 
 

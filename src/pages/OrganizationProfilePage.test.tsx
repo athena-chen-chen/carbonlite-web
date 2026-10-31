@@ -85,7 +85,7 @@ describe('OrganizationProfilePage', () => {
 
     render(<OrganizationProfilePage />);
 
-    expect(screen.getByRole('heading', { name: 'Organization & Boundary' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Organization & boundary' })).toBeInTheDocument();
     expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/pilot review/i)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeInTheDocument();
@@ -106,12 +106,12 @@ describe('OrganizationProfilePage', () => {
     expect(screen.getByRole('option', { name: 'Quebec' })).toBeInTheDocument();
 
     await fillRequiredProfileFields();
-    await userEvent.clear(screen.getByLabelText(/Geographic Boundary/i));
+    await userEvent.clear(screen.getByLabelText(/Geographic boundary/i));
     await userEvent.type(
-      screen.getByLabelText(/Geographic Boundary/i),
+      screen.getByLabelText(/Geographic boundary/i),
       'Canadian warehouse and fleet operations',
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
     expect(loadOrganizationProfile().organizationName).toBe('Kach Canada');
@@ -123,7 +123,7 @@ describe('OrganizationProfilePage', () => {
     );
   });
 
-  it('lets customer editors edit Organization & Boundary settings', async () => {
+  it('lets customer editors edit Organization & boundary settings', async () => {
     setCustomerUser('EDITOR');
 
     render(<OrganizationProfilePage />);
@@ -131,23 +131,23 @@ describe('OrganizationProfilePage', () => {
     expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeEnabled();
     expect(screen.getByRole('combobox', { name: /Province \/ Territory/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Save Organization Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save organization profile' })).toBeInTheDocument();
 
     await fillRequiredProfileFields();
     await userEvent.clear(screen.getByLabelText(/City/i));
     await userEvent.type(screen.getByLabelText(/City/i), 'Calgary');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
     expect(loadOrganizationProfile().city).toBe('Calgary');
   });
 
-  it('renders Members & Roles as read-only summary values without duplicate email fallback', () => {
+  it('renders Members & roles as read-only summary values without duplicate email fallback', () => {
     setCustomerUser('EDITOR');
 
     render(<OrganizationProfilePage />);
 
-    const membersSection = screen.getByRole('region', { name: 'Members & Roles' });
+    const membersSection = screen.getByRole('region', { name: 'Members & roles' });
     expect(within(membersSection).getByText('User')).toBeInTheDocument();
     expect(within(membersSection).queryByText('Current user')).not.toBeInTheDocument();
     expect(within(membersSection).queryByText('Email')).not.toBeInTheDocument();
@@ -165,19 +165,19 @@ describe('OrganizationProfilePage', () => {
 
     render(<OrganizationProfilePage />);
 
-    const membersSection = screen.getByRole('region', { name: 'Members & Roles' });
+    const membersSection = screen.getByRole('region', { name: 'Members & roles' });
     expect(within(membersSection).getByText('Current user')).toBeInTheDocument();
     expect(within(membersSection).getByText('Athena Chen')).toBeInTheDocument();
     expect(within(membersSection).getByText('Email')).toBeInTheDocument();
     expect(within(membersSection).getByText('athena.chen@example.com')).toBeInTheDocument();
   });
 
-  it('renders Data & Privacy as six informational cards in a responsive grid', () => {
+  it('renders Data & privacy as six informational cards in a responsive grid', () => {
     setAdminUser();
 
     render(<OrganizationProfilePage />);
 
-    const privacySection = screen.getByRole('region', { name: 'Data & Privacy' });
+    const privacySection = screen.getByRole('region', { name: 'Data & privacy' });
     [
       'Data handling',
       'Retention',
@@ -194,19 +194,19 @@ describe('OrganizationProfilePage', () => {
     expect(within(privacySection).queryByRole('textbox')).not.toBeInTheDocument();
   });
 
-  it('keeps customer viewers read-only on Organization & Boundary settings', () => {
+  it('keeps customer viewers read-only on Organization & boundary settings', () => {
     setCustomerUser('VIEWER');
 
     render(<OrganizationProfilePage />);
 
     expect(screen.getByText('Your account has read-only access to this workspace.')).toBeInTheDocument();
     expect(screen.queryByText(/pilot review/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Save Organization Profile' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save organization profile' })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: /Province \/ Territory/i })).toBeDisabled();
   });
 
-  it('lets legacy regular USER accounts edit Organization & Boundary settings', async () => {
+  it('lets legacy regular USER accounts edit Organization & boundary settings', async () => {
     setLegacyRegularUser();
     localStorage.setItem('accessToken', 'legacy-workspace-token');
     const fetchMock = vi.fn(async (_url: string | URL | Request, options?: RequestInit) => {
@@ -245,11 +245,11 @@ describe('OrganizationProfilePage', () => {
     expect(screen.queryByText(/Read-only access/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/pilot review/i)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Industry/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Save Organization Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save organization profile' })).toBeInTheDocument();
 
     await userEvent.clear(screen.getByLabelText(/City/i));
     await userEvent.type(screen.getByLabelText(/City/i), 'Edmonton');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -260,31 +260,31 @@ describe('OrganizationProfilePage', () => {
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
   });
 
-  it('allows Primary Contact Email to remain blank when saving', async () => {
+  it('allows Primary contact email to remain blank when saving', async () => {
     setAdminUser();
     render(<OrganizationProfilePage />);
 
     await fillRequiredProfileFields();
-    expect(screen.getByLabelText(/Primary Contact Email/i)).toHaveValue('');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    expect(screen.getByLabelText(/Primary contact email/i)).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
     expect(loadOrganizationProfile().primaryContactEmail).toBe('');
   });
 
-  it('saves a valid Primary Contact Email and trims surrounding spaces', async () => {
+  it('saves a valid Primary contact email and trims surrounding spaces', async () => {
     setAdminUser();
     render(<OrganizationProfilePage />);
 
     await fillRequiredProfileFields();
-    await userEvent.type(screen.getByLabelText(/Primary Contact Email/i), ' Athena+Pilot@Example.ca ');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.type(screen.getByLabelText(/Primary contact email/i), ' Athena+Pilot@Example.ca ');
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(screen.getByText('Organization profile saved.')).toBeInTheDocument();
     expect(loadOrganizationProfile().primaryContactEmail).toBe('athena+pilot@example.ca');
   });
 
-  it('loads and saves Organization & Boundary values through the backend when signed in', async () => {
+  it('loads and saves Organization & boundary values through the backend when signed in', async () => {
     setAdminUser();
     localStorage.setItem('accessToken', 'workspace-token');
     localStorage.setItem(
@@ -338,11 +338,11 @@ describe('OrganizationProfilePage', () => {
       expect(screen.getByDisplayValue('Backend Workspace')).toBeInTheDocument();
     });
     expect(screen.queryByDisplayValue('Stale Local Workspace')).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/Geographic Boundary/i)).toHaveValue('Saved backend boundary');
+    expect(screen.getByLabelText(/Geographic boundary/i)).toHaveValue('Saved backend boundary');
 
     await userEvent.clear(screen.getByLabelText(/City/i));
     await userEvent.type(screen.getByLabelText(/City/i), 'Ottawa');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -464,7 +464,7 @@ describe('OrganizationProfilePage', () => {
 
     await userEvent.clear(screen.getByLabelText(/City/i));
     await userEvent.type(screen.getByLabelText(/City/i), 'Ottawa');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(await screen.findByText('Organization profile could not be saved. Please try again.')).toBeInTheDocument();
     expect(screen.queryByText('Organization profile saved.')).not.toBeInTheDocument();
@@ -507,7 +507,7 @@ describe('OrganizationProfilePage', () => {
     });
     await userEvent.clear(screen.getByLabelText(/City/i));
     await userEvent.type(screen.getByLabelText(/City/i), 'Ottawa');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(await screen.findByText('Your account has read-only access to this workspace.')).toBeInTheDocument();
     expect(screen.queryByText('This account is read-only for pilot review. Editing actions are disabled.')).not.toBeInTheDocument();
@@ -522,15 +522,15 @@ describe('OrganizationProfilePage', () => {
     ['athena example.com'],
     ['[athena@example.com](mailto:athena@example.com)'],
     ['mailto:athena@example.com'],
-  ])('rejects invalid Primary Contact Email value %s before saving', async (email) => {
+  ])('rejects invalid Primary contact email value %s before saving', async (email) => {
     setAdminUser();
     render(<OrganizationProfilePage />);
 
     await fillRequiredProfileFields();
-    fireEvent.change(screen.getByLabelText(/Primary Contact Email/i), {
+    fireEvent.change(screen.getByLabelText(/Primary contact email/i), {
       target: { value: email },
     });
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent('Please enter a valid email address.');
     expect(screen.queryByText('Organization profile saved.')).not.toBeInTheDocument();
@@ -558,7 +558,7 @@ describe('OrganizationProfilePage', () => {
 
     await userEvent.clear(screen.getByLabelText('Other industry'));
     await userEvent.type(screen.getByLabelText('Other industry'), 'Climate advisory');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Organization Profile' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save organization profile' }));
 
     expect(loadOrganizationProfile().industry).toBe('Other');
     expect(loadOrganizationProfile().otherIndustry).toBe('Climate advisory');
@@ -586,11 +586,11 @@ describe('OrganizationProfilePage', () => {
     expect(screen.getByText('2026-01-01 to 2026-12-31')).toBeInTheDocument();
     expect(screen.getByText(/Read-only access: you can view boundary information/i)).toBeInTheDocument();
     expect(screen.queryByText(/This account is read-only for pilot review/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Save Organization Profile' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save organization profile' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Reset/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Industry/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Province \/ Territory/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Primary Contact Email/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Primary contact email/i)).not.toBeInTheDocument();
   });
 
   it('does not show a red unavailable error for pilot reviewers when sample defaults are visible', async () => {
@@ -691,11 +691,11 @@ describe('OrganizationProfilePage', () => {
     };
 
     expect(() => saveOrganizationProfile(profile)).toThrow(
-      'Reporting Period End must be after Reporting Period Start.',
+      'Reporting period end must be after reporting period start.',
     );
   });
 
-  it('validates Primary Contact Email in the client service', () => {
+  it('validates Primary contact email in the client service', () => {
     expect(isValidPrimaryContactEmail('')).toBe(true);
     expect(isValidPrimaryContactEmail('first.last@example.ca')).toBe(true);
     expect(isValidPrimaryContactEmail('name+pilot@example.com')).toBe(true);

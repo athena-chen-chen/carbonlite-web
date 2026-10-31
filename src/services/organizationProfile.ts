@@ -415,7 +415,7 @@ function validateOrganizationProfile(profile: OrganizationProfile) {
     profile.reportingPeriodEnd &&
     profile.reportingPeriodEnd <= profile.reportingPeriodStart
   ) {
-    throw new Error('Reporting Period End must be after Reporting Period Start.');
+    throw new Error('Reporting period end must be after reporting period start.');
   }
 
   Object.entries(profile).forEach(([key, value]) => {

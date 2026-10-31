@@ -16,7 +16,7 @@ export function SpreadsheetImportPanel({
 }: SpreadsheetImportPanelProps) {
   return (
     <div style={uploadCardStyle}>
-      <h2 style={{ marginTop: 0 }}>Import Spreadsheet</h2>
+      <h2 style={{ marginTop: 0 }}>Import spreadsheet</h2>
       <p style={{ color: '#666' }}>
         Import CSV or Excel activity data from a CarbonLite template or your existing spreadsheet.
       </p>

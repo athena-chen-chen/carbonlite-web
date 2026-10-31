@@ -551,18 +551,18 @@ function getCustomFactorFormErrors(
     form.sourceReference ?? form.sourceDocument ?? form.sourceUrl ?? '',
   ).trim();
 
-  if (!String(form.name ?? '').trim()) errors.push('Factor Name is required.');
-  if (!activityType) errors.push('Activity Type is required.');
-  if (!inputUnit) errors.push('Input Unit is required.');
-  if (!factorUnit) errors.push('Factor Unit is required.');
+  if (!String(form.name ?? '').trim()) errors.push('Factor name is required.');
+  if (!activityType) errors.push('Activity type is required.');
+  if (!inputUnit) errors.push('Input unit is required.');
+  if (!factorUnit) errors.push('Factor unit is required.');
   if (!Number.isFinite(factorValue) || factorValue <= 0) {
-    errors.push('Factor Value must be a positive number.');
+    errors.push('Factor value must be a positive number.');
   }
   if (!Number.isInteger(sourceYear) || sourceYear < 1900 || sourceYear > 2100) {
-    errors.push('Source Year is required.');
+    errors.push('Source year is required.');
   }
   if (!sourceAuthority && !sourceReference) {
-    errors.push('Source Authority or Source Reference is required.');
+    errors.push('Source authority or source reference is required.');
   }
   if (activityType === 'ELECTRICITY' && !province) {
     errors.push('Province / Jurisdiction is required for Electricity company factors.');
@@ -1176,7 +1176,7 @@ export function ConversionFactorsPage() {
       <div className="print-report-header" style={printHeaderStyle}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800 }}>CarbonLite</div>
-          <h1 style={{ margin: '8px 0 0', fontSize: 24 }}>Emission Factors Report</h1>
+          <h1 style={{ margin: '8px 0 0', fontSize: 24 }}>Emission factors report</h1>
         </div>
         <div style={{ textAlign: 'right', fontSize: 12, color: '#475569' }}>
           <div>Generated: {generatedAt}</div>
@@ -1185,21 +1185,21 @@ export function ConversionFactorsPage() {
       </div>
 
       <div style={pageHeaderStyle}>
-        <PageHeader title="Emission Factors" subtitle="Review factor sources, applicability, and provenance." badge="Advanced reviewer tool" />
+        <PageHeader title="Emission factors" subtitle="Review factor sources, applicability, and provenance." badge="Advanced reviewer tool" />
         <button
           type="button"
           onClick={handlePrintFactors}
           className="no-print"
           style={printButtonStyle}
         >
-          Print Factors
+          Print factors
         </button>
       </div>
 
       <div className="no-print" style={summaryGridStyle}>
         <SummaryCard
           icon="✅"
-          title="Production Approved"
+          title="Production approved"
           value={summaryCardPlaceholder ?? String(approvedCount)}
           subtitle="Eligible for governed calculations"
           accent="#047857"
@@ -1207,7 +1207,7 @@ export function ConversionFactorsPage() {
 
         <SummaryCard
           icon="📚"
-          title="Reference / Legacy"
+          title="Reference / legacy"
           value={summaryCardPlaceholder ?? String(referenceOrLegacyCount)}
           subtitle="Visible for context, not production approved"
           accent="#B45309"
@@ -1215,7 +1215,7 @@ export function ConversionFactorsPage() {
 
         <SummaryCard
           icon="🧮"
-          title="Total Library"
+          title="Total library"
           value={summaryCardPlaceholder ?? String(visibleFactorItems.length)}
           subtitle="Approved plus reference and legacy records"
           accent="#475569"
@@ -1223,7 +1223,7 @@ export function ConversionFactorsPage() {
 
         <SummaryCard
           icon="📊"
-          title="Activity Types"
+          title="Activity types"
           value={summaryCardPlaceholder ?? String(activityTypesCovered)}
           subtitle="Covered data categories"
           accent="#B45309"
@@ -1270,14 +1270,14 @@ export function ConversionFactorsPage() {
             }}
             style={primaryButtonStyle(false)}
           >
-            + Add Company Factor
+            + Add company factor
           </button>
         </div>
       ) : (
       <form className="no-print" onSubmit={handleSubmit} style={formCardStyle}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>
-            {editingId ? 'Edit Company Factor' : 'Add Company Factor'}
+            {editingId ? 'Edit company factor' : 'Add company factor'}
           </h2>
           <p style={{ marginTop: 6, color: factorsPalette.secondaryText }}>
             {editingId
@@ -1287,7 +1287,7 @@ export function ConversionFactorsPage() {
         </div>
 
         <div style={formGridStyle}>
-          <Field label="Activity Type">
+          <Field label="Activity type">
             <select
               value={form.activityType ?? ''}
               onChange={(e) => updateField('activityType', e.target.value)}
@@ -1302,7 +1302,7 @@ export function ConversionFactorsPage() {
             </select>
           </Field>
 
-          <Field label="Factor Name">
+          <Field label="Factor name">
             <input
               type="text"
               value={form.name}
@@ -1312,7 +1312,7 @@ export function ConversionFactorsPage() {
             />
           </Field>
 
-          <Field label="Factor Value">
+          <Field label="Factor value">
             <input
               type="number"
               step="any"
@@ -1329,7 +1329,7 @@ export function ConversionFactorsPage() {
             />
           </Field>
 
-          <Field label="Input Unit">
+          <Field label="Input unit">
             <input
               type="text"
               value={form.unit}
@@ -1339,7 +1339,7 @@ export function ConversionFactorsPage() {
             />
           </Field>
 
-          <Field label="Factor Unit">
+          <Field label="Factor unit">
             <input
               type="text"
               value={form.resultUnit}
@@ -1359,7 +1359,7 @@ export function ConversionFactorsPage() {
             />
           </Field>
 
-          <Field label="Province / Jurisdiction">
+          <Field label="Province / jurisdiction">
             <select
               value={form.jurisdiction ?? ''}
               onChange={(e) => updateField('jurisdiction', e.target.value)}
@@ -1373,7 +1373,7 @@ export function ConversionFactorsPage() {
             </select>
           </Field>
 
-          <Field label="Source Reference">
+          <Field label="Source reference">
             <input
               type="text"
               value={form.sourceReference ?? ''}
@@ -1385,9 +1385,9 @@ export function ConversionFactorsPage() {
         </div>
 
         <div style={sourceSectionStyle}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 18 }}>Source & Methodology</h3>
+          <h3 style={{ margin: '0 0 12px', fontSize: 18 }}>Source & methodology</h3>
           <div style={formGridStyle}>
-            <Field label="Source Authority">
+            <Field label="Source authority">
               <input
                 type="text"
                 value={form.sourceAuthority ?? ''}
@@ -1397,7 +1397,7 @@ export function ConversionFactorsPage() {
               />
             </Field>
 
-            <Field label="Source Document">
+            <Field label="Source document">
               <input
                 type="text"
                 value={form.sourceDocument ?? ''}
@@ -1407,7 +1407,7 @@ export function ConversionFactorsPage() {
               />
             </Field>
 
-            <Field label="Source Year">
+            <Field label="Source year">
               <input
                 type="number"
                 value={form.sourceYear ?? ''}
@@ -1422,7 +1422,7 @@ export function ConversionFactorsPage() {
               />
             </Field>
 
-            <Field label="Factor Version">
+            <Field label="Factor version">
               <input
                 type="text"
                 value={form.factorVersion ?? ''}
@@ -1442,7 +1442,7 @@ export function ConversionFactorsPage() {
               />
             </Field>
 
-            <Field label="Confidence Level">
+            <Field label="Confidence level">
               <select
                 value={form.confidenceLevel ?? 'MEDIUM'}
                 onChange={(e) => updateField('confidenceLevel', e.target.value)}
@@ -1454,7 +1454,7 @@ export function ConversionFactorsPage() {
               </select>
             </Field>
 
-            <Field label="Verification Status">
+            <Field label="Verification status">
               <select
                 value={form.verificationStatus ?? 'DRAFT'}
                 onChange={(e) => {
@@ -1464,10 +1464,10 @@ export function ConversionFactorsPage() {
                 style={inputStyle}
               >
                 <option value="DRAFT">Draft</option>
-                <option value="USER_PROVIDED">User Provided</option>
-                <option value="CONSULTANT_REVIEWED">Consultant Reviewed</option>
-                <option value="INTERNAL_REVIEW_REQUIRED">Internal Review Required</option>
-                <option value="PILOT_ESTIMATE">Pilot Estimate</option>
+                <option value="USER_PROVIDED">User provided</option>
+                <option value="CONSULTANT_REVIEWED">Consultant reviewed</option>
+                <option value="INTERNAL_REVIEW_REQUIRED">Internal review required</option>
+                <option value="PILOT_ESTIMATE">Pilot estimate</option>
               </select>
             </Field>
 
@@ -1530,8 +1530,8 @@ export function ConversionFactorsPage() {
                 ? 'Saving...'
                 : 'Creating...'
               : editingId
-              ? 'Save Changes'
-              : 'Create Company Factor'}
+              ? 'Save changes'
+              : 'Create company factor'}
           </button>
           {editingId ? (
             <button
@@ -1562,7 +1562,7 @@ export function ConversionFactorsPage() {
       <div className="print-table-card" style={tableCardStyle}>
         <div style={tableHeaderStyle}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 20 }}>Emission Factor Library</h2>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Emission factor library</h2>
             <p style={{ marginTop: 6, color: factorsPalette.secondaryText }}>
               Conversion factors should be current, source-backed, and jurisdiction-aware. CarbonLite tracks factor source, year, confidence level, and verification status to support more transparent calculations.
             </p>
@@ -1578,7 +1578,7 @@ export function ConversionFactorsPage() {
             void loadItems(pendingFilters);
           }}
         >
-          <Field label="Activity Type">
+          <Field label="Activity type">
             <select
               value={pendingFilters.activityType}
               onChange={(event) => setPendingFilters((prev) => ({
@@ -1609,7 +1609,7 @@ export function ConversionFactorsPage() {
               ))}
             </select>
           </Field>
-          <Field label="Source Year">
+          <Field label="Source year">
             <input
               type="number"
               min="1900"
@@ -1623,7 +1623,7 @@ export function ConversionFactorsPage() {
               placeholder="e.g. 2025"
             />
           </Field>
-          <Field label="Min Factor Value">
+          <Field label="Min factor value">
             <input
               type="number"
               step="any"
@@ -1636,7 +1636,7 @@ export function ConversionFactorsPage() {
               placeholder="e.g. 0.5"
             />
           </Field>
-          <Field label="Max Factor Value">
+          <Field label="Max factor value">
             <input
               type="number"
               step="any"
@@ -1649,7 +1649,7 @@ export function ConversionFactorsPage() {
               placeholder="e.g. 3"
             />
           </Field>
-          <Field label="Sort by Factor Value">
+          <Field label="Sort by factor value">
             <select
               value={pendingFilters.factorValueSort}
               onChange={(event) => setPendingFilters((prev) => ({
@@ -1665,7 +1665,7 @@ export function ConversionFactorsPage() {
           </Field>
           <div className="conversion-factor-filter-actions" style={filterActionsStyle}>
             <button type="submit" disabled={loading} style={primaryButtonStyle(loading)}>
-              Apply Filters
+              Apply filters
             </button>
             <button
               type="button"
@@ -1682,7 +1682,7 @@ export function ConversionFactorsPage() {
         </form>
         {hasUnappliedFilterChanges ? (
           <div className="no-print" role="status" aria-live="polite" style={filterHintStyle}>
-            Filters changed. Click Apply Filters to update results.
+            Filters changed. Click Apply filters to update results.
           </div>
         ) : null}
 
@@ -1722,23 +1722,23 @@ export function ConversionFactorsPage() {
             </colgroup>
             <thead>
               <tr style={{ background: factorsPalette.subtleBackground }}>
-                <th style={thStyle}>Activity Type</th>
+                <th style={thStyle}>Activity type</th>
                 <th style={thStyle}>Factor</th>
                 <th style={thStyle}>Jurisdiction</th>
-                <th style={thStyle}>Factor Value</th>
-                <th style={thStyle}>Input Unit</th>
+                <th style={thStyle}>Factor value</th>
+                <th style={thStyle}>Input unit</th>
                 <th style={thStyle}>Factor Set</th>
-                <th style={thStyle}>Source Authority</th>
-                <th style={thStyle}>Source Document</th>
-                <th style={thStyle}>Source Year</th>
-                <th style={thStyle}>Effective Year</th>
-                <th style={thStyle}>Factor Version</th>
-                <th style={thStyle}>Use Status</th>
+                <th style={thStyle}>Source authority</th>
+                <th style={thStyle}>Source document</th>
+                <th style={thStyle}>Source year</th>
+                <th style={thStyle}>Effective year</th>
+                <th style={thStyle}>Factor version</th>
+                <th style={thStyle}>Use status</th>
                 <th style={thStyle}>Status</th>
                 <th style={thStyle}>Confidence</th>
                 <th style={thStyle}>Verification</th>
                 <th style={thStyle}>Assumptions</th>
-                <th style={thStyle}>Factor Type</th>
+                <th style={thStyle}>Factor type</th>
                 <th className="no-print" style={stickyActionThStyle}>Actions</th>
               </tr>
             </thead>
@@ -2025,38 +2025,38 @@ function FactorDetailsModal({
             </div>
           ) : null}
           <div style={traceabilityDetailsStyle}>
-            <DetailSection title="Factor Summary">
-              <DetailItem label="Factor Name" value={formatFactorNameDisplay(item)} />
-              <DetailItem label="Activity Type" value={formatActivityTypeDisplay(item.activityType)} />
+            <DetailSection title="Factor summary">
+              <DetailItem label="Factor name" value={formatFactorNameDisplay(item)} />
+              <DetailItem label="Activity type" value={formatActivityTypeDisplay(item.activityType)} />
               <DetailItem label="Value" value={formatFactorValueDisplay(item)} />
               <DetailItem label="Activity Unit" value={formatInputUnitDisplay(item.unit || item.inputUnit)} />
-              <DetailItem label="Factor Unit" value={formatFactorResultUnitDisplay(item)} />
+              <DetailItem label="Factor unit" value={formatFactorResultUnitDisplay(item)} />
               <DetailItem label="Jurisdiction" value={getDisplayFactorJurisdiction({ factorJurisdictionRegion: item.region || item.jurisdiction, factorJurisdictionCountry: item.country })} />
-              <DetailItem label="Source Year" value={traceability.sourceYear} />
-              <DetailItem label="Effective Year" value={traceability.effectiveYear} />
-              <DetailItem label="Factor Set" value={traceability.factorSet} />
+              <DetailItem label="Source year" value={traceability.sourceYear} />
+              <DetailItem label="Effective year" value={traceability.effectiveYear} />
+              <DetailItem label="Factor set" value={traceability.factorSet} />
               {getDisplayFactorVersionLines({ ...item, factorId: item.id }).map(line => {
                 const separator = line.indexOf(': ');
                 return <DetailItem key={line} label={line.slice(0, separator)} value={line.slice(separator + 2)} />;
               })}
-              <DetailItem label="Default Scope" value={defaultScopeForFactor(item)} />
+              <DetailItem label="Default scope" value={defaultScopeForFactor(item)} />
               {isWaterTrackedFactor(item) ? (
                 <DetailItem label="Calculation" value="Not calculated by default" />
               ) : null}
             </DetailSection>
 
-            <DetailSection title="Source & Governance">
-              <DetailItem label="Source Authority" value={traceability.sourceAuthority} />
-              <DetailItem label="Source Document" value={traceability.sourceDocument} />
-              <DetailItem label="Verification Status" value={traceability.verificationStatus} />
-              <DetailItem label="Factor Status" value={traceability.factorStatus} />
-              <DetailItem label="Confidence Level" value={traceability.confidenceLevel} />
+            <DetailSection title="Source & governance">
+              <DetailItem label="Source authority" value={traceability.sourceAuthority} />
+              <DetailItem label="Source document" value={traceability.sourceDocument} />
+              <DetailItem label="Verification status" value={traceability.verificationStatus} />
+              <DetailItem label="Factor status" value={traceability.factorStatus} />
+              <DetailItem label="Confidence level" value={traceability.confidenceLevel} />
               <DetailItem label="Boundary" value={traceability.boundary} />
               <DetailItem
-                label="Consultant Review"
+                label="Consultant review"
                 value={isScope3Factor(item) || isPilotDefaultFactor(item) ? 'Recommended before formal reporting' : 'Use documented validation status'}
               />
-              <DetailItem label="Factor Type" value={getFactorTypeLabel(item)} />
+              <DetailItem label="Factor type" value={getFactorTypeLabel(item)} />
               <DetailItem
                 label="Source URL"
                 value={

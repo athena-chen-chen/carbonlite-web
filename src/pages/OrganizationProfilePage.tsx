@@ -43,47 +43,47 @@ const fieldGroups: Array<{
   {
     title: 'Organization',
     fields: [
-      { key: 'organizationName', label: 'Organization / Workspace', required: true },
+      { key: 'organizationName', label: 'Organization / workspace', required: true },
       { key: 'industry', label: 'Industry', required: true },
       { key: 'country', label: 'Country', required: true },
-      { key: 'provinceOrState', label: 'Province / Territory', required: true },
+      { key: 'provinceOrState', label: 'Province / territory', required: true },
       { key: 'city', label: 'City' },
-      { key: 'primaryContactName', label: 'Primary Contact Name' },
-      { key: 'primaryContactEmail', label: 'Primary Contact Email', type: 'email' },
+      { key: 'primaryContactName', label: 'Primary contact name' },
+      { key: 'primaryContactEmail', label: 'Primary contact email', type: 'email' },
     ],
   },
   {
-    title: 'Reporting Period',
+    title: 'Reporting period',
     fields: [
-      { key: 'reportingPeriodStart', label: 'Reporting Period Start', type: 'date' },
-      { key: 'reportingPeriodEnd', label: 'Reporting Period End', type: 'date' },
+      { key: 'reportingPeriodStart', label: 'Reporting period start', type: 'date' },
+      { key: 'reportingPeriodEnd', label: 'Reporting period end', type: 'date' },
     ],
   },
   {
-    title: 'Operational Boundary',
+    title: 'Operational boundary',
     fields: [
-      { key: 'geographicBoundary', label: 'Geographic Boundary', type: 'textarea' },
+      { key: 'geographicBoundary', label: 'Geographic boundary', type: 'textarea' },
     ],
   },
   {
-    title: 'Facilities / Sites',
+    title: 'Facilities / sites',
     fields: [
-      { key: 'includedFacilitiesOrLocations', label: 'Included Facilities or Locations', type: 'textarea' },
-      { key: 'excludedFacilitiesOrLocations', label: 'Excluded Facilities or Locations', type: 'textarea' },
+      { key: 'includedFacilitiesOrLocations', label: 'Included facilities or locations', type: 'textarea' },
+      { key: 'excludedFacilitiesOrLocations', label: 'Excluded facilities or locations', type: 'textarea' },
     ],
   },
   {
-    title: 'Scope Coverage',
+    title: 'Scope coverage',
     fields: [
-      { key: 'includedScopes', label: 'Included Scopes', type: 'textarea' },
-      { key: 'scope3CoverageNote', label: 'Scope 3 Coverage Note', type: 'textarea' },
+      { key: 'includedScopes', label: 'Included scopes', type: 'textarea' },
+      { key: 'scope3CoverageNote', label: 'Scope 3 coverage note', type: 'textarea' },
     ],
   },
   {
-    title: 'Exclusions & Notes',
+    title: 'Exclusions & notes',
     fields: [
-      { key: 'exclusionsAndLimitations', label: 'Exclusions / Limitations', type: 'textarea' },
-      { key: 'boundaryNotes', label: 'Boundary Notes', type: 'textarea' },
+      { key: 'exclusionsAndLimitations', label: 'Exclusions / limitations', type: 'textarea' },
+      { key: 'boundaryNotes', label: 'Boundary notes', type: 'textarea' },
     ],
   },
 ];
@@ -231,7 +231,7 @@ export function OrganizationProfilePage() {
 
   return (
     <div style={pageStyle}>
-      <PageHeader title="Organization & Boundary" />
+      <PageHeader title="Organization & boundary" />
 
       <div style={currentUserContextStyle}>
         <strong>Your role:</strong> {formatOrganizationRole(organizationRole)}
@@ -377,7 +377,7 @@ export function OrganizationProfilePage() {
           {canEdit ? (
             <div style={formFooterStyle}>
               <button type="submit" disabled={isSaving} style={saveButtonStyle(isSaving)}>
-                {isSaving ? 'Saving...' : 'Save Organization Profile'}
+                {isSaving ? 'Saving...' : 'Save organization profile'}
               </button>
             </div>
           ) : null}
@@ -414,7 +414,7 @@ function BoundaryReviewSection({
 }) {
   return (
     <section style={sectionStyle} aria-labelledby="boundary-review-title">
-      <h2 id="boundary-review-title" style={sectionTitleStyle}>Reporting Boundary Review</h2>
+      <h2 id="boundary-review-title" style={sectionTitleStyle}>Reporting boundary review</h2>
       <p style={sectionNoteStyle}>
         Record that an authorized user has reviewed the configured reporting boundary. This is separate
         from CarbonLite calculation coverage and is not a certification or external assurance opinion.
@@ -449,7 +449,7 @@ function BoundaryReviewSection({
           title={canReview ? 'Record boundary review' : 'Reviewer permission required'}
           style={saveButtonStyle(!canReview || isReviewing)}
         >
-          {isReviewing ? 'Recording Review...' : 'Review Boundary'}
+          {isReviewing ? 'Recording review...' : 'Review boundary'}
         </button>
         <p style={permissionHelpStyle}>
           {canReview
@@ -488,7 +488,7 @@ function MembersAndAccessSection({
 
   return (
     <section style={supplementalSectionStyle} aria-labelledby="members-access-title">
-      <h2 id="members-access-title" style={sectionTitleStyle}>Members & Roles</h2>
+      <h2 id="members-access-title" style={sectionTitleStyle}>Members & roles</h2>
       <p style={supplementalSectionNoteStyle}>
         Workspace data is visible to organization-authorized users according to role. Authorization checks
         are enforced by application permissions and must also be enforced by backend APIs.
@@ -537,7 +537,7 @@ function DataPrivacySection() {
 
   return (
     <section style={supplementalSectionStyle} aria-labelledby="data-privacy-title">
-      <h2 id="data-privacy-title" style={sectionTitleStyle}>Data & Privacy</h2>
+      <h2 id="data-privacy-title" style={sectionTitleStyle}>Data & privacy</h2>
       <p style={supplementalSectionNoteStyle}>
         This section describes the customer-facing posture currently visible in the app.
       </p>
@@ -588,7 +588,7 @@ function ReadOnlyProfileSection({
     <section style={sectionStyle} aria-labelledby={`${slugify(group.title)}-title`}>
       <h2 id={`${slugify(group.title)}-title`} style={sectionTitleStyle}>{group.title}</h2>
       <p style={sectionNoteStyle}>{getSectionNote(group.title)}</p>
-      {group.title === 'Reporting Period' ? (
+      {group.title === 'Reporting period' ? (
         <p style={readOnlyPeriodStyle}>
           {profile.reportingPeriodStart} to {profile.reportingPeriodEnd}
         </p>
@@ -626,15 +626,15 @@ function getSectionNote(title: string) {
   switch (title) {
     case 'Organization':
       return 'This workspace is set up for Canadian emissions reporting. Country is currently fixed to Canada.';
-    case 'Reporting Period':
+    case 'Reporting period':
       return 'Set the date range used for Calculation Results and Reports.';
-    case 'Operational Boundary':
+    case 'Operational boundary':
       return 'Define which operations and emissions sources are included in this workspace.';
-    case 'Facilities / Sites':
+    case 'Facilities / sites':
       return 'List the locations included in this reporting boundary.';
-    case 'Scope Coverage':
+    case 'Scope coverage':
       return 'Summarize the scopes and selected Scope 3 activity types covered by this workspace.';
-    case 'Exclusions & Notes':
+    case 'Exclusions & notes':
       return 'Document material exclusions, assumptions, or boundary limitations for reviewers.';
     default:
       return '';

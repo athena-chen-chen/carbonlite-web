@@ -101,13 +101,13 @@ export function LoginPage() {
         ) : null}
 
         <button type="submit" disabled={submitting} style={primaryButtonStyle(submitting)}>
-          {submitting ? 'Signing you in...' : 'Log In'}
+          {submitting ? 'Signing you in...' : 'Log in'}
         </button>
 
         <div style={authLinksStyle}>
           <Link to="/forgot-password">Forgot password?</Link>
           <span aria-hidden="true">·</span>
-          <Link to="/set-password">Accept invitation / Set password</Link>
+          <Link to="/set-password">Accept invitation / set password</Link>
         </div>
 
         {publicSignupEnabled ? (

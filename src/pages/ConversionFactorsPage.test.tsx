@@ -140,7 +140,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByText('Loading emission factors...')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading emission factors')).toBeInTheDocument();
-    ['Production Approved', 'Reference / Legacy', 'Total Library', 'Activity Types'].forEach((title) => {
+    ['Production approved', 'Reference / legacy', 'Total library', 'Activity types'].forEach((title) => {
       const card = getSummaryCard(title);
       expect(card.getByText('—')).toBeInTheDocument();
       expect(card.queryByText('0')).not.toBeInTheDocument();
@@ -158,10 +158,10 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.queryByLabelText('Loading emission factors')).not.toBeInTheDocument();
-    expect(getSummaryCard('Production Approved').getByText('0')).toBeInTheDocument();
-    expect(getSummaryCard('Reference / Legacy').getByText('1')).toBeInTheDocument();
-    expect(getSummaryCard('Total Library').getByText('1')).toBeInTheDocument();
-    expect(getSummaryCard('Activity Types').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Production approved').getByText('0')).toBeInTheDocument();
+    expect(getSummaryCard('Reference / legacy').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Total library').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Activity types').getByText('1')).toBeInTheDocument();
   });
 
   it('distinguishes governed Air Travel factors and explains the full library counts', async () => {
@@ -222,9 +222,9 @@ describe('ConversionFactorsPage traceability', () => {
     expect(await screen.findByText('Air Travel - Short Haul - EPA 2025')).toBeInTheDocument();
     expect(screen.getByText('Air Travel - Medium Haul - EPA 2025')).toBeInTheDocument();
     expect(screen.getByText('Air Travel - Long Haul - EPA 2025')).toBeInTheDocument();
-    expect(getSummaryCard('Production Approved').getByText('21')).toBeInTheDocument();
-    expect(getSummaryCard('Reference / Legacy').getByText('2')).toBeInTheDocument();
-    expect(getSummaryCard('Total Library').getByText('23')).toBeInTheDocument();
+    expect(getSummaryCard('Production approved').getByText('21')).toBeInTheDocument();
+    expect(getSummaryCard('Reference / legacy').getByText('2')).toBeInTheDocument();
+    expect(getSummaryCard('Total library').getByText('23')).toBeInTheDocument();
     expect(within(screen.getByTestId('factor-row-reference-only')).getByText('Reference only')).toBeInTheDocument();
     expect(within(screen.getByTestId('factor-row-legacy-blocked')).getByText('Legacy / blocked')).toBeInTheDocument();
     expect(within(screen.getByTestId('factor-row-approved-1')).getByText('Approved')).toBeInTheDocument();
@@ -366,7 +366,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('columnheader', { name: 'Factor Value' })).toBeInTheDocument();
+    expect(await screen.findByRole('columnheader', { name: 'Factor value' })).toBeInTheDocument();
     expect(screen.getByText('Scroll horizontally to view all columns →')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Result Unit' })).not.toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Jurisdiction' })).toBeInTheDocument();
@@ -564,7 +564,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    const activityTypeFilter = await screen.findByLabelText('Activity Type');
+    const activityTypeFilter = await screen.findByLabelText('Activity type');
     expect(within(activityTypeFilter).getByRole('option', { name: 'Electricity' })).toBeInTheDocument();
 
     expect(screen.getByText('Electricity - Alberta - 2026')).toBeInTheDocument();
@@ -575,7 +575,7 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByTestId('factor-value-pilot-electricity-on-2026')).toHaveTextContent('0.12 kg CO₂e/kWh');
 
     await userEvent.selectOptions(activityTypeFilter, 'ELECTRICITY');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     expect(getConversionFactors).toHaveBeenLastCalledWith({
       activityType: 'ELECTRICITY',
@@ -612,15 +612,15 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getAllByTestId(/factor-row-pilot-electricity-/)).toHaveLength(3);
 
     await userEvent.selectOptions(jurisdictionFilter, 'AB');
-    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply filters to update results.')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Filters changed. Click Apply Filters to update results.',
+      'Filters changed. Click Apply filters to update results.',
     );
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-bc-2026')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-on-2026')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     await waitFor(() => {
       expect(getConversionFactors).toHaveBeenLastCalledWith({
@@ -629,7 +629,7 @@ describe('ConversionFactorsPage traceability', () => {
         sourceYear: undefined,
       });
     });
-    expect(screen.queryByText('Filters changed. Click Apply Filters to update results.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Filters changed. Click Apply filters to update results.')).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-bc-2026')).not.toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-on-2026')).not.toBeInTheDocument();
@@ -637,14 +637,14 @@ describe('ConversionFactorsPage traceability', () => {
     await userEvent.selectOptions(jurisdictionFilter, 'BC');
     expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-pilot-electricity-bc-2026')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
     await waitFor(() => {
       expect(screen.getByTestId('factor-row-pilot-electricity-bc-2026')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('factor-row-pilot-electricity-ab-2026')).not.toBeInTheDocument();
 
     await userEvent.selectOptions(jurisdictionFilter, 'ON');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
     await waitFor(() => {
       expect(screen.getByTestId('factor-row-pilot-electricity-on-2026')).toBeInTheDocument();
     });
@@ -691,10 +691,10 @@ describe('ConversionFactorsPage traceability', () => {
 
     const jurisdictionFilter = await screen.findByLabelText('Jurisdiction');
     await userEvent.selectOptions(jurisdictionFilter, 'NATIONAL');
-    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply filters to update results.')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-pilot-electricity-ab-2026')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     await waitFor(() => {
       expect(getConversionFactors).toHaveBeenLastCalledWith({
@@ -713,7 +713,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
     await waitFor(() => {
-      expect(screen.queryByText('Filters changed. Click Apply Filters to update results.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Filters changed. Click Apply filters to update results.')).not.toBeInTheDocument();
     });
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-national-label')).toBeInTheDocument();
@@ -740,7 +740,7 @@ describe('ConversionFactorsPage traceability', () => {
 
     await screen.findByText('No emission factors yet.');
     await userEvent.selectOptions(screen.getByLabelText('Jurisdiction'), 'NATIONAL');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     expect(await screen.findByText('No factors match the selected filters.')).toBeInTheDocument();
     expect(screen.getByText('Try clearing filters or choosing different filter values.')).toBeInTheDocument();
@@ -838,7 +838,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('button', { name: '+ Add Company Factor' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '+ Add company factor' })).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByText('Provided by CarbonLite')).toBeInTheDocument();
     expect(screen.queryByLabelText('More actions for Diesel default')).not.toBeInTheDocument();
@@ -880,16 +880,16 @@ describe('ConversionFactorsPage traceability', () => {
     );
 
     await screen.findByTestId('factor-row-factor-1');
-    await userEvent.selectOptions(screen.getByLabelText('Sort by Factor Value'), 'asc');
+    await userEvent.selectOptions(screen.getByLabelText('Sort by factor value'), 'asc');
 
-    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply filters to update results.')).toBeInTheDocument();
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
       '2.68 kg CO₂e/liter',
       '0.53 kg CO₂e/kWh',
       '1.89 kg CO₂e/m3',
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     expect(screen.getAllByTestId(/factor-value-/).map((cell) => cell.textContent)).toEqual([
       '0.53 kg CO₂e/kWh',
@@ -926,13 +926,13 @@ describe('ConversionFactorsPage traceability', () => {
     expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-2')).toBeInTheDocument();
 
-    await userEvent.type(screen.getByLabelText('Min Factor Value'), '2');
+    await userEvent.type(screen.getByLabelText('Min factor value'), '2');
 
-    expect(screen.getByText('Filters changed. Click Apply Filters to update results.')).toBeInTheDocument();
+    expect(screen.getByText('Filters changed. Click Apply filters to update results.')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByTestId('factor-row-factor-2')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.queryByTestId('factor-row-factor-2')).not.toBeInTheDocument();
@@ -953,7 +953,7 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add company factor' }));
 
     expect(screen.getByLabelText('Reviewed source and methodology')).not.toBeChecked();
   });
@@ -998,18 +998,18 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
-    await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'DIESEL');
-    await userEvent.type(screen.getByLabelText('Factor Name'), 'Company diesel factor');
-    await userEvent.clear(getFirstLabeledControl('Factor Value'));
-    await userEvent.type(getFirstLabeledControl('Factor Value'), '2.7');
-    await userEvent.type(screen.getByLabelText('Input Unit'), 'L');
-    await userEvent.clear(getFirstLabeledControl('Source Year'));
-    await userEvent.type(getFirstLabeledControl('Source Year'), '2026');
-    await userEvent.type(getFirstLabeledControl('Source Authority'), 'Consultant factor table');
-    await userEvent.selectOptions(screen.getByLabelText('Confidence Level'), 'HIGH');
-    await userEvent.selectOptions(screen.getByLabelText('Verification Status'), 'CONSULTANT_REVIEWED');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add company factor' }));
+    await userEvent.selectOptions(getFirstLabeledControl('Activity type'), 'DIESEL');
+    await userEvent.type(screen.getByLabelText('Factor name'), 'Company diesel factor');
+    await userEvent.clear(getFirstLabeledControl('Factor value'));
+    await userEvent.type(getFirstLabeledControl('Factor value'), '2.7');
+    await userEvent.type(screen.getByLabelText('Input unit'), 'L');
+    await userEvent.clear(getFirstLabeledControl('Source year'));
+    await userEvent.type(getFirstLabeledControl('Source year'), '2026');
+    await userEvent.type(getFirstLabeledControl('Source authority'), 'Consultant factor table');
+    await userEvent.selectOptions(screen.getByLabelText('Confidence level'), 'HIGH');
+    await userEvent.selectOptions(screen.getByLabelText('Verification status'), 'CONSULTANT_REVIEWED');
+    await userEvent.click(screen.getByRole('button', { name: 'Create company factor' }));
 
     expect(createConversionFactor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1070,7 +1070,7 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByText('Company Factor')).toBeInTheDocument();
     expect(screen.getByText('Consultant factor table')).toBeInTheDocument();
     expect(screen.getAllByText('Consultant Reviewed').length).toBeGreaterThan(0);
-    expect(screen.queryByRole('button', { name: '+ Add Company Factor' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Add company factor' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
     expect(screen.queryByLabelText('More actions for Company diesel custom factor')).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
@@ -1112,7 +1112,7 @@ describe('ConversionFactorsPage traceability', () => {
       await screen.findByText(/Pilot reviewer accounts can view factor information for transparency/i),
     ).toBeInTheDocument();
     expect(await screen.findByTestId('factor-row-pilot-review-factor')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '+ Add Company Factor' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Add company factor' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/More actions for/i)).not.toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
 
@@ -1133,8 +1133,8 @@ describe('ConversionFactorsPage traceability', () => {
       minHeight: '0',
     });
     expect(within(dialog).getByLabelText('Close factor details')).toBeInTheDocument();
-    expect(within(dialog).getByText('Factor Summary')).toBeInTheDocument();
-    expect(within(dialog).getByText('Source & Governance')).toBeInTheDocument();
+    expect(within(dialog).getByText('Factor summary')).toBeInTheDocument();
+    expect(within(dialog).getByText('Source & governance')).toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: /Save|Delete|Edit/i })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -1155,14 +1155,14 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
-    await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'ELECTRICITY');
-    await userEvent.type(screen.getByLabelText('Factor Name'), 'Company electricity factor');
-    await userEvent.type(getFirstLabeledControl('Factor Value'), '0.04');
-    await userEvent.type(screen.getByLabelText('Input Unit'), 'kWh');
-    await userEvent.type(getFirstLabeledControl('Source Year'), '2026');
-    await userEvent.type(getFirstLabeledControl('Source Authority'), 'Provincial source');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add company factor' }));
+    await userEvent.selectOptions(getFirstLabeledControl('Activity type'), 'ELECTRICITY');
+    await userEvent.type(screen.getByLabelText('Factor name'), 'Company electricity factor');
+    await userEvent.type(getFirstLabeledControl('Factor value'), '0.04');
+    await userEvent.type(screen.getByLabelText('Input unit'), 'kWh');
+    await userEvent.type(getFirstLabeledControl('Source year'), '2026');
+    await userEvent.type(getFirstLabeledControl('Source authority'), 'Provincial source');
+    await userEvent.click(screen.getByRole('button', { name: 'Create company factor' }));
 
     expect(await screen.findByText(/Province \/ Jurisdiction is required for Electricity company factors/i)).toBeInTheDocument();
     expect(createConversionFactor).not.toHaveBeenCalled();
@@ -1183,17 +1183,17 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
-    await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'DIESEL');
-    await userEvent.type(screen.getByLabelText('Factor Name'), 'Bad diesel factor');
-    await userEvent.clear(getFirstLabeledControl('Factor Value'));
-    await userEvent.type(getFirstLabeledControl('Factor Value'), '0');
-    await userEvent.type(screen.getByLabelText('Input Unit'), 'L');
-    await userEvent.type(getFirstLabeledControl('Source Year'), '2026');
-    await userEvent.type(getFirstLabeledControl('Source Authority'), 'Consultant source');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add company factor' }));
+    await userEvent.selectOptions(getFirstLabeledControl('Activity type'), 'DIESEL');
+    await userEvent.type(screen.getByLabelText('Factor name'), 'Bad diesel factor');
+    await userEvent.clear(getFirstLabeledControl('Factor value'));
+    await userEvent.type(getFirstLabeledControl('Factor value'), '0');
+    await userEvent.type(screen.getByLabelText('Input unit'), 'L');
+    await userEvent.type(getFirstLabeledControl('Source year'), '2026');
+    await userEvent.type(getFirstLabeledControl('Source authority'), 'Consultant source');
+    await userEvent.click(screen.getByRole('button', { name: 'Create company factor' }));
 
-    expect(await screen.findByText(/Factor Value must be a positive number/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Factor value must be a positive number/i)).toBeInTheDocument();
     expect(createConversionFactor).not.toHaveBeenCalled();
   });
 
@@ -1226,15 +1226,15 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Add Company Factor' }));
-    await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'DIESEL');
-    await userEvent.type(screen.getByLabelText('Factor Name'), 'Duplicate custom diesel');
-    await userEvent.clear(getFirstLabeledControl('Factor Value'));
-    await userEvent.type(getFirstLabeledControl('Factor Value'), '2.8');
-    await userEvent.type(screen.getByLabelText('Input Unit'), 'L');
-    await userEvent.type(getFirstLabeledControl('Source Year'), '2026');
-    await userEvent.type(getFirstLabeledControl('Source Authority'), 'Consultant source');
-    await userEvent.click(screen.getByRole('button', { name: 'Create Company Factor' }));
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add company factor' }));
+    await userEvent.selectOptions(getFirstLabeledControl('Activity type'), 'DIESEL');
+    await userEvent.type(screen.getByLabelText('Factor name'), 'Duplicate custom diesel');
+    await userEvent.clear(getFirstLabeledControl('Factor value'));
+    await userEvent.type(getFirstLabeledControl('Factor value'), '2.8');
+    await userEvent.type(screen.getByLabelText('Input unit'), 'L');
+    await userEvent.type(getFirstLabeledControl('Source year'), '2026');
+    await userEvent.type(getFirstLabeledControl('Source authority'), 'Consultant source');
+    await userEvent.click(screen.getByRole('button', { name: 'Create company factor' }));
 
     expect(await screen.findByText(/A company factor already exists/i)).toBeInTheDocument();
     expect(createConversionFactor).not.toHaveBeenCalled();
@@ -1256,10 +1256,10 @@ describe('ConversionFactorsPage traceability', () => {
     );
 
     await screen.findByText('No emission factors yet.');
-    await userEvent.selectOptions(getFirstLabeledControl('Activity Type'), 'ELECTRICITY');
+    await userEvent.selectOptions(getFirstLabeledControl('Activity type'), 'ELECTRICITY');
     await userEvent.selectOptions(screen.getByLabelText('Jurisdiction'), 'AB');
-    await userEvent.type(getFirstLabeledControl('Source Year'), '2025');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+    await userEvent.type(getFirstLabeledControl('Source year'), '2025');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     expect(getConversionFactors).toHaveBeenLastCalledWith({
       activityType: 'ELECTRICITY',

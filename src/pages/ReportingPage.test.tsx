@@ -387,7 +387,7 @@ describe('ReportingPage audit trail', () => {
     await waitFor(() => {
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
-    expect(screen.getByRole('heading', { name: /Report Scope/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Report scope/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Reporting Boundary/i })).toBeInTheDocument();
   });
 
@@ -549,7 +549,7 @@ describe('ReportingPage audit trail', () => {
     vi.mocked(getWorkflowActivityEvents).mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 0 });
     vi.mocked(getWorkflowActivityEvents).mockResolvedValue({ items: [imported], page: 1, pageSize: 20, total: 1, totalPages: 1 });
     render(<MemoryRouter><ReportingPage /></MemoryRouter>);
-    await userEvent.click(await screen.findByRole('button', { name: /Expand Audit Trail/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Expand Audit trail/ }));
     expect(await screen.findByText('No workflow audit events recorded yet.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
     expect(await screen.findByText('Import confirmed')).toBeInTheDocument();
@@ -563,7 +563,7 @@ describe('ReportingPage audit trail', () => {
   it('shows a query failure instead of claiming that history is empty', async () => {
     vi.mocked(getWorkflowActivityEvents).mockRejectedValue(new Error('Network unavailable'));
     render(<MemoryRouter><ReportingPage /></MemoryRouter>);
-    await userEvent.click(await screen.findByRole('button', { name: /Expand Audit Trail/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Expand Audit trail/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load workflow history');
     expect(screen.queryByText('No workflow audit events recorded yet.')).not.toBeInTheDocument();
   });
@@ -576,7 +576,7 @@ describe('ReportingPage audit trail', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-    const auditToggle = screen.getByRole('button', { name: /Audit Trail/i });
+    const auditToggle = screen.getByRole('button', { name: /Audit trail/i });
     expect(auditToggle).toHaveAttribute('aria-expanded', 'false');
     expect(auditToggle).toHaveTextContent('Expand');
     expect(screen.queryByText(/Records processed from Golden Test Data/i)).not.toBeInTheDocument();
@@ -628,7 +628,7 @@ describe('ReportingPage audit trail', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-    await userEvent.click(screen.getByRole('button', { name: /Audit Trail/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Audit trail/i }));
 
     expect(
       screen.getByText(
@@ -1415,8 +1415,8 @@ describe('ReportingPage audit trail', () => {
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
     expect(await screen.findByRole('heading', { name: 'Reports' })).toBeInTheDocument();
 
-    const reportScopeSection = screen.getByRole('region', { name: 'Report Scope' });
-    const reportScopeToggle = within(reportScopeSection).getByRole('button', { name: /Report Scope/i });
+    const reportScopeSection = screen.getByRole('region', { name: 'Report scope' });
+    const reportScopeToggle = within(reportScopeSection).getByRole('button', { name: /Report scope/i });
     expect(reportScopeToggle).toBeInTheDocument();
     expect(reportScopeToggle).toHaveAttribute('aria-expanded', 'true');
     expect(reportScopeSection).toHaveTextContent(/Date Range/i);
@@ -1481,7 +1481,7 @@ describe('ReportingPage audit trail', () => {
     expect(feedbackListener).toHaveBeenCalledTimes(1);
     window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
     expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Save Report Scope/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save Report scope/i })).not.toBeInTheDocument();
     expect(screen.getAllByText(/37,285 kg CO₂e/i).length).toBeGreaterThan(0);
   });
 

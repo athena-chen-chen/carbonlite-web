@@ -32,7 +32,7 @@ export function DocumentDetailsDialog({ document, metadata, onClose }: DocumentD
         <div style={documentDetailsHeaderStyle}>
           <div>
             <h2 id="document-details-title" style={documentDetailsTitleStyle}>
-              Document Details
+              Document details
             </h2>
             <p style={documentDetailsSubtitleStyle}>
               Metadata for {document.fileName}

@@ -14,21 +14,21 @@ import {
 
 const navItems = [
   { to: '/', label: 'Home' },
-  { to: '/organization-profile', label: 'Organization & Boundary' },
-  { to: INPUT_DATA_ROUTE, label: 'Input Data', activePaths: [LEGACY_UPLOAD_ROUTE] },
-  { to: DATA_RECORDS_ROUTE, label: 'Data Records', activePaths: ['/activity-records', '/activity-data'] },
-  { to: CALCULATION_REVIEW_ROUTE, label: 'Calculation Results', activePaths: ['/calculation-review'] },
+  { to: '/organization-profile', label: 'Organization & boundary' },
+  { to: INPUT_DATA_ROUTE, label: 'Input data', activePaths: [LEGACY_UPLOAD_ROUTE] },
+  { to: DATA_RECORDS_ROUTE, label: 'Data records', activePaths: ['/activity-records', '/activity-data'] },
+  { to: CALCULATION_REVIEW_ROUTE, label: 'Calculation results', activePaths: ['/calculation-review'] },
   { to: REPORTS_ROUTE, label: 'Reports' },
 ] as const;
 
 const settingsNavItems = [
-  { to: '/data-collection-guide', label: 'Data Collection Guide' },
-  { to: '/conversion-factors', label: 'Emission Factors' },
+  { to: '/data-collection-guide', label: 'Data collection guide' },
+  { to: '/conversion-factors', label: 'Emission factors' },
 ] as const;
 
 const adminNavItems = [
-  { to: '/admin/pilot-reviewers', label: 'Pilot Reviewers' },
-  { to: '/pilot-review-instructions', label: 'Review Instructions' },
+  { to: '/admin/pilot-reviewers', label: 'Pilot reviewers' },
+  { to: '/pilot-review-instructions', label: 'Review instructions' },
   { to: '/feedback', label: 'Feedback' },
   { to: '/activity', label: 'Activity', activePaths: ['/user-activity', '/admin/activity'] },
 ] as const;
@@ -259,7 +259,7 @@ export function AppNav() {
                     aria-haspopup="menu"
                     aria-expanded={isSettingsMenuOpen}
                   >
-                    {showPilotReviewerBanner ? 'Workspace Info' : 'Settings'} <span aria-hidden="true">▾</span>
+                    {showPilotReviewerBanner ? 'Workspace info' : 'Settings'} <span aria-hidden="true">▾</span>
                   </button>
                   {isSettingsMenuOpen ? (
                     <div ref={settingsMenuRef} role="menu" style={adminMenuStyle}>

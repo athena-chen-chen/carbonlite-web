@@ -107,9 +107,9 @@ const ACTIVITY_TABLE_COLUMNS = [
   { key: 'unit', label: 'Unit' },
   { key: 'country', label: 'Country' },
   { key: 'province', label: 'Province' },
-  { key: 'facility', label: 'Site / Facility' },
+  { key: 'facility', label: 'Site / facility' },
   { key: 'source', label: 'Source' },
-  { key: 'sourceReference', label: 'Source Reference' },
+  { key: 'sourceReference', label: 'Source reference' },
 ] as const;
 
 type ActivityTableColumnKey = (typeof ACTIVITY_TABLE_COLUMNS)[number]['key'];
@@ -1702,7 +1702,7 @@ async function handleBulkApplyFacility() {
     setBulkFacility('');
     setActiveBulkAction(null);
     setSuccessMessage(
-      `Site / Facility updated for ${updatedCount} record${updatedCount === 1 ? '' : 's'}.`,
+      `Site / facility updated for ${updatedCount} record${updatedCount === 1 ? '' : 's'}.`,
     );
     window.sessionStorage.setItem('carbonliteMetricsStale', 'true');
     window.dispatchEvent(new Event('carbonlite:metrics-stale'));
@@ -1776,7 +1776,7 @@ async function handleBulkApplyProvince() {
       title: 'Update province?',
       message:
         `${existingProvinceRecordLabel}\nTheir existing province will be replaced with ${bulkProvince}.\n\nContinue?`,
-      confirmLabel: 'Update Province',
+      confirmLabel: 'Update province',
       cancelLabel: 'Cancel',
     });
 
@@ -2228,7 +2228,7 @@ function renderViewedRecordModal() {
         <div style={detailsModalHeaderStyle}>
           <div>
             <h2 id="activity-record-details-title" style={detailsModalTitleStyle}>
-              Activity Record Details
+              Activity record details
             </h2>
             <p style={detailsModalSubtitleStyle}>
               {formatActivityTypeValue(viewedRecord.activityType)} ·{' '}
@@ -2248,9 +2248,9 @@ function renderViewedRecordModal() {
         <div style={detailsModalBodyStyle}>
           <div style={detailsModalGridStyle}>
             <DetailsField label="Status" value={quality.label} />
-            <DetailsField label="Canonical Matching Status" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
-            <DetailsField label="Report Treatment" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
-            <DetailsField label="Calculation Status" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
+            <DetailsField label="Canonical matching status" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
+            <DetailsField label="Report treatment" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
+            <DetailsField label="Calculation status" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
             <DetailsField
               label="Scope"
               value={hasLocationBasedScope2Evidence({
@@ -2261,7 +2261,7 @@ function renderViewedRecordModal() {
             />
             {normalizedActivityType === 'ELECTRICITY' ? (
               <DetailsField
-                label="Accounting Method"
+                label="Accounting method"
                 value={getElectricityAccountingMethodLabel({
                   activityType: viewedRecord.activityType,
                   factorName: viewedRecord.matchedFactorName,
@@ -2269,48 +2269,48 @@ function renderViewedRecordModal() {
                 })}
               />
             ) : null}
-            <DetailsField label="Activity Type" value={formatActivityTypeValue(viewedRecord.activityType)} />
+            <DetailsField label="Activity type" value={formatActivityTypeValue(viewedRecord.activityType)} />
             <DetailsField label="Quantity" value={formatRequiredRecordValue(viewedRecord.quantity)} />
             <DetailsField label="Unit" value={formatRecordUnit(viewedRecord.unit)} />
             <DetailsField label="Date" value={formatRequiredRecordValue(formatDateOnly(viewedRecord.recordDate))} />
-            <DetailsField label="Record Year" value={formatOptionalRecordValue(getActivityRecordYear(viewedRecord))} />
+            <DetailsField label="Record year" value={formatOptionalRecordValue(getActivityRecordYear(viewedRecord))} />
             <DetailsField label="Country" value={formatOptionalRecordValue(viewedRecord.jurisdictionCountry)} />
             <DetailsField
               label="Province"
               value={formatOptionalRecordValue(normalizeProvinceValue(viewedRecord.jurisdictionRegion))}
             />
-            <DetailsField label="Site / Facility" value={formatSiteFacilityValue(viewedRecord)} />
-            <DetailsField label="Created Source" value={formatActivitySourceType(viewedRecord)} />
-            <DetailsField label="Source File" value={formatActivitySourceFile(viewedRecord)} />
+            <DetailsField label="Site / facility" value={formatSiteFacilityValue(viewedRecord)} />
+            <DetailsField label="Created source" value={formatActivitySourceType(viewedRecord)} />
+            <DetailsField label="Source file" value={formatActivitySourceFile(viewedRecord)} />
             <DetailsField
-              label="Source Reference"
+              label="Source reference"
               value={formatActivitySourceReference(viewedRecord)}
               fullWidth
             />
             {formatActivitySourceReviewStatus(viewedRecord) ? (
               <DetailsField
-                label="Source Data Status"
+                label="Source data status"
                 value={formatActivitySourceReviewStatus(viewedRecord)}
               />
             ) : null}
-            <DetailsField label="Matched Factor Name" value={formatOptionalRecordValue(getFactorDisplayName(viewedRecord.matchedFactorName) || (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
-            <DetailsField label="Matched Factor Value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
-            <DetailsField label="Matched Factor Unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
-            <DetailsField label="Matched Factor Source Year" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceYear ?? matchedFactor?.factorYear)} />
-            <DetailsField label="Matched Factor Version" value={formatOptionalRecordValue(getDisplayFactorVersion({ factorVersion: viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion, sourceDocument: viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument }))} />
-            <DetailsField label="Source Authority" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceAuthority ?? matchedFactorSnapshot.matchedFactorSourceAuthority)} />
-            <DetailsField label="Source Document" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument)} />
+            <DetailsField label="Matched factor name" value={formatOptionalRecordValue(getFactorDisplayName(viewedRecord.matchedFactorName) || (matchedFactor ? getShortFactorName(matchedFactor) : null))} />
+            <DetailsField label="Matched factor value" value={formatOptionalRecordValue(viewedRecord.matchedFactorValue ?? matchedFactorSnapshot.matchedFactorValue)} />
+            <DetailsField label="Matched factor unit" value={formatOptionalRecordValue(viewedRecord.matchedFactorUnit ?? matchedFactorSnapshot.matchedFactorUnit)} />
+            <DetailsField label="Matched factor source year" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceYear ?? matchedFactor?.factorYear)} />
+            <DetailsField label="Matched factor version" value={formatOptionalRecordValue(getDisplayFactorVersion({ factorVersion: viewedRecord.matchedFactorVersion ?? matchedFactorSnapshot.matchedFactorVersion, sourceDocument: viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument }))} />
+            <DetailsField label="Source authority" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceAuthority ?? matchedFactorSnapshot.matchedFactorSourceAuthority)} />
+            <DetailsField label="Source document" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceDocument ?? matchedFactorSnapshot.matchedFactorSourceDocument)} />
             <DetailsField label="Source URL" value={formatOptionalRecordValue(viewedRecord.matchedFactorSourceUrl ?? matchedFactorSnapshot.matchedFactorSourceUrl)} fullWidth />
             <DetailsField label="Verification" value={formatOptionalRecordValue(formatCredibilityLabel(factorVerificationStatus))} />
             <DetailsField label="Confidence" value={formatOptionalRecordValue(formatCredibilityLabel(factorConfidenceLevel))} />
-            <DetailsField label="Credibility Notes" value={formatOptionalRecordValue(credibilityBadges.join(' · '))} fullWidth />
+            <DetailsField label="Credibility notes" value={formatOptionalRecordValue(credibilityBadges.join(' · '))} fullWidth />
             <DetailsField label="Assumptions" value={formatOptionalRecordValue(factorAssumptions)} fullWidth />
-            <DetailsField label="Factor Selection Reason" value={formatOptionalRecordValue(viewedRecord.factorSelectionReason ?? matchedFactorSnapshot.factorSelectionReason)} />
-            <DetailsField label="Factor Selection Explanation" value={formatOptionalRecordValue(viewedRecord.factorSelectionExplanation ?? matchedFactorSnapshot.factorSelectionExplanation)} fullWidth />
-            <DetailsField label="Calculated Emissions" value={formatCalculatedEmissionValue(calculatedEmission)} />
-            <DetailsField label="Calculation Message" value={formatOptionalRecordValue(viewedRecord.calculationMessage)} fullWidth />
-            <DetailsField label="Created At" value={formatOptionalRecordValue(viewedRecord.createdAt)} />
-            <DetailsField label="Updated At" value={formatOptionalRecordValue(viewedRecord.updatedAt)} />
+            <DetailsField label="Factor selection reason" value={formatOptionalRecordValue(viewedRecord.factorSelectionReason ?? matchedFactorSnapshot.factorSelectionReason)} />
+            <DetailsField label="Factor selection explanation" value={formatOptionalRecordValue(viewedRecord.factorSelectionExplanation ?? matchedFactorSnapshot.factorSelectionExplanation)} fullWidth />
+            <DetailsField label="Calculated emissions" value={formatCalculatedEmissionValue(calculatedEmission)} />
+            <DetailsField label="Calculation message" value={formatOptionalRecordValue(viewedRecord.calculationMessage)} fullWidth />
+            <DetailsField label="Created at" value={formatOptionalRecordValue(viewedRecord.createdAt)} />
+            <DetailsField label="Updated at" value={formatOptionalRecordValue(viewedRecord.updatedAt)} />
             <DetailsField label="Notes" value={formatOptionalRecordValue(viewedRecord.notes)} fullWidth />
           </div>
         </div>
@@ -2392,7 +2392,7 @@ function renderClearRecordsModal() {
         <div style={detailsModalHeaderStyle}>
           <div>
             <h2 id="clear-activity-records-title" style={detailsModalTitleStyle}>
-              Reset Demo Data
+              Reset demo data
             </h2>
             <p style={detailsModalSubtitleStyle}>Advanced company data action</p>
           </div>
@@ -2435,7 +2435,7 @@ function renderClearRecordsModal() {
               disabled={!canConfirm}
               style={clearRecordsConfirmButtonStyle(canConfirm)}
             >
-              {isClearingRecords ? 'Resetting...' : 'Reset Demo Data'}
+              {isClearingRecords ? 'Resetting...' : 'Reset demo data'}
             </button>
           </div>
         </div>
@@ -2488,15 +2488,15 @@ if (import.meta.env.DEV) {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <PageHeader title="Data Records" />
+      <PageHeader title="Data records" />
       {canEditActivityRecords ? (
         <button
           type="button"
           onClick={() => navigate('/input-data', { state: { focusInputMethod: 'manual' } })}
           style={{ ...secondaryActionBtn, marginBottom: 20 }}
-          title="Go to Step 2 · Add Data"
+          title="Go to step 2 · Add data"
         >
-          Add More Data
+          Add more data
         </button>
       ) : (
         <div style={readOnlyNoticeStyle}>
@@ -2512,8 +2512,8 @@ if (import.meta.env.DEV) {
           marginBottom: 24,
         }}
       >
-        <Card title="Total Activity Records" value={summaryCardPlaceholder ?? items.length} icon="📄" />
-        <Card title="Manual Entries" value={summaryCardPlaceholder ?? items.filter(i => i.sourceType === 'MANUAL').length} icon="✍️" />
+        <Card title="Total activity records" value={summaryCardPlaceholder ?? items.length} icon="📄" />
+        <Card title="Manual entries" value={summaryCardPlaceholder ?? items.filter(i => i.sourceType === 'MANUAL').length} icon="✍️" />
         <Card title="Imported" value={summaryCardPlaceholder ?? items.filter(i => i.sourceType !== 'MANUAL').length} icon="📥" />
       </div>
       {loading ? (
@@ -2549,7 +2549,7 @@ if (import.meta.env.DEV) {
         <section style={advancedActionsStyle} aria-labelledby="advanced-actions-title">
           <div>
             <h2 id="advanced-actions-title" style={advancedActionsTitleStyle}>
-              Advanced Actions
+              Advanced actions
             </h2>
             <p style={advancedActionsTextStyle}>
               Admin-only data management for pilot resets in the current company.
@@ -2562,7 +2562,7 @@ if (import.meta.env.DEV) {
               disabled={isRecalculatingRecords || items.length === 0}
               style={recalculateRecordsButtonStyle(isRecalculatingRecords || items.length === 0)}
             >
-              {isRecalculatingRecords ? 'Recalculating...' : 'Recalculate Activity Records'}
+              {isRecalculatingRecords ? 'Recalculating...' : 'Recalculate activity records'}
             </button>
             <button
               type="button"
@@ -2570,7 +2570,7 @@ if (import.meta.env.DEV) {
               disabled={isClearingRecords}
               style={clearRecordsButtonStyle}
             >
-              Reset Demo Data
+              Reset demo data
             </button>
           </div>
         </section>
@@ -2578,7 +2578,7 @@ if (import.meta.env.DEV) {
       {/* ⭐ Table */}
       <div style={tableCard}>
         <div style={tableHeaderRowStyle}>
-          <h2 style={{ margin: 0 }}>Activity Records</h2>
+          <h2 style={{ margin: 0 }}>Activity records</h2>
         </div>
 
         <div style={tableToolbarStyle} aria-label="Activity records toolbar">
@@ -2650,7 +2650,7 @@ if (import.meta.env.DEV) {
                   onClick={() => setIsExportMenuOpen((current) => !current)}
                   style={secondaryActionBtn}
                 >
-                  Export Records
+                  Export records
                 </button>
                 {isExportMenuOpen ? (
                   <div
@@ -2697,7 +2697,7 @@ if (import.meta.env.DEV) {
                 aria-label="Generate report from selected records"
                 style={generateReportButtonStyle(selectedIds.length)}
               >
-                Generate Report
+                Generate report
               </button>
             </div>
           </div>
@@ -2713,7 +2713,7 @@ if (import.meta.env.DEV) {
                     aria-pressed={activeBulkAction === 'site'}
                     style={bulkToolbarButtonStyle(activeBulkAction === 'site')}
                   >
-                    Set Site / Facility
+                    Set site / facility
                   </button>
                 ) : null}
                 {canSetProvinceOnActivityRecords ? (
@@ -2729,7 +2729,7 @@ if (import.meta.env.DEV) {
                     aria-pressed={activeBulkAction === 'province'}
                     style={bulkToolbarButtonStyle(activeBulkAction === 'province', selectedElectricityRows.length === 0)}
                   >
-                    Set Province
+                    Set province
                   </button>
                 ) : null}
                 {canEditActivityRecords ? (
@@ -2770,7 +2770,7 @@ if (import.meta.env.DEV) {
               {activeBulkAction === 'site' && canSetFacilityOnActivityRecords ? (
                 <div style={bulkActionPanelStyle}>
                     <div style={bulkFacilityLabelGroupStyle}>
-                      <span style={bulkFacilityLabelStyle}>Site / Facility</span>
+                      <span style={bulkFacilityLabelStyle}>Site / facility</span>
                       <span style={bulkFacilityHelperTextStyle}>
                         {setFacilityDisabledReason && selectedIds.length > 0
                           ? setFacilityDisabledReason
@@ -2784,7 +2784,7 @@ if (import.meta.env.DEV) {
                         value={bulkFacility}
                         onChange={(event) => setBulkFacility(event.target.value)}
                         placeholder="Enter or select site / facility"
-                        aria-label="Site / Facility to apply to selected records"
+                        aria-label="Site / facility to apply to selected records"
                         style={bulkFacilityInputStyle}
                       />
                     </label>
@@ -2889,7 +2889,7 @@ if (import.meta.env.DEV) {
               onClick={clearActivityRecordFilters}
               style={clearFilterButtonStyle}
             >
-              Clear Filter
+              Clear filter
             </button>
           </div>
         ) : null}
@@ -2948,9 +2948,9 @@ if (import.meta.env.DEV) {
                   {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
                   {visibleColumns.country ? <th style={countryThStyle}>Country</th> : null}
                   {visibleColumns.province ? <th style={provinceThStyle}>Province</th> : null}
-                  {visibleColumns.facility ? <th style={facilityThStyle}>Site / Facility</th> : null}
+                  {visibleColumns.facility ? <th style={facilityThStyle}>Site / facility</th> : null}
                   {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
-                  {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
+                  {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source reference</th> : null}
                   <th style={actionsThStyle}></th>
                 </tr>
               </thead>
@@ -3060,9 +3060,9 @@ function ActivityRecordsLoadingState({
               {visibleColumns.unit ? <th style={unitThStyle}>Unit</th> : null}
               {visibleColumns.country ? <th style={countryThStyle}>Country</th> : null}
               {visibleColumns.province ? <th style={provinceThStyle}>Province</th> : null}
-              {visibleColumns.facility ? <th style={facilityThStyle}>Site / Facility</th> : null}
+              {visibleColumns.facility ? <th style={facilityThStyle}>Site / facility</th> : null}
               {visibleColumns.source ? <th style={sourceThStyle}>Source</th> : null}
-              {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source Reference</th> : null}
+              {visibleColumns.sourceReference ? <th style={sourceReferenceThStyle}>Source reference</th> : null}
               <th style={actionsThStyle} />
             </tr>
           </thead>

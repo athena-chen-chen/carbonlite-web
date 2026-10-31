@@ -47,7 +47,7 @@ export function ManualEntryForm({
   saveDisabled = false,
   saveLabel,
   canRemove = false,
-  removeLabel = 'Clear Draft',
+  removeLabel = 'Clear draft',
   removeAriaLabel,
   onRemove,
   savedActions,

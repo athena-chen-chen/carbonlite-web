@@ -2800,7 +2800,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
       ) : null}
       {hasImportedReviewRows && importReviewSummary.total > 0 ? (
         <div style={importReviewSummaryStyle}>
-          <strong>Import Review Summary</strong>
+          <strong>Import review summary</strong>
           <span>{formatCount(importReviewSummary.total, 'record')} found</span>
           <span>{importReviewSummary.ready} ready for calculation</span>
           <span>{formatCount(importReviewSummary.tracked, 'tracked metric')}</span>
@@ -2896,7 +2896,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
           title={saveAllDisabledReason}
           style={primaryButtonStyle(saveAllDisabled)}
         >
-          {isSavingAll ? 'Saving...' : 'Save All'}
+          {isSavingAll ? 'Saving...' : 'Save all'}
         </button>
         {hasSavedRows ? (
           <>
@@ -2906,7 +2906,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
               disabled={!canImportRows}
               style={secondaryButtonStyle}
             >
-              Clear Saved Rows
+              Clear saved rows
             </button>
             <button
               type="button"
@@ -2915,7 +2915,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
               }}
               style={secondaryButtonStyle}
             >
-              View Calculation Results
+              View calculation results
             </button>
             <button
               type="button"
@@ -2924,7 +2924,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
               }}
               style={secondaryButtonStyle}
             >
-              View Records
+              View records
             </button>
           </>
         ) : null}
@@ -3002,24 +3002,24 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
               <div style={draftReviewRowStyle}>
                 {normalizeActivityType(row.activityType) === 'AIR_TRAVEL' ? (
                   <div style={{ display: 'grid', gap: 10, gridColumn: '1 / -1' }}>
-                    <strong>Air Travel Route</strong>
+                    <strong>Air travel route</strong>
                     <span style={statusMessageStyle}>Enter IATA airport codes and trip details. Distance, passenger-km, haul category, factor selection, and emissions are derived by the server.</span>
                     <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
                       <label style={{ display: 'grid', gap: 4 }}>
-                        <span>Origin Airport</span>
-                        <input aria-label="Origin Airport" value={row.originAirport ?? ''} maxLength={3} placeholder="YYC" onChange={(event) => updateRow(row.id, 'originAirport', event.target.value)} />
+                        <span>Origin airport</span>
+                        <input aria-label="Origin airport" value={row.originAirport ?? ''} maxLength={3} placeholder="YYC" onChange={(event) => updateRow(row.id, 'originAirport', event.target.value)} />
                       </label>
                       <label style={{ display: 'grid', gap: 4 }}>
-                        <span>Destination Airport</span>
-                        <input aria-label="Destination Airport" value={row.destinationAirport ?? ''} maxLength={3} placeholder="YYZ" onChange={(event) => updateRow(row.id, 'destinationAirport', event.target.value)} />
+                        <span>Destination airport</span>
+                        <input aria-label="Destination airport" value={row.destinationAirport ?? ''} maxLength={3} placeholder="YYZ" onChange={(event) => updateRow(row.id, 'destinationAirport', event.target.value)} />
                       </label>
                       <label style={{ display: 'grid', gap: 4 }}>
                         <span>Passengers</span>
                         <input aria-label="Passengers" type="number" min="1" step="1" value={row.passengerCount ?? ''} onChange={(event) => updateRow(row.id, 'passengerCount', event.target.value)} />
                       </label>
                       <label style={{ display: 'grid', gap: 4 }}>
-                        <span>Trip Type</span>
-                        <select aria-label="Trip Type" value={row.tripType ?? ''} onChange={(event) => updateRow(row.id, 'tripType', event.target.value)}>
+                        <span>Trip type</span>
+                        <select aria-label="Trip type" value={row.tripType ?? ''} onChange={(event) => updateRow(row.id, 'tripType', event.target.value)}>
                           <option value="">Select trip type</option>
                           <option value="ONE_WAY">One way</option>
                           <option value="ROUND_TRIP">Round trip</option>
@@ -3034,17 +3034,17 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                   renderScopeCell(row),
                 )}
                 {renderPreviewPanel(
-                  'Factor Status',
+                  'Factor status',
                   'Whether this record is ready for emissions calculation.',
                   renderStatusCell(row),
                 )}
                 {renderPreviewPanel(
-                  'Matched Factor',
+                  'Matched factor',
                   'Conversion factor matched by type, unit, province, and year.',
                   renderFactorCell(row),
                 )}
                 {renderPreviewPanel(
-                  'Report Treatment',
+                  'Report treatment',
                   'How this row will affect totals after saving.',
                   renderTreatmentCell(row),
                 )}
@@ -3054,7 +3054,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
             saveDisabled={isRowSaveDisabled(row) || !canImportRows}
             saveLabel={getRowSaveLabel(row)}
             canRemove={canImportRows && canRemoveRow(row)}
-            removeLabel="Clear Draft"
+            removeLabel="Clear draft"
             removeAriaLabel={`Clear draft row ${index + 1}`}
             onRemove={() => removeRow(row.id)}
             savedActions={
@@ -3075,7 +3075,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                     disabled={!canImportRows}
                     style={secondaryButtonStyle}
                   >
-                    {isSpreadsheetMode ? 'Add another manual row' : 'Add Another Record'}
+                    {isSpreadsheetMode ? 'Add another manual row' : 'Add another record'}
                   </button>
                   <button
                     type="button"
@@ -3084,7 +3084,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                     }}
                     style={secondaryButtonStyle}
                   >
-                    View in Data Records
+                    View in data records
                   </button>
                 </>
               ) : null

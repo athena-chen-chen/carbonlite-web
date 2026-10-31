@@ -14,7 +14,7 @@ const document: DocumentItem = {
 function props(): ComponentProps<typeof ReviewDataSection> {
   return {
     loading: false, documents: [], visibleDocuments: [], hasMissingFiles: false,
-    selectedDocumentsActionLabel: 'View Calculation Results',
+    selectedDocumentsActionLabel: 'View calculation results',
     selectedDocumentsActionDisabled: true,
     selectedDocumentsActionHelp: 'Select one or more files with imported records.',
     selectedDocumentIds: [], selectableVisibleDocuments: [], latestDocumentId: null,
@@ -40,7 +40,7 @@ it('preserves the heading, helper, parent refs, and provided action state', asyn
   expect(p.reviewHeadingRef).toHaveProperty('current', heading);
   expect(p.reviewSectionRef).toHaveProperty('current', heading.closest('#review'));
   expect(screen.getByText('Select imported data to view calculation results.')).toBeInTheDocument();
-  const action = screen.getByRole('button', { name: 'View Calculation Results' });
+  const action = screen.getByRole('button', { name: 'View calculation results' });
   expect(action).toBeDisabled();
   expect(action).toHaveAttribute('title', p.selectedDocumentsActionHelp);
   expect(screen.getByText(p.selectedDocumentsActionHelp)).toBeInTheDocument();

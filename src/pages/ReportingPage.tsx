@@ -601,7 +601,7 @@ function setAllReportSections(expanded: boolean) {
 
       <CollapsibleReportSection
         id="report-scope-report-section"
-        title="Report Scope"
+        title="Report scope"
         summary={reportPeriod}
         expanded={expandedSections.reportScope}
         onToggle={() => toggleReportSection('reportScope')}
@@ -638,11 +638,11 @@ function setAllReportSections(expanded: boolean) {
       </CollapsibleReportSection>
       {!isPilotReviewerAccount && reportScope === 'selectedDocuments' ? (
         <div style={selectionNoticeStyle}>
-          Report Scope: Selected Documents ({selectedDocumentIds.length})
+          Report scope: Selected documents ({selectedDocumentIds.length})
         </div>
       ) : !isPilotReviewerAccount && reportScope === 'selectedRecords' ? (
         <div style={selectionNoticeStyle}>
-          Report Scope: Selected Records ({selectedRecordIds.length})
+          Report scope: Selected records ({selectedRecordIds.length})
         </div>
       ) : null}
       {!isPilotReviewerAccount && reportScope === 'selectedDocuments' && !loading && activities.length === 0 ? (
@@ -826,7 +826,7 @@ function WorkflowAuditTrail({
   return (
     <CollapsibleSection
       id="workflow-audit-trail"
-      title="Audit Trail"
+      title="Audit trail"
       summary={`Workflow history for this workspace.${latestEvent ? ` Latest event: ${formatEventLabel(latestEvent)} · ${formatEventTime(latestEvent.createdAt)}` : ''}`}
       expanded={isOpen}
       onToggle={onToggle}

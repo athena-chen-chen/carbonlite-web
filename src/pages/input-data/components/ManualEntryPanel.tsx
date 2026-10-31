@@ -13,7 +13,7 @@ export function ManualEntryPanel({
 }: ManualEntryPanelProps) {
   return (
     <div ref={containerRef} style={uploadCardStyle} tabIndex={-1}>
-      <h2 style={{ marginTop: 0 }}>Manual Entry</h2>
+      <h2 style={{ marginTop: 0 }}>Manual entry</h2>
       <p style={{ color: '#666' }}>
         Enter one activity record directly when no file is available.
       </p>

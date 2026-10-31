@@ -28,7 +28,7 @@ function props(documents = [imported, partial, empty]): DocumentTableProps {
 it('preserves columns, colgroup, filenames, eligibility, types, statuses, and provided formatters', () => {
   const p = props();
   const { container } = render(<DocumentTable {...p} />);
-  expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['', 'File Name', 'Type', 'Status', 'Rows', 'Created At', 'Actions']);
+  expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['', 'File name', 'Type', 'Status', 'Rows', 'Created at', 'Actions']);
   expect(container.querySelectorAll('colgroup col')).toHaveLength(7);
   for (const doc of p.documents) {
     const row = within(screen.getByLabelText(`Select document ${doc.fileName}`).closest('tr')!);

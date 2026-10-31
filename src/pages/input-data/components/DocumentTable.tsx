@@ -91,11 +91,11 @@ export function DocumentTable({
               aria-label="Select visible documents"
             />
           </th>
-          <th style={thStyle}>File Name</th>
+          <th style={thStyle}>File name</th>
           <th style={thStyle}>Type</th>
           <th style={thStyle}>Status</th>
           <th style={thStyle}>Rows</th>
-          <th style={thStyle}>Created At</th>
+          <th style={thStyle}>Created at</th>
           <th style={thStyle}>Actions</th>
         </tr>
       </thead>

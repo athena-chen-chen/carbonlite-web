@@ -251,7 +251,7 @@ describe('buildMetricsSummaryTableRows', () => {
     ],
   };
 
-  it('uses the same values shown in the Calculation Results cards', () => {
+  it('uses the same values shown in the Calculation results cards', () => {
     const rows = buildMetricsSummaryTableRows({
       usageTotals,
       totalEstimatedEmissionsKgCO2e: 1234.5,
@@ -281,7 +281,7 @@ describe('buildMetricsSummaryTableRows', () => {
         activityType: 'ELECTRICITY',
       },
       {
-        metricType: 'Total Calculated Emissions',
+        metricType: 'Total calculated emissions',
         unit: 'kg CO₂e',
         totalValue: '1,234.50',
         category: 'calculated',
@@ -289,7 +289,7 @@ describe('buildMetricsSummaryTableRows', () => {
     ]);
   });
 
-  it('displays normalized electricity input totals in the Calculation Summary table', () => {
+  it('displays normalized electricity input totals in the Calculation summary table', () => {
     const rows = buildMetricsSummaryTableRows({
       usageTotals: {
         fuel: 3313,
@@ -347,7 +347,7 @@ describe('buildMetricsSummaryTableRows', () => {
           trackedOnly: true,
         }),
         expect.objectContaining({
-          metricType: 'Total Calculated Emissions',
+          metricType: 'Total calculated emissions',
           unit: 'kg CO₂e',
           totalValue: '37,285',
           category: 'calculated',
@@ -382,7 +382,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          metricType: 'Total Calculated Emissions',
+          metricType: 'Total calculated emissions',
           unit: 'kg CO₂e',
           totalValue: '268',
           category: 'calculated',
@@ -471,7 +471,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(
       screen.getByText(/Records exist, but emissions could not be calculated/i),
     ).toBeInTheDocument();
-    expect(screen.getByText('Review Data Quality & Tracked Metrics above.')).toBeInTheDocument();
+    expect(screen.getByText('Review data quality & tracked metrics above.')).toBeInTheDocument();
     expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
   });
 
@@ -507,7 +507,7 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getByText('No calculated emissions yet.')).toBeInTheDocument();
-    expect(screen.getAllByText('Tracked Metrics').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Tracked metrics').length).toBeGreaterThan(0);
     expect(screen.getByText('Water / m3 — 1 record')).toBeInTheDocument();
     expect(screen.queryByText('No metrics yet.')).not.toBeInTheDocument();
   });
@@ -708,14 +708,14 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Calculation Summary')).toBeInTheDocument();
+    expect(screen.getByText('Calculation summary')).toBeInTheDocument();
     expect(screen.getByText('One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.')).toBeInTheDocument();
     expect(screen.getByText('Input Data')).toBeInTheDocument();
     expect(screen.getAllByText('100 liters').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Gasoline').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Calculation relationship')).toHaveTextContent('↓');
     expect(screen.getByText('Calculated Result')).toBeInTheDocument();
-    expect(screen.getAllByText('Total Calculated Emissions').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Total calculated emissions').length).toBeGreaterThan(0);
     expect(screen.getByText('231')).toBeInTheDocument();
     expect(screen.getByText('kg CO₂e')).toBeInTheDocument();
     expect(
@@ -730,7 +730,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.queryByRole('columnheader', { name: 'Factor Source' })).not.toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Formula' })).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('columnheader', { name: 'Matching Explanation' }),
+      screen.queryByRole('columnheader', { name: 'Matching explanation' }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /View calculation details for Gasoline/i }));
@@ -740,7 +740,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('ECCC 2025')).toBeInTheDocument();
     expect(within(dialog).getByText('Formula')).toBeInTheDocument();
     expect(within(dialog).getByText('100 liters × 2.31 kg CO₂e/liter = 231 kg CO₂e')).toBeInTheDocument();
-    expect(within(dialog).getByText('Matching Explanation')).toBeInTheDocument();
+    expect(within(dialog).getByText('Matching explanation')).toBeInTheDocument();
     expect(within(dialog).getByText('Matched factor')).toBeInTheDocument();
   });
 
@@ -759,8 +759,8 @@ describe('buildMetricsSummaryTableRows', () => {
     ];
     render(<MemoryRouter><MetricsSummarySection usageTotals={goldenTrailUsageTotals}
       totalEstimatedEmissionsKgCO2e={300} countSummary={goldenTrailCountSummary} calculationDetails={calculationDetails} /></MemoryRouter>);
-    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
-    const dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    fireEvent.click(screen.getAllByRole('button', { name: 'View calculation trail' })[0]);
+    const dialog = screen.getByRole('dialog', { name: /Total calculated emissions Calculation trail/i });
     expect(within(dialog).getByText('Electricity · Alberta, Canada')).toBeInTheDocument();
     expect(within(dialog).getByText('Diesel · Canada (Generic)')).toBeInTheDocument();
     expect(within(dialog).getByText('Diesel · Not specified')).toBeInTheDocument();
@@ -783,9 +783,9 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'View calculation trail' })[0]);
 
-    const dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    const dialog = screen.getByRole('dialog', { name: /Total calculated emissions Calculation trail/i });
     expect(dialog.parentElement).toHaveStyle({
       position: 'fixed',
       zIndex: '5000',
@@ -803,7 +803,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(within(dialog).getByText('37,285 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('9');
-    expect(within(dialog).getByText('Tracked metrics').parentElement).toHaveTextContent('1');
+    expect(within(dialog).getAllByText('Tracked metrics')[0].parentElement).toHaveTextContent('1');
     expect(within(dialog).getByText('Electricity - Alberta')).toBeInTheDocument();
     expect(dialog).toHaveTextContent('CarbonLite Default Factor Library v1.0');
     expect(within(dialog).getAllByText('Internal Review Required').length).toBeGreaterThan(0);
@@ -813,7 +813,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(dialog).not.toHaveTextContent('factor-electricity-ab-id');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Total calculated emissions Calculation trail/i })).not.toBeInTheDocument();
   });
 
   it('keeps March pilot calculation results semantics separate for activity, factors, and tracked metrics', () => {
@@ -904,8 +904,8 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Records Included in GHG Total')).toBeInTheDocument();
-    expect(screen.getAllByText('Tracked Metrics')[0].parentElement).toHaveTextContent('1');
+    expect(screen.getByText('Records included in GHG total')).toBeInTheDocument();
+    expect(screen.getAllByText('Tracked metrics')[0].parentElement).toHaveTextContent('1');
     expect(
       screen.getByText((_, element) => element?.textContent === '2 Calculated Emissions Records'),
     ).toBeInTheDocument();
@@ -916,7 +916,7 @@ describe('buildMetricsSummaryTableRows', () => {
       screen.getAllByText((_, element) => element?.textContent === '0 records needing attention').length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByText((_, element) => element?.textContent === '0 Excluded Due to Calculation Issues').length,
+      screen.getAllByText((_, element) => element?.textContent === '0 Excluded due to calculation issues').length,
     ).toBeGreaterThan(0);
     expect(screen.getByText('No records need attention')).toBeInTheDocument();
 
@@ -933,11 +933,11 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(within(dialog).getByText('Canada (Generic)')).toBeInTheDocument();
     fireEvent.click(within(dialog).getByLabelText('Close calculation detail'));
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
-    dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    fireEvent.click(screen.getAllByRole('button', { name: 'View calculation trail' })[0]);
+    dialog = screen.getByRole('dialog', { name: /Total calculated emissions Calculation trail/i });
     expect(within(dialog).getByText('579.40 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('2');
-    expect(within(dialog).getByText('Tracked metrics').parentElement).toHaveTextContent('1');
+    expect(within(dialog).getAllByText('Tracked metrics')[0].parentElement).toHaveTextContent('1');
     expect(within(dialog).getByText('Records needing attention').parentElement).toHaveTextContent('0');
     expect(dialog).toHaveTextContent('2026-03-01 · Alberta, Canada');
     expect(dialog).not.toHaveTextContent('2026-03-01T00:00:00.000Z');
@@ -1010,45 +1010,45 @@ describe('buildMetricsSummaryTableRows', () => {
 
     const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
     const scopeButtons = within(scopeSection).getAllByRole('button', {
-      name: 'View Calculation Trail',
+      name: 'View calculation trail',
     });
 
     fireEvent.click(scopeButtons[0]);
-    let dialog = screen.getByRole('dialog', { name: /Scope 1 Calculation Trail/i });
+    let dialog = screen.getByRole('dialog', { name: /Scope 1 Calculation trail/i });
     expect(within(dialog).getByText('3,313 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getAllByText(/Natural Gas · Canada/i).length).toBeGreaterThan(0);
     expect(within(dialog).queryByText(/Electricity · Alberta · 12,500 kWh/i)).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
 
     fireEvent.click(scopeButtons[1]);
-    dialog = screen.getByRole('dialog', { name: /Scope 2 Calculation Trail/i });
+    dialog = screen.getByRole('dialog', { name: /Scope 2 Calculation trail/i });
     expect(within(dialog).getByText('33,247 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getAllByText(/50 MWh × 1,000 = 50,000 kWh/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText(/Electricity ·/i).length).toBeGreaterThanOrEqual(4);
     fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
 
     fireEvent.click(scopeButtons[2]);
-    dialog = screen.getByRole('dialog', { name: /Scope 3 Calculation Trail/i });
+    dialog = screen.getByRole('dialog', { name: /Scope 3 Calculation trail/i });
     expect(within(dialog).getByText('725 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getAllByText(/Air Travel · Canada/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText(/Business Travel - Accommodation · Canada/i).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText('Consultant Review Recommended').length).toBeGreaterThan(0);
     fireEvent.click(within(dialog).getByLabelText('Close calculation trail'));
 
-    const hotspotSection = screen.getByRole('region', { name: /Emissions Hotspots/i });
-    fireEvent.click(within(hotspotSection).getByRole('button', { name: /Expand Emissions Hotspots section/i }));
+    const hotspotSection = screen.getByRole('region', { name: /Emissions hotspots/i });
+    fireEvent.click(within(hotspotSection).getByRole('button', { name: /Expand Emissions hotspots section/i }));
     fireEvent.click(
       within(hotspotSection).getAllByRole('button', {
-        name: 'View Calculation Trail',
+        name: 'View calculation trail',
       })[0],
     );
-    dialog = screen.getByRole('dialog', { name: /Electricity Calculation Trail/i });
+    dialog = screen.getByRole('dialog', { name: /Electricity Calculation trail/i });
     expect(within(dialog).getByText('33,247 kg CO₂e')).toBeInTheDocument();
     expect(within(dialog).getByText('Included records').parentElement).toHaveTextContent('4');
     expect(within(dialog).queryByText(/Natural Gas/i)).not.toBeInTheDocument();
   });
 
-  it('collapses secondary Calculation Results sections by default and keeps Calculation Summary expanded', () => {
+  it('collapses secondary Calculation results sections by default and keeps Calculation summary expanded', () => {
     render(
       <MemoryRouter>
         <MetricsSummarySection
@@ -1060,23 +1060,23 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    const hotspotSection = screen.getByRole('region', { name: /Emissions Hotspots/i });
+    const hotspotSection = screen.getByRole('region', { name: /Emissions hotspots/i });
     const hotspotToggle = within(hotspotSection).getByRole('button', {
-      name: /Expand Emissions Hotspots section/i,
+      name: /Expand Emissions hotspots section/i,
     });
     expect(hotspotToggle).toHaveTextContent('Expand');
     expect(hotspotToggle).toHaveAttribute('aria-expanded', 'false');
     expect(hotspotSection).toHaveTextContent('Top contributing activity areas are available for review.');
-    expect(within(hotspotSection).queryByText('Top Emission Categories')).not.toBeInTheDocument();
+    expect(within(hotspotSection).queryByText('Top emission categories')).not.toBeInTheDocument();
 
     fireEvent.click(hotspotToggle);
     expect(hotspotToggle).toHaveTextContent('Collapse');
     expect(hotspotToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(within(hotspotSection).getByText('Top Emission Categories')).toBeInTheDocument();
+    expect(within(hotspotSection).getByText('Top emission categories')).toBeInTheDocument();
 
-    const creditSection = screen.getByRole('region', { name: /Carbon Credit Readiness Notes/i });
+    const creditSection = screen.getByRole('region', { name: /Carbon credit readiness notes/i });
     const creditToggle = within(creditSection).getByRole('button', {
-      name: /Expand Carbon Credit Readiness Notes section/i,
+      name: /Expand Carbon credit readiness notes section/i,
     });
     expect(creditToggle).toHaveTextContent('Expand');
     expect(creditToggle).toHaveAttribute('aria-expanded', 'false');
@@ -1090,9 +1090,9 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(creditToggle).toHaveAttribute('aria-expanded', 'true');
     expect(creditSection).toHaveTextContent(CARBON_CREDIT_READINESS_DISCLAIMER);
 
-    const summarySection = screen.getByRole('region', { name: 'Calculation Summary' });
+    const summarySection = screen.getByRole('region', { name: 'Calculation summary' });
     const summaryToggle = within(summarySection).getByRole('button', {
-      name: /Collapse Calculation Summary section/i,
+      name: /Collapse Calculation summary section/i,
     });
     expect(summaryToggle).toHaveTextContent('Collapse');
     expect(summaryToggle).toHaveAttribute('aria-expanded', 'true');
@@ -1145,9 +1145,9 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'View Calculation Trail' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'View calculation trail' })[0]);
 
-    const dialog = screen.getByRole('dialog', { name: /Total Calculated Emissions Calculation Trail/i });
+    const dialog = screen.getByRole('dialog', { name: /Total calculated emissions Calculation trail/i });
     expect(within(dialog).getByText('Records Needing Attention')).toBeInTheDocument();
     expect(within(dialog).getByText('No matched factor available. Needs attention.')).toBeInTheDocument();
   });
@@ -1343,18 +1343,18 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Fuel Usage')).toBeInTheDocument();
+    expect(screen.getByText('Fuel usage')).toBeInTheDocument();
     expect(screen.getByText(/Diesel: 1,710 liters/)).toBeInTheDocument();
     expect(screen.getByText(/Natural Gas: 400 m3/)).toBeInTheDocument();
     expect(screen.queryByText(/L \/ m3/)).not.toBeInTheDocument();
-    expect(screen.getAllByText('Total Calculated Emissions').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Total calculated emissions').length).toBeGreaterThan(0);
     expect(screen.getAllByText('1,234.50 kg CO₂e').length).toBeGreaterThan(0);
 
     const table = screen.getByRole('table');
     expect(within(table).queryByText('Count')).not.toBeInTheDocument();
     expect(within(table).getByText('Input Data')).toBeInTheDocument();
     expect(within(table).getByText('Calculated Result')).toBeInTheDocument();
-    expect(within(table).getByText('Total Calculated Emissions')).toBeInTheDocument();
+    expect(within(table).getByText('Total calculated emissions')).toBeInTheDocument();
     expect(within(table).getByText('1,710 liters')).toBeInTheDocument();
     expect(within(table).getByText('Diesel')).toBeInTheDocument();
     expect(within(table).getByText('400 m3')).toBeInTheDocument();
@@ -1391,7 +1391,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Calculation Issues')).toBeInTheDocument();
+    expect(screen.getAllByText('Calculation issues').length).toBeGreaterThan(0);
     expect(screen.getByText('Missing Factor')).toBeInTheDocument();
     expect(screen.getByText('No factor found for: DIESEL / tonnes')).toBeInTheDocument();
     expect(screen.getByText(/2 records/)).toBeInTheDocument();
@@ -1491,8 +1491,8 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Data Quality & Tracked Metrics')).toBeInTheDocument();
-    expect(screen.queryByText('Calculation Issues')).not.toBeInTheDocument();
+    expect(screen.getByText('Data quality & tracked metrics')).toBeInTheDocument();
+    expect(screen.queryByText('Calculation issues')).not.toBeInTheDocument();
     expect(screen.getByText('Informational')).toBeInTheDocument();
     expect(screen.getByText('Water / m3 — tracked metric')).toBeInTheDocument();
     expect(screen.getByText('Tracked metric only. No emission factor required.')).toBeInTheDocument();
@@ -1525,8 +1525,8 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Data Quality & Tracked Metrics')).toBeInTheDocument();
-    expect(screen.queryByText('Calculation Issues')).not.toBeInTheDocument();
+    expect(screen.getByText('Data quality & tracked metrics')).toBeInTheDocument();
+    expect(screen.queryByText('Calculation issues')).not.toBeInTheDocument();
     expect(screen.getByText('Water / m3 — tracked metric')).toBeInTheDocument();
     expect(screen.getAllByText(/2 records/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Informational')).toHaveLength(1);
@@ -1554,7 +1554,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Record Reconciliation')).toBeInTheDocument();
+    expect(screen.getByText('Record reconciliation')).toBeInTheDocument();
     expect(screen.getByText('15')).toBeInTheDocument();
     expect(
       screen.getAllByText((_, element) => element?.textContent === '15 Imported Activity Records').length,
@@ -1563,7 +1563,7 @@ describe('buildMetricsSummaryTableRows', () => {
     expect(screen.getAllByText(/Calculated Emissions Records/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('6').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/records needing attention/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Excluded Due to Calculation Issues/i)).toBeInTheDocument();
+    expect(screen.getByText(/Excluded Due to Calculation issues/i)).toBeInTheDocument();
     expect(screen.getByText('Calculation issues')).toBeInTheDocument();
     expect(screen.getByText('Outside selected date range')).toBeInTheDocument();
     expect(screen.getByText('Outside selected report scope')).toBeInTheDocument();
@@ -2230,7 +2230,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
   });
 
-  it('uses the selected non-current report period in the Inventory Boundary', async () => {
+  it('uses the selected non-current report period in the Inventory boundary', async () => {
     vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
       startDate: '2024-01-01',
       endDate: '2024-12-31',
@@ -2243,17 +2243,17 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    const boundarySection = await screen.findByRole('region', { name: 'Inventory Boundary' });
+    const boundarySection = await screen.findByRole('region', { name: 'Inventory boundary' });
     expect(boundarySection).toHaveTextContent(
       '2024-01-01 to 2024-12-31',
     );
-    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory boundary' }));
     expect(within(boundarySection).getByText('Reporting period')).toBeInTheDocument();
     expect(within(boundarySection).getByText('2024-01-01 to 2024-12-31')).toBeInTheDocument();
     expect(boundarySection).not.toHaveTextContent('2026-01-01 to 2026-12-31');
   });
 
-  it('loads Calculation Results for the selected imported document when route state provides a document scope', async () => {
+  it('loads Calculation results for the selected imported document when route state provides a document scope', async () => {
     render(
       <MemoryRouter
         initialEntries={[
@@ -2275,7 +2275,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     });
   });
 
-  it('uses saved organization profile values in the Inventory Boundary', async () => {
+  it('uses saved organization profile values in the Inventory boundary', async () => {
     const adminUser = {
       email: 'admin@example.com',
       role: 'ADMIN' as const,
@@ -2307,11 +2307,11 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    const boundarySection = screen.getByRole('region', { name: 'Inventory boundary' });
     expect(boundarySection).toHaveTextContent(
       '2025-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Calgary office and Ontario distribution activity records',
     );
-    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory boundary' }));
 
     expect(within(boundarySection).getByText('KACH CANADA LTD.')).toBeInTheDocument();
     expect(
@@ -2323,7 +2323,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(within(boundarySection).getByText('Scope 3 includes selected travel records only.')).toBeInTheDocument();
   });
 
-  it('loads backend organization profile values into the Inventory Boundary for authenticated users', async () => {
+  it('loads backend organization profile values into the Inventory boundary for authenticated users', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -2369,13 +2369,13 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    const boundarySection = screen.getByRole('region', { name: 'Inventory boundary' });
     await waitFor(() => {
       expect(boundarySection).toHaveTextContent(
         '2025-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Kach Canadian operations in Alberta',
       );
     });
-    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' }));
+    await userEvent.click(within(boundarySection).getByRole('button', { name: 'Expand Inventory boundary' }));
 
     expect(within(boundarySection).getByText('Kach')).toBeInTheDocument();
     expect(within(boundarySection).getByText('Kach Canadian operations in Alberta')).toBeInTheDocument();
@@ -2383,7 +2383,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(within(boundarySection).getByText('US operations')).toBeInTheDocument();
   });
 
-  it('shows a collapsible Site / Facility Breakdown with calculated GHG totals', async () => {
+  it('shows a collapsible Site / facility breakdown with calculated GHG totals', async () => {
     vi.mocked(loadMetricsOverview).mockResolvedValueOnce({
       ...overview,
       totalEstimatedEmissionsKgCO2e: 9240,
@@ -2479,7 +2479,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     );
 
     await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-    const siteSection = screen.getByRole('region', { name: 'Site / Facility Breakdown' });
+    const siteSection = screen.getByRole('region', { name: 'Site / facility breakdown' });
     await waitFor(() => expect(siteSection).toHaveTextContent('Organization total: 9,240 kg CO₂e'));
     expect(siteSection).toHaveTextContent('2 site/facility groups');
     expect(within(siteSection).queryByText('Calgary Shop')).not.toBeInTheDocument();
@@ -2497,7 +2497,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     expect(siteSection).toHaveTextContent('Business Travel - Accommodation: 150 kg CO₂e');
   });
 
-  it('renders Calculation Results for pilot reviewer without mutation controls', async () => {
+  it('renders Calculation results for pilot reviewer without mutation controls', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -2514,29 +2514,29 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
       </MemoryRouter>,
     );
 
-    const pageHeading = await screen.findByRole('heading', { name: /Calculation Results/i });
+    const pageHeading = await screen.findByRole('heading', { name: /Calculation results/i });
     expect(pageHeading).toBeInTheDocument();
     expect(pageHeading).toHaveFocus();
-    const boundarySection = screen.getByRole('region', { name: 'Inventory Boundary' });
+    const boundarySection = screen.getByRole('region', { name: 'Inventory boundary' });
     expect(boundarySection).toBeInTheDocument();
     expect(boundarySection).toHaveTextContent(
       '2025-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
     );
-    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Inventory Boundary' });
+    const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Inventory boundary' });
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
+    expect(within(boundarySection).queryByText('Organization / workspace')).not.toBeInTheDocument();
 
     await userEvent.click(boundaryToggle);
 
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
     expect(boundaryToggle).toHaveTextContent('Collapse');
-    expect(within(boundarySection).getByText('Organization / Workspace')).toBeInTheDocument();
+    expect(within(boundarySection).getByText('Organization / workspace')).toBeInTheDocument();
     expect(within(boundarySection).getByText('CarbonLite Sample Workspace')).toBeInTheDocument();
 
     await userEvent.click(boundaryToggle);
 
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
+    expect(within(boundarySection).queryByText('Organization / workspace')).not.toBeInTheDocument();
     expect(await screen.findByText(/View readiness details/i)).toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();
@@ -2728,7 +2728,7 @@ function waitForDateDebounce() {
   return new Promise((resolve) => window.setTimeout(resolve, 550));
 }
 
-it('retains selected-document context and unresolved rows in Calculation Results', async () => {
+it('retains selected-document context and unresolved rows in Calculation results', async () => {
   const { input } = goldenReport('messy');
   vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({ startDate: '2026-01-01', endDate: '2026-12-31', hasActivityRecords: true });
   vi.mocked(loadMetricsOverview).mockResolvedValue({
@@ -2750,7 +2750,7 @@ function ReportRouteProbe() {
   return <div data-testid="report-handoff">{JSON.stringify({ path: location.pathname, state: location.state })}</div>;
 }
 
-it.each([undefined, ['doc-partial'], ['doc-partial', 'doc-field']])('continues from Calculation Results to Reports preserving scope %j', async (selectedDocumentIds) => {
+it.each([undefined, ['doc-partial'], ['doc-partial', 'doc-field']])('continues from Calculation results to Reports preserving scope %j', async (selectedDocumentIds) => {
   const { input } = goldenReport('messy');
   vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({ startDate: '2026-01-01', endDate: '2026-12-31', hasActivityRecords: true });
   vi.mocked(loadMetricsOverview).mockResolvedValue({
@@ -2764,7 +2764,7 @@ it.each([undefined, ['doc-partial'], ['doc-partial', 'doc-field']])('continues f
     <Routes><Route path="/metrics-summary" element={<MetricsSummaryPage />} /><Route path="/reports" element={<ReportRouteProbe />} /></Routes>
   </MemoryRouter>);
   await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-  expect(screen.getByText('Step 4 of 5 · Calculation Results')).toBeInTheDocument();
+  expect(screen.getByText('Step 4 of 5 · Calculation results')).toBeInTheDocument();
   expect(screen.getAllByRole('link', { name: 'Generate Report' })).toHaveLength(1);
   const request = vi.mocked(loadMetricsOverview).mock.calls.at(-1)![0];
   if (selectedDocumentIds) expect(request).toEqual({ recalculate: true, selectedDocumentIds });
