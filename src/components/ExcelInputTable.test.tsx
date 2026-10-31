@@ -1715,14 +1715,32 @@ describe('ExcelInputTable empty activity row UX', () => {
           activityType: 'ELECTRICITY',
           quantity: 100,
           jurisdictionRegion: undefined,
-          notes: expect.stringContaining('Status: MISSING_PROVINCE'),
+          notes: expect.stringContaining('Select a province before this electricity record can be calculated.'),
         }),
       );
     });
     await waitFor(() => {
       expect(within(row).getByText('Requires Review')).toBeInTheDocument();
     });
-    expect(within(row).getByText('Province is required before this electricity record can be calculated.')).toBeInTheDocument();
+    const savedPayload = vi.mocked(createActivityData).mock.calls.at(-1)?.[0];
+    expect(savedPayload?.notes).not.toContain('MISSING_PROVINCE');
+    expect(savedPayload?.notes).not.toContain('excludedFromTotals=true');
+    expect(within(row).getAllByText('Select a province before this electricity record can be calculated.').length).toBeGreaterThan(0);
+  });
+
+  it('shows activity-specific repair guidance without internal status terminology', async () => {
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([] as any);
+    renderTable();
+    const hotelRow = await addEmptyRow();
+    await userEvent.selectOptions(within(hotelRow).getByLabelText('Activity type'), 'HOTEL');
+    await userEvent.type(within(hotelRow).getByLabelText('Quantity'), '2');
+    expect(within(hotelRow).getAllByText('Use room-night, or provide Rooms and Nights.').length).toBeGreaterThan(0);
+    expect(hotelRow).not.toHaveTextContent('MISSING_FACTOR');
+
+    const airRow = await addEmptyRow();
+    await userEvent.selectOptions(within(airRow).getByLabelText('Activity type'), 'AIR_TRAVEL');
+    expect(within(airRow).getAllByText('Provide origin, destination, passengers, and trip type.').length).toBeGreaterThan(0);
+    expect(airRow).not.toHaveTextContent('UNIT_MISMATCH');
   });
 
   it('requires a valid date and positive amount before save', async () => {

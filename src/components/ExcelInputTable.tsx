@@ -16,7 +16,6 @@ import {
 } from '../constants/activityTypes';
 import * as XLSX from 'xlsx';
 import {
-  buildFactorUnitMismatchMessage,
   findBestConversionFactorMatch,
   getCompatibleFactorUnitLabels,
   getFactorResultUnit,
@@ -71,6 +70,10 @@ import { getActivityTypeLabel } from '../utils/activityType';
 import { ManualEntryConfirmation } from './manual-entry/ManualEntryConfirmation';
 import { deriveHotelActivityBasis, readHotelBasisColumns, type HotelActivityBasis } from '../utils/hotelActivityBasis';
 import { normalizeAirTravelActivityMetadata, type AirTravelActivityMetadataV1 } from '../utils/airTravelActivity';
+import {
+  getCustomerStatusMessage,
+  getExcludedFromTotalsMessage,
+} from '../utils/customerStatusPresentation';
 
 type Row = {
   id: string;
@@ -571,7 +574,7 @@ function getRowCalculationReview(
   if (normalizeActivityType(row.activityType) === 'AIR_TRAVEL' && !row.activityMetadata) {
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: 'Air Travel requires origin airport, destination airport, passenger count, and trip type. Passenger-km is derived by the server.',
+      calculationMessage: getCustomerStatusMessage('UNIT_MISMATCH', { activityType: 'AIR_TRAVEL' }),
       supportedUnits: ['passenger-km'],
     };
   }
@@ -579,8 +582,7 @@ function getRowCalculationReview(
   if (row.activityType === 'ELECTRICITY' && !normalizeJurisdictionRegion(row.jurisdictionRegion)) {
     return {
       calculationStatus: 'missingJurisdiction' as const,
-      calculationMessage:
-        'Electricity emissions require a province-specific factor. Please select the province where the electricity was used.',
+      calculationMessage: getCustomerStatusMessage('MISSING_PROVINCE', { activityType: 'ELECTRICITY' }),
       supportedUnits,
     };
   }
@@ -603,12 +605,11 @@ function getRowCalculationReview(
   }
 
   const normalizedUnit = normalizeUnitForDisplay(row.unit);
-  const activityTypeLabel = getActivityTypeLabel(row.activityType);
   const recordYear = resolveActivityYear({ recordDate: row.recordDate }).year;
   if (normalizedUnit.status !== 'valid') {
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      calculationMessage: getCustomerStatusMessage('INVALID_UNIT', { activityType: row.activityType }),
       supportedUnits,
     };
   }
@@ -620,7 +621,7 @@ function getRowCalculationReview(
   if (supportedUnits.length > 0 && !normalizedSupportedUnits.includes(normalizedUnit.value)) {
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: `Unit '${row.unit}' could not be matched to a supported ${activityTypeLabel} unit.${supportedUnits.length ? ` Supported unit: ${supportedUnits.join(', ')}.` : ''}`,
+      calculationMessage: getCustomerStatusMessage('UNIT_MISMATCH', { activityType: row.activityType }),
       supportedUnits,
     };
   }
@@ -639,18 +640,14 @@ function getRowCalculationReview(
   if (compatibleUnits.length > 0) {
     return {
       calculationStatus: 'invalidUnit' as const,
-      calculationMessage: buildFactorUnitMismatchMessage({
-        activityType: row.activityType,
-        inputUnit: normalizedUnit.value,
-        availableUnits: compatibleUnits,
-      }),
+      calculationMessage: getCustomerStatusMessage('UNIT_MISMATCH', { activityType: row.activityType }),
       supportedUnits,
     };
   }
 
   return {
     calculationStatus: 'missingFactor' as const,
-    calculationMessage: `No emission factor found for ${activityTypeLabel} / ${normalizedUnit.value}. This record was saved but excluded from emissions totals.`,
+    calculationMessage: getCustomerStatusMessage('MISSING_FACTOR', { activityType: row.activityType }),
     supportedUnits,
   };
 }
@@ -1133,6 +1130,11 @@ function validateRow(row: Row) {
   return errors;
 }
 
+function getPrimaryValidationMessage(errors: string[]) {
+  const priorities = [/quantity|greater than 0/i, /activity type/i, /date/i, /unit/i];
+  return priorities.map((pattern) => errors.find((error) => pattern.test(error))).find(Boolean) ?? errors[0];
+}
+
 function getSpreadsheetReviewIssues(row: Row): SpreadsheetReviewIssue[] {
   const issues = validateRow(row).map((message) => ({
     code: getReviewIssueCode(message),
@@ -1144,7 +1146,7 @@ function getSpreadsheetReviewIssues(row: Row): SpreadsheetReviewIssue[] {
     issues.push({
       code: 'MISSING_PROVINCE',
       field: 'jurisdictionRegion',
-      message: 'Missing Province',
+      message: getCustomerStatusMessage('MISSING_PROVINCE', { activityType: row.activityType }),
     });
   }
 
@@ -1152,7 +1154,7 @@ function getSpreadsheetReviewIssues(row: Row): SpreadsheetReviewIssue[] {
     issues.push({
       code: 'UNIT_MISMATCH',
       field: 'unit',
-      message: row.calculationMessage || 'Unit Mismatch',
+      message: row.calculationMessage || getCustomerStatusMessage('UNIT_MISMATCH', { activityType: row.activityType }),
     });
   }
 
@@ -1160,7 +1162,7 @@ function getSpreadsheetReviewIssues(row: Row): SpreadsheetReviewIssue[] {
     issues.push({
       code: 'MISSING_FACTOR',
       field: 'factor',
-      message: row.calculationMessage || 'Missing Factor',
+      message: row.calculationMessage || getCustomerStatusMessage('MISSING_FACTOR', { activityType: row.activityType }),
     });
   }
 
@@ -1282,9 +1284,12 @@ function buildActivityPayload(row: Row) {
       row.sourceSheetName ? `Source sheet: ${row.sourceSheetName}` : '',
       row.sourceRow ? `Source row: ${row.sourceRow}` : '',
       isMissingElectricityProvince
-        ? 'Requires Review. Status: MISSING_PROVINCE. excludedFromTotals=true. Province is required before this electricity record can be calculated.'
+        ? `${getCustomerStatusMessage('MISSING_PROVINCE', { activityType: 'ELECTRICITY' })} ${getExcludedFromTotalsMessage()}`
         : '',
-      `Created from ${entrySourceType}. Calculation status: ${getCalculationStatusLabel(row)}. ${row.calculationMessage ?? ''} Matched factor: ${row.factorName ?? 'N/A'} (${row.factorValue ?? 'N/A'})`,
+      isMissingElectricityProvince ? '' : `Created from ${entrySourceType}. ${getCustomerStatusMessage(row.calculationStatus, {
+        activityType: row.activityType,
+        quantity: row.quantity,
+      })}${row.factorName ? ` Matched factor: ${row.factorName} (${row.factorValue ?? 'N/A'}).` : ''}`,
     ].filter(Boolean).join(' '),
     matchingStatus: canonicalCalculation.matchingStatus,
     reportTreatment: canonicalCalculation.reportTreatment,
@@ -1593,11 +1598,11 @@ function getValidationCalculationMessage(status: string) {
     case 'INVALID_QUANTITY':
       return 'Quantity must be a valid number greater than 0 before this row can be calculated.';
     case 'MISSING_PROVINCE':
-      return 'Province is required before this row can be calculated.';
+      return 'Select a province before this electricity record can be calculated.';
     case 'UNIT_MISMATCH':
-      return 'Unit mismatch. This record is excluded from emissions totals.';
+      return 'The activity unit is not compatible with the available factor.';
     case 'MISSING_FACTOR':
-    return 'No matching emission factor is available for this record.';
+      return 'No applicable emission factor was found.';
     default:
       return 'Required fields must be completed before calculation.';
   }
@@ -1668,7 +1673,7 @@ function getCalculationStatusLabel(row: Row) {
   if (!row.activityType) return 'Missing Activity Type';
   if (!String(row.quantity ?? '').trim()) return 'Invalid Amount';
   if (row.activityType === 'ELECTRICITY' && !normalizeJurisdictionRegion(row.jurisdictionRegion)) {
-    return 'Missing Province';
+    return 'Province needed';
   }
 
   switch (row.calculationStatus) {
@@ -1677,11 +1682,11 @@ function getCalculationStatusLabel(row: Row) {
     case 'trackedMetric':
       return 'Tracked Metric';
     case 'invalidUnit':
-      return 'Unit Mismatch';
+      return 'Unit needs correction';
     case 'missingFactor':
-      return 'Missing Factor';
+      return 'No applicable factor';
     case 'missingJurisdiction':
-      return 'Missing Province';
+      return 'Province needed';
     case 'needsReview':
       return 'Needs Review';
     default:
@@ -1854,15 +1859,9 @@ function renderFactorCell(row: Row) {
   if (row.calculationStatus === 'invalidUnit') {
     return (
       <div style={{ color: '#b45309', fontSize: 12, lineHeight: 1.45 }}>
-        <strong>Unit Mismatch</strong>
+        <strong>Unit needs correction</strong>
         <br />
-        Submitted unit does not match available factor units.
-        {row.calculationMessage ? (
-          <>
-            <br />
-            {row.calculationMessage}
-          </>
-        ) : null}
+        {row.calculationMessage || getCustomerStatusMessage('UNIT_MISMATCH', { activityType: row.activityType })}
         {row.supportedUnits?.length ? (
           <>
             <br />
@@ -1885,7 +1884,7 @@ function renderFactorCell(row: Row) {
   if (row.activityType === 'ELECTRICITY' && normalizeProvince(row.jurisdictionRegion)) {
     return (
       <div style={factorCellTextStyle}>
-        <strong>No factor found</strong>
+        <strong>No applicable factor</strong>
         <span>
           {normalizeProvince(row.jurisdictionRegion)} · {normalizeUnitForDisplay(row.unit).value || row.unit}
         </span>
@@ -1895,15 +1894,9 @@ function renderFactorCell(row: Row) {
 
   return (
     <div style={{ color: '#be123c', fontSize: 12, lineHeight: 1.45 }}>
-      <strong>No valid factor match</strong>
+      <strong>No applicable factor</strong>
       <br />
-      Reason: Missing factor
-      {row.calculationMessage ? (
-        <>
-          <br />
-          {row.calculationMessage}
-        </>
-      ) : null}
+      {row.calculationMessage || getCustomerStatusMessage('MISSING_FACTOR', { activityType: row.activityType })}
     </div>
   );
 }
@@ -1978,10 +1971,8 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
 
   if (row.activityType === 'ELECTRICITY' && row.calculationStatus === 'missingJurisdiction') {
     return {
-      badge: 'Missing Province',
-      detail: row.status === 'saved'
-        ? 'Province is required before this electricity record can be calculated.'
-        : 'Select province to calculate.',
+      badge: 'Province needed',
+      detail: getCustomerStatusMessage('MISSING_PROVINCE', { activityType: 'ELECTRICITY' }),
     };
   }
 
@@ -1991,7 +1982,7 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
 
   if (normalizeActivityType(row.activityType) === 'NATURAL_GAS' && row.calculationStatus === 'missingJurisdiction') {
     return {
-      badge: 'Missing Province',
+      badge: 'Province needed',
       detail: 'Select a province to find an approved Natural Gas factor.',
     };
   }
@@ -1999,17 +1990,15 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
   if (row.activityType === 'ELECTRICITY') {
     if (row.calculationStatus === 'missingJurisdiction') {
       return {
-        badge: 'Missing Province',
-        detail: row.status === 'saved'
-          ? 'Province is required before this electricity record can be calculated.'
-          : 'Select province to calculate.',
+        badge: 'Province needed',
+        detail: getCustomerStatusMessage('MISSING_PROVINCE', { activityType: 'ELECTRICITY' }),
       };
     }
 
     if (row.calculationStatus === 'missingFactor') {
       return {
-        badge: 'Missing Factor',
-        detail: 'No factor for selected province/year.',
+        badge: 'No applicable factor',
+        detail: getCustomerStatusMessage('MISSING_FACTOR', { activityType: 'ELECTRICITY' }),
       };
     }
 
@@ -2030,9 +2019,9 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
     case 'trackedMetric':
       return { badge: 'Tracked Metric', detail: 'Tracked metric, excluded from GHG totals.' };
     case 'invalidUnit':
-      return { badge: 'Unit Mismatch', detail: row.calculationMessage || 'Review unit before calculation.' };
+      return { badge: 'Unit needs correction', detail: row.calculationMessage || getCustomerStatusMessage('UNIT_MISMATCH', { activityType: row.activityType }) };
     case 'missingFactor':
-      return { badge: 'Missing Factor', detail: 'No matching factor found.' };
+      return { badge: 'No applicable factor', detail: getCustomerStatusMessage('MISSING_FACTOR', { activityType: row.activityType }) };
     case 'needsReview':
       return { badge: 'Requires Review', detail: 'Review before calculation.' };
     default:
@@ -2050,35 +2039,35 @@ function getReportTreatment(row: Row) {
 
   if (row.calculationStatus === 'calculated') {
     return {
-      label: 'Included in GHG Total',
-      detail: 'Included in GHG total.',
+      label: 'Included in totals',
+      detail: 'Included in totals.',
     };
   }
 
   if (row.calculationStatus === 'missingJurisdiction') {
     return {
-      label: 'Excluded',
-      detail: 'Province required before calculation.',
+      label: 'Not included in totals',
+      detail: getExcludedFromTotalsMessage(),
     };
   }
 
   if (row.calculationStatus === 'invalidUnit') {
     return {
-      label: 'Excluded',
-      detail: 'Unit mismatch must be reviewed.',
+      label: 'Not included in totals',
+      detail: getExcludedFromTotalsMessage(),
     };
   }
 
   if (row.calculationStatus === 'missingFactor') {
     return {
-      label: 'Excluded',
-      detail: 'No matching factor found.',
+      label: 'Not included in totals',
+      detail: getExcludedFromTotalsMessage(),
     };
   }
 
   return {
-    label: 'Excluded',
-    detail: 'Excluded until this record is ready.',
+    label: 'Not included in totals',
+    detail: getExcludedFromTotalsMessage(),
   };
 }
 
@@ -2145,13 +2134,13 @@ function renderManualCalculationPreview(row: Row) {
             {emissions !== null ? <><span aria-hidden="true">·</span><span>Estimated emissions: {emissions.toLocaleString(undefined, { minimumFractionDigits: Number.isInteger(emissions) ? 0 : 2, maximumFractionDigits: 4 })} {formatEmissionsUnit(getEmissionResultUnit(row))}</span></> : null}
           </div>
           {matched ? <span>Factor: <span>{row.factorName ?? 'Matched factor'}</span>{row.factorSourceYear ? ` · ${row.factorSourceYear}` : ''}</span> : null}
-          {issues.length > 0 ? <span>{issues.join(' · ')}</span> : null}
+          {issues.length > 0 ? <span>{getPrimaryValidationMessage(issues)}</span> : null}
           {!tracked && emissions === null && summary.badge !== 'Calculated' && summary.badge !== 'Invalid Amount' ? (
             <span><strong>{summary.badge}</strong><span> · </span><span>{summary.detail}</span></span>
           ) : null}
           {matched && !String(row.quantity ?? '').trim() ? <span>Estimated emissions: Waiting for quantity</span> : null}
           {needsValidation ? <span style={{ color: '#92400e' }}>Factor needs validation</span> : null}
-          <span>{tracked || emissions === null ? 'Not included in GHG total' : 'Included in GHG total'}</span>
+          <span>{tracked || emissions === null ? 'Not included in totals' : 'Included in totals'}</span>
           {saved ? <span>{getSavedReviewLabel(row)}</span> : emissions !== null ? <span>Ready to save</span> : null}
           <details key={`${row.id}-${row.activityType}`}>
             <summary style={{ cursor: 'pointer', color: '#047857' }}>View calculation details</summary>
@@ -3034,7 +3023,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                   renderScopeCell(row),
                 )}
                 {renderPreviewPanel(
-                  'Factor status',
+                  'Factor matching',
                   'Whether this record is ready for emissions calculation.',
                   renderStatusCell(row),
                 )}
@@ -3044,7 +3033,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
                   renderFactorCell(row),
                 )}
                 {renderPreviewPanel(
-                  'Report treatment',
+                  'Totals treatment',
                   'How this row will affect totals after saving.',
                   renderTreatmentCell(row),
                 )}

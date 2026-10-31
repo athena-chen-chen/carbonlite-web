@@ -120,7 +120,7 @@ export function DraftRecordsTable({
             <th style={thStyle}>Site / Facility</th>
             <th style={thStyle}>Source Reference</th>
             <th style={thStyle}>Issue</th>
-            <th style={thStyle}>Report Treatment</th>
+            <th style={thStyle}>Totals treatment</th>
             <th style={thStyle}>Notes</th>
             <th style={thStyle}>Actions</th>
           </tr>
@@ -423,7 +423,7 @@ export function DraftRecordsTable({
               <td style={previewTdStyle}>
                 <span
                   style={
-                    rowReportTreatment === 'Included in GHG Total'
+                    rowReportTreatment === 'Included in totals'
                       ? includedTreatmentStyle
                       : rowReportTreatment === 'Tracked Metric'
                       ? trackedTreatmentStyle

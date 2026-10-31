@@ -97,13 +97,14 @@ const STATUS_LABELS: Record<string, string> = {
   TRACKED_ONLY: TERMINOLOGY.trackedMetric,
   TRACKED_METRIC: TERMINOLOGY.trackedMetric,
   REQUIRES_REVIEW: TERMINOLOGY.needsReview,
-  MISSING_FACTOR: 'Missing Factor',
-  MISSING_PROVINCE: 'Missing Province',
-  MISSING_JURISDICTION: 'Missing Province',
-  UNIT_MISMATCH: 'Unit Mismatch',
-  INVALID_UNIT: 'Unit Mismatch',
+  MISSING_FACTOR: 'No Applicable Factor',
+  FACTOR_NOT_APPROVED: 'No Approved Factor',
+  MISSING_PROVINCE: 'Province Needed',
+  MISSING_JURISDICTION: 'Province Needed',
+  UNIT_MISMATCH: 'Unit Needs Correction',
+  INVALID_UNIT: 'Unit Needs Correction',
   UNSUPPORTED_ACTIVITY: 'Unsupported Activity',
-  EXCLUDED: 'Excluded',
+  EXCLUDED: 'Not Included in Totals',
 };
 
 function normalizeStatus(value?: string | null) {

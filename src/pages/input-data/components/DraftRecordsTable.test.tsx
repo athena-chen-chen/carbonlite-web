@@ -24,7 +24,7 @@ function props(rows = [row()]): DraftRecordsTableProps {
     parsedActivities: rows, getFieldValidationMessage: vi.fn(() => undefined),
     getRowStatusLabel: vi.fn(() => 'Calculated'), getRowIssueText: vi.fn(() => '-'),
     getRowIssueTitle: vi.fn(() => 'Issue detail'), isParsedActivityImportable: vi.fn(() => true),
-    isParsedActivityAlreadyImported: vi.fn(() => false), getRowReportTreatment: vi.fn(() => 'Included in GHG Total'),
+    isParsedActivityAlreadyImported: vi.fn(() => false), getRowReportTreatment: vi.fn(() => 'Included in totals'),
     toggleParsedActivitySelected: vi.fn(), updateParsedActivityField: vi.fn(), removeParsedActivity: vi.fn(),
     getPreviewActivityTypeLabel: value => value ?? '', getUnsupportedActivityTypeDisplayLabel: () => 'Custom (Unsupported)',
     getImportValidationIssueDetail: issue => issue.message, getFieldValidationDisplayMessage: (_field, message) => message ?? '',
@@ -38,13 +38,13 @@ it('preserves all 14 columns, colgroup, horizontal hint, status, issues and trea
   const { container } = render(<DraftRecordsTable {...p} />);
   expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual([
     'Select', 'Status', 'Activity Type', 'Record Date', 'Quantity', 'Unit', 'Country', 'Province',
-    'Site / Facility', 'Source Reference', 'Issue', 'Report Treatment', 'Notes', 'Actions',
+    'Site / Facility', 'Source Reference', 'Issue', 'Totals treatment', 'Notes', 'Actions',
   ]);
   expect(container.querySelectorAll('colgroup col')).toHaveLength(14);
   expect(screen.getByText('Scroll horizontally to view all columns →')).toBeInTheDocument();
   expect(screen.getByText('Calculated')).toHaveAttribute('title', 'Calculated');
   expect(screen.getByText('-')).toHaveAttribute('title', 'Issue detail');
-  expect(screen.getByText('Included in GHG Total')).toBeInTheDocument();
+  expect(screen.getByText('Included in totals')).toBeInTheDocument();
   expect(p.getRowStatusLabel).toHaveBeenCalledWith(0, p.parsedActivities[0]);
   expect(p.getRowReportTreatment).toHaveBeenCalledWith(0, p.parsedActivities[0]);
 });
@@ -142,7 +142,7 @@ it('preserves validation field/row attributes, errors, estimated date warning an
   expect(p.updateParsedActivityField).toHaveBeenCalledWith(0, 'recordDate', '2026-07-20');
 });
 
-it.each(['Included in GHG Total', 'Tracked Metric', 'Excluded'])('renders the provided treatment %s and issue details', (treatment) => {
+it.each(['Included in totals', 'Tracked Metric', 'Not included in totals'])('renders the provided treatment %s and issue details', (treatment) => {
   render(<DraftRecordsTable {...props()} getRowIssueText={() => 'Needs attention'} getRowReportTreatment={() => treatment} />);
   expect(screen.getByText(treatment)).toBeInTheDocument();
   expect(screen.getByText('Needs attention')).toHaveAttribute('title', 'Issue detail');

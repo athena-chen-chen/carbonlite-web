@@ -21,6 +21,7 @@ import {
   canResetDemoData as canResetDemoDataForUser,
   canSetFacilityForActivityRecords,
   canSetProvinceForActivityRecords,
+  isPlatformAdmin,
 } from '../utils/permissions';
 import {
   getCurrentUser,
@@ -92,6 +93,10 @@ import {
   hasLocationBasedScope2Evidence,
   LOCATION_BASED_SCOPE_2_LABEL,
 } from '../reports/domain/buildScope2Accounting';
+import {
+  formatCustomerStatusLabel,
+  getCustomerStatusMessage,
+} from '../utils/customerStatusPresentation';
 
 const PAGE_SIZE = 15;
 const RESET_DEMO_DATA_CONFIRMATION = 'RESET DEMO DATA';
@@ -267,6 +272,7 @@ const canSelectActivityRecords =
   canEditActivityRecords || canSetProvinceOnActivityRecords || canSetFacilityOnActivityRecords;
 const canClearActivityRecords = canClearActivityRecordsForUser(currentUser);
 const canResetDemoData = canResetDemoDataForUser(currentUser);
+const isPlatformAdministrator = isPlatformAdmin(currentUser);
 const isPilotReviewerAccount = currentUser?.accountType === 'PILOT_REVIEWER';
 const selectedIdSet = useMemo(
   () => new Set(selectedIds.map(normalizeRecordId).filter(Boolean)),
@@ -1012,7 +1018,7 @@ function hasStoredMissingFactorStatus(row: ActivityDataItem) {
   return [
     row.matchingStatus,
     row.calculationStatus,
-  ].some((status) => normalizeStoredStatus(status).includes('MISSING_FACTOR'));
+  ].some((status) => ['MISSING_FACTOR', 'NO_FACTOR_FOUND', 'FACTOR_NOT_APPROVED'].includes(normalizeStoredStatus(status)));
 }
 
 function hasStoredUnitMismatchStatus(row: ActivityDataItem) {
@@ -1091,7 +1097,7 @@ function buildMatchedActivityRecordNote(
     row.notes && !/missing factor|no conversion factor|no emission factor/i.test(row.notes)
       ? row.notes
       : '',
-    `Calculation status: Calculated.${fallbackText}`,
+    `Calculated.${fallbackText}`,
     `Matched factor: ${getShortFactorName(match)} (${getFactorValue(match.factor)}).`,
     `Calculated emissions: ${emissionsText} kgCO2e.`,
   ].filter(Boolean).join(' ');
@@ -1106,17 +1112,16 @@ function buildUnmatchedActivityRecordNote(
     : '';
 
   const details: Record<typeof label, string> = {
-    'Missing Province': 'Electricity requires province before factor matching.',
-    'Missing Factor': 'No matching emission factor is available for this record.',
-    'Invalid Unit': 'Unit must be normalized before calculation.',
-    'Unit Mismatch': 'A matching activity factor exists, but it uses a different unit.',
+    'Missing Province': getCustomerStatusMessage('MISSING_PROVINCE', { activityType: row.activityType }),
+    'Missing Factor': getCustomerStatusMessage('MISSING_FACTOR', { activityType: row.activityType }),
+    'Invalid Unit': getCustomerStatusMessage('INVALID_UNIT', { activityType: row.activityType }),
+    'Unit Mismatch': getCustomerStatusMessage('UNIT_MISMATCH', { activityType: row.activityType }),
     'Tracked Metric': 'Tracked only and excluded from GHG totals.',
     'Requires Review': 'Required fields must be completed before calculation.',
   };
 
   return [
     retainedNotes,
-    `Calculation status: ${label}.`,
     details[label],
   ].filter(Boolean).join(' ');
 }
@@ -1298,28 +1303,31 @@ function getActivityRecordQuality(
 
   if (activityType === 'ELECTRICITY' && isMissingProvinceValue(getRecordProvinceValue(row))) {
     return {
-      label: 'Missing Province',
+      label: 'Province needed',
       filterKey: 'missing-jurisdiction',
       tone: 'warning' as const,
-      title: 'Electricity emissions require a province-specific factor. Please select the province where the electricity was used.',
+      title: getCustomerStatusMessage('MISSING_PROVINCE', { activityType }),
     };
   }
 
   if (hasStoredUnitMismatchStatus(row)) {
     return {
-      label: 'Unit Mismatch',
+      label: 'Unit needs correction',
       filterKey: 'invalid-unit',
       tone: 'warning' as const,
-      title: row.calculationMessage || 'A matching activity factor exists, but it uses a different unit.',
+      title: getCustomerStatusMessage(row.calculationStatus || row.matchingStatus || 'UNIT_MISMATCH', {
+        activityType,
+        quantity: row.quantity,
+      }),
     };
   }
 
   if (normalizedUnit.status === 'invalid') {
     return {
-      label: 'Invalid Unit',
+      label: 'Unit needs correction',
       filterKey: 'invalid-unit',
       tone: 'warning' as const,
-      title: 'Invalid unit. Please review this record before calculation.',
+      title: getCustomerStatusMessage('INVALID_UNIT', { activityType, quantity: row.quantity }),
     };
   }
 
@@ -1353,11 +1361,14 @@ function getActivityRecordQuality(
   }
 
   if (hasStoredMissingFactorStatus(row)) {
+    const factorStatus = [row.matchingStatus, row.calculationStatus]
+      .map(normalizeStoredStatus)
+      .find((status) => ['FACTOR_NOT_APPROVED', 'MISSING_FACTOR', 'NO_FACTOR_FOUND'].includes(status)) || 'MISSING_FACTOR';
     return {
-      label: 'Missing Factor',
+      label: formatCustomerStatusLabel(factorStatus),
       filterKey: 'missing-factor',
       tone: 'warning' as const,
-      title: 'No matching emission factor is available yet.',
+      title: getCustomerStatusMessage(factorStatus, { activityType, quantity: row.quantity }),
     };
   }
 
@@ -1400,22 +1411,18 @@ function getActivityRecordQuality(
 
     if (compatibleUnits.length > 0) {
       return {
-        label: 'Unit Mismatch',
+        label: 'Unit needs correction',
         filterKey: 'invalid-unit',
         tone: 'warning' as const,
-        title: buildFactorUnitMismatchMessage({
-          activityType,
-          inputUnit: normalizedUnit.value,
-          availableUnits: compatibleUnits,
-        }),
+        title: getCustomerStatusMessage('UNIT_MISMATCH', { activityType, quantity: row.quantity }),
       };
     }
 
     return {
-      label: 'Missing Factor',
+      label: 'No applicable factor',
       filterKey: 'missing-factor',
       tone: 'warning' as const,
-      title: 'No matching emission factor is available yet.',
+      title: getCustomerStatusMessage('MISSING_FACTOR', { activityType, quantity: row.quantity }),
     };
   }
 
@@ -1558,6 +1565,10 @@ function getSetFacilityDisabledReason(input: {
 function formatStoredStatusValue(value: unknown) {
   const normalized = normalizeStoredStatus(value as string | null | undefined);
   return normalized || '-';
+}
+
+function formatCustomerStoredStatusValue(value: unknown) {
+  return formatCustomerStatusLabel(value as string | null | undefined) || '-';
 }
 
 function formatCalculatedEmissionValue(value: unknown) {
@@ -2250,9 +2261,16 @@ function renderViewedRecordModal() {
         <div style={detailsModalBodyStyle}>
           <div style={detailsModalGridStyle}>
             <DetailsField label="Status" value={quality.label} />
-            <DetailsField label="Canonical matching status" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
-            <DetailsField label="Report treatment" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
-            <DetailsField label="Calculation status" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
+            <DetailsField label="Factor matching" value={formatCustomerStoredStatusValue(viewedRecord.matchingStatus)} />
+            <DetailsField label="Totals treatment" value={formatCustomerStoredStatusValue(viewedRecord.reportTreatment)} />
+            <DetailsField label="Calculation status" value={formatCustomerStoredStatusValue(viewedRecord.calculationStatus)} />
+            {isPlatformAdministrator ? (
+              <>
+                <DetailsField label="Internal matching code" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
+                <DetailsField label="Internal totals code" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
+                <DetailsField label="Internal calculation code" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
+              </>
+            ) : null}
             <DetailsField
               label="Scope"
               value={hasLocationBasedScope2Evidence({

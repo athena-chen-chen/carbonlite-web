@@ -96,20 +96,20 @@ const checklist = [
 
 const reviewIssues = [
   {
-    label: 'Missing Province',
-    description: 'Electricity records need a province or jurisdiction before a province-specific factor can be matched.',
+    label: 'Province needed',
+    description: 'Select a province before this electricity record can be calculated.',
   },
   {
     label: 'Missing Site',
     description: 'Site or facility is optional, but it helps group records in reports and review packages.',
   },
   {
-    label: 'Missing Factor',
-    description: 'The record is retained for review when no compatible emission factor is available.',
+    label: 'No applicable factor',
+    description: 'The record is retained for review when no applicable emission factor is available.',
   },
   {
-    label: 'Unit Mismatch',
-    description: 'The activity unit does not match the available factor unit. CarbonLite does not silently combine incompatible units.',
+    label: 'Unit needs correction',
+    description: 'The activity unit is not compatible with the available factor. CarbonLite does not silently combine incompatible units.',
   },
   {
     label: 'Missing Required Field',

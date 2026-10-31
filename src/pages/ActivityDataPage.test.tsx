@@ -1396,6 +1396,54 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(dialog).queryByText('bc hydro.pdf · Source information needed')).not.toBeInTheDocument();
   });
 
+  it('shows customer status language without raw diagnostic codes in data record details', async () => {
+    mockActivityRecords([{
+      id: 'activity-friendly-status',
+      activityType: 'HOTEL',
+      recordDate: '2026-07-01',
+      quantity: 2,
+      unit: 'nights',
+      sourceType: 'MANUAL',
+      matchingStatus: 'UNIT_MISMATCH',
+      calculationStatus: 'UNIT_MISMATCH',
+      reportTreatment: 'EXCLUDED',
+    }] as any);
+
+    renderPage();
+    const row = await screen.findByTestId('activity-row-activity-friendly-status');
+    await userEvent.click(within(row).getByRole('button', { name: 'View' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
+    expect(within(dialog).getByText('Factor matching')).toBeInTheDocument();
+    expect(within(dialog).getByText('Totals treatment')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('Unit needs correction').length).toBeGreaterThan(0);
+    expect(within(dialog).getByText('Not included in totals')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('UNIT_MISMATCH');
+    expect(dialog).not.toHaveTextContent('excludedFromTotals');
+    expect(within(dialog).queryByText('Canonical matching status')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Report treatment')).not.toBeInTheDocument();
+  });
+
+  it('preserves raw diagnostic codes for platform administrators', async () => {
+    localStorage.setItem('currentUser', JSON.stringify({
+      email: 'platform@example.com', role: 'ADMIN', platformRole: 'ADMIN', organizationId: 'org-1',
+    }));
+    mockActivityRecords([{
+      id: 'activity-admin-diagnostic', activityType: 'DIESEL', recordDate: '2026-07-01',
+      quantity: 2, unit: 'kg', sourceType: 'MANUAL', matchingStatus: 'UNIT_MISMATCH',
+      calculationStatus: 'UNIT_MISMATCH', reportTreatment: 'EXCLUDED',
+    }] as any);
+
+    renderPage();
+    const row = await screen.findByTestId('activity-row-activity-admin-diagnostic');
+    await userEvent.click(within(row).getByRole('button', { name: 'View' }));
+    const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
+    expect(within(dialog).getByText('Internal matching code')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('UNIT_MISMATCH').length).toBeGreaterThan(0);
+    expect(within(dialog).getByText('Internal totals code')).toBeInTheDocument();
+    expect(within(dialog).getByText('EXCLUDED')).toBeInTheDocument();
+  });
+
   it('exports selected data records as user-facing CSV without internal ids', async () => {
     const user = userEvent.setup();
     const exportedBlobs: Blob[] = [];

@@ -21,18 +21,18 @@ describe('canonical terminology', () => {
 
   it('uses canonical record and treatment labels', () => {
     expect(formatCalculationStatusLabel('TRACKED_ONLY')).toBe('Tracked Metric');
-    expect(formatCalculationStatusLabel('MISSING_PROVINCE')).toBe('Missing Province');
+    expect(formatCalculationStatusLabel('MISSING_PROVINCE')).toBe('Province Needed');
     expect(formatCalculationStatusLabel('INVALID_QUANTITY')).toBe('Invalid Quantity');
     expect(formatCalculationStatusLabel('MISSING_ACTIVITY_TYPE')).toBe('Missing Activity Type');
     expect(formatCalculationStatusLabel('SOME_NEW_ISSUE')).toBe('Some New Issue');
     expect(formatCalculationStatusLabel('SKIPPED_NEEDS_REVIEW')).toBe('Needs Attention');
-    expect(formatReportTreatmentLabel('INCLUDED')).toBe('Included in GHG Total');
+    expect(formatReportTreatmentLabel('INCLUDED')).toBe('Included in totals');
     expect(formatReportTreatmentLabel('TRACKED_ONLY')).toBe('Tracked Metric');
-    expect(formatReportTreatmentLabel('EXCLUDED')).toBe('Excluded');
+    expect(formatReportTreatmentLabel('EXCLUDED')).toBe('Not included in totals');
   });
 
   it('keeps factor matching technical and source labels explicit', () => {
-    expect(formatFactorMatchStatusLabel('MATCHED')).toBe('Factor Matched');
+    expect(formatFactorMatchStatusLabel('MATCHED')).toBe('Factor matched');
     expect(formatFactorTypeSourceLabel('SYSTEM')).toBe('Provided by CarbonLite');
     expect(formatFactorTypeSourceLabel('CUSTOM')).toBe('Company Factor');
   });

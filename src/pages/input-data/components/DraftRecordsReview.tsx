@@ -8,6 +8,7 @@ import { ImportValidationSummary, type ImportValidationSummaryProps } from './Im
 import { DetectedSourceItemsPanel, type DetectedSourceItemsPanelProps } from './DetectedSourceItemsPanel';
 import { DraftRecordsTable, type DraftRecordsTableProps } from './DraftRecordsTable';
 import { sectionCardStyle } from '../../UploadPage.styles';
+import { formatCustomerStatusLabel, getCustomerStatusMessage } from '../../../utils/customerStatusPresentation';
 
 type RowDisplayCallbacks = Pick<DraftRecordsTableProps,
   'getRowStatusLabel'
@@ -66,7 +67,7 @@ export function DraftRecordsReview({
   ) {
     if (!message) return '';
     if (field === 'jurisdictionRegion' && isUnsupportedPilotProvinceIssue(message)) {
-      return 'Missing Factor';
+      return 'No applicable factor';
     }
     if (field === 'jurisdictionRegion') return 'Province required';
     if (field === 'activityType' && message === UNSUPPORTED_ACTIVITY_TYPE_MESSAGE) {
@@ -81,10 +82,10 @@ export function DraftRecordsReview({
       issue.field === 'jurisdictionRegion' &&
       isUnsupportedPilotProvinceIssue(issue.message)
     ) {
-      return 'Missing Factor';
+      return 'No applicable factor';
     }
-    if (issue.field === 'jurisdictionRegion') return 'Missing Province';
-    if (issue.field === 'unit') return 'Unit Mismatch';
+    if (issue.field === 'jurisdictionRegion') return 'Province needed';
+    if (issue.field === 'unit') return 'Unit needs correction';
     if (issue.field === 'quantity') return 'Invalid Amount';
     if (issue.field === 'activityType' && issue.message === UNSUPPORTED_ACTIVITY_TYPE_MESSAGE) {
       return 'Unsupported Activity Type';
@@ -154,10 +155,10 @@ export function DraftRecordsReview({
           isUnsupportedPilotProvinceIssue(issue.message),
       )
     ) {
-      return 'Missing Factor';
+      return 'No applicable factor';
     }
-    if (issues.some((issue) => issue.field === 'jurisdictionRegion')) return 'Missing Province';
-    if (issues.some((issue) => issue.field === 'unit')) return 'Unit Mismatch';
+    if (issues.some((issue) => issue.field === 'jurisdictionRegion')) return 'Province needed';
+    if (issues.some((issue) => issue.field === 'unit')) return 'Unit needs correction';
     if (isCanonicalReadyReviewRow(item)) return 'Calculated';
     if (storedReviewLabel) return storedReviewLabel;
     return issues.length > 0 ? 'Needs Review' : 'Ready for Calculation';
@@ -168,8 +169,9 @@ export function DraftRecordsReview({
     const item = parsedActivities[rowIndex];
     if (item && isUntouchedDefaultParsedActivity(item)) return '-';
     const storedReviewLabel = item ? getStoredReviewLabel(item) : null;
-    return issues.length
-      ? Array.from(new Set(issues.map(getImportValidationIssueLabel))).join(', ')
+    const primaryIssue = getPrimaryReviewIssue(issues);
+    return primaryIssue
+      ? getImportValidationIssueLabel(primaryIssue)
       : storedReviewLabel
       ? storedReviewLabel
       : '-';
@@ -179,8 +181,9 @@ export function DraftRecordsReview({
     const issues = getRowValidationIssues(rowIndex);
     const item = parsedActivities[rowIndex];
     const storedReviewDetail = item ? getStoredReviewDetail(item) : null;
-    return issues.length
-      ? issues.map(getImportValidationIssueDetail).join(' ')
+    const primaryIssue = getPrimaryReviewIssue(issues);
+    return primaryIssue
+      ? getImportValidationIssueDetail(primaryIssue)
       : storedReviewDetail ?? undefined;
   }
 
@@ -188,8 +191,8 @@ export function DraftRecordsReview({
     if (isUntouchedDefaultParsedActivity(item)) return '-';
     const classification = rowClassifications[rowIndex];
     if (classification === 'TRACKED_METRIC') return 'Tracked Metric';
-    if (classification === 'READY') return 'Included in GHG Total';
-    return 'Excluded';
+    if (classification === 'READY') return 'Included in totals';
+    return 'Not included in totals';
   }
 
   function getStoredReviewLabel(item: EditableParsedActivity) {
@@ -203,14 +206,14 @@ export function DraftRecordsReview({
     ].map(normalizeClassificationSignal);
 
     if (signals.some((signal) => ['UNIT_MISMATCH', 'INVALID_UNIT'].includes(signal))) {
-      return 'Unit Mismatch';
+      return 'Unit needs correction';
     }
     if (signals.some((signal) => ['MISSING_PROVINCE', 'MISSING_JURISDICTION'].includes(signal))) {
-      return 'Missing Province';
+      return 'Province needed';
     }
-    if (signals.some((signal) => signal === 'FACTOR_NOT_APPROVED')) return 'Factor Not Approved';
-    if (signals.some((signal) => signal === 'NO_FACTOR_FOUND')) return 'No Factor Found';
-    if (signals.some((signal) => signal === 'MISSING_FACTOR')) return 'Missing Factor';
+    if (signals.some((signal) => signal === 'FACTOR_NOT_APPROVED')) return 'No approved factor';
+    if (signals.some((signal) => signal === 'NO_FACTOR_FOUND')) return 'No applicable factor';
+    if (signals.some((signal) => signal === 'MISSING_FACTOR')) return 'No applicable factor';
     if (signals.some((signal) => ['REQUIRES_REVIEW', 'NEEDS_REVIEW', 'EXCLUDED'].includes(signal))) {
       return 'Needs Review';
     }
@@ -219,17 +222,24 @@ export function DraftRecordsReview({
   }
 
   function getStoredReviewDetail(item: EditableParsedActivity) {
+    const signals = [item.calculationStatus, item.matchingStatus, item.status]
+      .map(normalizeClassificationSignal);
+    const knownStatus = signals.find((signal) => formatCustomerStatusLabel(signal));
+    if (knownStatus) {
+      return getCustomerStatusMessage(knownStatus, {
+        activityType: item.activityType.value,
+        quantity: item.quantity.value,
+      });
+    }
     if (item.calculationMessage) return item.calculationMessage;
-
-    const label = getStoredReviewLabel(item);
-    if (label === 'Unit Mismatch') return 'A matching activity factor exists, but it uses a different unit.';
-    if (label === 'Factor Not Approved') return 'Factor found, but it is not approved for automatic calculation.';
-    if (label === 'No Factor Found') return 'No matching emission factor is available for this record.';
-    if (label === 'Missing Factor') return 'No matching emission factor is available for this record.';
-    if (label === 'Missing Province') return 'Electricity records require province before factor matching.';
-    if (label === 'Needs Review') return 'This row must be reviewed before import.';
+    if (getStoredReviewLabel(item) === 'Needs Review') return 'This row must be reviewed before import.';
 
     return null;
+  }
+
+  function getPrimaryReviewIssue(issues: ImportValidationIssue[]) {
+    const fieldPriority: ImportValidationField[] = ['quantity', 'activityType', 'recordDate', 'unit', 'jurisdictionRegion'];
+    return fieldPriority.map((field) => issues.find((issue) => issue.field === field)).find(Boolean) ?? issues[0];
   }
 
   function isUnsupportedPilotProvinceIssue(message?: string) {

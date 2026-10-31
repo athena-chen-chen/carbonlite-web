@@ -51,9 +51,9 @@ export function CalculationQualitySection({
         <Fact label="Records Calculated" value={String(reportCountSummary.processedRecords)} />
         <Fact label="Tracked Operational Metrics" value={String(primarySkippedReasons.trackedOnly)} />
         <Fact label="Records Needing Attention" value={String(recordsRequiringReview)} />
-        <Fact label="Missing Factors" value={String(primarySkippedReasons.missingFactor)} />
-        <Fact label="Missing Jurisdiction" value={String(primarySkippedReasons.missingJurisdiction)} />
-        <Fact label="Invalid Unit" value={String(primarySkippedReasons.invalidUnit)} />
+        <Fact label="No Applicable Factor" value={String(primarySkippedReasons.missingFactor)} />
+        <Fact label="Province Needed" value={String(primarySkippedReasons.missingJurisdiction)} />
+        <Fact label="Unit Needs Correction" value={String(primarySkippedReasons.invalidUnit)} />
         <Fact label="Calculation Coverage" value={dataQualityCoverage} />
         {optionalDataCompleteness ? (
           <Fact label="Optional Data Completeness" value={optionalDataCompleteness} />
