@@ -140,14 +140,11 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByText('Loading emission factors...')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading emission factors')).toBeInTheDocument();
-    ['Total Factors', 'Default Factors', 'Activity Types'].forEach((title) => {
+    ['Production Approved', 'Reference / Legacy', 'Total Library', 'Activity Types'].forEach((title) => {
       const card = getSummaryCard(title);
       expect(card.getByText('—')).toBeInTheDocument();
       expect(card.queryByText('0')).not.toBeInTheDocument();
     });
-    const emissionFactorCard = screen.getAllByText('Emission Factors')[1]?.parentElement;
-    expect(emissionFactorCard).toBeTruthy();
-    expect(within(emissionFactorCard as HTMLElement).getByText('—')).toBeInTheDocument();
     expect(screen.queryByText('No emission factors yet.')).not.toBeInTheDocument();
     expect(screen.queryByText('No factors match the selected filters.')).not.toBeInTheDocument();
 
@@ -161,12 +158,77 @@ describe('ConversionFactorsPage traceability', () => {
 
     expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.queryByLabelText('Loading emission factors')).not.toBeInTheDocument();
-    expect(getSummaryCard('Total Factors').getByText('1')).toBeInTheDocument();
-    const loadedEmissionFactorCard = screen.getAllByText('Emission Factors')[1]?.parentElement;
-    expect(loadedEmissionFactorCard).toBeTruthy();
-    expect(within(loadedEmissionFactorCard as HTMLElement).getByText('1')).toBeInTheDocument();
-    expect(getSummaryCard('Default Factors').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Production Approved').getByText('0')).toBeInTheDocument();
+    expect(getSummaryCard('Reference / Legacy').getByText('1')).toBeInTheDocument();
+    expect(getSummaryCard('Total Library').getByText('1')).toBeInTheDocument();
     expect(getSummaryCard('Activity Types').getByText('1')).toBeInTheDocument();
+  });
+
+  it('distinguishes governed Air Travel factors and explains the full library counts', async () => {
+    const approvedFactors = Array.from({ length: 20 }, (_, index) => ({
+      ...baseFactor,
+      id: `approved-${index + 1}`,
+      name: index < 3 ? 'Air Travel' : `Approved factor ${index + 1}`,
+      activityType: index < 3 ? 'AIR_TRAVEL' : 'DIESEL',
+      unit: index < 3 ? 'passenger-km' : 'L',
+      factorValue: index < 3 ? [0.1298219647, 0.0808424426, 0.1021501929][index] : 2.68,
+      sourceAuthority: index < 3 ? 'U.S. Environmental Protection Agency' : 'Environment and Climate Change Canada',
+      sourceDocument: index < 3 ? '2025 GHG Emission Factors Hub' : 'Approved factor source',
+      sourceYear: index < 3 ? 2025 : 2026,
+      factorStatus: 'ACTIVE',
+      verificationStatus: 'VERIFIED',
+      verified: true,
+      isActive: true,
+      applicability: 'CORPORATE_INVENTORY' as const,
+      emissionBasis: 'DIRECT_CO2E' as const,
+      methodologyProvenance: index < 3
+        ? { haulCategory: (['SHORT', 'MEDIUM', 'LONG'] as const)[index], factorYear: 2025 }
+        : { factorYear: 2026 },
+    }));
+    const referenceFactors = [
+      {
+        ...baseFactor,
+        id: 'reference-only',
+        name: 'Reference factor',
+        applicability: 'REFERENCE_ONLY' as const,
+        emissionBasis: 'DIRECT_CO2E' as const,
+        factorStatus: 'REFERENCE_ONLY',
+        verified: true,
+      },
+      {
+        ...baseFactor,
+        id: 'legacy-blocked',
+        name: 'Legacy factor',
+        applicability: 'CORPORATE_INVENTORY' as const,
+        emissionBasis: 'DIRECT_CO2E' as const,
+        factorStatus: 'ARCHIVED',
+        verified: true,
+      },
+    ];
+    vi.mocked(getConversionFactors).mockResolvedValue({
+      items: [...approvedFactors, ...referenceFactors],
+      page: 1,
+      pageSize: 100,
+      total: 22,
+      totalPages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <ConversionFactorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Air Travel - Short Haul - EPA 2025')).toBeInTheDocument();
+    expect(screen.getByText('Air Travel - Medium Haul - EPA 2025')).toBeInTheDocument();
+    expect(screen.getByText('Air Travel - Long Haul - EPA 2025')).toBeInTheDocument();
+    expect(getSummaryCard('Production Approved').getByText('20')).toBeInTheDocument();
+    expect(getSummaryCard('Reference / Legacy').getByText('2')).toBeInTheDocument();
+    expect(getSummaryCard('Total Library').getByText('22')).toBeInTheDocument();
+    expect(within(screen.getByTestId('factor-row-reference-only')).getByText('Reference only')).toBeInTheDocument();
+    expect(within(screen.getByTestId('factor-row-legacy-blocked')).getByText('Legacy / blocked')).toBeInTheDocument();
+    expect(within(screen.getByTestId('factor-row-approved-1')).getByText('Approved')).toBeInTheDocument();
+    expect(screen.getByTestId('factor-value-approved-1')).toHaveTextContent('0.129822');
   });
 
   it('uses database traceability values for system factors', () => {
@@ -310,7 +372,7 @@ describe('ConversionFactorsPage traceability', () => {
     expect(screen.getByRole('columnheader', { name: 'Jurisdiction' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Reviewed' })).not.toBeInTheDocument();
     expect(screen.getByTestId('factor-value-factor-1')).toHaveTextContent('2.68');
-    expect(container.querySelectorAll('col')).toHaveLength(17);
+    expect(container.querySelectorAll('col')).toHaveLength(18);
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveStyle({
       position: 'sticky',
       right: '0px',

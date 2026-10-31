@@ -31,7 +31,7 @@ import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
 import { LinearLoadingIndicator } from '../components/LinearLoadingIndicator';
 import { formatEmissionsUnit } from '../utils/numberFormatting';
-import { factorProvenanceLines } from '../utils/factorGovernance';
+import { factorProvenanceLines, isInventoryFactorEligible } from '../utils/factorGovernance';
 import { getDisplayFactorVersion, getDisplayFactorVersionLines, getDisplayFactorJurisdiction } from '../utils/factorProvenanceDisplay';
 
 type ConversionFactorListResponse = {
@@ -374,7 +374,34 @@ function formatFactorNameDisplay(item: ConversionFactorItem) {
 
   const activityTypeLabel = item.activityType ? formatActivityTypeDisplay(item.activityType) : '';
 
+  const haulCategory = item.methodologyProvenance?.haulCategory;
+  if (
+    normalizeActivityType(item.activityType) === 'AIR_TRAVEL' &&
+    (haulCategory === 'SHORT' || haulCategory === 'MEDIUM' || haulCategory === 'LONG')
+  ) {
+    const haulLabel = `${haulCategory[0]}${haulCategory.slice(1).toLowerCase()} Haul`;
+    const sourceLabel = /environmental protection agency|\bepa\b/i.test(
+      `${item.sourceAuthority ?? ''} ${item.sourceName ?? ''}`,
+    ) ? 'EPA' : String(item.sourceAuthority ?? item.sourceName ?? '').trim();
+    const sourceYear = item.sourceYear ?? item.methodologyProvenance?.factorYear;
+    const methodologyLabel = [sourceLabel, sourceYear].filter(Boolean).join(' ');
+
+    return ['Air Travel', haulLabel, methodologyLabel].filter(Boolean).join(' - ');
+  }
+
   return activityTypeLabel || getFactorDisplayName(item.name) || '-';
+}
+
+export function getFactorUseStatus(item: ConversionFactorItem) {
+  if (isInventoryFactorEligible(item)) return 'Approved' as const;
+
+  const applicability = String(item.applicability ?? '').trim().toUpperCase();
+  const factorStatus = String(item.factorStatus ?? item.status ?? '').trim().toUpperCase();
+  if (applicability === 'REFERENCE_ONLY' || factorStatus === 'REFERENCE_ONLY') {
+    return 'Reference only' as const;
+  }
+
+  return 'Legacy / blocked' as const;
 }
 
 function formatJurisdictionDisplay(region?: string | null, country?: string | null) {
@@ -811,13 +838,13 @@ export function ConversionFactorsPage() {
     [items],
   );
 
-  const defaultCount = useMemo(
-    () => visibleFactorItems.filter((item) => item.isSystemDefault).length,
+  const approvedCount = useMemo(
+    () => visibleFactorItems.filter((item) => getFactorUseStatus(item) === 'Approved').length,
     [visibleFactorItems],
   );
 
-  const emissionCount = useMemo(
-    () => visibleFactorItems.filter((item) => item.type === 'EMISSION').length,
+  const referenceOrLegacyCount = useMemo(
+    () => visibleFactorItems.filter((item) => getFactorUseStatus(item) !== 'Approved').length,
     [visibleFactorItems],
   );
 
@@ -1171,25 +1198,26 @@ export function ConversionFactorsPage() {
 
       <div className="no-print" style={summaryGridStyle}>
         <SummaryCard
-          icon="🧮"
-          title="Total Factors"
-          value={summaryCardPlaceholder ?? String(visibleFactorItems.length)}
-          subtitle="Available conversion rules"
-        />
-
-        <SummaryCard
-          icon="🌱"
-          title="Emission Factors"
-          value={summaryCardPlaceholder ?? String(emissionCount)}
-          subtitle="Used for CO₂e calculations"
+          icon="✅"
+          title="Production Approved"
+          value={summaryCardPlaceholder ?? String(approvedCount)}
+          subtitle="Eligible for governed calculations"
           accent="#047857"
         />
 
         <SummaryCard
-          icon="✅"
-          title="Default Factors"
-          value={summaryCardPlaceholder ?? String(defaultCount)}
-          subtitle="System-provided starter library"
+          icon="📚"
+          title="Reference / Legacy"
+          value={summaryCardPlaceholder ?? String(referenceOrLegacyCount)}
+          subtitle="Visible for context, not production approved"
+          accent="#B45309"
+        />
+
+        <SummaryCard
+          icon="🧮"
+          title="Total Library"
+          value={summaryCardPlaceholder ?? String(visibleFactorItems.length)}
+          subtitle="Approved plus reference and legacy records"
           accent="#475569"
         />
 
@@ -1208,7 +1236,7 @@ export function ConversionFactorsPage() {
       ) : null}
 
       <div className="no-print" style={pilotDisclaimerStyle}>
-        CarbonLite-provided factors are provided for pilot workflow validation. Users should review factors against applicable reporting requirements before relying on final reports.
+        Production Approved factors meet CarbonLite's governed calculation eligibility checks. Total Library may be larger because reference-only and legacy or blocked records remain visible for traceability.
       </div>
       <div className="no-print" style={pilotCoverageNoteStyle}>
         Electricity requires province-specific factors. {PILOT_PROVINCE_COVERAGE_HELPER_TEXT}
@@ -1685,6 +1713,7 @@ export function ConversionFactorsPage() {
               <col style={factorSourceYearColStyle} />
               <col style={factorVersionColStyle} />
               <col style={factorStatusColStyle} />
+              <col style={factorStatusColStyle} />
               <col style={factorConfidenceColStyle} />
               <col style={factorVerificationColStyle} />
               <col style={factorAssumptionsColStyle} />
@@ -1704,6 +1733,7 @@ export function ConversionFactorsPage() {
                 <th style={thStyle}>Source Year</th>
                 <th style={thStyle}>Effective Year</th>
                 <th style={thStyle}>Factor Version</th>
+                <th style={thStyle}>Use Status</th>
                 <th style={thStyle}>Status</th>
                 <th style={thStyle}>Confidence</th>
                 <th style={thStyle}>Verification</th>
@@ -1715,7 +1745,7 @@ export function ConversionFactorsPage() {
             <tbody>
               {displayedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={17} style={{ padding: 18, textAlign: 'center', color: factorsPalette.secondaryText }}>
+                  <td colSpan={18} style={{ padding: 18, textAlign: 'center', color: factorsPalette.secondaryText }}>
                     {hasActiveFilters ? (
                       <>
                         <div>No factors match the selected filters.</div>
@@ -1756,6 +1786,9 @@ export function ConversionFactorsPage() {
                         <td style={nowrapCellStyle}>{traceability.sourceYear ?? '-'}</td>
                         <td style={nowrapCellStyle}>{traceability.effectiveYear ?? '-'}</td>
                         <td style={nowrapCellStyle}>{traceability.factorVersion || '-'}</td>
+                        <td style={nowrapCellStyle}>
+                          <FactorUseStatusBadge status={getFactorUseStatus(item)} />
+                        </td>
                         <td style={truncateCellStyle} title={traceability.factorStatus || undefined}>
                           {traceability.factorStatus || '-'}
                         </td>
@@ -1901,6 +1934,16 @@ function Badge({
       {label}
     </span>
   );
+}
+
+function FactorUseStatusBadge({ status }: { status: ReturnType<typeof getFactorUseStatus> }) {
+  if (status === 'Approved') {
+    return <Badge label={status} color="#047857" background="#ECFDF5" />;
+  }
+  if (status === 'Reference only') {
+    return <Badge label={status} color="#B45309" background="#FFFBEB" />;
+  }
+  return <Badge label={status} color="#B91C1C" background="#FEF2F2" />;
 }
 
 function FactorDetailsModal({

@@ -22,6 +22,8 @@ export type MethodologyProvenance = {
   factorYear?: number;
   factorVersion?: string;
   sourceTable?: string;
+  /** Activity-specific discriminator supplied by governed Air Travel factors. */
+  haulCategory?: 'SHORT' | 'MEDIUM' | 'LONG';
 };
 export type FactorGovernance = {
   applicability?: FactorApplicability | null;
