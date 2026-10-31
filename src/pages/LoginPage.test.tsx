@@ -123,15 +123,22 @@ describe('LoginPage', () => {
     renderLogin();
 
     expect(screen.getByRole('heading', { name: 'Log in to CarbonLite' })).toBeInTheDocument();
+    expect(screen.getByText('Securely access your emissions data, calculations, and reports.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /create an account/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /forgot password/i })).toHaveAttribute('href', '/forgot-password');
-    expect(screen.getByRole('link', { name: /set password from invite/i })).toHaveAttribute('href', '/set-password');
-    expect(screen.getByText(/pilot access is currently invite-only/i)).toBeInTheDocument();
-    expect(screen.getByText(/if you are a pilot reviewer/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /accept invitation \/ set password/i })).toHaveAttribute('href', '/set-password');
+    expect(screen.getByText(/Controlled Paid Pilot access is currently invite-only/i)).toBeInTheDocument();
+    expect(screen.getByText(/need help or interested in joining the pilot/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pilot reviewer/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'help@carbonliteapp.ca' })).toHaveAttribute(
       'href',
       'mailto:help@carbonliteapp.ca',
     );
+    expect(screen.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(screen.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+    expect(screen.getByLabelText(/^email$/i)).toBeRequired();
+    expect(screen.getByLabelText(/^password$/i)).toBeRequired();
+    expect(screen.getByRole('button', { name: /show password/i })).toHaveAttribute('type', 'button');
   });
 
   it('toggles password visibility without clearing the typed password', async () => {
@@ -150,6 +157,26 @@ describe('LoginPage', () => {
 
     expect(passwordInput).toHaveAttribute('type', 'password');
     expect(passwordInput).toHaveValue('TestPassword123!');
+  });
+
+  it('keeps login, recovery, invitation, contact, and legal controls keyboard accessible', async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    for (const control of [
+      screen.getByLabelText(/^email$/i),
+      screen.getByLabelText(/^password$/i),
+      screen.getByRole('button', { name: /show password/i }),
+      screen.getByRole('button', { name: /log in/i }),
+      screen.getByRole('link', { name: /forgot password/i }),
+      screen.getByRole('link', { name: /accept invitation \/ set password/i }),
+      screen.getByRole('link', { name: 'help@carbonliteapp.ca' }),
+      screen.getByRole('link', { name: 'Privacy' }),
+      screen.getByRole('link', { name: 'Terms' }),
+    ]) {
+      await user.tab();
+      expect(control).toHaveFocus();
+    }
   });
 
   it('does not submit the login form when toggling password visibility', async () => {

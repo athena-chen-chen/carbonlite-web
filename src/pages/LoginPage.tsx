@@ -48,7 +48,10 @@ export function LoginPage() {
   }
 
   return (
-    <AuthPageShell title="Log in to CarbonLite" subtitle="Access uploads, records, factors, metrics, and reports.">
+    <AuthPageShell
+      title="Log in to CarbonLite"
+      subtitle="Securely access your emissions data, calculations, and reports."
+    >
       <form onSubmit={handleSubmit} style={formStyle}>
         <label style={labelStyle}>
           Email
@@ -104,7 +107,7 @@ export function LoginPage() {
         <div style={authLinksStyle}>
           <Link to="/forgot-password">Forgot password?</Link>
           <span aria-hidden="true">·</span>
-          <Link to="/set-password">Set password from invite</Link>
+          <Link to="/set-password">Accept invitation / Set password</Link>
         </div>
 
         {publicSignupEnabled ? (
@@ -112,17 +115,27 @@ export function LoginPage() {
             New to CarbonLite? <Link to="/register">Create an account</Link>
           </p>
         ) : (
-          <p style={inviteOnlyTextStyle}>
-            CarbonLite pilot access is currently invite-only.
-            <br />
-            <br />
-            If you are a pilot reviewer or would like to request access, please contact us at{' '}
-            <a href={`mailto:${contactEmail}`} style={contactLinkStyle}>
-              {contactEmail}
-            </a>
-            .
-          </p>
+          <div style={inviteOnlyTextStyle}>
+            <p style={compactParagraphStyle}>
+              CarbonLite Controlled Paid Pilot access is currently invite-only.
+            </p>
+            <p style={compactParagraphStyle}>
+              Need help or interested in joining the pilot?
+              <br />
+              Contact us at{' '}
+              <a href={`mailto:${contactEmail}`} style={contactLinkStyle}>
+                {contactEmail}
+              </a>
+              .
+            </p>
+          </div>
         )}
+
+        <nav aria-label="Legal" style={legalLinksStyle}>
+          <Link to="/privacy">Privacy</Link>
+          <span aria-hidden="true">·</span>
+          <Link to="/terms">Terms</Link>
+        </nav>
       </form>
     </AuthPageShell>
   );
@@ -307,7 +320,13 @@ const footerTextStyle: React.CSSProperties = {
 
 const inviteOnlyTextStyle: React.CSSProperties = {
   ...footerTextStyle,
+  display: 'grid',
+  gap: 6,
   lineHeight: 1.5,
+};
+
+const compactParagraphStyle: React.CSSProperties = {
+  margin: 0,
 };
 
 const authLinksStyle: React.CSSProperties = {
@@ -323,4 +342,10 @@ const authLinksStyle: React.CSSProperties = {
 const contactLinkStyle: React.CSSProperties = {
   color: '#047857',
   fontWeight: 800,
+};
+
+const legalLinksStyle: React.CSSProperties = {
+  ...authLinksStyle,
+  marginTop: 2,
+  fontSize: 13,
 };
