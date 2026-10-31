@@ -585,6 +585,14 @@ function getRowCalculationReview(
     };
   }
 
+  if (normalizeActivityType(row.activityType) === 'NATURAL_GAS' && !normalizeJurisdictionRegion(row.jurisdictionRegion)) {
+    return {
+      calculationStatus: 'missingJurisdiction' as const,
+      calculationMessage: 'Select a province to find an approved Natural Gas factor.',
+      supportedUnits,
+    };
+  }
+
   if (isTrackedMetricActivity(row.activityType)) {
     return {
       calculationStatus: 'trackedMetric' as const,
@@ -1981,6 +1989,13 @@ function getRowStatusSummary(row: Row): { badge: string; detail: string } {
     return { badge: 'Invalid Amount', detail: 'Enter a quantity greater than 0.' };
   }
 
+  if (normalizeActivityType(row.activityType) === 'NATURAL_GAS' && row.calculationStatus === 'missingJurisdiction') {
+    return {
+      badge: 'Missing Province',
+      detail: 'Select a province to find an approved Natural Gas factor.',
+    };
+  }
+
   if (row.activityType === 'ELECTRICITY') {
     if (row.calculationStatus === 'missingJurisdiction') {
       return {
@@ -2112,6 +2127,7 @@ function renderManualCalculationPreview(row: Row) {
   const tracked = scope === 'TRACKED_METRIC' || row.calculationStatus === 'trackedMetric';
   const matched = row.factorStatus === 'matched';
   const issues = started ? validateRow(row) : [];
+  const hasQuantityIssue = issues.some((issue) => issue === 'Missing quantity' || issue === 'Quantity must be greater than 0');
   const summary = getRowStatusSummary(row);
   const emissions = matched && row.calculationStatus === 'calculated' && issues.length === 0
     ? getRowEstimatedEmission(row) : null;
@@ -2126,7 +2142,7 @@ function renderManualCalculationPreview(row: Row) {
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', alignItems: 'baseline' }}>
             <strong>{formatScopeClassification(scope)}</strong>
-            {emissions !== null ? <><span aria-hidden="true">·</span><span>Estimated emissions: {emissions.toLocaleString(undefined, { minimumFractionDigits: Number.isInteger(emissions) ? 0 : 2, maximumFractionDigits: 3 })} {formatEmissionsUnit(getEmissionResultUnit(row))}</span></> : null}
+            {emissions !== null ? <><span aria-hidden="true">·</span><span>Estimated emissions: {emissions.toLocaleString(undefined, { minimumFractionDigits: Number.isInteger(emissions) ? 0 : 2, maximumFractionDigits: 4 })} {formatEmissionsUnit(getEmissionResultUnit(row))}</span></> : null}
           </div>
           {matched ? <span>Factor: <span>{row.factorName ?? 'Matched factor'}</span>{row.factorSourceYear ? ` · ${row.factorSourceYear}` : ''}</span> : null}
           {issues.length > 0 ? <span>{issues.join(' · ')}</span> : null}
@@ -2153,7 +2169,7 @@ function renderManualCalculationPreview(row: Row) {
                   {row.factorAssumptions ? <span>{row.factorAssumptions}</span> : null}
                   {row.factorYearFallback && row.factorSourceYear ? <span>Using latest available factor year: {row.factorSourceYear}</span> : null}
                 </>
-              ) : <span>{row.calculationMessage || summary.detail}</span>}
+              ) : <span>{hasQuantityIssue ? summary.detail : row.calculationMessage || summary.detail}</span>}
               <span>{getReportTreatment(row).detail}</span>
             </div>
           </details>
@@ -2177,6 +2193,17 @@ function renderPreviewPanel(title: string, helpText: string, children: ReactNode
 
 function getDefaultUnit(activityType: string) {
   return getDefaultUnitForActivityType(activityType);
+}
+
+function getManualEntryGuidance(activityType?: string) {
+  switch (normalizeActivityType(activityType)) {
+    case 'ELECTRICITY':
+      return 'Electricity records require province and activity year to select the correct location-based factor.';
+    case 'NATURAL_GAS':
+      return 'Natural gas records require province, activity year, quantity and a supported unit.';
+    default:
+      return 'Enter the activity date, quantity, supported unit and location details.';
+  }
 }
 
 function getUnitForActivityTypeChange(currentUnit: string | undefined, nextActivityType: string) {
@@ -2918,7 +2945,7 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
           <span>
             {isSpreadsheetMode
               ? 'Paste rows copied from Excel here.'
-              : 'Enter one activity record manually. Electricity records require province before emissions can be calculated.'}
+              : getManualEntryGuidance()}
           </span>
         </div>
         <div style={quickEntryEmptyStyle}>
@@ -2941,8 +2968,8 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
             description={
               index === 0
                 ? isSpreadsheetMode
-                  ? 'Review imported spreadsheet rows before saving. Electricity records require province before emissions can be calculated.'
-                  : 'Enter one activity record manually. Electricity records require province before emissions can be calculated.'
+                  ? `Review imported spreadsheet rows before saving. ${getManualEntryGuidance(row.activityType)}`
+                  : getManualEntryGuidance(row.activityType)
                 : undefined
             }
             activityTypes={activityTypes}

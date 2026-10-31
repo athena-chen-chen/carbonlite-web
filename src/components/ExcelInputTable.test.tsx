@@ -120,40 +120,39 @@ describe('ExcelInputTable empty activity row UX', () => {
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
         {
-          id: 'factor-natural-gas',
-          name: 'Natural gas factor',
+          id: 'factor-natural-gas-volume-alberta-2026',
+          name: 'Natural gas combustion - Alberta - 2026 - volume',
           type: 'EMISSION',
           activityType: 'NATURAL_GAS',
           inputUnit: 'm3',
           unit: 'm3',
-          factorValue: 1.89,
+          factorValue: 1.972311,
           resultUnit: 'kgCO2e',
           ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2026,
+          jurisdictionCountry: 'Canada',
+          jurisdictionRegion: 'Alberta',
           isSystemDefault: true,
           isDefault: true,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
         {
-          id: 'factor-natural-gas-gj-canada-generic',
-          name: 'Natural Gas - Canada Generic',
+          id: 'factor-natural-gas-gj-alberta-2026',
+          name: 'Natural gas combustion - Alberta - 2026',
           type: 'EMISSION',
           activityType: 'NATURAL_GAS',
           inputUnit: 'GJ',
           unit: 'GJ',
-          factorValue: 49.44,
+          factorValue: 51.3756446991404,
           resultUnit: 'kgCO2e',
           jurisdictionCountry: 'Canada',
-          jurisdictionRegion: 'Canada',
+          jurisdictionRegion: 'Alberta',
           sourceAuthority: 'Environment and Climate Change Canada',
-          sourceDocument: 'Greenhouse gas and air pollutant emissions projections – 2025',
-          sourceUrl: 'https://www.canada.ca/en/environment-climate-change/services/climate-change/greenhouse-gas-emissions/projections/2025-report.html',
-          sourceYear: 2025,
-          confidenceLevel: 'HIGH',
-          verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
-          consultantReviewRecommended: true,
-          verified: false,
+          sourceDocument: 'Emission factors and reference values',
+          sourceUrl: 'https://www.canada.ca/en/environment-climate-change/services/climate-change/pricing-pollution-how-it-will-work/output-based-pricing-system/federal-greenhouse-gas-offset-system/emission-factors-reference-values.html',
+          sourceYear: 2026,
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           isSystemDefault: true,
           isDefault: true,
           createdAt: '2026-01-01T00:00:00.000Z',
@@ -1032,6 +1031,59 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(getUnitOptions(unitInput)).toEqual(['nights']);
   });
 
+  it('shows activity-aware Natural Gas guidance and an actionable province reason', async () => {
+    renderTable();
+
+    const row = await addEmptyRow();
+    await userEvent.selectOptions(within(row).getByLabelText('Activity Type'), 'NATURAL_GAS');
+
+    expect(within(row).getByText('Natural gas records require province, activity year, quantity and a supported unit.')).toBeVisible();
+    expect(within(row).queryByText(/Electricity records require province/)).not.toBeInTheDocument();
+
+    const preview = within(row).getByRole('region', { name: 'Calculation preview' });
+    expect(preview).toHaveTextContent('Quantity must be greater than 0');
+    expect(within(preview).queryByText('Select a province to find an approved Natural Gas factor.')).not.toBeInTheDocument();
+
+    await userEvent.type(within(row).getByLabelText('Quantity'), '100');
+    expect(within(preview).getAllByText('Select a province to find an approved Natural Gas factor.').length).toBeGreaterThan(0);
+  });
+
+  it('calculates the reviewed Natural Gas volume factor and preserves GJ behavior', async () => {
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([
+      {
+        id: 'factor-natural-gas-volume-alberta-2026', name: 'Natural gas combustion - Alberta - 2026 - volume',
+        type: 'EMISSION', activityType: 'NATURAL_GAS', inputUnit: 'm3', unit: 'm3', factorValue: 1.972311,
+        resultUnit: 'kgCO2e', ...LEGITIMATE_OFFICIAL_FACTOR, sourceYear: 2026,
+        jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', isSystemDefault: true, isDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'factor-natural-gas-gj-alberta-2026', name: 'Natural gas combustion - Alberta - 2026',
+        type: 'EMISSION', activityType: 'NATURAL_GAS', inputUnit: 'GJ', unit: 'GJ', factorValue: 51.3756446991404,
+        resultUnit: 'kgCO2e', ...LEGITIMATE_OFFICIAL_FACTOR, sourceYear: 2026,
+        jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', isSystemDefault: true, isDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ] as any);
+    renderTable();
+
+    const volumeRow = await addEmptyRow();
+    await userEvent.selectOptions(within(volumeRow).getByLabelText('Activity Type'), 'NATURAL_GAS');
+    await userEvent.type(within(volumeRow).getByLabelText('Quantity'), '100');
+    await userEvent.selectOptions(within(volumeRow).getByLabelText('Province'), 'Alberta');
+    expect(within(volumeRow).getByText('Estimated emissions: 197.2311 kg CO₂e')).toBeVisible();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add another manual row' }));
+    const rows = screen.getAllByRole('group', { name: /Activity row/ });
+    const gjRow = rows[1];
+    await userEvent.selectOptions(within(gjRow).getByLabelText('Activity Type'), 'NATURAL_GAS');
+    await userEvent.clear(within(gjRow).getByLabelText('Quantity'));
+    await userEvent.type(within(gjRow).getByLabelText('Quantity'), '8.5');
+    await userEvent.selectOptions(getUnitControl(gjRow), 'GJ');
+    await userEvent.selectOptions(within(gjRow).getByLabelText('Province'), 'Alberta');
+    expect(within(gjRow).getByText('Estimated emissions: 436.693 kg CO₂e')).toBeVisible();
+  });
+
   it('preserves manual unit edits until activity type changes again', async () => {
     renderTable();
 
@@ -1046,6 +1098,7 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(unitInput).toHaveValue('GJ');
 
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '3');
+    await userEvent.selectOptions(within(row).getByLabelText('Province'), 'Alberta');
     await waitFor(() => {
       expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     });
@@ -1153,7 +1206,7 @@ describe('ExcelInputTable empty activity row UX', () => {
 
   it.each([
     ['ELECTRICITY', 'British Columbia', 'Scope 2', 'Electricity - British Columbia - 2025'],
-    ['NATURAL_GAS', '', 'Scope 1', 'Natural gas factor'],
+    ['NATURAL_GAS', 'Alberta', 'Scope 1', 'Natural gas combustion - Alberta - 2026 - volume'],
     ['GASOLINE', '', 'Scope 1', 'Gasoline factor'],
     ['DIESEL', '', 'Scope 1', 'Diesel factor'],
     ['AIR_TRAVEL', '', 'Scope 3', 'Business travel flight factor'],
@@ -1171,7 +1224,9 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     if (province) {
       await userEvent.selectOptions(
-        within(row).getByRole('combobox', { name: /Province required for electricity records/i }),
+        within(row).getByRole('combobox', {
+          name: activityType === 'ELECTRICITY' ? /Province required for electricity records/i : /^Province$/i,
+        }),
         province,
       );
     }
@@ -1551,26 +1606,27 @@ describe('ExcelInputTable empty activity row UX', () => {
     }));
   });
 
-  it('calculates Natural Gas GJ with the Canada-generic ECCC factor', async () => {
+  it('calculates Natural Gas GJ with the reviewed Alberta ECCC factor', async () => {
     renderTable();
 
     const row = await addEmptyRow();
     await userEvent.clear(within(row).getByLabelText('Date'));
-    await userEvent.type(within(row).getByLabelText('Date'), '2025-08-01');
+    await userEvent.type(within(row).getByLabelText('Date'), '2026-08-01');
     await userEvent.selectOptions(
       within(row).getByRole('combobox', { name: /Activity type/i }),
       'NATURAL_GAS',
     );
     await userEvent.type(within(row).getByPlaceholderText('Quantity'), '3');
     await userEvent.selectOptions(getUnitControl(row), 'GJ');
+    await userEvent.selectOptions(within(row).getByLabelText('Province'), 'Alberta');
 
     await waitFor(() => {
       expect(within(row).getByText('Ready to save')).toBeInTheDocument();
     });
-    expect(within(row).getByText('Natural Gas - Canada Generic')).toBeInTheDocument();
+    expect(within(row).getByText('Natural gas combustion - Alberta - 2026')).toBeInTheDocument();
     expect(within(row).getByText('Scope 1')).toBeInTheDocument();
     expect(within(row).getByText('Included in GHG total')).toBeInTheDocument();
-    expect(within(row).getByText('Estimated emissions: 148.32 kg CO₂e')).toBeInTheDocument();
+    expect(within(row).getByText('Estimated emissions: 154.1269 kg CO₂e')).toBeInTheDocument();
     expect(within(row).queryByText('Unit Mismatch')).not.toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('button', { name: /Save row 1/i }));
@@ -1585,11 +1641,11 @@ describe('ExcelInputTable empty activity row UX', () => {
           calculationStatus: 'CALCULATED',
           reportTreatment: 'INCLUDED',
           scope: 'SCOPE_1',
-          matchedFactorName: 'Natural Gas - Canada Generic',
-          matchedFactorValue: 49.44,
+          matchedFactorName: 'Natural gas combustion - Alberta - 2026',
+          matchedFactorValue: 51.3756446991404,
           matchedFactorUnit: 'kgCO2e/GJ',
-          factorSelectionReason: 'GENERIC_JURISDICTION_FALLBACK',
-          calculatedEmissionsKgCO2e: 148.32,
+          factorSelectionReason: 'EXACT_MATCH',
+          calculatedEmissionsKgCO2e: 154.1269340974212,
         }),
       );
     });

@@ -165,7 +165,7 @@ describe('ConversionFactorsPage traceability', () => {
   });
 
   it('distinguishes governed Air Travel factors and explains the full library counts', async () => {
-    const approvedFactors = Array.from({ length: 20 }, (_, index) => ({
+    const approvedFactors = Array.from({ length: 21 }, (_, index) => ({
       ...baseFactor,
       id: `approved-${index + 1}`,
       name: index < 3 ? 'Air Travel' : `Approved factor ${index + 1}`,
@@ -209,7 +209,7 @@ describe('ConversionFactorsPage traceability', () => {
       items: [...approvedFactors, ...referenceFactors],
       page: 1,
       pageSize: 100,
-      total: 22,
+      total: 23,
       totalPages: 1,
     });
 
@@ -222,9 +222,9 @@ describe('ConversionFactorsPage traceability', () => {
     expect(await screen.findByText('Air Travel - Short Haul - EPA 2025')).toBeInTheDocument();
     expect(screen.getByText('Air Travel - Medium Haul - EPA 2025')).toBeInTheDocument();
     expect(screen.getByText('Air Travel - Long Haul - EPA 2025')).toBeInTheDocument();
-    expect(getSummaryCard('Production Approved').getByText('20')).toBeInTheDocument();
+    expect(getSummaryCard('Production Approved').getByText('21')).toBeInTheDocument();
     expect(getSummaryCard('Reference / Legacy').getByText('2')).toBeInTheDocument();
-    expect(getSummaryCard('Total Library').getByText('22')).toBeInTheDocument();
+    expect(getSummaryCard('Total Library').getByText('23')).toBeInTheDocument();
     expect(within(screen.getByTestId('factor-row-reference-only')).getByText('Reference only')).toBeInTheDocument();
     expect(within(screen.getByTestId('factor-row-legacy-blocked')).getByText('Legacy / blocked')).toBeInTheDocument();
     expect(within(screen.getByTestId('factor-row-approved-1')).getByText('Approved')).toBeInTheDocument();
