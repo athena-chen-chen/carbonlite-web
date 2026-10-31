@@ -328,6 +328,10 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.getByText('Import a CSV/XLSX file or paste rows from Excel.')).toBeInTheDocument();
     expect(screen.getByText('File import')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Choose spreadsheet file' })).toBeInTheDocument();
+    expect(document.querySelector('input[type="file"]')).toHaveAttribute(
+      'accept',
+      '.csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel',
+    );
     expect(screen.getByText('Select a CSV or XLSX file from your computer.')).toBeInTheDocument();
     expect(screen.getByText('To paste copied rows, use the paste area below.')).toBeInTheDocument();
     expect(screen.getByLabelText('Paste spreadsheet rows')).toBeInTheDocument();

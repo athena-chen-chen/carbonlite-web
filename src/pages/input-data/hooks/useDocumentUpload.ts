@@ -1,15 +1,10 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { DuplicateDocumentError, uploadDocument } from '../../../services/documents';
-import { hasSupportedFileExtension, isSpreadsheetFileName, SPREADSHEET_UPLOAD_EXTENSIONS } from '../domain/extractionNormalization';
+import { hasSupportedFileExtension, SPREADSHEET_UPLOAD_EXTENSIONS } from '../domain/extractionNormalization';
+import { DOCUMENT_UPLOAD_ACCEPT, validateDocumentUploadFile } from '../domain/documentUploadValidation';
 import type { DocumentItem } from '../inputData.types';
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const DOCUMENT_UPLOAD_ACCEPT =
-  '.pdf,.csv,.xlsx,.xls,.json,.jpg,.jpeg,.png,application/pdf,text/csv,application/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/json,text/json,image/jpeg,image/png';
-const SPREADSHEET_UPLOAD_ACCEPT =
-  '.csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
-const DOCUMENT_UPLOAD_FORMAT_LABEL = 'PDF, CSV, XLSX, JSON, JPG, or PNG';
-const DOCUMENT_UPLOAD_EXTENSIONS = ['pdf', 'csv', 'xlsx', 'xls', 'json', 'jpg', 'jpeg', 'png'] as const;
 
 type UploadOptions = {
   canUploadData: boolean;
@@ -33,8 +28,7 @@ export function useDocumentUpload({
   const [replacementSourceDocument, setReplacementSourceDocument] = useState<DocumentItem | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDragDepthRef = useRef(0);
-  const isSpreadsheetReplacement = isSpreadsheetSourceDocument(replacementSourceDocument);
-  const uploadAccept = isSpreadsheetReplacement ? SPREADSHEET_UPLOAD_ACCEPT : DOCUMENT_UPLOAD_ACCEPT;
+  const uploadAccept = DOCUMENT_UPLOAD_ACCEPT;
   function getDocumentTypeFromFile(file: File) {
     const fileName = file.name.toLowerCase();
 
@@ -53,67 +47,40 @@ export function useDocumentUpload({
     return 'OTHER';
   }
 
-  function isSupportedUploadFile(file: File) {
-    return hasSupportedFileExtension(file.name, DOCUMENT_UPLOAD_EXTENSIONS);
-  }
-
-  function isSupportedSpreadsheetUploadFile(file: File) {
-    return hasSupportedFileExtension(file.name, SPREADSHEET_UPLOAD_EXTENSIONS);
-  }
-
   function clearUploadInput() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   }
 
-  function isSpreadsheetSourceDocument(doc?: DocumentItem | null) {
-    return Boolean(
-      doc &&
-        (isSpreadsheetFileName(doc.fileName) ||
-          ['SPREADSHEET', 'CSV', 'EXCEL'].includes(
-            String(doc.type ?? '').trim().toUpperCase(),
-          )),
-    );
-  }
+  function selectUploadFiles(files: File[]) {
+    const spreadsheetFiles: File[] = [];
+    const unsupportedFiles: File[] = [];
+    const validTypeFiles = files.filter((file) => {
+      const validation = validateDocumentUploadFile(file);
+      if (validation.accepted) return true;
+      (validation.reason === 'spreadsheet' ? spreadsheetFiles : unsupportedFiles).push(file);
+      return false;
+    });
+    const oversizedFiles = validTypeFiles.filter((file) => file.size > MAX_UPLOAD_FILE_SIZE_BYTES);
+    const acceptedFiles = validTypeFiles.filter((file) => file.size <= MAX_UPLOAD_FILE_SIZE_BYTES);
+    const errors: string[] = [];
 
-  function selectUploadFiles(files: File[], replacementDocument?: DocumentItem | null) {
-    const expectsSpreadsheet = isSpreadsheetSourceDocument(replacementDocument);
-    const unsupportedFile = files.find((file) =>
-      expectsSpreadsheet
-        ? !isSupportedSpreadsheetUploadFile(file)
-        : !isSupportedUploadFile(file),
-    );
-
-    if (unsupportedFile) {
-      setSelectedFiles([]);
-      setSuccessMessage(null);
-      setError(
-        expectsSpreadsheet
-          ? `${unsupportedFile.name} is not supported. Please select a supported spreadsheet file (.csv, .xlsx, or .xls).`
-          : `${unsupportedFile.name} is not supported. Please choose ${DOCUMENT_UPLOAD_FORMAT_LABEL} files.`,
-      );
-      clearUploadInput();
-      return;
+    if (spreadsheetFiles.length > 0) {
+      errors.push(`Spreadsheet files should be imported using Import spreadsheet. Rejected files: ${spreadsheetFiles.map((file) => file.name).join(', ')}.`);
+    }
+    if (unsupportedFiles.length > 0) {
+      errors.push(`Unsupported file type. Upload PDF, JPG, JPEG, or PNG files. Rejected files: ${unsupportedFiles.map((file) => file.name).join(', ')}.`);
+    }
+    if (oversizedFiles.length > 0) {
+      errors.push(`Files must be 10 MB or less. Rejected files: ${oversizedFiles.map((file) => file.name).join(', ')}.`);
     }
 
-    const oversizedFile = files.find(
-      (file) => file.size > MAX_UPLOAD_FILE_SIZE_BYTES,
-    );
-
-    if (oversizedFile) {
-      setSelectedFiles([]);
-      setSuccessMessage(null);
-      setError(`${oversizedFile.name} must be 10 MB or less.`);
-      clearUploadInput();
-      return;
-    }
-
-    onFilesSelected();
-    setSelectedFiles(files);
+    if (acceptedFiles.length > 0) onFilesSelected();
+    setSelectedFiles(acceptedFiles);
     setSuccessMessage(null);
-    setError(null);
-
+    setError(errors.length > 0 ? errors.join(' ') : null);
+    if (errors.length > 0) clearUploadInput();
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -125,7 +92,7 @@ export function useDocumentUpload({
     }
 
     const files = Array.from(event.target.files ?? []);
-    selectUploadFiles(files, replacementSourceDocument);
+    selectUploadFiles(files);
   }
 
   function handleUploadDragEnter(event: DragEvent<HTMLDivElement>) {
