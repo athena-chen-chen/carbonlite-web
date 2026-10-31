@@ -102,6 +102,27 @@ export type ConversionFactorListResponse = {
   totalPages: number;
 };
 
+export type CustomerMethodologyFactor = {
+  activityType: string;
+  displayName: string;
+  geography: string;
+  applicabilityYear: number | null;
+  factorValue: number;
+  inputUnit: string;
+  resultUnit: string;
+  source: string;
+  sourceUrl: string | null;
+  methodology: string;
+  accountingBasis: string;
+  assumptions: string | null;
+  status: 'Approved';
+};
+
+export type CustomerMethodologyFactorResponse = {
+  items: CustomerMethodologyFactor[];
+  total: number;
+};
+
 const VALID_VERIFICATION_STATUSES = new Set([
   'UNREVIEWED',
   'INTERNAL_REVIEW_REQUIRED',
@@ -448,6 +469,10 @@ export async function getConversionFactors(params?: {
   );
 
   return withPilotSystemFactors(filterConversionFactorsForCurrentCompany(response), params);
+}
+
+export function getCustomerMethodologyFactors() {
+  return apiFetch<CustomerMethodologyFactorResponse>('/conversion-factors/methodology');
 }
 
 function filterConversionFactorsForCurrentCompany(

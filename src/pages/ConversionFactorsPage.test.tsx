@@ -138,6 +138,8 @@ describe('ConversionFactorsPage traceability', () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByRole('heading', { name: 'Factor Library' })).toBeInTheDocument();
+    expect(screen.getByText('Platform admin')).toBeInTheDocument();
     expect(await screen.findByText('Loading emission factors...')).toBeInTheDocument();
     expect(screen.getByLabelText('Loading emission factors')).toBeInTheDocument();
     ['Production approved', 'Reference / legacy', 'Total library', 'Activity types'].forEach((title) => {

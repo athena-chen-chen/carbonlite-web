@@ -1185,7 +1185,7 @@ export function ConversionFactorsPage() {
       </div>
 
       <div style={pageHeaderStyle}>
-        <PageHeader title="Emission factors" subtitle="Review factor sources, applicability, and provenance." badge="Advanced reviewer tool" />
+        <PageHeader title="Factor Library" subtitle="Review factor sources, applicability, and provenance." badge="Platform admin" />
         <button
           type="button"
           onClick={handlePrintFactors}

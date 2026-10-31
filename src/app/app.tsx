@@ -1,7 +1,7 @@
 
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ActivityDataPage } from '../pages/ActivityDataPage';
-import { ConversionFactorsPage } from '../pages/ConversionFactorsPage';
+import { FactorsExperiencePage } from '../pages/FactorsExperiencePage';
 import { MetricsSummaryPage } from '../pages/MetricsSummaryPage';
 import { UploadPage } from '../pages/UploadPage';
 import { AppNav } from '../components/AppNav';
@@ -120,7 +120,7 @@ export default function App() {
           element={
             <ProtectedRoute>
               <AppShell>
-                <ConversionFactorsPage />
+                <FactorsExperiencePage />
               </AppShell>
             </ProtectedRoute>
           }
