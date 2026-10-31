@@ -555,6 +555,69 @@ describe('ExcelInputTable empty activity row UX', () => {
     expect(screen.getAllByText(/Quantity must be greater than 0/i).length).toBeGreaterThan(0);
   });
 
+  it('parses structured Air Travel columns and preserves canonical metadata in the review payload', async () => {
+    renderTable('spreadsheet');
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Origin Airport', 'Destination Airport', 'Passengers', 'Trip Type'],
+      ['2026-04-10', 'Air Travel', 'yyc', 'yyz', 1, 'round_trip'],
+    ]), 'Travel');
+    const file = new File([XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })], 'travel.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
+    expect(await screen.findByDisplayValue('YYC')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
+
+    expect(vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows[0]).toMatchObject({
+      status: 'READY',
+      activityType: 'AIR_TRAVEL',
+      activityMetadata: {
+        schemaVersion: 1,
+        type: 'AIR_TRAVEL',
+        originAirport: 'YYC',
+        destinationAirport: 'YYZ',
+        passengerCount: 1,
+        tripType: 'ROUND_TRIP',
+      },
+    });
+  });
+
+  it('repairs a generic Air Travel km row with editable route metadata without replacing its source quantity', async () => {
+    renderTable('spreadsheet');
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ['Date', 'Activity Type', 'Quantity', 'Unit'],
+      ['2026-04-10', 'Air Travel', 4280, 'km'],
+    ]), 'Travel');
+    const file = new File([XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })], 'legacy-travel.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
+    expect((await screen.findAllByText('Unit Mismatch')).length).toBeGreaterThan(0);
+    await userEvent.type(screen.getByLabelText('Origin Airport'), 'yyc');
+    await userEvent.type(screen.getByLabelText('Destination Airport'), 'lhr');
+    await userEvent.type(screen.getByLabelText('Passengers'), '2');
+    await userEvent.selectOptions(screen.getByLabelText('Trip Type'), 'ROUND_TRIP');
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
+
+    expect(vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows[0]).toMatchObject({
+      status: 'READY',
+      quantity: 4280,
+      unit: 'km',
+      activityMetadata: {
+        originAirport: 'YYC',
+        destinationAirport: 'LHR',
+        passengerCount: 2,
+        tripType: 'ROUND_TRIP',
+      },
+    });
+  });
+
   it('preserves Cost CAD from spreadsheet rows into review-row payloads', async () => {
     renderTable('spreadsheet');
 

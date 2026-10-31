@@ -70,6 +70,7 @@ import { formatCount, formatEmissionsUnit } from '../utils/numberFormatting';
 import { getActivityTypeLabel } from '../utils/activityType';
 import { ManualEntryConfirmation } from './manual-entry/ManualEntryConfirmation';
 import { deriveHotelActivityBasis, readHotelBasisColumns, type HotelActivityBasis } from '../utils/hotelActivityBasis';
+import { normalizeAirTravelActivityMetadata, type AirTravelActivityMetadataV1 } from '../utils/airTravelActivity';
 
 type Row = {
   id: string;
@@ -94,6 +95,11 @@ type Row = {
   rawActivityType?: string;
   rawSourceRow?: Record<string, unknown>;
   hotelActivityBasis?: HotelActivityBasis;
+  originAirport?: string;
+  destinationAirport?: string;
+  passengerCount?: string;
+  tripType?: string;
+  activityMetadata?: AirTravelActivityMetadataV1;
   notes?: string;
   factorId?: string;
   factorName?: string;
@@ -548,7 +554,7 @@ function isTrackedMetricActivity(activityType: string) {
 }
 
 function getRowCalculationReview(
-  row: Pick<Row, 'activityType' | 'unit' | 'jurisdictionCountry' | 'jurisdictionRegion' | 'recordDate'>,
+  row: Pick<Row, 'activityType' | 'unit' | 'jurisdictionCountry' | 'jurisdictionRegion' | 'recordDate' | 'activityMetadata'>,
 ) {
   if (!row.activityType || !row.unit) {
     return {
@@ -561,6 +567,14 @@ function getRowCalculationReview(
   const activitySupportedUnits = getSupportedUnitsForActivityType(row.activityType);
   const availableFactorUnits = getAvailableFactorUnitsForActivityType(row.activityType);
   const supportedUnits = activitySupportedUnits.length ? activitySupportedUnits : availableFactorUnits;
+
+  if (normalizeActivityType(row.activityType) === 'AIR_TRAVEL' && !row.activityMetadata) {
+    return {
+      calculationStatus: 'invalidUnit' as const,
+      calculationMessage: 'Air Travel requires origin airport, destination airport, passenger count, and trip type. Passenger-km is derived by the server.',
+      supportedUnits: ['passenger-km'],
+    };
+  }
 
   if (row.activityType === 'ELECTRICITY' && !normalizeJurisdictionRegion(row.jurisdictionRegion)) {
     return {
@@ -633,8 +647,21 @@ function getRowCalculationReview(
   };
 }
 
+function getAirTravelActivityMetadata(row: Pick<Row, 'activityType' | 'originAirport' | 'destinationAirport' | 'passengerCount' | 'tripType'>) {
+  if (normalizeActivityType(row.activityType) !== 'AIR_TRAVEL') return null;
+  return normalizeAirTravelActivityMetadata({
+    schemaVersion: 1,
+    type: 'AIR_TRAVEL',
+    originAirport: row.originAirport,
+    destinationAirport: row.destinationAirport,
+    passengerCount: row.passengerCount,
+    tripType: row.tripType,
+  });
+}
+
 function applyFactorToRow(row: Row): Row {
-  if (isRowCompletelyEmpty(row) || !row.activityType || !row.unit) {
+  const airTravelActivityMetadata = getAirTravelActivityMetadata(row);
+  if (isRowCompletelyEmpty(row) || !row.activityType || (!row.unit && !airTravelActivityMetadata)) {
     return {
       ...row,
       factorId: undefined,
@@ -666,11 +693,36 @@ function applyFactorToRow(row: Row): Row {
   const facilityCountry = normalizeCountry(matchedFacility?.country);
   const normalizedRow = {
     ...row,
+    activityMetadata: airTravelActivityMetadata ?? undefined,
     facilityId: matchedFacility?.id ?? row.facilityId,
     jurisdictionCountry: normalizeCountry(row.jurisdictionCountry || facilityCountry),
     jurisdictionRegion: normalizeProvince(row.jurisdictionRegion) || facilityProvince,
   };
+
+  if (normalizedRow.activityMetadata) {
+    return {
+      ...normalizedRow,
+      factorId: undefined,
+      factorName: undefined,
+      factorValue: undefined,
+      factorStatus: undefined,
+      calculationStatus: 'needsReview',
+      calculationMessage: 'Route metadata is complete. Passenger-km, factor selection, and emissions will be derived by the server when confirmed.',
+      supportedUnits: ['passenger-km'],
+    };
+  }
   const review = getRowCalculationReview(normalizedRow);
+
+  if (normalizeActivityType(normalizedRow.activityType) === 'AIR_TRAVEL' && !normalizedRow.activityMetadata) {
+    return {
+      ...normalizedRow,
+      factorId: undefined,
+      factorName: undefined,
+      factorValue: undefined,
+      factorStatus: 'missing',
+      ...review,
+    };
+  }
 
   if (review.calculationStatus === 'trackedMetric') {
     return {
@@ -784,6 +836,10 @@ function importExcelFile(file: File, importSessionId = importSessionRef.current)
       ]);
       const recordDate = normalizeSpreadsheetDate(rawRecordDate, !!workbook.Workbook?.WBProps?.date1904);
       const rawQuantity = readAliasedField(row, ['quantity', 'Quantity', 'Consumption', 'qty', 'amount', 'usage']);
+      const originAirport = readAliasedField(row, ['Origin Airport', 'originAirport', 'Origin', 'origin', 'From', 'from']).toUpperCase();
+      const destinationAirport = readAliasedField(row, ['Destination Airport', 'destinationAirport', 'Destination', 'destination', 'To', 'to']).toUpperCase();
+      const passengerCount = readAliasedField(row, ['Passengers', 'passengers', 'Passenger Count', 'passengerCount']);
+      const tripType = readAliasedField(row, ['Trip Type', 'tripType']).toUpperCase();
       const hotelColumns = readHotelBasisColumns(row);
       const hotelBasis = deriveHotelActivityBasis({ activityType, ...hotelColumns });
       const sourceReference = readAliasedField(row, ['Source Reference', 'sourceReference', 'Original Document', 'reference']);
@@ -824,6 +880,10 @@ function importExcelFile(file: File, importSessionId = importSessionRef.current)
           ? readAliasedField(row, ['unit', 'Unit', 'uom', 'measurement']) || ''
           : '',
         hotelActivityBasis: hotelBasis.status === 'DERIVED' ? hotelBasis.basis : undefined,
+        originAirport,
+        destinationAirport,
+        passengerCount,
+        tripType,
         jurisdictionCountry: normalizeCountry(readAliasedField(row, [
           'jurisdictionCountry',
           'Jurisdiction Country',
@@ -931,6 +991,10 @@ function parseCSVText(
   ]);
   const roomsIndex = findColumnIndex(headers, ['rooms', 'room count', 'number of rooms']);
   const nightsIndex = findColumnIndex(headers, ['nights', 'night count', 'number of nights']);
+  const originAirportIndex = findColumnIndex(headers, ['origin airport', 'originAirport', 'origin', 'from']);
+  const destinationAirportIndex = findColumnIndex(headers, ['destination airport', 'destinationAirport', 'destination', 'to']);
+  const passengerCountIndex = findColumnIndex(headers, ['passengers', 'passenger count', 'passengerCount']);
+  const tripTypeIndex = findColumnIndex(headers, ['trip type', 'tripType']);
 
   const unitIndex = findColumnIndex(headers, ['unit', 'uom', 'measurement']);
   const countryIndex = findColumnIndex(headers, ['country', 'jurisdictionCountry', 'jurisdiction country']);
@@ -970,7 +1034,8 @@ function parseCSVText(
   const costCurrencyIndex = findColumnIndex(headers, ['currency', 'costCurrency', 'cost currency']);
   const notesIndex = findColumnIndex(headers, ['notes', 'note']);
 
-  if (activityTypeIndex === -1 || (quantityIndex === -1 && nightsIndex === -1)) {
+  const hasAirTravelColumns = originAirportIndex >= 0 && destinationAirportIndex >= 0 && passengerCountIndex >= 0 && tripTypeIndex >= 0;
+  if (activityTypeIndex === -1 || (quantityIndex === -1 && nightsIndex === -1 && !hasAirTravelColumns)) {
     showError({
       title: 'Unable to import CSV',
       message: 'CSV must include activity type and either quantity or nights columns.',
@@ -1014,6 +1079,10 @@ function parseCSVText(
           ? cols[unitIndex]
           : getDefaultUnit(activityType),
       hotelActivityBasis: hotelBasis.status === 'DERIVED' ? hotelBasis.basis : undefined,
+      originAirport: originAirportIndex >= 0 ? String(cols[originAirportIndex] ?? '').trim().toUpperCase() : '',
+      destinationAirport: destinationAirportIndex >= 0 ? String(cols[destinationAirportIndex] ?? '').trim().toUpperCase() : '',
+      passengerCount: passengerCountIndex >= 0 ? cols[passengerCountIndex] : '',
+      tripType: tripTypeIndex >= 0 ? String(cols[tripTypeIndex] ?? '').trim().toUpperCase() : '',
       jurisdictionCountry: normalizeCountry(countryIndex >= 0 ? cols[countryIndex] : 'Canada'),
       jurisdictionRegion: normalizeProvince(provinceIndex >= 0 ? cols[provinceIndex] : ''),
       facilityName: facilityIndex >= 0 ? cols[facilityIndex] : '',
@@ -1040,17 +1109,18 @@ function parseCSVText(
 }
 function validateRow(row: Row) {
   const errors: string[] = [];
+  const hasValidAirTravelMetadata = Boolean(getAirTravelActivityMetadata(row));
 
   if (!row.activityType) errors.push('Missing activity type');
   if (!row.recordDate) errors.push('Missing date');
   if (row.recordDate && !isValidDateOnly(row.recordDate)) {
     errors.push('Invalid date');
   }
-  if (!row.quantity) errors.push('Missing quantity');
-  if (!Number.isFinite(Number(row.quantity)) || Number(row.quantity) <= 0) {
+  if (!hasValidAirTravelMetadata && !row.quantity) errors.push('Missing quantity');
+  if (!hasValidAirTravelMetadata && (!Number.isFinite(Number(row.quantity)) || Number(row.quantity) <= 0)) {
     errors.push('Quantity must be greater than 0');
   }
-  if (!row.unit) errors.push('Missing unit');
+  if (!hasValidAirTravelMetadata && !row.unit) errors.push('Missing unit');
 
   return errors;
 }
@@ -1070,7 +1140,7 @@ function getSpreadsheetReviewIssues(row: Row): SpreadsheetReviewIssue[] {
     });
   }
 
-  if (row.calculationStatus === 'invalidUnit') {
+  if (row.calculationStatus === 'invalidUnit' && !row.activityMetadata) {
     issues.push({
       code: 'UNIT_MISMATCH',
       field: 'unit',
@@ -1078,7 +1148,7 @@ function getSpreadsheetReviewIssues(row: Row): SpreadsheetReviewIssue[] {
     });
   }
 
-  if (row.calculationStatus === 'missingFactor') {
+  if (row.calculationStatus === 'missingFactor' && !row.activityMetadata) {
     issues.push({
       code: 'MISSING_FACTOR',
       field: 'factor',
@@ -1127,6 +1197,7 @@ function getSpreadsheetReviewStatus(row: Row): SpreadsheetReviewRowStatus {
   const issues = getSpreadsheetReviewIssues(row);
   if (issues.length > 0) return 'NEEDS_REVIEW';
   if (row.calculationStatus === 'trackedMetric') return 'TRACKED_ONLY';
+  if (row.activityMetadata) return 'READY';
   return row.calculationStatus !== 'calculated'
     ? 'NEEDS_REVIEW'
     : 'READY';
@@ -1184,6 +1255,7 @@ function buildActivityPayload(row: Row) {
     recordDate: formatDateOnly(row.recordDate),
     quantity: Number(row.quantity),
     unit: row.unit,
+    activityMetadata: row.activityMetadata,
     jurisdictionCountry: normalizeOptional(row.jurisdictionCountry) ?? 'Canada',
     jurisdictionRegion: normalizeOptional(row.jurisdictionRegion),
     facility: normalizeOptional(row.facilityName) ?? normalizeOptional(row.facilityId),
@@ -1251,6 +1323,7 @@ function buildSpreadsheetReviewRowPayload(row: Row): SpreadsheetReviewRowInput {
     quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
     rawQuantity: row.rawQuantity ?? row.quantity,
     unit: row.unit,
+    activityMetadata: row.activityMetadata,
     jurisdictionCountry: normalizeOptional(row.jurisdictionCountry),
     jurisdictionRegion: normalizeOptional(row.jurisdictionRegion),
     facilityName: normalizeOptional(row.facilityName),
@@ -2133,6 +2206,8 @@ function updateRow(id: string, key: keyof Row, value: string) {
           ? normalizeProvince(value)
           : key === 'jurisdictionCountry'
           ? normalizeCountry(value)
+          : key === 'originAirport' || key === 'destinationAirport' || key === 'tripType'
+          ? value.trim().toUpperCase()
           : value;
 
       const updated = {
@@ -2898,6 +2973,34 @@ const importedMissingElectricityProvinceCount = importedReviewRows.filter(
             }}
             review={isSpreadsheetMode ? (
               <div style={draftReviewRowStyle}>
+                {normalizeActivityType(row.activityType) === 'AIR_TRAVEL' ? (
+                  <div style={{ display: 'grid', gap: 10, gridColumn: '1 / -1' }}>
+                    <strong>Air Travel Route</strong>
+                    <span style={statusMessageStyle}>Enter IATA airport codes and trip details. Distance, passenger-km, haul category, factor selection, and emissions are derived by the server.</span>
+                    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+                      <label style={{ display: 'grid', gap: 4 }}>
+                        <span>Origin Airport</span>
+                        <input aria-label="Origin Airport" value={row.originAirport ?? ''} maxLength={3} placeholder="YYC" onChange={(event) => updateRow(row.id, 'originAirport', event.target.value)} />
+                      </label>
+                      <label style={{ display: 'grid', gap: 4 }}>
+                        <span>Destination Airport</span>
+                        <input aria-label="Destination Airport" value={row.destinationAirport ?? ''} maxLength={3} placeholder="YYZ" onChange={(event) => updateRow(row.id, 'destinationAirport', event.target.value)} />
+                      </label>
+                      <label style={{ display: 'grid', gap: 4 }}>
+                        <span>Passengers</span>
+                        <input aria-label="Passengers" type="number" min="1" step="1" value={row.passengerCount ?? ''} onChange={(event) => updateRow(row.id, 'passengerCount', event.target.value)} />
+                      </label>
+                      <label style={{ display: 'grid', gap: 4 }}>
+                        <span>Trip Type</span>
+                        <select aria-label="Trip Type" value={row.tripType ?? ''} onChange={(event) => updateRow(row.id, 'tripType', event.target.value)}>
+                          <option value="">Select trip type</option>
+                          <option value="ONE_WAY">One way</option>
+                          <option value="ROUND_TRIP">Round trip</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
                 {renderPreviewPanel(
                   'Scope',
                   'GHG Protocol category inferred from activity type.',

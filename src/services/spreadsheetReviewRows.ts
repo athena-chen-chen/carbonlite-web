@@ -1,6 +1,7 @@
 import { apiFetch } from './api';
 import { canImportDraftRows, requirePermission } from '../utils/permissions';
 import { getCurrentUser } from './auth';
+import type { AirTravelActivityMetadataV1 } from '../utils/airTravelActivity';
 
 export type SpreadsheetReviewRowStatus = 'READY' | 'NEEDS_REVIEW' | 'TRACKED_ONLY';
 
@@ -20,6 +21,7 @@ export type SpreadsheetReviewRowInput = {
   quantity: number | null;
   rawQuantity?: string;
   unit: string;
+  activityMetadata?: AirTravelActivityMetadataV1;
   jurisdictionCountry?: string;
   jurisdictionRegion?: string;
   facilityName?: string;
@@ -71,6 +73,7 @@ export type SpreadsheetReviewRowItem = {
   quantity?: number | null;
   rawQuantity?: string | null;
   unit?: string | null;
+  activityMetadata?: AirTravelActivityMetadataV1 | null;
   jurisdictionCountry?: string | null;
   jurisdictionRegion?: string | null;
   facilityName?: string | null;
