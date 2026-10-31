@@ -1,5 +1,6 @@
 import { type DetectedSourceItem } from '../../services/documentExtraction';
 import { type ActivityDataInput } from '../../services/activityData';
+import type { HotelActivityBasis } from '../../utils/hotelActivityBasis';
 
 export type DocumentItem = {
   id: string;
@@ -34,6 +35,9 @@ export type EditableParsedActivity = {
   recordDate: EditableConfidenceField<string>;
   quantity: EditableConfidenceField<number>;
   unit: EditableConfidenceField<string>;
+  rooms?: EditableConfidenceField<number>;
+  nights?: EditableConfidenceField<number>;
+  hotelActivityBasis?: HotelActivityBasis;
   jurisdictionCountry: EditableConfidenceField<string>;
   jurisdictionRegion: EditableConfidenceField<string>;
   facilityName: EditableConfidenceField<string>;

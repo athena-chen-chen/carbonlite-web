@@ -12,6 +12,14 @@ export type ParsedActivity = {
   periodEnd?: string | null;
   quantity: number;
   unit: string;
+  rooms?: number | null;
+  nights?: number | null;
+  hotelActivityBasis?: {
+    rooms: number;
+    nights: number;
+    roomNights: number;
+    derivation: 'ROOMS_X_NIGHTS';
+  };
   periodRole?: 'CURRENT' | 'PREVIOUS_PERIOD' | 'PRIOR_YEAR' | 'HISTORICAL_COMPARISON' | 'UNKNOWN' | string | null;
   comparisonType?: string | null;
   usageType?: string | null;

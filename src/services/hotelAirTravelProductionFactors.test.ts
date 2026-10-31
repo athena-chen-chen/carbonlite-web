@@ -57,6 +57,22 @@ describe('backend-provided travel factors', () => {
     expect(calculated.calculatedEmissionsKgCO2e).toBeCloseTo(22.2);
     expect(evaluateActivityRecord({ ...base, unit: 'nights' }).calculationStatus)
       .toBe('UNIT_MISMATCH');
+
+    const twoRooms = evaluateActivityRecord({
+      ...base, quantity: 3, unit: 'nights', rooms: 2, nights: 3,
+    });
+    expect(twoRooms).toMatchObject({
+      calculationStatus: 'CALCULATED',
+      matchedFactorId: hotelFromBackend.id,
+      normalizedUnit: 'room-night',
+    });
+    expect(twoRooms.calculatedEmissionsKgCO2e).toBeCloseTo(44.4);
+    expect(evaluateActivityRecord({ ...base, unit: 'nights', rooms: 1, nights: 3 })
+      .calculatedEmissionsKgCO2e).toBeCloseTo(22.2);
+    expect(evaluateActivityRecord({ ...base, unit: '', rooms: 2 }).calculationStatus)
+      .toBe('REQUIRES_REVIEW');
+    expect(evaluateActivityRecord({ ...base, unit: 'nights', rooms: 0, nights: 3 }).calculationStatus)
+      .toBe('REQUIRES_REVIEW');
   });
 
   it('keeps legacy hotel and generic air-travel values blocked', () => {

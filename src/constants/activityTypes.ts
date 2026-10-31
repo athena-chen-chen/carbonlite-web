@@ -78,7 +78,7 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
-    supportedUnits: ['nights'],
+    supportedUnits: ['room-night', 'nights'],
     defaultUnit: 'nights',
   },
   {

@@ -69,6 +69,7 @@ import { getActivitySourceType } from '../utils/activitySourceType';
 import { formatCount, formatEmissionsUnit } from '../utils/numberFormatting';
 import { getActivityTypeLabel } from '../utils/activityType';
 import { ManualEntryConfirmation } from './manual-entry/ManualEntryConfirmation';
+import { deriveHotelActivityBasis, readHotelBasisColumns, type HotelActivityBasis } from '../utils/hotelActivityBasis';
 
 type Row = {
   id: string;
@@ -92,6 +93,7 @@ type Row = {
   rawQuantity?: string;
   rawActivityType?: string;
   rawSourceRow?: Record<string, unknown>;
+  hotelActivityBasis?: HotelActivityBasis;
   notes?: string;
   factorId?: string;
   factorName?: string;
@@ -782,6 +784,8 @@ function importExcelFile(file: File, importSessionId = importSessionRef.current)
       ]);
       const recordDate = normalizeSpreadsheetDate(rawRecordDate, !!workbook.Workbook?.WBProps?.date1904);
       const rawQuantity = readAliasedField(row, ['quantity', 'Quantity', 'Consumption', 'qty', 'amount', 'usage']);
+      const hotelColumns = readHotelBasisColumns(row);
+      const hotelBasis = deriveHotelActivityBasis({ activityType, ...hotelColumns });
       const sourceReference = readAliasedField(row, ['Source Reference', 'sourceReference', 'Original Document', 'reference']);
       const costCad = readAliasedField(row, [
         'Cost CAD',
@@ -804,9 +808,22 @@ function importExcelFile(file: File, importSessionId = importSessionRef.current)
         rawActivityType,
         recordDate,
         rawRecordDate,
-        quantity: rawQuantity,
+        quantity: hotelBasis.status === 'DERIVED'
+          ? String(hotelBasis.basis.roomNights)
+          : hotelBasis.status === 'INCOMPLETE' && hotelBasis.nights
+          ? String(hotelBasis.nights)
+          : hotelBasis.status === 'ABSENT'
+          ? rawQuantity
+          : '',
         rawQuantity,
-        unit: readAliasedField(row, ['unit', 'Unit', 'uom', 'measurement']) || '',
+        unit: hotelBasis.status === 'DERIVED'
+          ? 'room-night'
+          : hotelBasis.status === 'INCOMPLETE' && hotelBasis.nights
+          ? 'nights'
+          : hotelBasis.status === 'ABSENT'
+          ? readAliasedField(row, ['unit', 'Unit', 'uom', 'measurement']) || ''
+          : '',
+        hotelActivityBasis: hotelBasis.status === 'DERIVED' ? hotelBasis.basis : undefined,
         jurisdictionCountry: normalizeCountry(readAliasedField(row, [
           'jurisdictionCountry',
           'Jurisdiction Country',
@@ -912,6 +929,8 @@ function parseCSVText(
     'usage',
     'volume',
   ]);
+  const roomsIndex = findColumnIndex(headers, ['rooms', 'room count', 'number of rooms']);
+  const nightsIndex = findColumnIndex(headers, ['nights', 'night count', 'number of nights']);
 
   const unitIndex = findColumnIndex(headers, ['unit', 'uom', 'measurement']);
   const countryIndex = findColumnIndex(headers, ['country', 'jurisdictionCountry', 'jurisdiction country']);
@@ -951,10 +970,10 @@ function parseCSVText(
   const costCurrencyIndex = findColumnIndex(headers, ['currency', 'costCurrency', 'cost currency']);
   const notesIndex = findColumnIndex(headers, ['notes', 'note']);
 
-  if (activityTypeIndex === -1 || quantityIndex === -1) {
+  if (activityTypeIndex === -1 || (quantityIndex === -1 && nightsIndex === -1)) {
     showError({
       title: 'Unable to import CSV',
-      message: 'CSV must include at least activity type and quantity columns.',
+      message: 'CSV must include activity type and either quantity or nights columns.',
     });
     return;
   }
@@ -963,6 +982,12 @@ function parseCSVText(
   const importedRows = lines.slice(1).map((line) => {
     const cols = line.split(',').map((v) => v.trim());
     const activityType = normalizeActivityType(cols[activityTypeIndex] || '');
+    const rawSourceRow = Object.fromEntries(headers.map((header, index) => [header, cols[index] ?? '']));
+    const hotelBasis = deriveHotelActivityBasis({
+      activityType,
+      rooms: roomsIndex >= 0 ? cols[roomsIndex] : undefined,
+      nights: nightsIndex >= 0 ? cols[nightsIndex] : undefined,
+    });
 
     const rawRecordDate = recordDateIndex >= 0 ? cols[recordDateIndex] : '';
 
@@ -973,11 +998,22 @@ function parseCSVText(
       activityType,
       recordDate: recordDateIndex >= 0 ? normalizeSpreadsheetDate(rawRecordDate) : getTodayDateOnly(),
       rawRecordDate,
-      quantity: cols[quantityIndex] || '',
+      quantity: hotelBasis.status === 'DERIVED'
+        ? String(hotelBasis.basis.roomNights)
+        : hotelBasis.status === 'INCOMPLETE' && hotelBasis.nights
+        ? String(hotelBasis.nights)
+        : hotelBasis.status === 'ABSENT' && quantityIndex >= 0
+        ? cols[quantityIndex] || ''
+        : '',
       unit:
-        unitIndex >= 0
+        hotelBasis.status === 'DERIVED'
+          ? 'room-night'
+          : hotelBasis.status === 'INCOMPLETE' && hotelBasis.nights
+          ? 'nights'
+          : unitIndex >= 0
           ? cols[unitIndex]
           : getDefaultUnit(activityType),
+      hotelActivityBasis: hotelBasis.status === 'DERIVED' ? hotelBasis.basis : undefined,
       jurisdictionCountry: normalizeCountry(countryIndex >= 0 ? cols[countryIndex] : 'Canada'),
       jurisdictionRegion: normalizeProvince(provinceIndex >= 0 ? cols[provinceIndex] : ''),
       facilityName: facilityIndex >= 0 ? cols[facilityIndex] : '',
@@ -991,6 +1027,7 @@ function parseCSVText(
           ? 'CAD'
           : '',
       notes: notesIndex >= 0 ? cols[notesIndex] : '',
+      rawSourceRow,
     };
   });
 

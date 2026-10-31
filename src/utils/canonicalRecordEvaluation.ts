@@ -14,6 +14,7 @@ import {
 import { buildMatchedFactorSnapshot, type FactorSnapshotFields } from './factorCredibility';
 import { inferDefaultScope } from './scopeClassification';
 import { normalizeUnitForDisplay } from './unitNormalization';
+import { deriveHotelActivityBasis } from './hotelActivityBasis';
 
 export type CanonicalRecordStatus = 'READY' | 'TRACKED_ONLY' | 'NEEDS_REVIEW';
 
@@ -93,6 +94,8 @@ export type ActivityRecordEvaluationInput = {
   allowPlaceholderConfidence?: boolean;
   factors: MatchableConversionFactor[];
   unitConversions?: MatchableUnitConversion[];
+  rooms?: unknown;
+  nights?: unknown;
 };
 
 const TRACKED_ONLY_ACTIVITY_TYPES = new Set(['WATER', 'WATER_USAGE']);
@@ -145,11 +148,24 @@ export function evaluateActivityRecord(
   input: ActivityRecordEvaluationInput,
 ): CanonicalRecordEvaluation {
   const activityType = normalizeActivityType(input.activityType) ?? '';
-  const quantityText = String(input.quantity ?? '').trim();
-  const quantity = Number(input.quantity);
-  const unit = normalizeUnitForDisplay(input.unit);
+  const hotelBasis = deriveHotelActivityBasis({ activityType, rooms: input.rooms, nights: input.nights });
+  const canonicalQuantity = hotelBasis.status === 'DERIVED' ? hotelBasis.basis.roomNights : input.quantity;
+  const canonicalUnit = hotelBasis.status === 'DERIVED' ? 'room-night' : input.unit;
+  const quantityText = String(canonicalQuantity ?? '').trim();
+  const quantity = Number(canonicalQuantity);
+  const unit = normalizeUnitForDisplay(canonicalUnit);
   const normalizedUnit = unit.status === 'valid' ? unit.value : '';
   const issues: CanonicalRecordIssue[] = [];
+
+  if (hotelBasis.status === 'INCOMPLETE' || hotelBasis.status === 'INVALID') {
+    issues.push({
+      code: 'INVALID_QUANTITY',
+      field: 'quantity',
+      message: hotelBasis.status === 'INVALID'
+        ? 'Hotel rooms and nights must both be valid numbers greater than 0.'
+        : 'Hotel room-night requires both rooms and nights; no missing value is assumed.',
+    });
+  }
 
   if (!String(input.activityType ?? '').trim()) {
     issues.push({

@@ -22,6 +22,8 @@ export type ActivityDataInput = {
   recordDate: string | null;
   quantity: number;
   unit: string;
+  rooms?: number;
+  nights?: number;
   jurisdictionCountry?: string;
   jurisdictionRegion?: string;
   recordYear?: number;

@@ -1,5 +1,6 @@
 import type { DocumentItem, EditableParsedActivity } from '../inputData.types';
 import { type DetectedSourceItem, type ParsedActivity } from '../../../services/documentExtraction';
+import { deriveHotelActivityBasis } from '../../../utils/hotelActivityBasis';
 import { normalizeActivityType as normalizeCanonicalActivityType } from '../../../utils/activityType';
 import { isValidDateOnly, getTodayDateOnly } from '../../../utils/dateOnly';
 import { normalizeJurisdictionCountry } from '../../../utils/conversionFactorMatching';
@@ -760,6 +761,8 @@ export function buildEditableParsedActivities(
       'value',
     ]);
     const unitField = getAliasedExtractionField(item, ['unit', 'uom', 'UOM', 'measurement']);
+    const roomsField = getAliasedExtractionField(item, ['rooms', 'Rooms', 'roomCount', 'Room Count']);
+    const nightsField = getAliasedExtractionField(item, ['nights', 'Nights', 'nightCount', 'Night Count']);
     const startDateField = getAliasedExtractionField(item, [
       'recordDate',
       'date',
@@ -798,8 +801,15 @@ export function buildEditableParsedActivities(
       uploadDate: documentUploadDate,
     });
 
-    const quantityValue = Number(getFieldValue(quantityField, 0));
     const normalizedActivityType = normalizePreviewActivityType(activityTypeField);
+    const hotelBasis = deriveHotelActivityBasis({
+      activityType: normalizedActivityType,
+      rooms: getFieldValue(roomsField, undefined),
+      nights: getFieldValue(nightsField, undefined),
+    });
+    const quantityValue = hotelBasis.status === 'DERIVED'
+      ? hotelBasis.basis.roomNights
+      : Number(getFieldValue(quantityField, 0));
     const normalizedCountry = normalizePreviewCountry(countryField);
     const normalizedProvince =
       normalizePreviewProvince(provinceField) || extractProvinceFromAddress(addressField);
@@ -841,9 +851,18 @@ export function buildEditableParsedActivities(
         confidence: extractFieldConfidence(quantityField),
       },
       unit: {
-        value: String(getFieldValue(unitField, '')),
+        value: hotelBasis.status === 'DERIVED' ? 'room-night' : String(getFieldValue(unitField, '')),
         confidence: extractFieldConfidence(unitField),
       },
+      rooms: hotelBasis.status === 'DERIVED' ? {
+        value: hotelBasis.basis.rooms,
+        confidence: extractFieldConfidence(roomsField),
+      } : undefined,
+      nights: hotelBasis.status === 'DERIVED' ? {
+        value: hotelBasis.basis.nights,
+        confidence: extractFieldConfidence(nightsField),
+      } : undefined,
+      hotelActivityBasis: hotelBasis.status === 'DERIVED' ? hotelBasis.basis : undefined,
       jurisdictionCountry: {
         value: normalizedCountry,
         confidence: 'high',

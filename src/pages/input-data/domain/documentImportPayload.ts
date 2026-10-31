@@ -30,6 +30,7 @@ export function buildDocumentImportActivityPayload(input: {
   const country = item.jurisdictionCountry.value || 'Canada';
   const province = item.jurisdictionRegion.value || undefined;
   const quantity = Number(item.quantity.value);
+  const hotelBasis = item.hotelActivityBasis;
   const activityYear = resolveActivityYear({
     servicePeriodEndDate: item.periodEndDate,
     recordDate: item.recordDate.value,
@@ -44,8 +45,10 @@ export function buildDocumentImportActivityPayload(input: {
     activityType,
     recordDate: item.recordDate.value || null,
     recordYear: recordYear ?? undefined,
-    quantity: item.quantity.value,
-    unit: item.unit.value,
+    quantity: hotelBasis?.roomNights ?? item.quantity.value,
+    unit: hotelBasis ? 'room-night' : item.unit.value,
+    rooms: hotelBasis?.rooms,
+    nights: hotelBasis?.nights,
     jurisdictionCountry: country,
     jurisdictionRegion: province,
     facility: facilityName || undefined,
@@ -97,7 +100,9 @@ export function buildDocumentImportActivityPayload(input: {
   const evaluation = evaluateActivityRecord({
     activityType,
     quantity,
-    unit: item.unit.value,
+    unit: hotelBasis ? 'room-night' : item.unit.value,
+    rooms: hotelBasis?.rooms,
+    nights: hotelBasis?.nights,
     jurisdictionCountry: country,
     jurisdictionRegion: province,
     recordYear,
