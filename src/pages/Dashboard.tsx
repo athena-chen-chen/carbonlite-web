@@ -23,7 +23,45 @@
 
 // src/pages/Dashboard.tsx
 
+import { useEffect, useState } from 'react';
+import { buildScopeBreakdown } from '../reports/domain/buildScopeBreakdown';
+import type { ScopeBreakdown } from '../reports/domain/reportTypes';
+import { loadMetricsOverview } from '../services/metricsOverview';
+import { formatEmissionsWithUnit } from '../utils/numberFormatting';
+
+const EMPTY_SCOPE_BREAKDOWN: ScopeBreakdown = {
+  totals: { 'Scope 1': 0, 'Scope 2': 0, 'Scope 3': 0, Unclassified: 0 },
+  scope2Accounting: {
+    accountingMethod: 'NOT_APPLICABLE',
+    accountingMethodLabel: 'Not applicable',
+    scopeLabel: 'Scope 2',
+    marketBasedStatus: 'NOT_CALCULATED',
+    marketBasedDisclosure: 'Market-based Scope 2 not calculated.',
+  },
+};
+
 export default function DashboardPage() {
+  const [totalKgCO2e, setTotalKgCO2e] = useState(0);
+  const [scopeBreakdown, setScopeBreakdown] = useState(EMPTY_SCOPE_BREAKDOWN);
+
+  useEffect(() => {
+    let active = true;
+    loadMetricsOverview()
+      .then((overview) => {
+        if (!active) return;
+        setTotalKgCO2e(overview.totalEstimatedEmissionsKgCO2e);
+        setScopeBreakdown(buildScopeBreakdown(overview.calculationDetails));
+      })
+      .catch(() => {
+        // Keep the fail-closed zero state; detailed calculation errors are shown in Calculation Review.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const scopeTotals = scopeBreakdown.totals;
+
   return (
     <>
       <section className="card mb-4">
@@ -43,24 +81,24 @@ export default function DashboardPage() {
             <div className="card-row">
               <div>
                 <div className="page-title">Total Emissions</div>
-                <div className="page-hint">Last 12 months (tCO₂e)</div>
+                <div className="page-hint">Current calculated inventory</div>
               </div>
               <span className="text-[10px] px-2 py-1 rounded-md bg-emerald-600 text-white font-medium">
-                Scope 1 + 2
+                Scope 1 + 2 + selected Scope 3
               </span>
             </div>
 
             <div className="flex items-baseline gap-3">
               <div className="text-3xl font-semibold text-[rgb(var(--text))] leading-none">
-                42,310
+                {formatEmissionsWithUnit(totalKgCO2e)}
               </div>
               <div className="text-xs text-emerald-600 font-medium bg-emerald-50 dark:bg-emerald-900/30 rounded px-2 py-1">
-                ↓ 3.2% vs LY
+                Calculated records
               </div>
             </div>
 
             <div className="text-[11px] text-[rgb(var(--muted))] leading-snug">
-              Company-wide operational footprint (Scopes 1 & 2).
+              Company-wide calculated footprint from the current activity inventory.
             </div>
           </div>
         </div>
@@ -70,7 +108,7 @@ export default function DashboardPage() {
           <div className="card-body">
             <div className="card-row">
               <div className="page-title">Emissions by Scope</div>
-              <div className="page-hint">tCO₂e</div>
+              <div className="page-hint">kg CO₂e</div>
             </div>
 
             <details className="rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--card))]/40 mb-4">
@@ -113,7 +151,7 @@ export default function DashboardPage() {
                   Direct emissions
                 </div>
                 <div className="text-xl font-semibold text-[rgb(var(--text))] leading-none">
-                  31,880
+                  {formatEmissionsWithUnit(scopeTotals['Scope 1'])}
                 </div>
                 <div className="text-[11px] text-[rgb(var(--muted))]">
                   Diesel, gasoline, natural gas, fleet fuel
@@ -122,16 +160,16 @@ export default function DashboardPage() {
 
               <div className="flex flex-col">
                 <div className="text-xs text-[rgb(var(--muted))] uppercase tracking-wide">
-                  Scope 2 — Location-based
+                  {scopeBreakdown.scope2Accounting.scopeLabel}
                 </div>
                 <div className="text-[11px] font-semibold text-[rgb(var(--text))]">
                   Purchased energy
                 </div>
                 <div className="text-xl font-semibold text-[rgb(var(--text))] leading-none">
-                  10,430
+                  {formatEmissionsWithUnit(scopeTotals['Scope 2'])}
                 </div>
                 <div className="text-[11px] text-[rgb(var(--muted))]">
-                  Purchased electricity · Market-based Scope 2 not calculated.
+                  Purchased electricity · {scopeBreakdown.scope2Accounting.marketBasedDisclosure}
                 </div>
               </div>
 
@@ -143,7 +181,7 @@ export default function DashboardPage() {
                   Selected pilot estimates
                 </div>
                 <div className="text-xl font-semibold text-[rgb(var(--text))] leading-none">
-                  0
+                  {formatEmissionsWithUnit(scopeTotals['Scope 3'])}
                 </div>
                 <div className="text-[11px] text-[rgb(var(--muted))]">
                   Selected travel and transport
