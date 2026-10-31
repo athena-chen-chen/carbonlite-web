@@ -1524,7 +1524,38 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByRole('button', { name: /Confirm Import/i })).not.toBeInTheDocument();
   });
 
-  it('allows customer users with workspace context to access upload and import workflows', async () => {
+  it.each(['PENDING', 'PILOT', 'ACTIVE', 'SUSPENDED'])(
+    'hides sample data for %s customer organizations while preserving input workflows',
+    async (status) => {
+      localStorage.setItem(
+        'currentUser',
+        JSON.stringify({
+          email: 'user@example.com',
+          role: 'USER',
+          accountType: 'CUSTOMER',
+          status,
+          organizationId: 'org-1',
+        }),
+      );
+
+      render(
+        <MemoryRouter>
+          <UploadPage />
+        </MemoryRouter>,
+      );
+
+      expect(await screen.findByRole('tab', { name: /Upload Documents/i })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /Import Spreadsheet/i })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /Manual Entry/i })).toBeInTheDocument();
+      expect(screen.queryByText(/Read-only access:/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/pilot reviewer accounts use preloaded sample data/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Try sample data/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Load Sample Data/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Set Province' })).not.toBeInTheDocument();
+    },
+  );
+
+  it('fails closed when customer organization lifecycle state is unknown', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -1542,11 +1573,9 @@ describe('UploadPage sample workflow', () => {
     );
 
     expect(await screen.findByRole('tab', { name: /Upload Documents/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Import Spreadsheet/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Manual Entry/i })).toBeInTheDocument();
-    expect(screen.queryByText(/Read-only access:/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/pilot reviewer accounts use preloaded sample data/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Set Province' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Try sample data/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Load sample documents and extracted rows for demo purposes/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Load Sample Data/i })).not.toBeInTheDocument();
   });
 
   it('clears Review Data sources when demo data reset is broadcast', async () => {
@@ -2560,15 +2589,29 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).not.toBeInTheDocument();
   });
 
-  it('loads sample files without enabling a hidden demo mode', async () => {
+  it('keeps sample data visible and functional for an explicit DEMO organization', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'internal@example.com',
+        role: 'ADMIN',
+        accountType: 'INTERNAL_TEST',
+        status: 'DEMO',
+        organizationId: 'internal-org',
+      }),
+    );
+
     render(
       <MemoryRouter>
         <UploadPage />
       </MemoryRouter>,
     );
 
+    expect(await screen.findByText('Try sample data')).toBeInTheDocument();
+    expect(screen.getByText('Load sample documents and extracted rows for demo purposes.')).toBeInTheDocument();
+
     await userEvent.click(
-      await screen.findByRole('button', { name: /load sample data/i }),
+      screen.getByRole('button', { name: /load sample data/i }),
     );
 
     expect(

@@ -22,6 +22,7 @@ import {
   canImportDraftRows,
   canSetProvinceForActivityRecords,
   canUploadFiles,
+  getAccountType,
   isPilotReviewer,
 } from '../utils/permissions';
 import {
@@ -297,6 +298,9 @@ export function UploadPage() {
   const canDeleteDocuments = canImportData;
   const canSetProvinceOnDraftRows = canSetProvinceForActivityRecords(currentUser);
   const pilotReviewerReadOnly = isPilotReviewer(currentUser);
+  const showSampleDataControls =
+    getAccountType(currentUser) === 'INTERNAL_TEST' &&
+    String(currentUser?.status ?? '').trim().toUpperCase() === 'DEMO';
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
@@ -1253,7 +1257,7 @@ export function UploadPage() {
         </div>
       ) : null}
 
-      {!pilotReviewerReadOnly ? <div style={sampleBannerStyle}>
+      {showSampleDataControls ? <div style={sampleBannerStyle}>
         <div>
           <strong>{sampleWorkspaceLoaded ? 'Example workspace loaded' : 'Try sample data'}</strong>
           <div style={{ color: '#475569', marginTop: 4 }}>
