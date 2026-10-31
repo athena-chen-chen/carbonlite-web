@@ -129,6 +129,23 @@ describe('confirmDocumentImport', () => {
     });
   });
 
+  it('preserves Air Travel source metadata in the confirmation payload', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ count: 0, createdIds: [] }), { status: 200 }),
+    );
+    const activityMetadata = {
+      schemaVersion: 1 as const, type: 'AIR_TRAVEL' as const,
+      originAirport: 'YYC', destinationAirport: 'YYZ', passengerCount: 1,
+      tripType: 'ROUND_TRIP' as const,
+    };
+    await confirmDocumentImport('doc-air', [{
+      activityType: 'AIR_TRAVEL', recordDate: '2026-04-01', quantity: 5377.3586266,
+      unit: 'passenger-km', activityMetadata,
+    }]);
+    const requestBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(requestBody.activities[0].activityMetadata).toEqual(activityMetadata);
+  });
+
   it('blocks viewer users from importing extracted records', async () => {
     localStorage.setItem(
       'currentUser',

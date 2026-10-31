@@ -1,6 +1,7 @@
 import type { DocumentItem, EditableParsedActivity } from '../inputData.types';
 import { type DetectedSourceItem, type ParsedActivity } from '../../../services/documentExtraction';
 import { deriveHotelActivityBasis } from '../../../utils/hotelActivityBasis';
+import { normalizeAirTravelActivityMetadata } from '../../../utils/airTravelActivity';
 import { normalizeActivityType as normalizeCanonicalActivityType } from '../../../utils/activityType';
 import { isValidDateOnly, getTodayDateOnly } from '../../../utils/dateOnly';
 import { normalizeJurisdictionCountry } from '../../../utils/conversionFactorMatching';
@@ -807,6 +808,7 @@ export function buildEditableParsedActivities(
       rooms: getFieldValue(roomsField, undefined),
       nights: getFieldValue(nightsField, undefined),
     });
+    const activityMetadata = normalizeAirTravelActivityMetadata(getFieldValue(item.activityMetadata, item.activityMetadata));
     const quantityValue = hotelBasis.status === 'DERIVED'
       ? hotelBasis.basis.roomNights
       : Number(getFieldValue(quantityField, 0));
@@ -863,6 +865,7 @@ export function buildEditableParsedActivities(
         confidence: extractFieldConfidence(nightsField),
       } : undefined,
       hotelActivityBasis: hotelBasis.status === 'DERIVED' ? hotelBasis.basis : undefined,
+      activityMetadata: activityMetadata ?? undefined,
       jurisdictionCountry: {
         value: normalizedCountry,
         confidence: 'high',

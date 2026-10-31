@@ -15,6 +15,7 @@ import { buildMatchedFactorSnapshot, type FactorSnapshotFields } from './factorC
 import { inferDefaultScope } from './scopeClassification';
 import { normalizeUnitForDisplay } from './unitNormalization';
 import { deriveHotelActivityBasis } from './hotelActivityBasis';
+import { normalizeAirTravelActivityMetadata } from './airTravelActivity';
 
 export type CanonicalRecordStatus = 'READY' | 'TRACKED_ONLY' | 'NEEDS_REVIEW';
 
@@ -96,6 +97,7 @@ export type ActivityRecordEvaluationInput = {
   unitConversions?: MatchableUnitConversion[];
   rooms?: unknown;
   nights?: unknown;
+  activityMetadata?: unknown;
 };
 
 const TRACKED_ONLY_ACTIVITY_TYPES = new Set(['WATER', 'WATER_USAGE']);
@@ -211,6 +213,23 @@ export function evaluateActivityRecord(
 
   if (issues.length > 0) {
     return buildNeedsReviewEvaluation({ activityType, normalizedUnit, issues });
+  }
+
+  if (activityType === 'AIR_TRAVEL') {
+    const airTravelMetadata = normalizeAirTravelActivityMetadata(input.activityMetadata);
+    if (!airTravelMetadata || normalizedUnit !== 'passenger-km') {
+      return buildNeedsReviewEvaluation({
+        activityType,
+        normalizedUnit,
+        issues: [{
+          code: 'UNIT_MISMATCH',
+          field: 'unit',
+          message: 'Air Travel requires origin airport, destination airport, passenger count, trip type, and server-derived passenger-km.',
+        }],
+        matchingStatus: 'UNIT_MISMATCH',
+        calculationStatus: 'UNIT_MISMATCH',
+      });
+    }
   }
 
   if (activityType === 'ELECTRICITY' && !String(input.jurisdictionRegion ?? '').trim()) {

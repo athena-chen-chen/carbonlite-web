@@ -43,6 +43,8 @@ const UNIT_ALIASES: Record<string, string> = {
   tonkm: 'ton-km',
   tonnekm: 'ton-km',
   tkm: 'ton-km',
+  passengerkm: 'passenger-km',
+  pkm: 'passenger-km',
   kg: 'kg',
   kilogram: 'kg',
   kilograms: 'kg',

@@ -2,6 +2,7 @@ import { ApiError, apiFetch } from './api';
 import { track } from './analytics.service';
 import { canImportDraftRows, requirePermission } from '../utils/permissions';
 import { getCurrentUser } from './auth';
+import type { AirTravelActivityMetadataV1 } from '../utils/airTravelActivity';
 
 export type ParsedActivity = {
   activityType: string;
@@ -20,6 +21,7 @@ export type ParsedActivity = {
     roomNights: number;
     derivation: 'ROOMS_X_NIGHTS';
   };
+  activityMetadata?: AirTravelActivityMetadataV1 | null;
   periodRole?: 'CURRENT' | 'PREVIOUS_PERIOD' | 'PRIOR_YEAR' | 'HISTORICAL_COMPARISON' | 'UNKNOWN' | string | null;
   comparisonType?: string | null;
   usageType?: string | null;

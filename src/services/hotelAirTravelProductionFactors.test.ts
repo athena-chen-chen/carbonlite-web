@@ -100,6 +100,6 @@ describe('backend-provided travel factors', () => {
       activityType: 'AIR_TRAVEL', quantity: 4280, unit: 'km',
       jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', recordYear: 2026,
       organizationId: 'paid-pilot-customer', factors: [legacy('AIR_TRAVEL', 'km', 0.115)],
-    }).calculationStatus).toBe('FACTOR_NOT_APPROVED');
+    }).calculationStatus).toBe('UNIT_MISMATCH');
   });
 });

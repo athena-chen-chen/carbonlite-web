@@ -16,6 +16,7 @@ import {
   getOrganizationId,
 } from './auth';
 import { getActivitySourceType } from '../utils/activitySourceType';
+import type { AirTravelActivityMetadataV1 } from '../utils/airTravelActivity';
 
 export type ActivityDataInput = {
   activityType: string;
@@ -24,6 +25,7 @@ export type ActivityDataInput = {
   unit: string;
   rooms?: number;
   nights?: number;
+  activityMetadata?: AirTravelActivityMetadataV1;
   jurisdictionCountry?: string;
   jurisdictionRegion?: string;
   recordYear?: number;
@@ -89,6 +91,7 @@ export type ActivityDataItem = {
   importBatchId?: string | null;
   dateEstimated?: boolean | null;
   activityType: string;
+  activityMetadata?: AirTravelActivityMetadataV1 | null;
   customTypeLabel?: string | null;
   recordDate: string | null;
   periodStart?: string | null;

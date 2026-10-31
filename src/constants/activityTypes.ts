@@ -68,8 +68,8 @@ export const pilotActivityTypeDefinitions: PilotActivityTypeDefinition[] = [
     reportTreatment: 'Included in GHG Total',
     provinceRequired: false,
     factorRequired: true,
-    supportedUnits: ['km'],
-    defaultUnit: 'km',
+    supportedUnits: ['passenger-km'],
+    defaultUnit: 'passenger-km',
   },
   {
     value: 'HOTEL',
