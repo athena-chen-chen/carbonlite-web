@@ -810,6 +810,25 @@ describe('pilot CSV export', () => {
     expect(buildPilotCsvRows(report)).toEqual(buildPilotCsvRows(goldenDetails));
     expect(buildPilotCsv(report)).toBe(buildPilotCsv(goldenDetails));
   });
+
+  it('exports location-based Scope 2 as an accounting method without a market-based row', () => {
+    const detail = calculatedDetail({
+      activityDataId: 'location-based-electricity',
+      activityType: 'ELECTRICITY',
+      activityQuantity: 1250,
+      activityUnit: 'kWh',
+      factorName: 'Electricity - Alberta - 2026 Location-based',
+      factorValue: 0.438,
+      factorDefaultScope: 'Scope 2 — Location-based',
+      calculatedEmissionsKgCO2e: 547.5,
+    });
+    const rows = buildPilotCsvRows([detail]);
+    const csv = buildPilotCsv([detail]);
+
+    expect(rows[0].Scope).toBe('Scope 2 — Location-based');
+    expect(rows[0]['Accounting Method']).toBe('Location-based');
+    expect(csv).not.toContain('Market-based Scope 2,0');
+  });
 });
 
 

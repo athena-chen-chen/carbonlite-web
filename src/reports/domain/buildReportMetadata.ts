@@ -9,7 +9,7 @@ const REPORT_DOCUMENT_VERSION = '0.1';
 const REPORT_STATUS_PILOT_DRAFT = 'Pilot Draft';
 const REPORT_REVIEWER_NOT_ASSIGNED = 'Not yet assigned';
 const REPORT_REVIEW_STATUS_NOT_REVIEWED = 'Not reviewed';
-const CARBONLITE_TEMPLATE_VERSION = 'CarbonLite Pilot Demo v0.1';
+const CARBONLITE_TEMPLATE_VERSION = 'CarbonLite Controlled Paid Pilot v0.1';
 const BASE_REGULATORY_REPORTING_SYSTEMS = [
   'Federal GHGRP Single Window reporting',
 ] as const;

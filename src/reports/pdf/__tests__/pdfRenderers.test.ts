@@ -50,6 +50,10 @@ describe('extracted PDF renderers', () => {
     expect(technicalText).toContain(`${scenario.cost} imported activity records include optional cost data`);
     expect(report.sourceReview).toMatchObject({ totalRows: scenario.review[0], resolvedCount: scenario.review[1], needsReviewCount: scenario.review[2] });
     expect(technicalText).toContain('Calculation Coverage');
+    expect(executiveText).toMatch(/Scope 2 . Location-based/);
+    expect(technicalText).toMatch(/Scope 2 . Location-based/);
+    expect(executiveText).toContain('Market-based Scope 2 not calculated.');
+    expect(technicalText).toContain('Market-based Scope 2 not calculated.');
     expect(executiveText).toContain('Reporting Readiness');
     expect(technicalText).toContain('Calculation Traceability');
     expect(technicalText).toContain('Appendix A: Imported Record-Level Source Evidence');

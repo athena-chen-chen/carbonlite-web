@@ -79,7 +79,9 @@ export function buildExecutiveSummaryPdf(canonicalData: CanonicalReportData): js
     body: [
       ['Estimated Emissions', executiveSummary.estimatedEmissions],
       ['Scope 1', formatEmissionsWithUnit(pdfScopeSummary['Scope 1'])],
-      ['Scope 2', formatEmissionsWithUnit(pdfScopeSummary['Scope 2'])],
+      [outputFacts.scope2Accounting.scopeLabel, formatEmissionsWithUnit(pdfScopeSummary['Scope 2'])],
+      ['Scope 2 accounting method', outputFacts.scope2Accounting.accountingMethodLabel],
+      ['Market-based Scope 2', outputFacts.scope2Accounting.marketBasedDisclosure],
       ['Scope 3', formatEmissionsWithUnit(pdfScopeSummary['Scope 3'])],
       ['Imported Activity Records', canonicalData.inventory.importedRecordCount],
       ['Records Included in GHG Total', reportCountSummary.processedRecords],

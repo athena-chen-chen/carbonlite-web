@@ -22,7 +22,9 @@ function detail(input: Partial<CalculationAuditDetail>): CalculationAuditDetail 
     facilityName: input.facilityName ?? null,
     activityQuantity: input.activityQuantity ?? 1,
     activityUnit: input.activityUnit ?? 'kWh',
-    factorName: input.factorName ?? 'Test Factor',
+    factorName: input.factorName ?? (input.activityType === 'ELECTRICITY'
+      ? 'Electricity - Canada - 2026 Location-based'
+      : 'Test Factor'),
     factorValue: input.factorValue ?? 1,
     factorInputUnit: input.factorInputUnit ?? input.activityUnit ?? 'kWh',
     factorResultUnit: input.factorResultUnit ?? 'kgCO2e',
@@ -48,7 +50,9 @@ function detail(input: Partial<CalculationAuditDetail>): CalculationAuditDetail 
     costCurrency: input.costCurrency ?? null,
     scopeOverride: input.scopeOverride ?? null,
     factorDefaultScope: input.factorDefaultScope ?? null,
-    factorScope: input.factorScope ?? null,
+    factorScope: input.factorScope ?? (input.activityType === 'ELECTRICITY'
+      ? 'Scope 2 — Location-based'
+      : null),
   };
 }
 function reviewRow(input: Partial<SpreadsheetReviewRowItem>): SpreadsheetReviewRowItem {

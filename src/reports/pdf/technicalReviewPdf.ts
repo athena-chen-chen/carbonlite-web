@@ -256,7 +256,7 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
       const emissions = scopeSummary[scope] ?? 0;
       const share = totalEstimatedEmissionsKgCO2e > 0 ? (emissions / totalEstimatedEmissionsKgCO2e) * 100 : 0;
       return [
-        scope,
+        scope === 'Scope 2' ? outputFacts.scope2Accounting.scopeLabel : scope,
         getScopeDescription(scope),
         formatEmissionsWithUnit(emissions),
         `${formatDisplayNumber(share)}%`,
@@ -277,7 +277,16 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     ],
   });
 
-  nextY = (doc as any).lastAutoTable.finalY + 14;
+  nextY = (doc as any).lastAutoTable.finalY + 6;
+  nextY = drawPdfTextBlock(
+    doc,
+    `Scope 2 accounting method: ${outputFacts.scope2Accounting.accountingMethodLabel}. ${outputFacts.scope2Accounting.marketBasedDisclosure}`,
+    14,
+    nextY,
+    getPdfUsableWidth(doc),
+  );
+
+  nextY += 8;
   drawPdfSectionTitle(doc, 'Emissions by Site / Facility', nextY);
   autoTablePdf(doc, {
     startY: nextY + 6,

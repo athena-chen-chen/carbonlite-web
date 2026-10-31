@@ -4,6 +4,7 @@ import {
   resolveScopeClassification,
 } from '../../utils/scopeClassification';
 import type { ScopeBreakdown } from './reportTypes';
+import { buildScope2AccountingDisclosure } from './buildScope2Accounting';
 
 export function buildScopeBreakdown(calculationDetails: CalculationAuditDetail[]): ScopeBreakdown {
   const totals: ScopeBreakdown['totals'] = {
@@ -34,5 +35,8 @@ export function buildScopeBreakdown(calculationDetails: CalculationAuditDetail[]
     if (label in totals) totals[label as keyof typeof totals] += emissions;
   });
 
-  return { totals };
+  return {
+    totals,
+    scope2Accounting: buildScope2AccountingDisclosure(calculationDetails),
+  };
 }

@@ -10,6 +10,7 @@ export function buildReportOutputFacts(report: CanonicalReportData) {
     includedRecordCount: report.inventory.includedRecordCount,
     trackedMetricCount: report.inventory.trackedMetricCount,
     scopeTotals: report.scopeBreakdown.totals,
+    scope2Accounting: report.scopeBreakdown.scope2Accounting,
     calculationCoverage: report.calculationQuality.calculationCoverage,
     calculatedRecordCount: report.calculationQuality.coverageCounts.calculatedRecords,
     eligibleRecordCount: report.calculationQuality.coverageCounts.eligibleEmissionBearingRecords,

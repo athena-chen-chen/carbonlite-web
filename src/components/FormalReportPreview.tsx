@@ -57,11 +57,12 @@ import {
   buildReportingReadinessAssessment,
   type SourceReviewReadinessSummary,
 } from '../utils/reportingReadiness';
+import { buildScope2AccountingDisclosure } from '../reports/domain/buildScope2Accounting';
 
 export { formatFuelUsageBreakdown };
 
 export const FORMAL_REPORT_DISCLAIMER =
-  'This report was generated using CarbonLite Pilot Demo v0.1 for emissions data readiness and workflow review purposes only. It is not a certified GHG emissions report and does not constitute regulatory compliance advice, third-party verification, audit assurance, or carbon credit eligibility determination. Emission factors, assumptions, and calculations should be reviewed by qualified sustainability professionals before formal use.';
+  'This report was generated using CarbonLite Controlled Paid Pilot v0.1 for emissions data readiness and workflow review purposes only. It is not a certified GHG emissions report and does not constitute regulatory compliance advice, third-party verification, audit assurance, or carbon credit eligibility determination. Emission factors, assumptions, and calculations should be reviewed by qualified sustainability professionals before formal use.';
 
 export const FORMAL_REPORT_METHODOLOGY = [
   'CarbonLite uses one six-stage workflow: Define Reporting Boundary; Collect & Upload Source Data; Review & Resolve Data Issues; Validate Factors & Calculations; Review Results; Generate & Review Report.',
@@ -828,6 +829,7 @@ export function FormalReportPreview({
   const dataReadinessSummary = buildDataReadinessSummary(calculationDetails);
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildFormalScopeSummary(calculationDetails);
+  const scope2Accounting = buildScope2AccountingDisclosure(calculationDetails);
   const scopeSummaryLine = `Scope 1: ${formatEmissionsWithUnit(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsWithUnit(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsWithUnit(scopeSummary.SCOPE_3)}`;
   const inventoryBoundary =
     providedInventoryBoundary ?? buildInventoryBoundary(organizationName, reportPeriod);
@@ -1011,6 +1013,7 @@ export function FormalReportPreview({
           unclassifiedCalculatedRecords={unclassifiedCalculatedRecords}
           formatRecordUnit={formatReportUnit}
           formatScopeSourceLabel={(item) => formatScopeSource(getFormalScopeResolution(item).source)}
+          scope2Accounting={scope2Accounting}
         />
       </ReportSection>
 

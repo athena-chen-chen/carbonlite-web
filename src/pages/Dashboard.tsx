@@ -122,7 +122,7 @@ export default function DashboardPage() {
 
               <div className="flex flex-col">
                 <div className="text-xs text-[rgb(var(--muted))] uppercase tracking-wide">
-                  Scope 2
+                  Scope 2 — Location-based
                 </div>
                 <div className="text-[11px] font-semibold text-[rgb(var(--text))]">
                   Purchased energy
@@ -131,7 +131,7 @@ export default function DashboardPage() {
                   10,430
                 </div>
                 <div className="text-[11px] text-[rgb(var(--muted))]">
-                  Purchased electricity
+                  Purchased electricity · Market-based Scope 2 not calculated.
                 </div>
               </div>
 

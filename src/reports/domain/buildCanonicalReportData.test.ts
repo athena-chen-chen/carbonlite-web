@@ -182,6 +182,41 @@ describe('buildCanonicalReportData', () => {
     expect(report.calculationQuality.calculationCoverage).toBe('Not applicable');
   });
 
+  it('adds Scope 2 accounting disclosure without changing aggregate totals', () => {
+    const report = buildCanonicalReportData(inputFor({
+      calculationDetails: [detail({
+        activityDataId: 'electricity-location-based',
+        activityType: 'ELECTRICITY',
+        factorName: 'Electricity - Alberta - 2026 Location-based',
+        factorScope: 'Scope 2 — Location-based',
+        calculatedEmissionsKgCO2e: 547.5,
+      })],
+      totalEstimatedEmissionsKgCO2e: 547.5,
+    }));
+
+    expect(report.inventory.totalKgCO2e).toBe(547.5);
+    expect(report.scopeBreakdown.totals['Scope 2']).toBe(547.5);
+    expect(report.scopeBreakdown.scope2Accounting).toMatchObject({
+      accountingMethod: 'LOCATION_BASED',
+      scopeLabel: 'Scope 2 — Location-based',
+      marketBasedDisclosure: 'Market-based Scope 2 not calculated.',
+    });
+  });
+
+  it('does not invent an accounting method for an older electricity snapshot', () => {
+    const report = buildCanonicalReportData(inputFor({
+      calculationDetails: [detail({
+        activityDataId: 'historical-electricity',
+        activityType: 'ELECTRICITY',
+        factorName: 'Electricity - Alberta - 2025',
+        calculatedEmissionsKgCO2e: 53,
+      })],
+    }));
+
+    expect(report.scopeBreakdown.scope2Accounting.accountingMethod).toBe('UNSPECIFIED');
+    expect(report.scopeBreakdown.scope2Accounting.scopeLabel).toBe('Scope 2 — Accounting method not specified');
+  });
+
   it('summarizes calculated records, missing review records, costs, and facility fallback', () => {
     const report = buildCanonicalReportData(inputFor({
       calculationDetails: [

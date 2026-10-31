@@ -86,6 +86,11 @@ import {
   isMissingProvince,
   normalizeProvince as normalizeSetProvince,
 } from '../utils/activityRecordHelpers';
+import {
+  getElectricityAccountingMethodLabel,
+  hasLocationBasedScope2Evidence,
+  LOCATION_BASED_SCOPE_2_LABEL,
+} from '../reports/domain/buildScope2Accounting';
 
 const PAGE_SIZE = 15;
 const RESET_DEMO_DATA_CONFIRMATION = 'RESET DEMO DATA';
@@ -2246,7 +2251,24 @@ function renderViewedRecordModal() {
             <DetailsField label="Canonical Matching Status" value={formatStoredStatusValue(viewedRecord.matchingStatus)} />
             <DetailsField label="Report Treatment" value={formatStoredStatusValue(viewedRecord.reportTreatment)} />
             <DetailsField label="Calculation Status" value={formatStoredStatusValue(viewedRecord.calculationStatus)} />
-            <DetailsField label="Scope" value={formatStoredStatusValue(viewedRecord.scope || inferDefaultScope(normalizedActivityType))} />
+            <DetailsField
+              label="Scope"
+              value={hasLocationBasedScope2Evidence({
+                activityType: viewedRecord.activityType,
+                factorName: viewedRecord.matchedFactorName,
+                sourceDocument: viewedRecord.matchedFactorSourceDocument,
+              }) ? LOCATION_BASED_SCOPE_2_LABEL : formatStoredStatusValue(viewedRecord.scope || inferDefaultScope(normalizedActivityType))}
+            />
+            {normalizedActivityType === 'ELECTRICITY' ? (
+              <DetailsField
+                label="Accounting Method"
+                value={getElectricityAccountingMethodLabel({
+                  activityType: viewedRecord.activityType,
+                  factorName: viewedRecord.matchedFactorName,
+                  sourceDocument: viewedRecord.matchedFactorSourceDocument,
+                })}
+              />
+            ) : null}
             <DetailsField label="Activity Type" value={formatActivityTypeValue(viewedRecord.activityType)} />
             <DetailsField label="Quantity" value={formatRequiredRecordValue(viewedRecord.quantity)} />
             <DetailsField label="Unit" value={formatRecordUnit(viewedRecord.unit)} />

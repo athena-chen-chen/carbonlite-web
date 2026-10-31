@@ -1744,7 +1744,7 @@ describe('ReportingPage audit trail', () => {
     expect(reportId).toMatch(/^CL-DRAFT-2026-[0-9A-Z]{7}$/);
     expect(reportInfo.get('Report Version')).toBe('0.1');
     expect(reportInfo.get('Report Status')).toBe('Pilot Draft');
-    expect(reportInfo.get('Generated With')).toBe('CarbonLite Pilot Demo v0.1');
+    expect(reportInfo.get('Generated With')).toBe('CarbonLite Controlled Paid Pilot v0.1');
     expect(reportInfo.get('Prepared By')).toBe('CarbonLite');
     expect(reportInfo.get('Reviewer')).toBe('Not yet assigned');
     expect(reportInfo.get('Reviewer Sign-off Status')).toBe('Not reviewed');

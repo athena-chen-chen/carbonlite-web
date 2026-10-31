@@ -26,6 +26,7 @@ import type {
   SiteFacilityRollup,
 } from '../../utils/siteFacilityBreakdown';
 import type { getCalculationCoverageCounts } from '../../utils/reportCredibility';
+import type { Scope2AccountingDisclosure } from './buildScope2Accounting';
 
 export type CanonicalReportActivity = {
   id: string;
@@ -101,6 +102,7 @@ export type CanonicalReportData = {
   sourceReview: SourceReviewSummary;
   scopeBreakdown: {
     totals: Record<'Scope 1' | 'Scope 2' | 'Scope 3' | 'Unclassified', number>;
+    scope2Accounting: Scope2AccountingDisclosure;
   };
   facilityBreakdown: SiteFacilityRollup;
   hotspots: HotspotAnalysis;

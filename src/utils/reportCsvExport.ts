@@ -22,6 +22,11 @@ import {
 } from './scopeClassification';
 import { formatDateOnly } from './dateOnly';
 import { buildCalculatedFormula } from './calculationTraceability';
+import {
+  getElectricityAccountingMethodLabel,
+  hasLocationBasedScope2Evidence,
+  LOCATION_BASED_SCOPE_2_LABEL,
+} from '../reports/domain/buildScope2Accounting';
 
 export { escapeCsvValue } from './csv';
 
@@ -37,6 +42,7 @@ export const PILOT_CSV_HEADERS = [
   'Country',
   'Province / Jurisdiction',
   'Scope',
+  'Accounting Method',
   'Report Treatment',
   'Calculation Status',
   'Matching Status',
@@ -356,7 +362,10 @@ export function buildPilotCsvRows(input: CsvInput): PilotCsvRow[] {
       'Site / Facility': getSiteFacility(detail),
       Country: getActivityJurisdictionCountry(detail),
       'Province / Jurisdiction': getActivityJurisdictionRegion(detail),
-      Scope: getScopeLabel(detail),
+      Scope: hasLocationBasedScope2Evidence(detail) ? LOCATION_BASED_SCOPE_2_LABEL : getScopeLabel(detail),
+      'Accounting Method': detail.activityType === 'ELECTRICITY'
+        ? getElectricityAccountingMethodLabel(detail)
+        : '',
       'Report Treatment': getReportTreatment(detail),
       'Calculation Status': getCalculationStatus(detail),
       'Matching Status': getMatchingStatus(detail),

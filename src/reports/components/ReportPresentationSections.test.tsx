@@ -4,6 +4,7 @@ import type { CalculationQualitySummary, SourceReviewSummary } from '../domain/r
 import {
   CalculationQualitySection,
   FacilityBreakdownSection,
+  ScopeBreakdownSection,
   SourceDatasetReviewSection,
 } from './ReportPresentationSections';
 import type { ReportingReadinessAssessment } from '../../utils/reportingReadiness';
@@ -94,6 +95,30 @@ function sourceReview(overrides: Partial<SourceReviewSummary> = {}): SourceRevie
 }
 
 describe('report presentation sections', () => {
+  it('renders the canonical location-based Scope 2 label and market-based disclosure', () => {
+    render(
+      <ScopeBreakdownSection
+        data={{
+          totals: { 'Scope 1': 100, 'Scope 2': 547.5, 'Scope 3': 20, Unclassified: 0 },
+          scope2Accounting: {
+            accountingMethod: 'LOCATION_BASED',
+            accountingMethodLabel: 'Location-based',
+            scopeLabel: 'Scope 2 — Location-based',
+            marketBasedStatus: 'NOT_CALCULATED',
+            marketBasedDisclosure: 'Market-based Scope 2 not calculated.',
+          },
+        }}
+        unclassifiedCalculatedRecordCount={0}
+        expanded
+        onToggle={noop}
+      />,
+    );
+
+    expect(screen.getByText('Scope 2 — Location-based')).toBeInTheDocument();
+    expect(screen.getByText(/Market-based Scope 2 not calculated/)).toBeInTheDocument();
+    expect(screen.queryByText(/Market-based Scope 2.*0 kg/)).not.toBeInTheDocument();
+  });
+
   it('renders calculation quality from canonical quality and readiness data', () => {
     render(
       <CalculationQualitySection

@@ -61,6 +61,7 @@ import {
 } from '../reports/components/ReportPresentationSections';
 import { useReportData, type ReportRouteState } from '../reports/hooks/useReportData';
 import { useReportExports } from '../reports/hooks/useReportExports';
+import type { Scope2AccountingDisclosure } from '../reports/domain/buildScope2Accounting';
 const REPORT_SECTION_DEFAULTS = {
   reportScope: true,
   executiveSummary: true,
@@ -266,7 +267,10 @@ const facilityThresholdReferenceRows = useMemo(
   [siteFacilityBreakdownRows],
 );
 
-function buildScopeNarrative(scopeSummary: Record<string, number>) {
+function buildScopeNarrative(
+  scopeSummary: Record<string, number>,
+  scope2Accounting: Scope2AccountingDisclosure,
+) {
   const scope1 = scopeSummary['Scope 1'] ?? 0;
   const scope2 = scopeSummary['Scope 2'] ?? 0;
   const scope3 = scopeSummary['Scope 3'] ?? 0;
@@ -281,7 +285,7 @@ function buildScopeNarrative(scopeSummary: Record<string, number>) {
 
   if (scope2 > 0) {
     lines.push(
-      `Scope 2 emissions are associated with purchased electricity consumed by the organization.`
+      `${scope2Accounting.scopeLabel} emissions are associated with purchased electricity consumed by the organization. ${scope2Accounting.marketBasedDisclosure}`
     );
   }
 
@@ -316,8 +320,8 @@ function handleExportMenuItem(callback: () => void | Promise<void>) {
 }
 
 const scopeNarrative = useMemo(() => {
-  return buildScopeNarrative(scopeSummary);
-}, [scopeSummary]);
+  return buildScopeNarrative(scopeSummary, reportData.scopeBreakdown.scope2Accounting);
+}, [scopeSummary, reportData.scopeBreakdown.scope2Accounting]);
 
 function getFullYearShortcutYears() {
   const currentYear = new Date().getFullYear();

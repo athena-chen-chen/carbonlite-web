@@ -1632,6 +1632,38 @@ describe('ActivityDataPage delete flows', () => {
     expect(within(row).queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
+  it('shows location-based Scope 2, province, and factor source year for current electricity', async () => {
+    vi.mocked(getAllConversionFactors).mockResolvedValueOnce([] as any);
+    mockActivityRecords([{
+      id: 'activity-ab-electricity-location-based',
+      activityType: 'ELECTRICITY',
+      recordDate: '2026-07-20',
+      quantity: 1250,
+      unit: 'kWh',
+      jurisdictionCountry: 'Canada',
+      jurisdictionRegion: 'Alberta',
+      sourceType: 'MANUAL',
+      matchingStatus: 'MATCHED',
+      calculationStatus: 'CALCULATED',
+      reportTreatment: 'INCLUDED',
+      scope: 'SCOPE_2',
+      matchedFactorName: 'Electricity - Alberta - 2026 Location-based',
+      matchedFactorSourceYear: 2026,
+      matchedFactorSourceAuthority: 'Environment and Climate Change Canada',
+      calculatedEmissionsKgCO2e: 547.5,
+    }] as any);
+    renderPage();
+
+    const row = await screen.findByTestId('activity-row-activity-ab-electricity-location-based');
+    await userEvent.click(within(row).getByRole('button', { name: 'View' }));
+    const dialog = screen.getByRole('dialog', { name: 'Activity Record Details' });
+    expect(within(dialog).getByText('Scope 2 — Location-based')).toBeInTheDocument();
+    expect(within(dialog).getByText('Accounting Method')).toBeInTheDocument();
+    expect(within(dialog).getByText('Location-based')).toBeInTheDocument();
+    expect(within(dialog).getByText('Alberta')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('2026')).toHaveLength(2);
+  });
+
   it('shows accommodation wording for hotel records in pilot reviewer data records', async () => {
     localStorage.setItem(
       'currentUser',

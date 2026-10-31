@@ -631,12 +631,16 @@ export function ScopeBreakdownSection({
       <ScopeExplanation />
       <div style={scopeCardGridStyle}>
         <Card title="Scope 1" subtitle={scopeLabelByName['Scope 1']} value={formatEmissionsWithUnit(scopeSummary['Scope 1'])} icon="🏭" />
-        <Card title="Scope 2" subtitle={scopeLabelByName['Scope 2']} value={formatEmissionsWithUnit(scopeSummary['Scope 2'])} icon="⚡" />
+        <Card title={data.scope2Accounting.scopeLabel} subtitle={scopeLabelByName['Scope 2']} value={formatEmissionsWithUnit(scopeSummary['Scope 2'])} icon="⚡" />
         <Card title="Scope 3" subtitle={scopeLabelByName['Scope 3']} value={formatEmissionsWithUnit(scopeSummary['Scope 3'])} icon="🌍" />
         {scopeSummary.Unclassified > 0 ? (
           <Card title="Unclassified" subtitle="Requires scope validation" value={formatEmissionsWithUnit(scopeSummary.Unclassified)} icon="?" />
         ) : null}
       </div>
+      <p style={sectionDescriptionStyle}>
+        <strong>Scope 2 accounting method:</strong> {data.scope2Accounting.accountingMethodLabel}.{' '}
+        {data.scope2Accounting.marketBasedDisclosure}
+      </p>
       {unclassifiedCalculatedRecordCount > 0 ? (
         <div style={scopeUnclassifiedWarningStyle}>
           {unclassifiedCalculatedRecordCount} calculated record(s) could not be assigned to Scope 1, 2, or 3 and should be reviewed.

@@ -12,6 +12,11 @@ import {
 } from './terminology';
 import { normalizeUnitForDisplay } from './unitNormalization';
 import { getDisplayFactorVersion } from './reportCredibility';
+import {
+  getElectricityAccountingMethodLabel,
+  hasLocationBasedScope2Evidence,
+  LOCATION_BASED_SCOPE_2_LABEL,
+} from '../reports/domain/buildScope2Accounting';
 
 export type DataRecordCsvExportItem = {
   activityType?: string | null;
@@ -61,6 +66,7 @@ export const DATA_RECORDS_CSV_HEADERS = [
   'Province',
   'Site / Facility',
   'Scope',
+  'Accounting Method',
   'Emission Factor',
   'Factor Unit',
   'Factor Source Year',
@@ -181,7 +187,11 @@ function formatScope(record: DataRecordCsvExportItem) {
     scopeOverride: record.scope,
   }).scope;
 
-  return formatScopeClassification(scope);
+  return hasLocationBasedScope2Evidence({
+    activityType: record.activityType,
+    factorName: record.matchedFactorName,
+    sourceDocument: record.matchedFactorSourceDocument,
+  }) ? LOCATION_BASED_SCOPE_2_LABEL : formatScopeClassification(scope);
 }
 
 function formatTreatment(record: DataRecordCsvExportItem) {
@@ -224,6 +234,13 @@ function buildDataRecordsCsvRows(records: DataRecordCsvExportItem[]): DataRecord
     Province: formatOptionalValue(record.jurisdictionRegion ?? record.province),
     'Site / Facility': formatSiteFacility(record),
     Scope: formatScope(record),
+    'Accounting Method': normalizeStatus(record.activityType) === 'ELECTRICITY'
+      ? getElectricityAccountingMethodLabel({
+          activityType: record.activityType,
+          factorName: record.matchedFactorName,
+          sourceDocument: record.matchedFactorSourceDocument,
+        })
+      : '',
     'Emission Factor': isTrackedMetricRecord(record)
       ? ''
       : formatOptionalValue(getFactorDisplayName(record.matchedFactorName)) ||

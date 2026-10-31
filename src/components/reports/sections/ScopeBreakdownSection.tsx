@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { CalculationAuditDetail } from '../../../services/metrics';
 import { formatDisplayNumber, formatEmissionsWithUnit } from '../../../utils/numberFormatting';
 import { getActivityTypeLabel } from '../../../utils/activityType';
+import type { Scope2AccountingDisclosure } from '../../../reports/domain/buildScope2Accounting';
 
 type ScopeSummary = {
   SCOPE_1: number;
@@ -17,6 +18,7 @@ type ScopeBreakdownSectionProps = {
   unclassifiedCalculatedRecords: CalculationAuditDetail[];
   formatRecordUnit: (unit?: string | number | null, detail?: Pick<CalculationAuditDetail, 'status'> | null) => string;
   formatScopeSourceLabel: (detail: CalculationAuditDetail) => string;
+  scope2Accounting: Scope2AccountingDisclosure;
 };
 
 export function ScopeBreakdownSection({
@@ -26,6 +28,7 @@ export function ScopeBreakdownSection({
   unclassifiedCalculatedRecords,
   formatRecordUnit,
   formatScopeSourceLabel,
+  scope2Accounting,
 }: ScopeBreakdownSectionProps) {
   return (
     <>
@@ -34,9 +37,13 @@ export function ScopeBreakdownSection({
       </p>
       <div style={summaryGridStyle}>
         <Fact label="Scope 1" value={formatEmissionsWithUnit(scopeSummary.SCOPE_1)} />
-        <Fact label="Scope 2" value={formatEmissionsWithUnit(scopeSummary.SCOPE_2)} />
+        <Fact label={scope2Accounting.scopeLabel} value={formatEmissionsWithUnit(scopeSummary.SCOPE_2)} />
         <Fact label="Scope 3" value={formatEmissionsWithUnit(scopeSummary.SCOPE_3)} />
       </div>
+      <p style={sectionHelperStyle}>
+        <strong>Scope 2 accounting method:</strong> {scope2Accounting.accountingMethodLabel}.{' '}
+        {scope2Accounting.marketBasedDisclosure}
+      </p>
       {electricityRecordCount > 0 && calculatedElectricityCount === 0 ? (
         <div style={qualityReasonStyle}>
           Electricity records were found, but none were included in Scope 2 because they require review, such as missing province or missing factor.

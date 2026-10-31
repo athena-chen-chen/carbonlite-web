@@ -76,6 +76,28 @@ describe('data records CSV export', () => {
     expect(csv).toContain('Manual Entry');
   });
 
+  it('discloses the accounting method for current electricity and leaves historical evidence unspecified', () => {
+    const csv = buildDataRecordsCsv([
+      {
+        activityType: 'ELECTRICITY',
+        matchedFactorName: 'Electricity - Alberta - 2026 Location-based',
+        jurisdictionRegion: 'Alberta',
+        matchedFactorSourceYear: 2026,
+      },
+      {
+        activityType: 'ELECTRICITY',
+        matchedFactorName: 'Electricity - Alberta - 2025',
+        jurisdictionRegion: 'Alberta',
+        matchedFactorSourceYear: 2025,
+      },
+    ]);
+
+    expect(csv).toContain('Accounting Method');
+    expect(csv).toContain('Scope 2 — Location-based');
+    expect(csv).toContain('Location-based');
+    expect(csv).toContain('Not specified');
+  });
+
   it('escapes CSV values and builds dated filenames', () => {
     const csv = buildDataRecordsCsv([
       {
