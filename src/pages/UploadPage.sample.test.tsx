@@ -2589,6 +2589,36 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).not.toBeInTheDocument();
   });
 
+  it('downloads the paid-pilot CSV and XLSX templates from the Import Spreadsheet tab', async () => {
+    const createObjectURL = vi.fn(() => 'blob:activity-template');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const linkClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
+      expect(this.download).toMatch(/^carbonlite-activity-data-template\.(?:csv|xlsx)$/);
+    });
+
+    render(
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>,
+    );
+    await userEvent.click(await screen.findByRole('tab', { name: /Import Spreadsheet/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Download CSV template/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Download Excel template/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob);
+    expect(createObjectURL.mock.calls[0][0]).toHaveProperty('type', 'text/csv');
+    expect(createObjectURL.mock.calls[1][0]).toHaveProperty(
+      'type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(linkClick).toHaveBeenCalledTimes(2);
+    expect(revokeObjectURL).toHaveBeenNthCalledWith(1, 'blob:activity-template');
+    expect(revokeObjectURL).toHaveBeenNthCalledWith(2, 'blob:activity-template');
+  });
+
   it('keeps sample data visible and functional for an explicit DEMO organization', async () => {
     localStorage.setItem(
       'currentUser',

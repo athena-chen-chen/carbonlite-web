@@ -11,6 +11,7 @@ import { createActivityData, updateActivityData } from '../services/activityData
 import { getAllConversionFactors } from '../services/conversionFactors';
 import { getFacilities } from '../services/facilities';
 import { saveSpreadsheetReviewRows } from '../services/spreadsheetReviewRows';
+import { ACTIVITY_DATA_TEMPLATE_HEADERS } from '../pages/input-data/activityDataTemplate';
 
 vi.mock('../services/activityData', () => ({
   createActivityData: vi.fn(),
@@ -572,6 +573,51 @@ describe('ExcelInputTable empty activity row UX', () => {
 
     expect(vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows[0]).toMatchObject({
       status: 'READY',
+      activityType: 'AIR_TRAVEL',
+      activityMetadata: {
+        schemaVersion: 1,
+        type: 'AIR_TRAVEL',
+        originAirport: 'YYC',
+        destinationAirport: 'YYZ',
+        passengerCount: 1,
+        tripType: 'ROUND_TRIP',
+      },
+    });
+  });
+
+  it('imports current paid-pilot template columns for electricity, gas, hotel, and air travel', async () => {
+    renderTable('spreadsheet');
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ACTIVITY_DATA_TEMPLATE_HEADERS,
+      ['Electricity', 1250, 'kWh', '2026-01-15', 'Canada', 'Alberta'],
+      ['Natural Gas', 8.5, 'GJ', '2026-01-31', 'Canada', 'Alberta'],
+      ['Natural Gas', 100, 'm3', '2026-01-31', 'Canada', 'Alberta'],
+      ['Business Travel - Accommodation', '', '', '2026-02-01', 'Canada', 'Alberta', '', 2, 3],
+      ['Air Travel', '', '', '2026-02-05', 'Canada', '', '', '', '', 'YYC', 'YYZ', 1, 'ROUND_TRIP'],
+    ]), 'Activity Data');
+    const file = new File([XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })], 'paid-pilot-template.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [file] } });
+    expect(await screen.findByText('5 records found')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save All' }));
+    await waitFor(() => expect(saveSpreadsheetReviewRows).toHaveBeenCalledTimes(1));
+
+    const rows = vi.mocked(saveSpreadsheetReviewRows).mock.calls[0][0].rows;
+    expect(rows[0]).toMatchObject({
+      activityType: 'ELECTRICITY', quantity: 1250, unit: 'kWh', recordDate: '2026-01-15', jurisdictionRegion: 'Alberta',
+    });
+    expect(rows[1]).toMatchObject({ activityType: 'NATURAL_GAS', quantity: 8.5, unit: 'GJ' });
+    expect(rows[2]).toMatchObject({ activityType: 'NATURAL_GAS', quantity: 100, unit: 'm3' });
+    expect(rows[3]).toMatchObject({
+      activityType: 'HOTEL',
+      quantity: 6,
+      unit: 'room-night',
+      rawSourceRow: expect.objectContaining({ Rooms: 2, Nights: 3 }),
+    });
+    expect(rows[4]).toMatchObject({
       activityType: 'AIR_TRAVEL',
       activityMetadata: {
         schemaVersion: 1,

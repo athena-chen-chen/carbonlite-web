@@ -13,9 +13,12 @@ import { InputMethodTabs } from './input-data/components/InputMethodTabs';
 import { DocumentUploadPanel } from './input-data/components/DocumentUploadPanel';
 import { SpreadsheetImportPanel } from './input-data/components/SpreadsheetImportPanel';
 import { ManualEntryPanel } from './input-data/components/ManualEntryPanel';
+import {
+  createActivityDataCsvTemplate,
+  createActivityDataExcelTemplate,
+} from './input-data/activityDataTemplate';
 import { PageHeader } from '../components/PageHeader';
 import { useEffect, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { buildApiUrl } from '../config/api';
 import {
@@ -125,23 +128,6 @@ type ImportReviewRouteState = {
   selectedDocumentIds?: string[];
   reportScope?: 'selectedDocuments';
 };
-
-const INPUT_TEMPLATE_HEADERS = [
-  'Activity Type',
-  'Record Category',
-  'Quantity',
-  'Consumption',
-  'Unit',
-  'UOM',
-  'Date',
-  'Country',
-  'Province',
-  'Facility',
-  'Location Name',
-  'Source Reference',
-  'Original Document',
-  'Notes',
-];
 
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
 const ACTIVITY_DATA_SAVED_SUCCESS_MESSAGE =
@@ -621,15 +607,12 @@ export function UploadPage() {
   }
 
   function downloadCsvTemplate() {
-    const csv = `${INPUT_TEMPLATE_HEADERS.join(',')}\n`;
+    const csv = createActivityDataCsvTemplate();
     downloadBlob(new Blob([csv], { type: 'text/csv' }), 'carbonlite-activity-data-template.csv');
   }
 
   function downloadExcelTemplate() {
-    const worksheet = XLSX.utils.aoa_to_sheet([INPUT_TEMPLATE_HEADERS]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Activity Data');
-    const output = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const output = createActivityDataExcelTemplate();
     downloadBlob(
       new Blob([output], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
