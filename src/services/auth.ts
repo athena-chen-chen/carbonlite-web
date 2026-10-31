@@ -29,6 +29,7 @@ export {
   isAdminOrOwner,
   isAdminOrOwnerUser,
   isAdminUser,
+  isPlatformAdmin,
   isInternalTestAccount,
   isPilotReviewer,
   isReadOnlyUser,
@@ -50,6 +51,7 @@ export type AuthUser = {
   id?: string;
   email: string;
   role?: 'OWNER' | 'ADMIN' | 'EDITOR' | 'MEMBER' | 'VIEWER' | 'REVIEWER' | 'USER';
+  platformRole?: 'ADMIN' | 'USER' | string | null;
   membershipRole?: 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER' | string | null;
   accountType?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string | null;
   account_type?: 'INTERNAL_TEST' | 'PILOT_REVIEWER' | 'CUSTOMER' | string | null;

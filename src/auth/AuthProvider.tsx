@@ -12,7 +12,7 @@ import {
   logout as logoutRequest,
   register as registerRequest,
   type AuthUser,
-  isAdminUser,
+  isPlatformAdmin,
 } from '../services/auth';
 import {
   identify,
@@ -30,7 +30,7 @@ type RegisterInput = {
 type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  isAdmin: boolean;
+  isPlatformAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   logout: () => void;
@@ -39,7 +39,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   isAuthenticated: false,
-  isAdmin: false,
+  isPlatformAdmin: false,
   login: async () => {},
   register: async () => {},
   logout: () => {},
@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         isAuthenticated: Boolean(token),
-        isAdmin: isAdminUser(user),
+        isPlatformAdmin: isPlatformAdmin(user),
         login,
         register,
         logout,

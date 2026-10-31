@@ -108,7 +108,7 @@ function getLinkStyle(isActive: boolean): React.CSSProperties {
 }
 
 export function AppNav() {
-  const { isAuthenticated, isAdmin, logout, user } = useAuth();
+  const { isAuthenticated, isPlatformAdmin, logout, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceName = getOrganizationName(user);
@@ -281,7 +281,7 @@ export function AppNav() {
                   ) : null}
                 </div>
               ) : null}
-              {isAdmin && canViewAdmin(user) ? (
+              {isPlatformAdmin && canViewAdmin(user) ? (
                 <div style={adminDropdownStyle}>
                   <button
                     ref={adminMenuButtonRef}

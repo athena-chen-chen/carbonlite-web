@@ -358,7 +358,13 @@ describe('ActivityDataPage delete flows', () => {
   it('requires admins to type RESET DEMO DATA before confirming demo data reset', async () => {
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        organizationId: 'org-1',
+        accountType: 'INTERNAL_TEST',
+        allowDemoFactorsForCalculations: true,
+      }),
     );
     localStorage.setItem('carbonlite-upload-review-draft', 'stale');
     const resetEventListener = vi.fn();
@@ -409,6 +415,28 @@ describe('ActivityDataPage delete flows', () => {
       ),
     ).toBeInTheDocument();
     window.removeEventListener('carbonlite:demo-data-reset', resetEventListener);
+  });
+
+  it('hides demo reset for a real customer organization admin', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'customer-admin@example.com',
+        role: 'ADMIN',
+        membershipRole: 'ADMIN',
+        platformRole: 'USER',
+        organizationId: 'customer-org-1',
+        accountType: 'CUSTOMER',
+        status: 'ACTIVE',
+        allowDemoFactorsForCalculations: false,
+      }),
+    );
+    renderPage();
+
+    await screen.findByText('Diesel');
+    expect(screen.getByRole('button', { name: /^Recalculate activity records$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Reset demo data$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/pilot resets/i)).not.toBeInTheDocument();
   });
 
   it('moves Delete selected into the More menu after selection', async () => {

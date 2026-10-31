@@ -1017,7 +1017,13 @@ describe('resetDemoDataForCurrentCompany', () => {
   it('calls POST /admin/demo-data/reset with confirmation and Authorization header', async () => {
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        organizationId: 'org-1',
+        accountType: 'INTERNAL_TEST',
+        allowDemoFactorsForCalculations: true,
+      }),
     );
     localStorage.setItem('accessToken', 'admin-token');
     const summary = {
@@ -1053,7 +1059,13 @@ describe('resetDemoDataForCurrentCompany', () => {
     vi.stubEnv('VITE_APP_ENV', 'production');
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        organizationId: 'org-1',
+        accountType: 'INTERNAL_TEST',
+        allowDemoFactorsForCalculations: true,
+      }),
     );
     const fetchMock = vi.spyOn(globalThis, 'fetch');
 
@@ -1066,7 +1078,13 @@ describe('resetDemoDataForCurrentCompany', () => {
   it('shows role-friendly error when user is not admin or owner', async () => {
     localStorage.setItem(
       'currentUser',
-      JSON.stringify({ email: 'admin@example.com', role: 'ADMIN', organizationId: 'org-1' }),
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        organizationId: 'org-1',
+        accountType: 'INTERNAL_TEST',
+        allowDemoFactorsForCalculations: true,
+      }),
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('forbidden', { status: 403 }),
@@ -1075,5 +1093,24 @@ describe('resetDemoDataForCurrentCompany', () => {
     await expect(resetDemoDataForCurrentCompany()).rejects.toThrow(
       'Only admins and owners can reset demo data.',
     );
+  });
+
+  it('blocks real customer organization admins before calling the reset endpoint', async () => {
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'customer-admin@example.com',
+        role: 'ADMIN',
+        organizationId: 'customer-org',
+        accountType: 'CUSTOMER',
+        allowDemoFactorsForCalculations: false,
+      }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(resetDemoDataForCurrentCompany()).rejects.toThrow(
+      'You do not have permission to perform this action.',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

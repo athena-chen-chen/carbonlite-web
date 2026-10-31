@@ -181,10 +181,7 @@ describe('AppNav logout flow', () => {
     );
     expect(screen.getByRole('menuitem', { name: 'Emission factors' })).toHaveAttribute('href', '/conversion-factors');
 
-    await userEvent.click(screen.getByRole('button', { name: /^Admin\s*▾?$/i }));
-
-    expect(screen.queryByRole('menuitem', { name: 'Organization & boundary' })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Pilot reviewers' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Admin\s*▾?$/i })).not.toBeInTheDocument();
   });
 
   it('preserves active Input Review document context from Data Records', () => {
@@ -297,6 +294,7 @@ describe('AppNav logout flow', () => {
         email: 'admin@example.com',
         organizationName: 'CarbonLite',
         role: 'ADMIN',
+        platformRole: 'ADMIN',
       }),
     );
 

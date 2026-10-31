@@ -16,13 +16,14 @@ function renderAdminRoute() {
 }
 
 describe('AdminRoute', () => {
-  it('allows administrators to view internal pages', () => {
+  it('allows platform administrators to view internal pages', () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
         email: 'admin@example.com',
         role: 'ADMIN',
+        platformRole: 'ADMIN',
       }),
     );
 
@@ -30,6 +31,25 @@ describe('AdminRoute', () => {
 
     expect(screen.getByText('Internal admin content')).toBeInTheDocument();
     expect(screen.queryByText('Access Denied')).not.toBeInTheDocument();
+  });
+
+  it('denies customer organization administrators', () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'customer-admin@example.com',
+        role: 'ADMIN',
+        membershipRole: 'ADMIN',
+        platformRole: 'USER',
+        accountType: 'CUSTOMER',
+      }),
+    );
+
+    renderAdminRoute();
+
+    expect(screen.getByText('Access Denied')).toBeInTheDocument();
+    expect(screen.queryByText('Internal admin content')).not.toBeInTheDocument();
   });
 
   it('shows a 403 page to normal users', () => {

@@ -53,7 +53,7 @@ const emptySummary: ActivityEventSummary = {
 };
 
 export function UserActivityPage() {
-  const { isAdmin } = useAuth();
+  const { isPlatformAdmin } = useAuth();
   const [items, setItems] = useState<ActivityEventItem[]>([]);
   const [activeUsers, setActiveUsers] = useState<ActiveUserItem[]>([]);
   const [summary, setSummary] = useState<ActivityEventSummary>(emptySummary);
@@ -81,9 +81,9 @@ export function UserActivityPage() {
       dateTo,
       activityType,
       pagePath,
-      ...(isAdmin ? { user, organization, accountType, hideTestAccounts } : {}),
+      ...(isPlatformAdmin ? { user, organization, accountType, hideTestAccounts } : {}),
     }),
-    [accountType, activityType, dateFrom, dateTo, hideTestAccounts, isAdmin, organization, pagePath, user],
+    [accountType, activityType, dateFrom, dateTo, hideTestAccounts, isPlatformAdmin, organization, pagePath, user],
   );
 
   const adminActivityQuery = useMemo(
@@ -101,11 +101,11 @@ export function UserActivityPage() {
   );
 
   const visibleActiveUsersCount =
-    isAdmin && showActiveUsers && !activeUsersLoading && !activeUsersError
+    isPlatformAdmin && showActiveUsers && !activeUsersLoading && !activeUsersError
       ? activeUsers.length
       : summary.activeUsers;
   const visibleOrganizationsCount =
-    isAdmin && showActiveUsers && !activeUsersLoading && !activeUsersError
+    isPlatformAdmin && showActiveUsers && !activeUsersLoading && !activeUsersError
       ? new Set(
           activeUsers
             .map((item) => item.organizationId || item.organizationName)
@@ -118,18 +118,18 @@ export function UserActivityPage() {
   }, [query]);
 
   useEffect(() => {
-    if (isAdmin && showActiveUsers) {
+    if (isPlatformAdmin && showActiveUsers) {
       void loadActiveUsers();
     }
-  }, [adminActivityQuery, isAdmin, showActiveUsers]);
+  }, [adminActivityQuery, isPlatformAdmin, showActiveUsers]);
 
   async function loadActivity() {
     setLoading(true);
     setError(null);
 
     try {
-      const eventsRequest = isAdmin ? getAdminActivityEvents(query) : getActivityEvents(query);
-      const summaryRequest = isAdmin
+      const eventsRequest = isPlatformAdmin ? getAdminActivityEvents(query) : getActivityEvents(query);
+      const summaryRequest = isPlatformAdmin
         ? getAdminActivityEventSummary(query)
         : getActivityEventSummary(query);
       const [eventsResponse, summaryResponse] = await Promise.all([
@@ -167,7 +167,7 @@ export function UserActivityPage() {
   }
 
   function handleActiveUsersClick() {
-    if (!isAdmin) return;
+    if (!isPlatformAdmin) return;
     setShowActiveUsers((current) => !current);
   }
 
@@ -197,7 +197,7 @@ export function UserActivityPage() {
         <div>
           <h1 style={titleStyle}>User Activity</h1>
           <p style={subtitleStyle}>
-            {isAdmin
+            {isPlatformAdmin
               ? 'Activity across pilot users and organizations without sensitive document content.'
               : 'Your workflow activity without sensitive document content.'}
           </p>
@@ -210,11 +210,11 @@ export function UserActivityPage() {
         <SummaryCard
           label="Active Users"
           value={visibleActiveUsersCount}
-          onClick={isAdmin ? handleActiveUsersClick : undefined}
+          onClick={isPlatformAdmin ? handleActiveUsersClick : undefined}
           active={showActiveUsers}
         />
-        {isAdmin ? <SummaryCard label="Organizations" value={visibleOrganizationsCount} /> : null}
-        {isAdmin ? <SummaryCard label="New Users" value={summary.newUsers ?? 0} /> : null}
+        {isPlatformAdmin ? <SummaryCard label="Organizations" value={visibleOrganizationsCount} /> : null}
+        {isPlatformAdmin ? <SummaryCard label="New Users" value={summary.newUsers ?? 0} /> : null}
       </div>
 
       <div style={filterCardStyle}>
@@ -238,7 +238,7 @@ export function UserActivityPage() {
           Page
           <input value={pagePath} onChange={(event) => setPagePath(event.target.value)} placeholder="/reports" style={inputStyle} />
         </label>
-        {isAdmin ? (
+        {isPlatformAdmin ? (
           <>
             <label style={labelStyle}>
               User
@@ -269,7 +269,7 @@ export function UserActivityPage() {
         ) : null}
       </div>
 
-      {isAdmin && showActiveUsers ? (
+      {isPlatformAdmin && showActiveUsers ? (
         <section style={activeUsersPanelStyle} aria-label="Active users">
           <div style={activeUsersHeaderStyle}>
             <div>
@@ -394,8 +394,8 @@ export function UserActivityPage() {
                 <tr>
                   <th style={thStyle}>Date</th>
                   <th style={thStyle}>User</th>
-                  {isAdmin ? <th style={thStyle}>Organization</th> : null}
-                  {isAdmin ? <th style={thStyle}>Account Type</th> : null}
+                  {isPlatformAdmin ? <th style={thStyle}>Organization</th> : null}
+                  {isPlatformAdmin ? <th style={thStyle}>Account Type</th> : null}
                   <th style={thStyle}>Event</th>
                   <th style={thStyle}>Page</th>
                   <th style={thStyle}>Entity</th>
@@ -407,8 +407,8 @@ export function UserActivityPage() {
                   <tr key={item.id}>
                     <td style={tdStyle}>{formatDate(item.createdAt)}</td>
                     <td style={tdStyle}>{item.userEmail || item.user?.email || item.userName || item.userId || '-'}</td>
-                    {isAdmin ? <td style={tdStyle}>{item.organizationName || item.organizationId || '-'}</td> : null}
-                    {isAdmin ? <td style={tdStyle}>{formatAccountType(item.accountType || item.metadata?.accountType)}</td> : null}
+                    {isPlatformAdmin ? <td style={tdStyle}>{item.organizationName || item.organizationId || '-'}</td> : null}
+                    {isPlatformAdmin ? <td style={tdStyle}>{formatAccountType(item.accountType || item.metadata?.accountType)}</td> : null}
                     <td style={tdStyle}>{formatEvent(item.activityType || item.eventName)}</td>
                     <td style={tdStyle}>{item.page || '-'}</td>
                     <td style={tdStyle}>{item.entityType ? `${item.entityType}${item.entityId ? ` · ${item.entityId}` : ''}` : '-'}</td>

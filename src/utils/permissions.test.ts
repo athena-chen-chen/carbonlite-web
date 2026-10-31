@@ -6,6 +6,7 @@ import {
   canManageCompanyFactors,
   canImportData,
   canManageUsers,
+  canResetDemoData,
   canResetWorkspaceData,
   canViewAdmin,
   canViewCalculationReview,
@@ -16,6 +17,7 @@ import {
   isAdmin,
   isAdminOrOwner,
   isPilotReviewer,
+  isPlatformAdmin,
   isReadOnlyUser,
 } from './permissions';
 import type { AuthUser } from '../services/auth';
@@ -89,11 +91,41 @@ describe('shared permission helpers', () => {
       expect(canDeleteActivityRecords(account)).toBe(true);
       expect(canResetWorkspaceData(account)).toBe(true);
       expect(canManageUsers(account)).toBe(true);
-      expect(canViewAdmin(account)).toBe(true);
+      expect(canViewAdmin(account)).toBe(false);
     });
 
     expect(isAdmin(user('ADMIN'))).toBe(true);
     expect(isAdmin(user('OWNER'))).toBe(false);
+  });
+
+  it('separates platform authority from organization administration and fails closed', () => {
+    const organizationAdmin = user('ADMIN', { accountType: 'CUSTOMER', platformRole: 'USER' });
+    const platformAdmin = user('ADMIN', { accountType: 'INTERNAL_TEST', platformRole: 'ADMIN' });
+
+    expect(isAdmin(organizationAdmin)).toBe(true);
+    expect(isPlatformAdmin(organizationAdmin)).toBe(false);
+    expect(canViewAdmin(organizationAdmin)).toBe(false);
+    expect(isPlatformAdmin(user('ADMIN', { platformRole: undefined }))).toBe(false);
+    expect(isPlatformAdmin(platformAdmin)).toBe(true);
+    expect(canViewAdmin(platformAdmin)).toBe(true);
+  });
+
+  it('shows demo reset only for explicitly eligible synthetic workspaces', () => {
+    expect(canResetDemoData(user('ADMIN', {
+      accountType: 'INTERNAL_TEST',
+      allowDemoFactorsForCalculations: true,
+    }))).toBe(true);
+    expect(canResetDemoData(user('ADMIN', {
+      accountType: 'CUSTOMER',
+      allowDemoFactorsForCalculations: true,
+    }))).toBe(false);
+    expect(canResetDemoData(user('ADMIN', {
+      accountType: 'INTERNAL_TEST',
+      allowDemoFactorsForCalculations: false,
+    }))).toBe(false);
+    expect(canResetDemoData(user('ADMIN', {
+      accountType: 'INTERNAL_TEST',
+    }))).toBe(false);
   });
 
   it('allows internal test admins and owners to manage company factors', () => {

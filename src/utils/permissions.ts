@@ -69,6 +69,11 @@ export function isAdmin(user: AuthUser | null) {
   return getUserRole(user) === 'ADMIN';
 }
 
+export function isPlatformAdmin(user: AuthUser | null) {
+  if (!user || isPilotReviewer(user)) return false;
+  return String(user.platformRole ?? '').trim().toUpperCase() === 'ADMIN';
+}
+
 export function isOwner(user: AuthUser | null) {
   if (isPilotReviewer(user)) return false;
   return getUserRole(user) === 'OWNER';
@@ -139,6 +144,14 @@ export function canResetWorkspaceData(user: AuthUser | null) {
   return isAdminOrOwner(user);
 }
 
+export function canResetDemoData(user: AuthUser | null) {
+  return (
+    canResetWorkspaceData(user) &&
+    getAccountType(user) === 'INTERNAL_TEST' &&
+    user?.allowDemoFactorsForCalculations === true
+  );
+}
+
 export function canEditFactors(user: AuthUser | null) {
   if (!hasCompanyContext(user)) return false;
   if (isPilotReviewer(user)) return false;
@@ -196,7 +209,7 @@ export function canOverrideFactors(user: AuthUser | null) {
 }
 
 export function canViewAdmin(user: AuthUser | null) {
-  return canManageUsers(user);
+  return isPlatformAdmin(user);
 }
 
 export function isReadOnlyUser(user: AuthUser | null) {

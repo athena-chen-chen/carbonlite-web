@@ -18,6 +18,7 @@ import {
 import {
   canClearActivityRecords as canClearActivityRecordsForUser,
   canManageActivityRecords,
+  canResetDemoData as canResetDemoDataForUser,
   canSetFacilityForActivityRecords,
   canSetProvinceForActivityRecords,
 } from '../utils/permissions';
@@ -265,6 +266,7 @@ const canSetProvinceOnActivityRecords = canSetProvinceForActivityRecords(current
 const canSelectActivityRecords =
   canEditActivityRecords || canSetProvinceOnActivityRecords || canSetFacilityOnActivityRecords;
 const canClearActivityRecords = canClearActivityRecordsForUser(currentUser);
+const canResetDemoData = canResetDemoDataForUser(currentUser);
 const isPilotReviewerAccount = currentUser?.accountType === 'PILOT_REVIEWER';
 const selectedIdSet = useMemo(
   () => new Set(selectedIds.map(normalizeRecordId).filter(Boolean)),
@@ -2334,7 +2336,7 @@ function closeClearRecordsModal() {
 }
 
 async function handleClearActivityRecords() {
-  if (!canClearActivityRecords) {
+  if (!canResetDemoData) {
     setError('You do not have permission to perform this action.');
     return;
   }
@@ -2374,7 +2376,7 @@ async function handleClearActivityRecords() {
 }
 
 function renderClearRecordsModal() {
-  if (!isClearRecordsModalOpen) return null;
+  if (!isClearRecordsModalOpen || !canResetDemoData) return null;
 
   const canConfirm =
     clearRecordsConfirmation === RESET_DEMO_DATA_CONFIRMATION &&
@@ -2552,7 +2554,9 @@ if (import.meta.env.DEV) {
               Advanced actions
             </h2>
             <p style={advancedActionsTextStyle}>
-              Admin-only data management for pilot resets in the current company.
+              {canResetDemoData
+                ? 'Admin-only data management for pilot resets in the current company.'
+                : 'Organization admin tools for recalculating activity records.'}
             </p>
           </div>
           <div style={advancedActionsButtonGroupStyle}>
@@ -2564,14 +2568,16 @@ if (import.meta.env.DEV) {
             >
               {isRecalculatingRecords ? 'Recalculating...' : 'Recalculate activity records'}
             </button>
-            <button
-              type="button"
-              onClick={() => setIsClearRecordsModalOpen(true)}
-              disabled={isClearingRecords}
-              style={clearRecordsButtonStyle}
-            >
-              Reset demo data
-            </button>
+            {canResetDemoData ? (
+              <button
+                type="button"
+                onClick={() => setIsClearRecordsModalOpen(true)}
+                disabled={isClearingRecords}
+                style={clearRecordsButtonStyle}
+              >
+                Reset demo data
+              </button>
+            ) : null}
           </div>
         </section>
       ) : null}

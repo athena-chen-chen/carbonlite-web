@@ -3,9 +3,9 @@ import { AccessDeniedPage } from '../pages/AccessDeniedPage';
 import { isPilotReviewer } from '../services/auth';
 
 export function PilotReviewInstructionsRoute({ children }: { children: React.ReactNode }) {
-  const { isAdmin, user } = useAuth();
+  const { isPlatformAdmin, user } = useAuth();
 
-  if (!isAdmin && !isPilotReviewer(user)) {
+  if (!isPlatformAdmin && !isPilotReviewer(user)) {
     return <AccessDeniedPage />;
   }
 

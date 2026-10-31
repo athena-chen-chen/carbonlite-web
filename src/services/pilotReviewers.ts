@@ -1,5 +1,5 @@
 import { apiFetch } from './api';
-import { isAdminUser, requirePermission } from '../utils/permissions';
+import { isPlatformAdmin, requirePermission } from '../utils/permissions';
 import { getCurrentUser } from './auth';
 
 export const PILOT_REVIEWER_EMAIL_VALIDATION_MESSAGE =
@@ -68,7 +68,7 @@ function isKnownEmailDomainTypo(email: string) {
 }
 
 export function createPilotReviewer(input: CreatePilotReviewerInput) {
-  requirePermission(isAdminUser(getCurrentUser()));
+  requirePermission(isPlatformAdmin(getCurrentUser()));
   const email = normalizePilotReviewerEmail(input.email);
 
   return apiFetch<CreatePilotReviewerResponse>('/admin/pilot-reviewers', {
@@ -108,7 +108,7 @@ export function createPilotReviewer(input: CreatePilotReviewerInput) {
 }
 
 export function deactivatePilotReviewer(emailInput: string) {
-  requirePermission(isAdminUser(getCurrentUser()));
+  requirePermission(isPlatformAdmin(getCurrentUser()));
   const email = normalizePilotReviewerEmail(emailInput);
 
   return apiFetch<DeactivatePilotReviewerResponse>('/admin/pilot-reviewers/deactivate', {
@@ -118,7 +118,7 @@ export function deactivatePilotReviewer(emailInput: string) {
 }
 
 export function regeneratePilotReviewerInvite(emailInput: string) {
-  requirePermission(isAdminUser(getCurrentUser()));
+  requirePermission(isPlatformAdmin(getCurrentUser()));
   const email = normalizePilotReviewerEmail(emailInput);
 
   return apiFetch<RegeneratePilotReviewerInviteResponse>(

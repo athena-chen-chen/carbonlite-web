@@ -46,15 +46,30 @@ describe('PilotReviewInstructionsPage', () => {
     expect(screen.getByText('This is for workflow review only and is not a certified GHG report.')).toBeInTheDocument();
   });
 
-  it('allows admins to view the instructions', () => {
+  it('allows platform admins to view the instructions', () => {
     renderProtectedInstructions({
       email: 'admin@example.com',
       role: 'ADMIN',
+      platformRole: 'ADMIN',
       accountType: 'CUSTOMER',
       organizationName: 'CarbonLite',
     });
 
     expect(screen.getByRole('heading', { name: 'Pilot Review Instructions' })).toBeInTheDocument();
+  });
+
+  it('blocks customer organization admins from viewing the instructions', () => {
+    renderProtectedInstructions({
+      email: 'customer-admin@example.com',
+      role: 'ADMIN',
+      membershipRole: 'ADMIN',
+      platformRole: 'USER',
+      accountType: 'CUSTOMER',
+      organizationName: 'Customer workspace',
+    });
+
+    expect(screen.getByText(/access denied/i)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pilot Review Instructions' })).not.toBeInTheDocument();
   });
 
   it('blocks normal users from viewing the instructions', () => {

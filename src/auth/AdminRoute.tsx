@@ -2,9 +2,9 @@ import { useAuth } from './AuthProvider';
 import { AccessDeniedPage } from '../pages/AccessDeniedPage';
 
 export function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useAuth();
+  const { isPlatformAdmin } = useAuth();
 
-  if (!isAdmin) {
+  if (!isPlatformAdmin) {
     return <AccessDeniedPage />;
   }
 

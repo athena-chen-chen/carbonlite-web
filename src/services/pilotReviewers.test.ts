@@ -19,6 +19,7 @@ describe('pilot reviewer admin service', () => {
       JSON.stringify({
         email: 'admin@example.com',
         role: 'ADMIN',
+        platformRole: 'ADMIN',
         organizationId: 'sample-org',
       }),
     );
@@ -100,6 +101,31 @@ describe('pilot reviewer admin service', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('blocks customer organization admins without platform authority', () => {
+    localStorage.setItem('accessToken', 'customer-admin-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'customer-admin@example.com',
+        role: 'ADMIN',
+        membershipRole: 'ADMIN',
+        platformRole: 'USER',
+        accountType: 'CUSTOMER',
+        organizationId: 'customer-org',
+      }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    expect(() =>
+      createPilotReviewer({
+        name: 'Reviewer',
+        email: 'reviewer@example.com',
+        workspaceName: 'Sample workspace',
+      }),
+    ).toThrow('You do not have permission to perform this action.');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('rejects markdown mailto email values before calling the API', () => {
     localStorage.setItem('accessToken', 'admin-token');
     localStorage.setItem(
@@ -107,6 +133,7 @@ describe('pilot reviewer admin service', () => {
       JSON.stringify({
         email: 'admin@example.com',
         role: 'ADMIN',
+        platformRole: 'ADMIN',
         organizationId: 'sample-org',
       }),
     );
@@ -146,6 +173,7 @@ describe('pilot reviewer admin service', () => {
       JSON.stringify({
         email: 'admin@example.com',
         role: 'ADMIN',
+        platformRole: 'ADMIN',
         organizationId: 'sample-org',
       }),
     );
@@ -185,6 +213,7 @@ describe('pilot reviewer admin service', () => {
       JSON.stringify({
         email: 'admin@example.com',
         role: 'ADMIN',
+        platformRole: 'ADMIN',
         organizationId: 'sample-org',
       }),
     );

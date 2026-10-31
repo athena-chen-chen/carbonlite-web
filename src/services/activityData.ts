@@ -6,6 +6,7 @@ import {
   canClearActivityRecords,
   canImportDraftRows,
   canManageActivityRecords,
+  canResetDemoData,
   canSetFacilityForActivityRecords,
   canSetProvinceForActivityRecords,
   requirePermission,
@@ -576,7 +577,7 @@ export async function clearActivityRecordsForCurrentCompany() {
 }
 
 export async function resetDemoDataForCurrentCompany() {
-  requirePermission(canClearActivityRecords(getCurrentUser()));
+  requirePermission(canResetDemoData(getCurrentUser()));
   requirePermission(isDemoResetAvailable());
 
   try {

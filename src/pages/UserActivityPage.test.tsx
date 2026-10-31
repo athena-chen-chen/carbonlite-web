@@ -112,6 +112,7 @@ describe('UserActivityPage', () => {
         id: role === 'ADMIN' ? 'admin-1' : 'user-1',
         email: role === 'ADMIN' ? 'admin@example.com' : 'pilot@example.com',
         role,
+        platformRole: role === 'ADMIN' ? 'ADMIN' : 'USER',
       }),
     );
 
@@ -173,6 +174,35 @@ describe('UserActivityPage', () => {
       );
     });
     expect(getAdminActivityEventSummary).toHaveBeenCalled();
+  });
+
+  it('keeps organization admins on the customer activity endpoints', async () => {
+    localStorage.setItem('accessToken', 'valid-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        id: 'customer-admin-1',
+        email: 'customer-admin@example.com',
+        role: 'ADMIN',
+        membershipRole: 'ADMIN',
+        platformRole: 'USER',
+        accountType: 'CUSTOMER',
+        organizationId: 'org-1',
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <UserActivityPage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Document Uploaded');
+    expect(getActivityEvents).toHaveBeenCalled();
+    expect(getActivityEventSummary).toHaveBeenCalled();
+    expect(getAdminActivityEvents).not.toHaveBeenCalled();
+    expect(getAdminActivityEventSummary).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(/Organization/i)).not.toBeInTheDocument();
   });
 
   it('opens active users panel for admins and refreshes with date filters', async () => {
