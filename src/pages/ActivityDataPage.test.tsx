@@ -105,7 +105,11 @@ describe('ActivityDataPage delete flows', () => {
         unit: 'liters',
         factorValue: 2.68,
         resultUnit: 'kgCO2e/liter',
-        sourceAuthority: 'CarbonLite',
+        sourceAuthority: 'Environment and Climate Change Canada',
+        verified: true,
+        verificationStatus: 'VERIFIED',
+        applicability: 'CORPORATE_INVENTORY',
+        emissionBasis: 'DIRECT_CO2E',
         sourceYear: 2025,
         jurisdictionCountry: 'Canada',
         jurisdictionRegion: 'Canada',
@@ -124,7 +128,11 @@ describe('ActivityDataPage delete flows', () => {
         unit: 'kWh',
         factorValue: 0.02,
         resultUnit: 'kgCO2e/kWh',
-        sourceAuthority: 'CarbonLite',
+        sourceAuthority: 'Environment and Climate Change Canada',
+        verified: true,
+        verificationStatus: 'VERIFIED',
+        applicability: 'CORPORATE_INVENTORY',
+        emissionBasis: 'DIRECT_CO2E',
         sourceYear: 2025,
         jurisdictionCountry: 'Canada',
         jurisdictionRegion: 'British Columbia',
@@ -1381,7 +1389,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
 
     const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
-    expect(within(dialog).getByText('Calculated')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('Calculated').length).toBeGreaterThan(0);
     expect(within(dialog).getByText('Electricity')).toBeInTheDocument();
     expect(within(dialog).getByText('389')).toBeInTheDocument();
     expect(within(dialog).getByText('kWh')).toBeInTheDocument();
@@ -1671,7 +1679,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-activity-diesel-kg');
     expect(within(row).getByText('Diesel')).toBeInTheDocument();
-    expect(within(row).getByText('Unit Mismatch')).toBeInTheDocument();
+    expect(within(row).getByText('Unit needs correction')).toBeInTheDocument();
     expect(within(row).queryByText('Calculated')).not.toBeInTheDocument();
   });
 

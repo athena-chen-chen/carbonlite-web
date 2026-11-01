@@ -841,7 +841,7 @@ describe('ConversionFactorsPage traceability', () => {
     );
 
     expect(await screen.findByRole('button', { name: '+ Add company factor' })).toBeInTheDocument();
-    expect(screen.getByTestId('factor-row-factor-1')).toBeInTheDocument();
+    expect(await screen.findByTestId('factor-row-factor-1')).toBeInTheDocument();
     expect(screen.getByText('Provided by CarbonLite')).toBeInTheDocument();
     expect(screen.queryByLabelText('More actions for Diesel default')).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();

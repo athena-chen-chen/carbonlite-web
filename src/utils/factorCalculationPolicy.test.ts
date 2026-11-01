@@ -119,9 +119,9 @@ it('reconciles fresh Golden A and C calculations after Alberta pilot electricity
   });
 
   expect(summarize(goldenA)).toEqual({ included: 1, tracked: 1, needsReview: 7, total: 60 });
-  expect(summarize(goldenC)).toEqual({ included: 4, tracked: 0, needsReview: 1, total: 1765.94 });
-  expect(summarize([...goldenA, ...goldenC])).toEqual({ included: 5, tracked: 1, needsReview: 8, total: 1825.94 });
-  expect(980 * .53).toBe(519.4);
-  expect(1250 * .53).toBe(662.5);
-  expect(Number((3007.84 - 519.4 - 662.5).toFixed(2))).toBe(1825.94);
+  expect(summarize(goldenC)).toEqual({ included: 3, tracked: 0, needsReview: 2, total: 1273.74 });
+  expect(summarize([...goldenA, ...goldenC])).toEqual({ included: 4, tracked: 1, needsReview: 9, total: 1333.74 });
+  expect(980 * .438).toBe(429.24);
+  expect(1250 * .438).toBe(547.5);
+  expect(Number((2310.48 - 429.24 - 547.5).toFixed(2))).toBe(1333.74);
 });

@@ -1041,11 +1041,11 @@ describe('ReportingPage audit trail', () => {
     expect(sourceRowsPdfBody).toContain('MARCH-OTHER-005');
     expect(sourceRowsPdfBody).toContain('MARCH-DIESEL-006');
     expect(sourceRowsPdfBody).toContain('MARCH-AIR-008');
-    expect(sourceRowsPdfBody).toContain('Missing Province');
+    expect(sourceRowsPdfBody).toContain('Province Needed');
     expect(sourceRowsPdfBody).toContain('Missing Unit');
     expect(sourceRowsPdfBody).toContain('Invalid Quantity');
     expect(sourceRowsPdfBody).toContain('Missing Activity Type');
-    expect(sourceRowsPdfBody).toContain('Unit Mismatch');
+    expect(sourceRowsPdfBody).toContain('Unit Needs Correction');
     expect(sourceRowsPdfBody).toContain('Missing Quantity');
     expect(sourceRowsPdfBody).not.toContain('MISSING_PROVINCE');
     expect(sourceRowsPdfBody).not.toContain('INVALID_QUANTITY');

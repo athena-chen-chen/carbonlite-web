@@ -131,7 +131,7 @@ type ImportReviewRouteState = {
 
 const FILE_MISSING_MESSAGE = 'This file is no longer available. Please upload it again.';
 const ACTIVITY_DATA_SAVED_SUCCESS_MESSAGE =
-  'Activity data saved. Review saved records in Data Records, Calculation Results, or Reports.';
+  'Activity data saved. Review saved records in Data records, Calculation results, or Reports.';
 export const FILE_MISSING_EXPLANATION =
   'This file is no longer available on the server. This may happen after system updates or temporary storage cleanup. Please upload the file again if you need to extract or review it.';
 function getRouteInputMethod(state: unknown): InputMethod | null {
@@ -1067,9 +1067,9 @@ export function UploadPage() {
 
     detailParts.push('0 records need attention');
 
-    return `Import completed successfully. The selected records have been saved as Data Records. ${detailParts.join(
+    return `Import completed successfully. The selected records have been saved as Data records. ${detailParts.join(
       '. ',
-    )}. Opening Data Records...`;
+    )}. Opening Data records...`;
   }
 
   function renderSuccessMessage(message: string) {
@@ -1079,11 +1079,11 @@ export function UploadPage() {
       <>
         Activity data saved. Review saved records in{' '}
         <Link className="input-data-success-link" style={successLinkStyle} to={DATA_RECORDS_ROUTE}>
-          Data Records
+          Data records
         </Link>
         ,{' '}
         <Link className="input-data-success-link" style={successLinkStyle} to={CALCULATION_REVIEW_ROUTE}>
-          Calculation Results
+          Calculation results
         </Link>
         , or{' '}
         <Link className="input-data-success-link" style={successLinkStyle} to={REPORTS_ROUTE}>
@@ -1199,8 +1199,8 @@ export function UploadPage() {
       {!canImportData ? (
         <div style={readOnlyNoticeStyle}>
           {pilotReviewerReadOnly
-            ? 'Pilot reviewer accounts use preloaded sample data. Please use Data Records, Calculation Results, and Reports to review the workflow. Upload, import, manual entry, editing, and reset actions are disabled for pilot reviewer accounts.'
-            : 'Read-only access: you can view existing records, Calculation Results, and Reports, but cannot upload, import, edit, delete, or reset pilot data.'}
+            ? 'Pilot reviewer accounts use preloaded sample data. Please use Data records, Calculation results, and Reports to review the workflow. Upload, import, manual entry, editing, and reset actions are disabled for pilot reviewer accounts.'
+            : 'Read-only access: you can view existing records, Calculation results, and Reports, but cannot upload, import, edit, delete, or reset pilot data.'}
         </div>
       ) : null}
 
@@ -1214,10 +1214,10 @@ export function UploadPage() {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => navigate('/data-records')} style={secondaryButtonStyle}>
-              Data Records
+              Data records
             </button>
             <button type="button" onClick={() => navigate('/metrics-summary')} style={secondaryButtonStyle}>
-              Calculation Results
+              Calculation results
             </button>
             <button type="button" onClick={() => navigate('/reports')} style={primaryButtonStyle(false)}>
               Reports

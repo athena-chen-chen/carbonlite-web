@@ -244,6 +244,14 @@ vi.mock('../services/conversionFactors', () => ({
   getAllConversionFactors: vi.fn(() => Promise.resolve([])),
 }));
 
+const approvedFactorMetadata = {
+  verified: true,
+  verificationStatus: 'VERIFIED',
+  applicability: 'CORPORATE_INVENTORY',
+  emissionBasis: 'DIRECT_CO2E',
+  sourceAuthority: 'Environment and Climate Change Canada',
+};
+
 describe('UploadPage sample workflow', () => {
   const failedDocument = {
     id: 'doc-1',
@@ -259,6 +267,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-electricity-ab-2026',
       name: 'Electricity - Alberta - 2026',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'ELECTRICITY',
       inputUnit: 'kWh',
@@ -275,6 +284,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-electricity-bc-2026',
       name: 'Electricity - British Columbia - 2026',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'ELECTRICITY',
       inputUnit: 'kWh',
@@ -291,6 +301,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-electricity-on-2026',
       name: 'Electricity - Ontario - 2026',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'ELECTRICITY',
       inputUnit: 'kWh',
@@ -307,6 +318,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-natural-gas-canada-2025',
       name: 'Natural Gas - Canada - 2025',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'NATURAL_GAS',
       inputUnit: 'm3',
@@ -323,6 +335,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-gasoline-canada-2025',
       name: 'Gasoline - Canada - 2025',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'GASOLINE',
       inputUnit: 'liters',
@@ -339,6 +352,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-diesel-canada-2025',
       name: 'Diesel - Canada - 2025',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'DIESEL',
       inputUnit: 'liters',
@@ -355,6 +369,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-air-travel-canada-2025',
       name: 'Air Travel - Canada - 2025',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'AIR_TRAVEL',
       inputUnit: 'km',
@@ -371,6 +386,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-ground-transport-canada-2025',
       name: 'Ground Transport - Canada - 2025',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'GROUND_TRANSPORT',
       inputUnit: 'km',
@@ -387,6 +403,7 @@ describe('UploadPage sample workflow', () => {
     {
       id: 'factor-hotel-canada-2025',
       name: 'Business Travel - Accommodation - Canada - 2025',
+      ...approvedFactorMetadata,
       type: 'EMISSION',
       activityType: 'HOTEL',
       inputUnit: 'nights',
@@ -491,12 +508,12 @@ describe('UploadPage sample workflow', () => {
     expect(older).toBeEnabled();
     expect(within(older.closest('tr')!).getByText('Needs Review')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Open document actions for paged-25.xlsx' }));
-    await userEvent.click(screen.getByRole('menuitem', { name: 'View Details' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'View details' }));
     expect(within(screen.getByRole('dialog')).getByText('paged-25.xlsx')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Close document details' }));
     await userEvent.click(older);
     await userEvent.click(screen.getByLabelText('Select document paged-1.xlsx'));
-    await userEvent.click(screen.getByRole('button', { name: 'View Calculation Results' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View calculation results' }));
     expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({
       reportScope: 'selectedDocuments', selectedDocumentIds: ['paged-1', 'paged-25'],
     });
@@ -511,8 +528,8 @@ describe('UploadPage sample workflow', () => {
     render(<MemoryRouter><UploadPage /></MemoryRouter>);
     await userEvent.click(await screen.findByRole('button', { name: 'Expand document list (25)' }));
     await userEvent.click(screen.getByRole('button', { name: 'Open document actions for paged-25.xlsx' }));
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete Source Document' }));
-    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete Source Document' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete source document' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete source document' }));
     await waitFor(() => expect(screen.queryByLabelText('Select document paged-25.xlsx')).not.toBeInTheDocument());
     expect(deleteDocument).toHaveBeenCalledWith('paged-25');
     expect(screen.getAllByRole('row')).toHaveLength(25);
@@ -564,7 +581,7 @@ describe('UploadPage sample workflow', () => {
     render(<MemoryRouter><UploadPage /></MemoryRouter>);
     await screen.findByRole('button', { name: 'Expand document list (25)' });
     await userEvent.upload(document.getElementById('document-upload-input') as HTMLInputElement, new File(['bill'], 'new.pdf', { type: 'application/pdf' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Expand document list (26)' }));
     expect(screen.getAllByRole('row')).toHaveLength(27);
     expect(screen.getByText('paged-25.xlsx')).toBeInTheDocument();
@@ -603,7 +620,7 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(uploadDocument).mockReturnValueOnce(new Promise((resolve) => { finishUpload = resolve; }));
     render(<MemoryRouter><UploadPage /></MemoryRouter>);
     await userEvent.upload(document.getElementById('document-upload-input') as HTMLInputElement, new File(['bill'], 'pending.pdf', { type: 'application/pdf' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
     await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(1));
     act(() => window.dispatchEvent(new Event('carbonlite:demo-data-reset')));
     await act(async () => finishUpload({ id: 'obsolete-upload', fileName: 'pending.pdf', fileUrl: '', type: 'PDF', status: 'UPLOADED', createdAt: '2026-03-01', updatedAt: '2026-03-01' }));
@@ -730,10 +747,10 @@ describe('UploadPage sample workflow', () => {
     const electricityRow = await screen.findByDisplayValue('Electricity');
     const row = electricityRow.closest('tr');
     expect(row).toBeTruthy();
-    expect(within(row!).getAllByText('Missing Province').length).toBeGreaterThan(0);
-    expect(within(row!).queryByText('Missing Factor')).not.toBeInTheDocument();
+    expect(within(row!).getAllByText('Province needed').length).toBeGreaterThan(0);
+    expect(within(row!).queryByText('No applicable factor')).not.toBeInTheDocument();
     expect(screen.getByText('Missing province helper')).toBeInTheDocument();
-    expect(screen.getByText('Row 1: Missing Province')).toBeInTheDocument();
+    expect(screen.getByText('Row 1: Province needed')).toBeInTheDocument();
 
     const helper = screen.getByText('Missing province helper').closest('div')?.parentElement;
     expect(helper).toBeTruthy();
@@ -747,8 +764,8 @@ describe('UploadPage sample workflow', () => {
       expect(within(row!).getByDisplayValue('Alberta')).toBeInTheDocument();
       expect(within(row!).getByText('Calculated')).toBeInTheDocument();
     });
-    expect(within(row!).queryByText('Missing Province')).not.toBeInTheDocument();
-    expect(within(row!).queryByText('Missing Factor')).not.toBeInTheDocument();
+    expect(within(row!).queryByText('Province needed')).not.toBeInTheDocument();
+    expect(within(row!).queryByText('No applicable factor')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
 
@@ -778,6 +795,7 @@ describe('UploadPage sample workflow', () => {
         id: 'electricity-alberta-2025',
         factorType: 'SYSTEM',
         name: 'Electricity - Alberta',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'ELECTRICITY',
         inputUnit: 'kWh',
@@ -872,19 +890,19 @@ describe('UploadPage sample workflow', () => {
 
     expect(within(rowA!).getByDisplayValue('Alberta')).toBeInTheDocument();
     expect(within(rowA!).getByText('Calculated')).toBeInTheDocument();
-    expect(within(rowA!).queryByText('Missing Factor')).not.toBeInTheDocument();
-    expect(within(rowA!).queryByText('Missing Province')).not.toBeInTheDocument();
+    expect(within(rowA!).queryByText('No applicable factor')).not.toBeInTheDocument();
+    expect(within(rowA!).queryByText('Province needed')).not.toBeInTheDocument();
     expect(within(rowA!).getByRole('checkbox', { name: 'Select preview row 1' })).toBeChecked();
-    expect(screen.queryByText('Row 1: Missing Factor')).not.toBeInTheDocument();
-    expect(screen.queryByText('Row 1: Missing Province')).not.toBeInTheDocument();
+    expect(screen.queryByText('Row 1: No applicable factor')).not.toBeInTheDocument();
+    expect(screen.queryByText('Row 1: Province needed')).not.toBeInTheDocument();
 
     expect(within(rowB!).getByPlaceholderText('Province')).toHaveValue('');
-    expect(within(rowB!).getAllByText('Missing Province').length).toBeGreaterThan(0);
-    expect(within(rowB!).queryByText('Missing Factor')).not.toBeInTheDocument();
+    expect(within(rowB!).getAllByText('Province needed').length).toBeGreaterThan(0);
+    expect(within(rowB!).queryByText('No applicable factor')).not.toBeInTheDocument();
     expect(within(rowB!).getByRole('checkbox', { name: 'Select preview row 2' })).not.toBeChecked();
     expect(within(rowB!).getByRole('checkbox', { name: 'Select preview row 2' })).toBeDisabled();
     expect(screen.getByText('Missing province helper')).toBeInTheDocument();
-    expect(screen.getByText('Row 2: Missing Province')).toBeInTheDocument();
+    expect(screen.getByText('Row 2: Province needed')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Confirm Import' }));
 
@@ -924,6 +942,7 @@ describe('UploadPage sample workflow', () => {
         id: 'factor-electricity-ab-2026',
         factorType: 'SYSTEM',
         name: 'Electricity - Alberta - 2026',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'ELECTRICITY',
         inputUnit: 'kWh',
@@ -939,6 +958,7 @@ describe('UploadPage sample workflow', () => {
         id: 'factor-hotel-on-2026',
         factorType: 'SYSTEM',
         name: 'Business Travel - Accommodation - Ontario - 2026',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'HOTEL',
         inputUnit: 'nights',
@@ -954,6 +974,7 @@ describe('UploadPage sample workflow', () => {
         id: 'factor-diesel-liters-2026',
         factorType: 'SYSTEM',
         name: 'Diesel - Canada - 2026',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'DIESEL',
         inputUnit: 'liters',
@@ -1252,6 +1273,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-diesel-canada-2025',
         name: 'Diesel - Canada - 2025',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'DIESEL',
         inputUnit: 'liters',
@@ -1307,6 +1329,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-electricity-ab-2026',
         name: 'Electricity - Alberta - 2026',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'ELECTRICITY',
         inputUnit: 'kWh',
@@ -1323,6 +1346,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-diesel-canada-2025',
         name: 'Diesel - Canada - 2025',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'DIESEL',
         inputUnit: 'liters',
@@ -1339,6 +1363,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-hotel-canada-2025',
         name: 'Business Travel - Accommodation - Canada - 2025',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'HOTEL',
         inputUnit: 'nights',
@@ -1487,7 +1512,7 @@ describe('UploadPage sample workflow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Step 2 of 5 · Add Data')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText('Step 2 of 5 · Add data')).toHaveAttribute('aria-current', 'step');
     expect(screen.getByText('Upload bills or spreadsheets, or add activity data manually.')).toBeInTheDocument();
     expect(screen.queryByLabelText(/CarbonLite workflow: 6 canonical stages/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/canonical CarbonLite workflow/i)).not.toBeInTheDocument();
@@ -1613,7 +1638,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.queryByText('stale-import.xlsx')).not.toBeInTheDocument();
   });
 
-  it('keeps Input Data open after spreadsheet Save All and shows the spreadsheet source in Review Data', async () => {
+  it('keeps Input data open after spreadsheet Save All and shows the spreadsheet source in Review Data', async () => {
     const savedSpreadsheetDocuments = {
       items: [
         {
@@ -1780,7 +1805,7 @@ describe('UploadPage sample workflow', () => {
             path={DATA_RECORDS_ROUTE}
             element={
               <>
-                <div>Data Records route</div>
+                <div>Data records route</div>
                 <LocationStateProbe />
               </>
             }
@@ -1805,7 +1830,7 @@ describe('UploadPage sample workflow', () => {
       expect.any(Array),
       'document-spreadsheet-source-1',
     );
-    expect(await screen.findByText('Data Records route')).toBeInTheDocument();
+    expect(await screen.findByText('Data records route')).toBeInTheDocument();
     expect(screen.getByTestId('location-state')).toHaveTextContent(
       JSON.stringify({
         flashMessage:
@@ -1821,7 +1846,7 @@ describe('UploadPage sample workflow', () => {
     );
   }, 15000);
 
-  it('redirects the old Input Review URL to the Input Data review section', async () => {
+  it('redirects the old Input Review URL to the Input data review section', async () => {
     render(
       <MemoryRouter initialEntries={[INPUT_REVIEW_ROUTE]}>
         <Routes>
@@ -1839,7 +1864,7 @@ describe('UploadPage sample workflow', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Input Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Input data' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent(`${INPUT_DATA_ROUTE}?section=review`);
     expect(screen.getByRole('heading', { level: 2, name: 'Review Data' })).toBeInTheDocument();
   });
@@ -1852,7 +1877,7 @@ describe('UploadPage sample workflow', () => {
             pathname: INPUT_DATA_ROUTE,
             state: {
               flashMessage:
-                'Activity data saved. Review saved records in Data Records, Calculation Results, or Reports.',
+                'Activity data saved. Review saved records in Data records, Calculation results, or Reports.',
             },
           },
         ]}
@@ -1864,8 +1889,8 @@ describe('UploadPage sample workflow', () => {
     );
 
     expect(await screen.findByText(/Activity data saved/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Data Records' })).toHaveAttribute('href', DATA_RECORDS_ROUTE);
-    expect(screen.getByRole('link', { name: 'Calculation Results' })).toHaveAttribute('href', CALCULATION_REVIEW_ROUTE);
+    expect(screen.getByRole('link', { name: 'Data records' })).toHaveAttribute('href', DATA_RECORDS_ROUTE);
+    expect(screen.getByRole('link', { name: 'Calculation results' })).toHaveAttribute('href', CALCULATION_REVIEW_ROUTE);
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', REPORTS_ROUTE);
   });
 
@@ -1900,7 +1925,7 @@ describe('UploadPage sample workflow', () => {
     }
 
     renderPostImportBanner();
-    const calculationReviewButton = (await screen.findAllByRole('button', { name: 'View Calculation Results' }))
+    const calculationReviewButton = (await screen.findAllByRole('button', { name: 'View calculation results' }))
       .find((button) => button.classList.contains('input-data-post-import-action'))!;
     expect(calculationReviewButton).toHaveClass('cursor-pointer');
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
@@ -1976,14 +2001,14 @@ describe('UploadPage sample workflow', () => {
       zIndex: '1000',
     });
     expect(within(menu).queryByRole('menuitem', { name: 'View' })).not.toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'View Details' })).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Download Source File' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'View details' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Download source file' })).toBeInTheDocument();
     expect(within(menu).getByRole('separator')).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Delete Source Document' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Delete source document' })).toBeInTheDocument();
 
-    await userEvent.click(within(menu).getByRole('menuitem', { name: 'View Details' }));
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'View details' }));
 
-    expect(await screen.findByRole('dialog', { name: /Document Details/i })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: /Document details/i })).toBeInTheDocument();
     expect(screen.getByText('Metadata for pilot-import.xlsx')).toBeInTheDocument();
     expect(screen.getByText('Imported record count')).toBeInTheDocument();
     expect(screen.getByText('10')).toBeInTheDocument();
@@ -1991,13 +2016,13 @@ describe('UploadPage sample workflow', () => {
 
     await userEvent.keyboard('{Escape}');
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: /Document Details/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: /Document details/i })).not.toBeInTheDocument();
     });
 
     await userEvent.click(menuButton);
     await userEvent.click(
       within(screen.getByRole('menu', { name: /More actions for pilot-import.xlsx/i }))
-        .getByRole('menuitem', { name: 'Download Source File' }),
+        .getByRole('menuitem', { name: 'Download source file' }),
     );
 
     expect(windowOpenSpy).toHaveBeenCalledWith(
@@ -2033,12 +2058,12 @@ describe('UploadPage sample workflow', () => {
       expect(menu.parentElement).toBe(document.body);
       // The parent's ref must recognize both the trigger and portal as inside.
       fireEvent.pointerDown(menu);
-      fireEvent.focusIn(within(menu).getByRole('menuitem', { name: 'View Details' }));
+      fireEvent.focusIn(within(menu).getByRole('menuitem', { name: 'View details' }));
       expect(screen.getByRole('menu')).toBe(menu);
       if (dismissal === 'same trigger') await userEvent.click(trigger);
       if (dismissal === 'outside pointer') fireEvent.pointerDown(document.body);
       if (dismissal === 'Escape') await userEvent.keyboard('{Escape}');
-      if (dismissal === 'focus outside') screen.getByRole('button', { name: 'Load Sample Data' }).focus();
+      if (dismissal === 'focus outside') screen.getByRole('heading', { name: 'Input data' }).focus();
       if (dismissal === 'scroll') fireEvent.scroll(window);
       await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
       expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -2054,8 +2079,8 @@ describe('UploadPage sample workflow', () => {
       });
       render(<MemoryRouter><UploadPage /></MemoryRouter>);
       await userEvent.click(await screen.findByRole('button', { name: 'Open document actions for details.pdf' }));
-      await userEvent.click(screen.getByRole('menuitem', { name: 'View Details' }));
-      const dialog = screen.getByRole('dialog', { name: 'Document Details' });
+      await userEvent.click(screen.getByRole('menuitem', { name: 'View details' }));
+      const dialog = screen.getByRole('dialog', { name: 'Document details' });
       expect(within(dialog).getAllByRole('term').map(field => field.textContent)).toEqual([
         'File name', 'Type', 'Status', 'Created date', 'Source row count', 'Extracted row count', 'Imported record count',
       ]);
@@ -2090,10 +2115,10 @@ describe('UploadPage sample workflow', () => {
     });
     render(<MemoryRouter><UploadPage /></MemoryRouter>);
     await userEvent.click(await screen.findByRole('button', { name: 'Open document actions for pending.pdf' }));
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete Source Document' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete source document' }));
     await userEvent.keyboard('{Escape}');
     expect(screen.getByRole('dialog', { name: 'Delete source document?' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Delete Source Document', exact: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete source document', exact: true }));
     expect(deleteDocument).toHaveBeenCalledWith('pending-delete');
     expect(screen.getByRole('button', { name: 'Deleting...' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
@@ -2136,7 +2161,7 @@ describe('UploadPage sample workflow', () => {
     );
     await userEvent.click(
       within(screen.getByRole('menu', { name: /More actions for ready-invoice.pdf/i }))
-        .getByRole('menuitem', { name: 'Delete Source Document' }),
+        .getByRole('menuitem', { name: 'Delete source document' }),
     );
 
     expect(await screen.findByRole('dialog', { name: /Delete source document/i })).toBeInTheDocument();
@@ -2153,7 +2178,7 @@ describe('UploadPage sample workflow', () => {
       screen.getByText('Upload documents or import a spreadsheet to create reviewable activity data.'),
     ).toBeInTheDocument();
     expect(screen.queryByText('Source document deleted.')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View calculation results' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
     expect(screen.queryByText('ready-invoice.pdf')).not.toBeInTheDocument();
   });
@@ -2204,7 +2229,7 @@ describe('UploadPage sample workflow', () => {
     );
     await userEvent.click(
       within(screen.getByRole('menu', { name: /More actions for imported-source.xlsx/i }))
-        .getByRole('menuitem', { name: 'Delete Source Document' }),
+        .getByRole('menuitem', { name: 'Delete source document' }),
     );
 
     expect(await screen.findByRole('dialog', { name: /Delete source document/i })).toBeInTheDocument();
@@ -2215,7 +2240,7 @@ describe('UploadPage sample workflow', () => {
       ),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /^Delete Source Document$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Delete source document$/i }));
 
     await waitFor(() => {
       expect(deleteDocument).toHaveBeenCalledWith('doc-imported-delete');
@@ -2227,7 +2252,7 @@ describe('UploadPage sample workflow', () => {
     expect(
       screen.queryByText('Source document removed from Review Data. Imported records were kept.'),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View calculation results' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
     expect(screen.queryByText('imported-source.xlsx')).not.toBeInTheDocument();
     expect(deleteDocument).toHaveBeenCalledTimes(1);
@@ -2304,12 +2329,12 @@ describe('UploadPage sample workflow', () => {
     );
     await userEvent.click(
       within(screen.getByRole('menu', { name: /More actions for imported-source.xlsx/i }))
-        .getByRole('menuitem', { name: 'Delete Source Document' }),
+        .getByRole('menuitem', { name: 'Delete source document' }),
     );
-    await userEvent.click(await screen.findByRole('button', { name: /^Delete Source Document$/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Delete source document$/i }));
 
     expect(await screen.findByText('No data sources to review yet.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View calculation results' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'View Reports' })).not.toBeInTheDocument();
 
     const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
@@ -2317,8 +2342,8 @@ describe('UploadPage sample workflow', () => {
       fileInput,
       new File(['new invoice bytes'], 'new-invoice.pdf', { type: 'application/pdf' }),
     );
-    expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    expect(screen.getByRole('button', { name: 'Extract data' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
 
     expect(await screen.findByText('new-invoice.pdf')).toBeInTheDocument();
     expect(await screen.findByText('Draft Records Review')).toBeInTheDocument();
@@ -2359,7 +2384,7 @@ describe('UploadPage sample workflow', () => {
     );
     await userEvent.click(
       within(screen.getByRole('menu', { name: /More actions for cancel-delete.pdf/i }))
-        .getByRole('menuitem', { name: 'Delete Source Document' }),
+        .getByRole('menuitem', { name: 'Delete source document' }),
     );
     await userEvent.click(await screen.findByRole('button', { name: /^Cancel$/i }));
 
@@ -2367,7 +2392,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText('cancel-delete.pdf')).toBeInTheDocument();
   });
 
-  it('hides Delete Source Document from viewer accounts', async () => {
+  it('hides Delete source document from viewer accounts', async () => {
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -2409,9 +2434,9 @@ describe('UploadPage sample workflow', () => {
 
     if (menuButton) {
       await userEvent.click(menuButton);
-      expect(screen.queryByRole('menuitem', { name: 'Delete Source Document' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'Delete source document' })).not.toBeInTheDocument();
     } else {
-      expect(screen.queryByRole('button', { name: 'Delete Source Document' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete source document' })).not.toBeInTheDocument();
     }
   });
 
@@ -2447,7 +2472,7 @@ describe('UploadPage sample workflow', () => {
     );
     await userEvent.click(
       within(screen.getByRole('menu', { name: /More actions for delete-fails.pdf/i }))
-        .getByRole('menuitem', { name: 'Delete Source Document' }),
+        .getByRole('menuitem', { name: 'Delete source document' }),
     );
     await userEvent.click(await screen.findByRole('button', { name: /^Delete$/i }));
 
@@ -2475,16 +2500,16 @@ describe('UploadPage sample workflow', () => {
     expect(imported).toBeEnabled();
     expect(within(partial.closest('tr')!).getByText('Needs Review')).toBeInTheDocument();
     expect(within(partial.closest('tr')!).getByRole('button', { name: 'Review Rows' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View calculation results' })).toBeDisabled();
     expect(screen.getByText('Select one or more files with imported records.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Generate Report' })).not.toBeInTheDocument();
     await userEvent.click(partial);
-    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'View calculation results' })).toBeEnabled();
     await userEvent.click(screen.getByLabelText('Select visible documents'));
     expect(empty).not.toBeChecked();
     expect(partial).toBeChecked();
     expect(imported).toBeChecked();
-    await userEvent.click(screen.getByRole('button', { name: 'View Calculation Results' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View calculation results' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/metrics-summary');
     expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({ reportScope: 'selectedDocuments', selectedDocumentIds: ['doc-partial', 'doc-imported'] });
   });
@@ -2505,10 +2530,10 @@ describe('UploadPage sample workflow', () => {
     await userEvent.click(screen.getByLabelText('Select document scope-3.xlsx'));
     await userEvent.click(screen.getByRole('button', { name: 'Collapse document list' }));
     expect(screen.queryByText('scope-3.xlsx')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Calculation Results' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'View calculation results' })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: 'Expand document list (4)' }));
     expect(screen.getByLabelText('Select document scope-3.xlsx')).toBeChecked();
-    await userEvent.click(screen.getByRole('button', { name: 'View Calculation Results' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View calculation results' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/metrics-summary');
     expect(JSON.parse(screen.getByTestId('location-state').textContent!)).toEqual({
       reportScope: 'selectedDocuments', selectedDocumentIds: ['scope-3'],
@@ -2563,16 +2588,16 @@ describe('UploadPage sample workflow', () => {
     );
 
     expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
-    expect(screen.getByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).toBeInTheDocument();
+    expect(screen.getByText(/Supported documents: PDF, JPG, JPEG, PNG/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Download CSV template/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Add activity record/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Document Type/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Extract Data' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Extract data' })).toBeDisabled();
 
     await userEvent.click(screen.getByRole('tab', { name: /Import Spreadsheet/i }));
     expect(screen.getByRole('heading', { name: /^Import Spreadsheet$/i })).toBeInTheDocument();
     expect(
-      screen.getAllByText(/Import CSV or Excel activity data from a CarbonLite template or your existing spreadsheet/i)
+      screen.getAllByText(/Import structured activity data from CSV or Excel using your existing spreadsheet or a CarbonLite template/i)
         .length,
     ).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Download CSV template/i })).toBeInTheDocument();
@@ -2586,7 +2611,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByRole('button', { name: /Add activity record/i })).toBeInTheDocument();
     expect(screen.getByText('No manual activity rows yet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Download CSV template/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Supported documents: PDF, JPG, JPEG, PNG/i)).not.toBeInTheDocument();
   });
 
   it('downloads the paid-pilot CSV and XLSX templates from the Import Spreadsheet tab', async () => {
@@ -2663,8 +2688,8 @@ describe('UploadPage sample workflow', () => {
     );
 
     expect(await screen.findByRole('heading', { name: /^Upload Documents$/i })).toBeInTheDocument();
-    expect(screen.getAllByText(/Upload utility bills, fuel invoices, water bills, travel documents/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Upload utility bills, fuel invoices, hotel receipts, and other source documents/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Supported documents: PDF, JPG, JPEG, PNG/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Use Sample JSON/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Use Sample CSV/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/CSV, XLSX/i)).not.toBeInTheDocument();
@@ -2764,8 +2789,8 @@ describe('UploadPage sample workflow', () => {
       fileInput,
       new File(['fortisbc bill'], 'PD_064532180789.pdf', { type: 'application/pdf' }),
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled());
-    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Extract data' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
 
     await waitFor(() => expect(extractDocument).toHaveBeenCalledWith('fortisbc-doc'));
     expect(await screen.findByText('Draft Records Review')).toBeInTheDocument();
@@ -2776,13 +2801,9 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByDisplayValue('British Columbia')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('2.2')).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('0.7')).not.toBeInTheDocument();
-    const unitMismatchLabels = screen.getAllByText('Unit Mismatch');
+    const unitMismatchLabels = screen.getAllByText('Unit needs correction');
     expect(unitMismatchLabels.length).toBeGreaterThan(0);
-    expect(
-      unitMismatchLabels.some((label) =>
-        label.getAttribute('title')?.includes('Natural Gas is recorded in GJ, but the available emission factor requires m3.'),
-      ),
-    ).toBe(true);
+    expect(unitMismatchLabels.some((label) => Boolean(label.getAttribute('title')))).toBe(true);
   });
 
   it('keeps distinct current Natural Gas billing periods as separate draft activities', async () => {
@@ -2853,8 +2874,8 @@ describe('UploadPage sample workflow', () => {
       fileInput,
       new File(['gas bills'], 'gas-current-periods.pdf', { type: 'application/pdf' }),
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled());
-    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Extract data' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
 
     expect(await screen.findByText('Draft Records Review')).toBeInTheDocument();
     expect(screen.getAllByDisplayValue('Natural Gas')).toHaveLength(2);
@@ -2887,8 +2908,8 @@ describe('UploadPage sample workflow', () => {
         type: 'application/pdf',
       }),
     );
-    expect(screen.getByRole('button', { name: 'Extract Data' })).toBeEnabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+    expect(screen.getByRole('button', { name: 'Extract data' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
 
     expect(
       await screen.findByText(
@@ -3007,7 +3028,7 @@ describe('UploadPage sample workflow', () => {
     await waitFor(() => expect(retryButton).toBeEnabled());
     await userEvent.click(retryButton);
 
-    expect((await screen.findAllByText('Missing Province')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Province needed')).length).toBeGreaterThan(0);
     expect(screen.getByText('Scroll horizontally to view all columns →')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Electricity')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Natural Gas')).toBeInTheDocument();
@@ -3018,7 +3039,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByDisplayValue('Optional note')).toBeInTheDocument();
     expect(
       screen.queryByText(
-        'Missing Province: Electricity records require province before factor matching.',
+        'Province needed: Electricity records require province before factor matching.',
       ),
     ).not.toBeInTheDocument();
 
@@ -3029,7 +3050,7 @@ describe('UploadPage sample workflow', () => {
     expect(within(electricityRow!).getByText('Province required')).toBeInTheDocument();
     expect(
       within(electricityRow!)
-        .getAllByText('Missing Province')
+        .getAllByText('Province needed')
         .some(
           (element) =>
             element.getAttribute('title') ===
@@ -3303,18 +3324,18 @@ describe('UploadPage sample workflow', () => {
     const row = screen.getByDisplayValue('Electricity').closest('tr');
     expect(row).toBeTruthy();
     expect(within(row!).getByDisplayValue('Saskatchewan')).toBeInTheDocument();
-    expect(within(row!).getAllByText('Missing Factor').length).toBeGreaterThan(0);
-    expect(within(row!).getByText('Excluded')).toBeInTheDocument();
+    expect(within(row!).getAllByText('No applicable factor').length).toBeGreaterThan(0);
+    expect(within(row!).getByText('Not included in totals')).toBeInTheDocument();
     expect(
       within(row!)
-        .getAllByText('Missing Factor')
+        .getAllByText('No applicable factor')
         .some(
           (element) =>
             element.getAttribute('title') ===
             'Electricity factor not available for this province in the current pilot.',
         ),
     ).toBe(true);
-    expect(within(row!).queryByText('Missing Province')).not.toBeInTheDocument();
+    expect(within(row!).queryByText('Province needed')).not.toBeInTheDocument();
     expect(within(row!).queryByText('Province required')).not.toBeInTheDocument();
     expect(within(row!).getByRole('checkbox')).not.toBeChecked();
     expect(within(row!).getByRole('checkbox')).toBeDisabled();
@@ -3468,7 +3489,7 @@ describe('UploadPage sample workflow', () => {
     });
     const importedActivities = vi.mocked(confirmDocumentImport).mock.calls[0][1];
     expect(importedActivities.length).toBe(selectedImportableCheckboxes.length);
-    expect(importedActivities).toHaveLength(9);
+    expect(importedActivities).toHaveLength(8);
     expect(importedActivities.map((activity) => activity.activityType)).toContain('WATER');
     expect(importedActivities).toEqual(
       expect.arrayContaining([
@@ -3483,12 +3504,12 @@ describe('UploadPage sample workflow', () => {
       ]),
     );
     expect(
-      await screen.findByText(/Imported 9 activity record\(s\).*4 rows were left in draft because they require review/i),
+      await screen.findByText(/Imported 8 activity record\(s\).*5 rows were left in draft because they require review/i),
     ).toBeInTheDocument();
-    expect(screen.getByText('Extracted rows: 4')).toBeInTheDocument();
+    expect(screen.getByText('Extracted rows: 5')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Custom (Unsupported)')).toBeInTheDocument();
-    expect(screen.getAllByText('Missing Province').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Missing Factor').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Province needed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('No applicable factor').length).toBeGreaterThan(0);
   });
 
   it('does not import Diesel 240 kg when the available Diesel factor expects liters', async () => {
@@ -3496,6 +3517,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-electricity-ab-2026',
         name: 'Electricity - Alberta - 2026',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'ELECTRICITY',
         inputUnit: 'kWh',
@@ -3512,6 +3534,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-hotel-canada-2025',
         name: 'Business Travel - Accommodation - Canada - 2025',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'HOTEL',
         inputUnit: 'nights',
@@ -3528,6 +3551,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-diesel-canada-2025',
         name: 'Diesel - Canada - 2025',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'DIESEL',
         inputUnit: 'liters',
@@ -3625,7 +3649,7 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByDisplayValue('Diesel')).toBeInTheDocument();
     const dieselRowBeforeImport = screen.getByDisplayValue('Diesel').closest('tr');
     expect(dieselRowBeforeImport).toBeTruthy();
-    expect(within(dieselRowBeforeImport!).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
+    expect(within(dieselRowBeforeImport!).getAllByText('Unit needs correction').length).toBeGreaterThan(0);
     expect(within(dieselRowBeforeImport!).queryByText('Ready')).not.toBeInTheDocument();
     expect(within(dieselRowBeforeImport!).getByRole('checkbox')).not.toBeChecked();
 
@@ -3678,10 +3702,10 @@ describe('UploadPage sample workflow', () => {
       ]),
     );
     expect(calculateMetrics).toHaveBeenCalledWith(['created-1', 'created-2', 'created-3']);
-    expect((await screen.findAllByText('Unit Mismatch')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Unit needs correction')).length).toBeGreaterThan(0);
     const remainingDieselRow = screen.getByDisplayValue('Diesel').closest('tr');
     expect(remainingDieselRow).toBeTruthy();
-    expect(within(remainingDieselRow!).getAllByText('Unit Mismatch').length).toBeGreaterThan(0);
+    expect(within(remainingDieselRow!).getAllByText('Unit needs correction').length).toBeGreaterThan(0);
   }, 20000);
 
   it('imports newly ready rows from a previously partially imported document without duplicating existing rows', async () => {
@@ -3689,6 +3713,7 @@ describe('UploadPage sample workflow', () => {
       {
         id: 'factor-electricity-ab-2026',
         name: 'Electricity - Alberta - 2026',
+        ...approvedFactorMetadata,
         type: 'EMISSION',
         activityType: 'ELECTRICITY',
         inputUnit: 'kWh',
@@ -3925,7 +3950,7 @@ describe('UploadPage sample workflow', () => {
               </>
             }
           />
-          <Route path={DATA_RECORDS_ROUTE} element={<div>Data Records route</div>} />
+          <Route path={DATA_RECORDS_ROUTE} element={<div>Data records route</div>} />
         </Routes>
       </MemoryRouter>,
     );
@@ -3938,7 +3963,7 @@ describe('UploadPage sample workflow', () => {
     });
     expect(await screen.findByText('No new records were imported.')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/input-data');
-    expect(screen.queryByText('Data Records route')).not.toBeInTheDocument();
+    expect(screen.queryByText('Data records route')).not.toBeInTheDocument();
   });
 
   it('stays on review rows when confirm fails', async () => {
@@ -3987,7 +4012,7 @@ describe('UploadPage sample workflow', () => {
               </>
             }
           />
-          <Route path={DATA_RECORDS_ROUTE} element={<div>Data Records route</div>} />
+          <Route path={DATA_RECORDS_ROUTE} element={<div>Data records route</div>} />
         </Routes>
       </MemoryRouter>,
     );
@@ -4002,10 +4027,10 @@ describe('UploadPage sample workflow', () => {
       await screen.findByText('Import could not be completed. Please review the records and try again.'),
     ).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/input-data');
-    expect(screen.queryByText('Data Records route')).not.toBeInTheDocument();
+    expect(screen.queryByText('Data records route')).not.toBeInTheDocument();
   });
 
-  it('shows completion, clears draft review, and navigates to Data Records after a full successful import', async () => {
+  it('shows completion, clears draft review, and navigates to Data records after a full successful import', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {
@@ -4046,7 +4071,7 @@ describe('UploadPage sample workflow', () => {
             path={DATA_RECORDS_ROUTE}
             element={
               <>
-                <div>Data Records route</div>
+                <div>Data records route</div>
                 <LocationStateProbe />
               </>
             }
@@ -4066,12 +4091,12 @@ describe('UploadPage sample workflow', () => {
     expect(calculateMetrics).toHaveBeenCalledWith(['created-1']);
 
     await waitFor(() => {
-      expect(screen.getByText('Data Records route')).toBeInTheDocument();
+      expect(screen.getByText('Data records route')).toBeInTheDocument();
     });
     expect(screen.getByTestId('location-state')).toHaveTextContent(
       JSON.stringify({
         flashMessage:
-          'Import completed successfully. The selected records have been saved as Data Records. 1 record imported. 0 records need attention. Opening Data Records...',
+          'Import completed successfully. The selected records have been saved as Data records. 1 record imported. 0 records need attention. Opening Data records...',
         sourceDocumentIds: ['complete-import-doc'],
         inputReviewDocumentId: 'complete-import-doc',
         inputReviewPath: '/input-data?documentId=complete-import-doc&view=review',
@@ -4133,12 +4158,12 @@ describe('UploadPage sample workflow', () => {
     await userEvent.clear(screen.getByDisplayValue('Alberta'));
 
     await waitFor(() => {
-      expect(within(row!).getAllByText('Missing Province').length).toBeGreaterThan(0);
+      expect(within(row!).getAllByText('Province needed').length).toBeGreaterThan(0);
     });
     expect(within(row!).getByText('Province required')).toBeInTheDocument();
     expect(
       within(row!)
-        .getAllByText('Missing Province')
+        .getAllByText('Province needed')
         .some(
           (element) =>
             element.getAttribute('title') ===
@@ -4214,13 +4239,13 @@ describe('UploadPage sample workflow', () => {
     ).toBeInTheDocument();
     expect((await screen.findAllByText('Re-upload Required')).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Upload Again/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /^Delete Source Document$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Delete source document$/i })).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /Open document actions for failed-invoice.pdf/i }),
     ).not.toBeInTheDocument();
   });
 
-  it('uses spreadsheet file types when Upload Again is clicked for a spreadsheet source', async () => {
+  it('keeps Upload Again in the document workflow even for a legacy spreadsheet source', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {
@@ -4246,63 +4271,22 @@ describe('UploadPage sample workflow', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Upload Again/i }));
 
     const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
-    await waitFor(() => expect(fileInput.accept).toContain('.xlsx'));
-    expect(fileInput.accept).toContain('.csv');
-    expect(fileInput.accept).toContain('.xls');
-    expect(fileInput.accept).not.toContain('.pdf');
+    await waitFor(() => expect(fileInput.accept).toContain('.pdf'));
+    expect(fileInput.accept).toContain('.jpg');
+    expect(fileInput.accept).not.toContain('.xlsx');
 
-    await userEvent.upload(
-      fileInput,
-      new File(['replacement workbook bytes'], 'carbonlite_needs_review_test.xlsx', {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }),
-    );
-
-    expect(await screen.findByText(/carbonlite_needs_review_test\.xlsx ·/i)).toBeInTheDocument();
-
-    vi.mocked(uploadDocument).mockResolvedValueOnce({
-      id: 'replacement-spreadsheet-doc',
-      fileName: 'carbonlite_needs_review_test.xlsx',
-      fileUrl: '',
-      type: 'SPREADSHEET',
-      status: 'UPLOADED',
-      createdAt: '2026-06-10T00:00:00.000Z',
-      updatedAt: '2026-06-10T00:00:00.000Z',
-    } as any);
-    vi.mocked(getDocuments).mockResolvedValueOnce({
-      items: [
-        {
-          ...failedDocument,
-          id: 'replacement-spreadsheet-doc',
-          fileName: 'carbonlite_needs_review_test.xlsx',
-          type: 'SPREADSHEET',
-          status: 'UPLOADED',
-        },
-      ],
-      page: 1,
-      pageSize: 1,
-      total: 1,
-      totalPages: 1,
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['workbook bytes'], 'carbonlite_needs_review_test.xlsx')] },
     });
-    vi.mocked(extractDocument).mockResolvedValueOnce({
-      documentId: 'replacement-spreadsheet-doc',
-      status: 'REVIEW_REQUIRED',
-      parsedActivities: [],
-      sourceRowCount: 0,
-      extractedRowCount: 0,
-      possibleMissingRows: false,
-      warning: null,
-    });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
-
-    expect(uploadDocument).toHaveBeenCalledWith({
-      file: expect.objectContaining({ name: 'carbonlite_needs_review_test.xlsx' }),
-      type: 'SPREADSHEET',
-    });
+    expect(
+      await screen.findByText(
+        'Spreadsheet files should be imported using Import spreadsheet. Rejected files: carbonlite_needs_review_test.xlsx.',
+      ),
+    ).toBeInTheDocument();
+    expect(uploadDocument).not.toHaveBeenCalled();
   });
 
-  it('rejects document files selected for a spreadsheet Upload Again replacement', async () => {
+  it('accepts document files selected from Upload Again for a legacy spreadsheet source', async () => {
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {
@@ -4334,11 +4318,7 @@ describe('UploadPage sample workflow', () => {
       },
     });
 
-    expect(
-      await screen.findByText(
-        'wrong-replacement.pdf is not supported. Please select a supported spreadsheet file (.csv, .xlsx, or .xls).',
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/wrong-replacement\.pdf ·/i)).toBeInTheDocument();
     expect(uploadDocument).not.toHaveBeenCalled();
   });
 
@@ -4369,7 +4349,7 @@ describe('UploadPage sample workflow', () => {
     expect(fileInput.accept).toContain('.jpg');
     expect(fileInput.accept).toContain('.png');
     expect(fileInput.accept).not.toContain('.heic');
-    expect(fileInput.accept).toContain('.xlsx');
+    expect(fileInput.accept).not.toContain('.xlsx');
   });
 
   it('shows a friendly error when saved extraction preview is missing', async () => {

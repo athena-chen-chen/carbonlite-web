@@ -59,16 +59,16 @@ export function getDocumentActionModel(input: {
   const isSpreadsheetSource = sourceType === 'SPREADSHEET';
   const viewDetailsAction: DocumentActionConfig = {
     kind: 'viewDetails',
-    label: 'View Details',
+    label: 'View details',
   };
   const downloadSourceAction: DocumentActionConfig = {
     kind: 'downloadSource',
-    label: input.isViewing ? 'Opening source file...' : 'Download Source File',
+    label: input.isViewing ? 'Opening source file...' : 'Download source file',
     disabled: input.isViewing,
   };
   const deleteAction: DocumentActionConfig = {
     kind: 'delete',
-    label: input.isDeleting ? 'Deleting...' : 'Delete Source Document',
+    label: input.isDeleting ? 'Deleting...' : 'Delete source document',
     disabled: input.isDeleting,
     danger: true,
     separatorBefore: true,
