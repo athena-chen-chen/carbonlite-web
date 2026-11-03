@@ -49,34 +49,12 @@ describe('pilot reviewer admin service', () => {
       }),
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       invitationPurpose: 'CUSTOMER',
       name: 'Alexander',
       email: 'alexander@example.com',
-      workspace: 'CarbonLite Sample Workspace',
       workspaceName: 'CarbonLite Sample Workspace',
-      expires: '2026-09-01',
       expiresAt: '2026-09-01',
-      role: 'REVIEWER',
-      accountType: 'PILOT_REVIEWER',
-      invite: {
-        delivery: 'SETUP_LINK',
-        sendEmail: true,
-        tokenExpiresHours: 72,
-        passwordResetRequired: true,
-      },
-      accessScope: 'SAMPLE_WORKSPACE_ONLY',
-      permissions: {
-        canViewSampleData: true,
-        canUpload: false,
-        canImport: false,
-        canEditRecords: false,
-        canDeleteRecords: false,
-        canResetDemoData: false,
-        canEditFactors: false,
-        canManageUsers: false,
-        canAccessAdminDashboard: false,
-      },
     });
   });
 
@@ -103,7 +81,12 @@ describe('pilot reviewer admin service', () => {
     });
 
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body.invitationPurpose).toBe('DEMO');
+    expect(body).toEqual({
+      invitationPurpose: 'DEMO',
+      name: 'Demo User',
+      email: 'demo@example.com',
+      workspaceName: 'CarbonLite Sample Workspace',
+    });
   });
 
   it('rejects a missing invitation purpose instead of falling back to DEMO', () => {
