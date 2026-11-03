@@ -149,6 +149,78 @@ describe('apiFetch authenticated requests', () => {
     );
   });
 
+  it('surfaces a safe backend validation message for an ordinary HTTP 400', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          statusCode: 400,
+          message: 'Example backend validation message.',
+          error: 'Bad Request',
+        }),
+        { status: 400 },
+      ),
+    );
+
+    const request = apiFetch('/admin/pilot-reviewers');
+
+    await expect(request).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 400,
+      code: 'BAD_REQUEST',
+      message: 'Example backend validation message.',
+      technicalMessage: 'Example backend validation message.',
+    });
+    await expect(request).rejects.not.toThrow(
+      'CarbonLite could not connect to the server',
+    );
+  });
+
+  it('normalizes and surfaces Nest validation-array messages for HTTP 400', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          statusCode: 400,
+          message: [
+            'property example should not exist',
+            'invitationPurpose must be one of the following values: DEMO, CUSTOMER',
+          ],
+          error: 'Bad Request',
+        }),
+        { status: 400 },
+      ),
+    );
+
+    await expect(apiFetch('/admin/pilot-reviewers')).rejects.toMatchObject({
+      status: 400,
+      code: 'BAD_REQUEST',
+      message:
+        'property example should not exist, invitationPurpose must be one of the following values: DEMO, CUSTOMER',
+    });
+  });
+
+  it('does not expose unsafe backend details from an HTTP 400', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          statusCode: 400,
+          message: 'Prisma database error with stack trace and token=secret-value',
+          error: 'Bad Request',
+        }),
+        { status: 400 },
+      ),
+    );
+
+    await expect(apiFetch('/admin/pilot-reviewers')).rejects.toMatchObject({
+      status: 400,
+      code: 'BAD_REQUEST',
+      message:
+        'The request could not be completed. Please review the information and try again.',
+    });
+  });
+
   it('maps missing extraction previews to a friendly message and internal code', async () => {
     const { apiFetch } = await loadApiFetch();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
