@@ -31,7 +31,7 @@ describe('PilotReviewersPage', () => {
     });
   });
 
-  it('creates a pilot reviewer with sample workspace defaults and shows setup link', async () => {
+  it('creates a demo invitation with sample workspace defaults and shows setup link', async () => {
     vi.mocked(createPilotReviewer).mockResolvedValue({
       name: 'Alexander',
       email: 'alexander@example.com',
@@ -41,24 +41,30 @@ describe('PilotReviewersPage', () => {
       status: 'Active',
       expiresAt: '2026-09-01',
       inviteLink: 'https://app.example.com/set-password?token=secure-token',
+      invitationPurpose: 'DEMO',
     });
 
     render(<PilotReviewersPage />);
 
-    expect(screen.getByRole('heading', { name: 'Pilot Reviewers' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Organization Invitations' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create invitation/i })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('radio', { name: /^demo/i }));
     expect(screen.getByDisplayValue('CarbonLite Sample Workspace')).toBeInTheDocument();
-    expect(screen.getByText(/cannot upload, import, edit, delete, reset demo data/i)).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/^name/i), 'Alexander');
     await userEvent.type(screen.getByLabelText(/^email/i), 'alexander@example.com');
     await userEvent.type(screen.getByLabelText(/optional expiration date/i), '2026-09-01');
-    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create invitation/i }));
 
-    expect(window.confirm).toHaveBeenCalledWith('Create pilot reviewer for: alexander@example.com');
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Create demo invitation for: alexander@example.com? This seeds synthetic sample data.',
+    );
     expect(createPilotReviewer).toHaveBeenCalledWith({
       name: 'Alexander',
       email: 'alexander@example.com',
       workspaceName: 'CarbonLite Sample Workspace',
+      invitationPurpose: 'DEMO',
       expiresAt: '2026-09-01',
     });
     expect(await screen.findByRole('heading', { name: 'Invite Ready' })).toBeInTheDocument();
@@ -76,6 +82,42 @@ describe('PilotReviewersPage', () => {
     expect(screen.getByText('Setup link copied.')).toBeInTheDocument();
   });
 
+  it('creates a clean customer invitation with an explicit CUSTOMER purpose', async () => {
+    vi.mocked(createPilotReviewer).mockResolvedValue({
+      email: 'customer@example.com',
+      workspaceName: 'Acme Paid Pilot',
+      invitationPurpose: 'CUSTOMER',
+      inviteLink: 'https://app.example.com/set-password?token=customer-token',
+    });
+
+    render(<PilotReviewersPage />);
+
+    await userEvent.click(screen.getByRole('radio', { name: /^customer/i }));
+    expect(screen.getByText(/No sample data will be created/i)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/^name/i), 'Customer Admin');
+    await userEvent.type(screen.getByLabelText(/^email/i), 'Customer@Example.com');
+    await userEvent.type(screen.getByLabelText(/^workspace/i), 'Acme Paid Pilot');
+    await userEvent.click(screen.getByRole('button', { name: /create invitation/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Create customer invitation for: customer@example.com? No sample data will be created.',
+    );
+    expect(createPilotReviewer).toHaveBeenCalledWith({
+      name: 'Customer Admin',
+      email: 'customer@example.com',
+      workspaceName: 'Acme Paid Pilot',
+      invitationPurpose: 'CUSTOMER',
+      expiresAt: '',
+    });
+  });
+
+  it('does not allow submission without an explicit invitation purpose', () => {
+    render(<PilotReviewersPage />);
+
+    expect(screen.getByRole('button', { name: /create invitation/i })).toBeDisabled();
+    expect(createPilotReviewer).not.toHaveBeenCalled();
+  });
+
   it('warns if backend does not return an invite credential', async () => {
     vi.mocked(createPilotReviewer).mockResolvedValue({
       name: 'Alexander',
@@ -87,9 +129,10 @@ describe('PilotReviewersPage', () => {
 
     render(<PilotReviewersPage />);
 
+    await userEvent.click(screen.getByRole('radio', { name: /^demo/i }));
     await userEvent.type(screen.getByLabelText(/^name/i), 'Alexander');
     await userEvent.type(screen.getByLabelText(/^email/i), 'alexander@example.com');
-    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create invitation/i }));
 
     expect(
       await screen.findByText(/did not return a setup link or temporary password/i),
@@ -101,24 +144,29 @@ describe('PilotReviewersPage', () => {
 
     render(<PilotReviewersPage />);
 
+    await userEvent.click(screen.getByRole('radio', { name: /^demo/i }));
     await userEvent.type(screen.getByLabelText(/^name/i), 'Alexander');
     await userEvent.type(screen.getByLabelText(/^email/i), 'Alexander@Example.com');
-    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create invitation/i }));
 
-    expect(window.confirm).toHaveBeenCalledWith('Create pilot reviewer for: alexander@example.com');
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Create demo invitation for: alexander@example.com? This seeds synthetic sample data.',
+    );
     expect(createPilotReviewer).not.toHaveBeenCalled();
   });
 
   it('shows a friendly validation error for markdown email values', async () => {
     render(<PilotReviewersPage />);
 
+    await userEvent.click(screen.getByRole('radio', { name: /^customer/i }));
     await userEvent.type(screen.getByLabelText(/^name/i), 'Mint');
+    await userEvent.type(screen.getByLabelText(/^workspace/i), 'Mint Paid Pilot');
     fireEvent.change(screen.getByLabelText(/^email/i), {
       target: {
         value: '[mint_pp@hotmail.com](mailto:mint_pp@hotmail.com)',
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create invitation/i }));
 
     expect(
       await screen.findByText(
@@ -131,9 +179,11 @@ describe('PilotReviewersPage', () => {
   it('shows a friendly validation error for common typo email domains', async () => {
     render(<PilotReviewersPage />);
 
+    await userEvent.click(screen.getByRole('radio', { name: /^customer/i }));
     await userEvent.type(screen.getByLabelText(/^name/i), 'Alexander');
+    await userEvent.type(screen.getByLabelText(/^workspace/i), 'Alexander Paid Pilot');
     await userEvent.type(screen.getByLabelText(/^email/i), 'alexander@gamil.com');
-    await userEvent.click(screen.getByRole('button', { name: /create pilot reviewer/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create invitation/i }));
 
     expect(
       await screen.findByText(

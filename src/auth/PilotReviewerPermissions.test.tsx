@@ -173,6 +173,7 @@ describe('Pilot Reviewer permission regressions', () => {
         name: 'Reviewer Two',
         email: 'reviewer2@example.com',
         workspaceName: 'CarbonLite Sample Workspace',
+        invitationPurpose: 'DEMO',
       }),
     ).toThrow(PERMISSION_ERROR);
     expect(() => deactivatePilotReviewer('reviewer2@example.com')).toThrow(PERMISSION_ERROR);

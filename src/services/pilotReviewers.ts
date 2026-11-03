@@ -5,10 +5,13 @@ import { getCurrentUser } from './auth';
 export const PILOT_REVIEWER_EMAIL_VALIDATION_MESSAGE =
   'Please enter a valid email address, for example name@example.com.';
 
+export type InvitationPurpose = 'CUSTOMER' | 'DEMO';
+
 export type CreatePilotReviewerInput = {
   name: string;
   email: string;
   workspaceName: string;
+  invitationPurpose: InvitationPurpose;
   expiresAt?: string;
 };
 
@@ -28,6 +31,7 @@ export type CreatePilotReviewerResponse = {
   inviteUrl?: string;
   temporaryPassword?: string;
   message?: string;
+  invitationPurpose?: InvitationPurpose;
 };
 
 export type DeactivatePilotReviewerResponse = {
@@ -69,11 +73,15 @@ function isKnownEmailDomainTypo(email: string) {
 
 export function createPilotReviewer(input: CreatePilotReviewerInput) {
   requirePermission(isPlatformAdmin(getCurrentUser()));
+  if (input.invitationPurpose !== 'CUSTOMER' && input.invitationPurpose !== 'DEMO') {
+    throw new Error('Choose Customer or Demo before creating the invitation.');
+  }
   const email = normalizePilotReviewerEmail(input.email);
 
   return apiFetch<CreatePilotReviewerResponse>('/admin/pilot-reviewers', {
     method: 'POST',
     body: JSON.stringify({
+      invitationPurpose: input.invitationPurpose,
       name: input.name.trim(),
       email,
       workspace: input.workspaceName.trim() || 'CarbonLite Sample Workspace',

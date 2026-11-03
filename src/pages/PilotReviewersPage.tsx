@@ -6,6 +6,7 @@ import {
   regeneratePilotReviewerInvite,
   type CreatePilotReviewerResponse,
   type DeactivatePilotReviewerResponse,
+  type InvitationPurpose,
   type RegeneratePilotReviewerInviteResponse,
 } from '../services/pilotReviewers';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
@@ -15,7 +16,8 @@ const DEFAULT_WORKSPACE = 'CarbonLite Sample Workspace';
 export default function PilotReviewersPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [workspaceName, setWorkspaceName] = useState(DEFAULT_WORKSPACE);
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [invitationPurpose, setInvitationPurpose] = useState<InvitationPurpose | ''>('');
   const [expiresAt, setExpiresAt] = useState('');
   const [result, setResult] = useState<CreatePilotReviewerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +48,18 @@ export default function PilotReviewersPage() {
     setCopyMessage(null);
 
     try {
+      if (!invitationPurpose) {
+        setError('Choose Customer or Demo before creating the invitation.');
+        return;
+      }
+
       const normalizedEmail = normalizePilotReviewerEmail(email);
       setEmail(normalizedEmail);
 
-      if (!window.confirm(`Create pilot reviewer for: ${normalizedEmail}`)) {
+      const confirmationMessage = invitationPurpose === 'DEMO'
+        ? `Create demo invitation for: ${normalizedEmail}? This seeds synthetic sample data.`
+        : `Create customer invitation for: ${normalizedEmail}? No sample data will be created.`;
+      if (!window.confirm(confirmationMessage)) {
         return;
       }
 
@@ -57,6 +67,7 @@ export default function PilotReviewersPage() {
         name,
         email: normalizedEmail,
         workspaceName,
+        invitationPurpose,
         expiresAt,
       });
       setResult(response);
@@ -64,6 +75,15 @@ export default function PilotReviewersPage() {
       setError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function handlePurposeChange(purpose: InvitationPurpose) {
+    setInvitationPurpose(purpose);
+    if (purpose === 'DEMO' && !workspaceName.trim()) {
+      setWorkspaceName(DEFAULT_WORKSPACE);
+    } else if (purpose === 'CUSTOMER' && workspaceName === DEFAULT_WORKSPACE) {
+      setWorkspaceName('');
     }
   }
 
@@ -131,20 +151,50 @@ export default function PilotReviewersPage() {
     <div style={pageStyle}>
       <header style={headerStyle}>
         <div>
-          <h1 style={titleStyle}>Pilot Reviewers</h1>
+          <h1 style={titleStyle}>Organization Invitations</h1>
           <p style={subtitleStyle}>
-            Create invite-only, read-only pilot reviewer accounts for the sample workspace.
+            Invite a clean paid-pilot customer or create a synthetic demo workspace.
           </p>
         </div>
       </header>
 
       <section style={noticeStyle}>
-        Pilot reviewers use sample data only. They can view records, Calculation Results, reports, and
-        submit feedback, but cannot upload, import, edit, delete, reset demo data, edit factors, or access admin pages.
+        Choose the invitation purpose explicitly. Customer invitations create no sample data. Demo
+        invitations create synthetic Golden Sample data for demonstrations and testing.
       </section>
 
       <form onSubmit={handleSubmit} style={formCardStyle}>
-        <h2 style={sectionTitleStyle}>Create Pilot Reviewer</h2>
+        <h2 style={sectionTitleStyle}>Create organization invitation</h2>
+
+        <fieldset style={purposeFieldsetStyle}>
+          <legend style={labelStyle}>Invitation purpose</legend>
+          <label style={purposeOptionStyle}>
+            <input
+              type="radio"
+              name="invitationPurpose"
+              value="CUSTOMER"
+              checked={invitationPurpose === 'CUSTOMER'}
+              onChange={() => handlePurposeChange('CUSTOMER')}
+              required
+            />
+            <span>
+              <strong>Customer</strong> — creates a clean paid-pilot organization with no sample data.
+            </span>
+          </label>
+          <label style={purposeOptionStyle}>
+            <input
+              type="radio"
+              name="invitationPurpose"
+              value="DEMO"
+              checked={invitationPurpose === 'DEMO'}
+              onChange={() => handlePurposeChange('DEMO')}
+              required
+            />
+            <span>
+              <strong>Demo</strong> — creates sample/demo workspace data for demonstrations and testing.
+            </span>
+          </label>
+        </fieldset>
 
         <div style={fieldGridStyle}>
           <label style={labelStyle}>
@@ -182,7 +232,11 @@ export default function PilotReviewersPage() {
               style={inputStyle}
             />
             <span style={helperTextStyle}>
-              Only sample/demo workspaces should be used for pilot reviewers.
+              {invitationPurpose === 'CUSTOMER'
+                ? 'Use the paid-pilot customer organization name.'
+                : invitationPurpose === 'DEMO'
+                  ? 'Use only a clearly synthetic workspace name.'
+                  : 'Choose the invitation purpose first.'}
             </span>
           </label>
 
@@ -198,14 +252,19 @@ export default function PilotReviewersPage() {
         </div>
 
         <div style={readonlySummaryStyle}>
-          <strong>Account settings:</strong> Account type `PILOT_REVIEWER`, role `REVIEWER`,
-          setup-link invite, password reset required, sample-workspace-only access.
+          {invitationPurpose === 'CUSTOMER' ? (
+            <><strong>Customer invitation:</strong> No sample data will be created. The normal setup-link and password flow will be used before provisioning.</>
+          ) : invitationPurpose === 'DEMO' ? (
+            <><strong>Demo invitation:</strong> Synthetic Golden Sample data will be created for demo and internal testing use.</>
+          ) : (
+            <><strong>Purpose required:</strong> Select Customer or Demo to continue.</>
+          )}
         </div>
 
         {error ? <div style={errorStyle}>{error}</div> : null}
 
-        <button type="submit" disabled={submitting} style={primaryButtonStyle(submitting)}>
-          {submitting ? 'Creating...' : 'Create Pilot Reviewer'}
+        <button type="submit" disabled={submitting || !invitationPurpose} style={primaryButtonStyle(submitting || !invitationPurpose)}>
+          {submitting ? 'Creating...' : 'Create invitation'}
         </button>
       </form>
 
@@ -216,6 +275,7 @@ export default function PilotReviewersPage() {
             <ResultItem label="Name" value={result.name || name} />
             <ResultItem label="Email" value={result.email || email} />
             <ResultItem label="Workspace" value={result.workspaceName || result.workspace || workspaceName} />
+            <ResultItem label="Invitation Purpose" value={result.invitationPurpose || invitationPurpose} />
             <ResultItem label="Account Type" value={result.accountType || 'PILOT_REVIEWER'} />
             <ResultItem label="Role" value={result.role || 'REVIEWER'} />
             <ResultItem label="Status" value={result.status || 'Active'} />
@@ -498,6 +558,23 @@ const labelStyle: React.CSSProperties = {
   gap: 6,
   color: '#0f172a',
   fontWeight: 800,
+};
+
+const purposeFieldsetStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  margin: 0,
+  padding: 14,
+  borderRadius: 10,
+  border: '1px solid #cbd5e1',
+};
+
+const purposeOptionStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 10,
+  color: '#334155',
+  lineHeight: 1.5,
 };
 
 const inputStyle: React.CSSProperties = {
