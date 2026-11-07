@@ -1,0 +1,54 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNonTLSRequestsFromNonAWSServicePrincipals",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::__BACKUP_BUCKET__",
+        "arn:aws:s3:::__BACKUP_BUCKET__/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false",
+          "aws:PrincipalIsAWSService": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenyTLSBelow12FromNonAWSServicePrincipals",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::__BACKUP_BUCKET__",
+        "arn:aws:s3:::__BACKUP_BUCKET__/*"
+      ],
+      "Condition": {
+        "NumericLessThan": {
+          "s3:TlsVersion": "1.2"
+        },
+        "Bool": {
+          "aws:PrincipalIsAWSService": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenyWriterDeletionAndRetentionChanges",
+      "Effect": "Deny",
+      "Principal": {
+        "AWS": "arn:aws:iam::__BACKUP_ACCOUNT_ID__:role/CarbonLiteBackupWriter"
+      },
+      "Action": [
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+        "s3:BypassGovernanceRetention",
+        "s3:PutObjectRetention",
+        "s3:PutObjectLegalHold"
+      ],
+      "Resource": "arn:aws:s3:::__BACKUP_BUCKET__/pairs/*"
+    }
+  ]
+}

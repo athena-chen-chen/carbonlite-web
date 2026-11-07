@@ -1,0 +1,90 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListBackupPairsAndVersions",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:ListBucketVersions"
+      ],
+      "Resource": "arn:aws:s3:::__BACKUP_BUCKET__",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "pairs/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReadCiphertextAndRetentionMetadata",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:GetObjectAttributes",
+        "s3:GetObjectRetention",
+        "s3:GetObjectLegalHold"
+      ],
+      "Resource": "arn:aws:s3:::__BACKUP_BUCKET__/pairs/*"
+    },
+    {
+      "Sid": "ReadBackupBucketSafetyConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketOwnershipControls",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetBucketPolicyStatus"
+      ],
+      "Resource": "arn:aws:s3:::__BACKUP_BUCKET__"
+    },
+    {
+      "Sid": "ReadExternalControlEvidence",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:ListBucketVersions"
+      ],
+      "Resource": "arn:aws:s3:::__CONTROL_BUCKET__",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "events/*",
+            "recovery/*",
+            "checkpoints/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReadExternalControlObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:GetObjectRetention",
+        "s3:GetObjectLegalHold"
+      ],
+      "Resource": [
+        "arn:aws:s3:::__CONTROL_BUCKET__/events/*",
+        "arn:aws:s3:::__CONTROL_BUCKET__/recovery/*",
+        "arn:aws:s3:::__CONTROL_BUCKET__/checkpoints/*"
+      ]
+    },
+    {
+      "Sid": "VerifySignedEvidenceWithoutSigning",
+      "Effect": "Allow",
+      "Action": [
+        "kms:GetPublicKey",
+        "kms:Verify"
+      ],
+      "Resource": "arn:aws:kms:__REGION__:__BACKUP_ACCOUNT_ID__:key/__SIGNING_KEY_ID__"
+    }
+  ]
+}

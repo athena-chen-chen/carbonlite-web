@@ -1,0 +1,135 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageOnlyDesignatedBucketConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetBucketOwnershipControls",
+        "s3:PutBucketOwnershipControls",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:PutBucketObjectLockConfiguration",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:PutLifecycleConfiguration",
+        "s3:GetBucketLogging",
+        "s3:PutBucketLogging",
+        "s3:ListBucket",
+        "s3:ListBucketVersions"
+      ],
+      "Resource": [
+        "arn:aws:s3:::__BACKUP_BUCKET__",
+        "arn:aws:s3:::__CONTROL_BUCKET__",
+        "arn:aws:s3:::__LOG_BUCKET__"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        },
+        "StringEquals": {
+          "aws:PrincipalTag/BreakGlassApproved": "true"
+        }
+      }
+    },
+    {
+      "Sid": "RecoverDesignatedObjectsAfterApproval",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:GetObjectRetention",
+        "s3:GetObjectLegalHold",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "arn:aws:s3:::__BACKUP_BUCKET__/*",
+        "arn:aws:s3:::__CONTROL_BUCKET__/*",
+        "arn:aws:s3:::__LOG_BUCKET__/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        },
+        "StringEquals": {
+          "aws:PrincipalTag/BreakGlassApproved": "true"
+        }
+      }
+    },
+    {
+      "Sid": "ManageOnlyNamedOperationalRolePolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::__BACKUP_ACCOUNT_ID__:role/CarbonLiteBackupWriter",
+        "arn:aws:iam::__BACKUP_ACCOUNT_ID__:role/CarbonLiteBackupVerifier",
+        "arn:aws:iam::__BACKUP_ACCOUNT_ID__:role/CarbonLiteRecoveryOperator",
+        "arn:aws:iam::__BACKUP_ACCOUNT_ID__:role/CarbonLiteIndependentReviewer"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        },
+        "StringEquals": {
+          "aws:PrincipalTag/BreakGlassApproved": "true"
+        }
+      }
+    },
+    {
+      "Sid": "ContainNamedKeysWithoutCryptographicUse",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:GetKeyPolicy",
+        "kms:ListGrants",
+        "kms:DisableKey",
+        "kms:EnableKey",
+        "kms:RevokeGrant"
+      ],
+      "Resource": [
+        "arn:aws:kms:__REGION__:__BACKUP_ACCOUNT_ID__:key/__ENCRYPTION_KEY_ID__",
+        "arn:aws:kms:__REGION__:__BACKUP_ACCOUNT_ID__:key/__SIGNING_KEY_ID__"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        },
+        "StringEquals": {
+          "aws:PrincipalTag/BreakGlassApproved": "true"
+        }
+      }
+    },
+    {
+      "Sid": "EnsureNamedTrailIsLogging",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:GetTrailStatus",
+        "cloudtrail:StartLogging"
+      ],
+      "Resource": "arn:aws:cloudtrail:__REGION__:__BACKUP_ACCOUNT_ID__:trail/CarbonLiteBackupAudit",
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        },
+        "StringEquals": {
+          "aws:PrincipalTag/BreakGlassApproved": "true"
+        }
+      }
+    }
+  ]
+}

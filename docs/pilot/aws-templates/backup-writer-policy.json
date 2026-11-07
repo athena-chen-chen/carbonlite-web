@@ -1,0 +1,43 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadBackupBucketSafetyConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketObjectLockConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::__BACKUP_BUCKET__"
+    },
+    {
+      "Sid": "CreateBackupPairObjectsOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": "arn:aws:s3:::__BACKUP_BUCKET__/pairs/${aws:PrincipalTag/RecoveryPairId}/*"
+    },
+    {
+      "Sid": "AppendCaptureEventsOnly",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::__CONTROL_BUCKET__/events/capture/${aws:PrincipalTag/RecoveryPairId}/*"
+    },
+    {
+      "Sid": "GenerateClientSideEnvelopeDataKey",
+      "Effect": "Allow",
+      "Action": "kms:GenerateDataKey",
+      "Resource": "arn:aws:kms:__REGION__:__BACKUP_ACCOUNT_ID__:key/__ENCRYPTION_KEY_ID__",
+      "Condition": {
+        "StringEquals": {
+          "kms:EncryptionContext:carbonlite-purpose": "backup-pair",
+          "kms:EncryptionContext:recovery-pair-id": "${aws:PrincipalTag/RecoveryPairId}"
+        }
+      }
+    }
+  ]
+}
