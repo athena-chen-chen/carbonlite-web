@@ -383,6 +383,8 @@ export async function installPilotDemoApiMock(
             id: 'pilot-smoke-user',
             email: credentials.email,
             role: 'ADMIN',
+            accountType: 'INTERNAL_TEST',
+            allowDemoFactorsForCalculations: true,
             organizationId,
             organizationName: 'CarbonLite Pilot Demo Workspace',
           },
@@ -400,6 +402,16 @@ export async function installPilotDemoApiMock(
 
     if (method === 'GET' && path === '/documents') {
       await fulfillJson(route, paginated(state.documents));
+      return;
+    }
+
+    if (method === 'GET' && path === '/organization-profile') {
+      await fulfillJson(route, {});
+      return;
+    }
+
+    if (method === 'GET' && path === '/spreadsheet-import/review-rows') {
+      await fulfillJson(route, { items: [] });
       return;
     }
 

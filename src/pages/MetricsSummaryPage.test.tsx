@@ -41,6 +41,8 @@ afterEach(() => {
   localStorage.removeItem('currentUser');
   localStorage.removeItem('accessToken');
   vi.unstubAllGlobals();
+  vi.mocked(loadDefaultMetricsDateRange).mockReset();
+  vi.mocked(loadMetricsOverview).mockReset();
 });
 
 const goldenTrailUsageTotals = {
@@ -1392,7 +1394,7 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getAllByText('Calculation issues').length).toBeGreaterThan(0);
-    expect(screen.getByText('Missing Factor')).toBeInTheDocument();
+    expect(screen.getByText('No applicable factor')).toBeInTheDocument();
     expect(screen.getByText('No factor found for: DIESEL / tonnes')).toBeInTheDocument();
     expect(screen.getByText(/2 records/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
@@ -1456,7 +1458,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Invalid Unit')).toBeInTheDocument();
+    expect(screen.getByText('Unit needs correction')).toBeInTheDocument();
     expect(screen.getByText('Electricity — invalid unit')).toBeInTheDocument();
     expect(
       screen.getByText('Invalid unit detected. Please review this record.'),
@@ -2201,12 +2203,12 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     localStorage.removeItem('currentUser');
-    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({
+    vi.mocked(loadDefaultMetricsDateRange).mockReset().mockResolvedValue({
       startDate: '2025-01-01',
       endDate: '2026-12-31',
       hasActivityRecords: false,
     });
-    vi.mocked(loadMetricsOverview).mockResolvedValue(overview as any);
+    vi.mocked(loadMetricsOverview).mockReset().mockResolvedValue(overview as any);
   });
 
   it('auto loads metrics on page load and removes Generate Metrics', async () => {
@@ -2231,7 +2233,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
   });
 
   it('uses the selected non-current report period in the Inventory boundary', async () => {
-    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({
       startDate: '2024-01-01',
       endDate: '2024-12-31',
       hasActivityRecords: true,
@@ -2653,7 +2655,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
   });
 
   it('uses detected 2025 activity range by default', async () => {
-    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({
       startDate: '2025-01-01',
       endDate: '2025-12-31',
       hasActivityRecords: true,

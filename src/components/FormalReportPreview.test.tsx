@@ -427,7 +427,7 @@ describe('FormalReportPreview', () => {
 
     const tables = screen.getAllByRole('table');
     const emissionsBreakdownTable = tables.find((table) =>
-      within(table).queryByText('Total Calculated Emissions'),
+      within(table).queryByText('Calculated Result') && within(table).queryByText('Diesel'),
     );
     expect(emissionsBreakdownTable).toBeTruthy();
     expect(within(emissionsBreakdownTable!).getAllByText('Input Data').length).toBeGreaterThan(0);

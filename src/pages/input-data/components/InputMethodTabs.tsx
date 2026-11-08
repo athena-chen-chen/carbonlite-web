@@ -16,12 +16,12 @@ export function InputMethodTabs({
         {
           key: 'documents' as const,
           title: 'Upload documents',
-          text: 'Upload utility bills, fuel invoices, water bills, travel documents, hotel invoices, or operational PDFs.',
+          text: 'Upload utility bills, fuel invoices, hotel receipts, and other source documents.',
         },
         {
           key: 'spreadsheet' as const,
           title: 'Import spreadsheet',
-          text: 'Import CSV or Excel activity data from a CarbonLite template or your existing spreadsheet.',
+          text: 'Import structured activity data from CSV or Excel using your existing spreadsheet or a CarbonLite template.',
         },
         {
           key: 'manual' as const,

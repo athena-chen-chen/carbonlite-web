@@ -6,6 +6,7 @@ import { getAllConversionFactors } from '../../../services/conversionFactors';
 import { calculateMetrics } from '../../../services/metrics';
 import { buildDocumentImportRecordKey } from '../domain/importIdentity';
 import type { DocumentItem } from '../inputData.types';
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../../../test/legitimateFactorMetadata';
 
 vi.mock('../../../services/documentExtraction', async importOriginal => ({ ...await importOriginal<typeof import('../../../services/documentExtraction')>(), confirmDocumentImport: vi.fn(), extractDocument: vi.fn(), getDocumentExtraction: vi.fn() }));
 vi.mock('../../../services/activityData', () => ({ getAllActivityData: vi.fn(), createActivityData: vi.fn() }));
@@ -121,6 +122,7 @@ it('re-evaluates Missing Province rows canonically after applying Alberta and re
   vi.mocked(getAllConversionFactors).mockResolvedValue([{
     id: 'electricity-ab', name: 'Electricity Alberta', type: 'EMISSION', activityType: 'ELECTRICITY',
     inputUnit: 'kWh', unit: 'kWh', factorValue: 0.53, resultUnit: 'kgCO2e',
+    ...LEGITIMATE_OFFICIAL_FACTOR,
     jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', sourceYear: 2026,
     effectiveYear: 2026, defaultScope: 'SCOPE_2', isDefault: true, isSystemDefault: true,
     createdAt: '2026-01-01', updatedAt: '2026-01-01',

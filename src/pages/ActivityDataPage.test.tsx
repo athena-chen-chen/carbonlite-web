@@ -15,6 +15,7 @@ import { getAllConversionFactors } from '../services/conversionFactors';
 import { AppDialogProvider } from '../components/AppDialog';
 import { ToastProvider } from '../components/Toast';
 import { ActivityDataPage } from './ActivityDataPage';
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../test/legitimateFactorMetadata';
 
 vi.mock('../components/ExcelInputTable', () => ({
   ExcelInputTable: () => <div>Quick Entry</div>,
@@ -105,6 +106,7 @@ describe('ActivityDataPage delete flows', () => {
         unit: 'liters',
         factorValue: 2.68,
         resultUnit: 'kgCO2e/liter',
+        ...LEGITIMATE_OFFICIAL_FACTOR,
         sourceAuthority: 'CarbonLite',
         sourceYear: 2025,
         jurisdictionCountry: 'Canada',
@@ -124,6 +126,7 @@ describe('ActivityDataPage delete flows', () => {
         unit: 'kWh',
         factorValue: 0.02,
         resultUnit: 'kgCO2e/kWh',
+        ...LEGITIMATE_OFFICIAL_FACTOR,
         sourceAuthority: 'CarbonLite',
         sourceYear: 2025,
         jurisdictionCountry: 'Canada',
@@ -1381,7 +1384,7 @@ describe('ActivityDataPage delete flows', () => {
     await userEvent.click(within(row).getByRole('button', { name: 'View' }));
 
     const dialog = screen.getByRole('dialog', { name: 'Activity record details' });
-    expect(within(dialog).getByText('Calculated')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('Calculated').length).toBeGreaterThan(0);
     expect(within(dialog).getByText('Electricity')).toBeInTheDocument();
     expect(within(dialog).getByText('389')).toBeInTheDocument();
     expect(within(dialog).getByText('kWh')).toBeInTheDocument();
@@ -1646,7 +1649,8 @@ describe('ActivityDataPage delete flows', () => {
     renderPage();
 
     expect(await screen.findByText('Electricity')).toBeInTheDocument();
-    expect(screen.getByText('Calculated')).toBeInTheDocument();
+    const row = await screen.findByTestId('activity-row-activity-bc-electricity');
+    expect(within(row).getByText('Calculated')).toBeInTheDocument();
     expect(screen.queryByText('Missing Factor')).not.toBeInTheDocument();
   });
 
@@ -1671,7 +1675,7 @@ describe('ActivityDataPage delete flows', () => {
 
     const row = await screen.findByTestId('activity-row-activity-diesel-kg');
     expect(within(row).getByText('Diesel')).toBeInTheDocument();
-    expect(within(row).getByText('Unit Mismatch')).toBeInTheDocument();
+    expect(within(row).getByText('Unit needs correction')).toBeInTheDocument();
     expect(within(row).queryByText('Calculated')).not.toBeInTheDocument();
   });
 

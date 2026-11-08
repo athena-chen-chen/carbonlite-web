@@ -36,7 +36,7 @@ describe('factor rejection reasons', () => {
     ['NATURAL_GAS', 49.44, 'GJ', 'Alberta', 'Natural Gas - Canada Generic'],
     ['GASOLINE', 2.31, 'L', 'British Columbia', 'Gasoline combustion'],
     ['HOTEL', 15, 'nights', 'Ontario', 'Hotel stays'],
-    ['AIR_TRAVEL', 0.115, 'km', 'Alberta', 'Air travel'],
+    ['AIR_TRAVEL', 0.115, 'passenger-km', 'Alberta', 'Air travel'],
   ];
 
   it('reports NO_FACTOR_FOUND when no matching candidate exists', () => {
@@ -93,6 +93,14 @@ describe('factor rejection reasons', () => {
       activityType,
       quantity: 1,
       unit,
+      activityMetadata: activityType === 'AIR_TRAVEL' ? {
+        schemaVersion: 1,
+        type: 'AIR_TRAVEL',
+        originAirport: 'YYC',
+        destinationAirport: 'YYZ',
+        passengerCount: 1,
+        tripType: 'ONE_WAY',
+      } : undefined,
       jurisdictionRegion: region,
       factors: [{
         id: `current-${activityType.toLowerCase()}`,
@@ -111,7 +119,11 @@ describe('factor rejection reasons', () => {
         emissionBasis: isNaturalGasReference ? 'DIRECT_CO2E' : undefined,
       }],
     });
-    expect(result).toMatchObject({ matchingStatus: 'FACTOR_NOT_APPROVED', calculationStatus: 'FACTOR_NOT_APPROVED' });
+    expect(result).toMatchObject({
+      status: 'NEEDS_REVIEW',
+      matchingStatus: 'FACTOR_NOT_APPROVED',
+      calculationStatus: 'FACTOR_NOT_APPROVED',
+    });
     expect(result.calculatedEmissionsKgCO2e).toBeNull();
   });
 

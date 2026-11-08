@@ -7,6 +7,7 @@ import { calculateMetrics } from '../../../services/metrics';
 import { buildDocumentImportRecordKey } from '../domain/importIdentity';
 import type { SpreadsheetReviewRowInput } from '../../../services/spreadsheetReviewRows';
 import type { DocumentItem } from '../inputData.types';
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../../../test/legitimateFactorMetadata';
 
 vi.mock('../../../services/documentExtraction', async importOriginal => ({ ...await importOriginal<typeof import('../../../services/documentExtraction')>(), confirmDocumentImport: vi.fn(), extractDocument: vi.fn(), getDocumentExtraction: vi.fn() }));
 vi.mock('../../../services/activityData', () => ({ getAllActivityData: vi.fn(), createActivityData: vi.fn() }));
@@ -47,6 +48,7 @@ const factor = (activityType: string, region: string, value: number) => ({
   id: `${activityType}-${region}`, name: `${activityType} ${region}`, type: 'EMISSION', activityType,
   inputUnit: activityType === 'ELECTRICITY' ? 'kWh' : 'L', unit: activityType === 'ELECTRICITY' ? 'kWh' : 'L',
   factorValue: value, resultUnit: 'kgCO2e', jurisdictionCountry: 'Canada', jurisdictionRegion: region,
+  ...LEGITIMATE_OFFICIAL_FACTOR,
   sourceYear: 2026, effectiveYear: 2026, defaultScope: activityType === 'ELECTRICITY' ? 'SCOPE_2' : 'SCOPE_1',
   isDefault: true, isSystemDefault: true, createdAt: '2026-01-01', updatedAt: '2026-01-01',
 });
@@ -351,7 +353,7 @@ it.each([false, true])('keeps demo policy across delete and same-file re-import 
     for (const source of [pilot, replacement]) {
       await act(() => result.current.actions.extractDocuments([source]));
       expect(result.current.state.parsedActivities[0]).toMatchObject({
-        calculationStatus: allowDemoFactorsForCalculations ? 'CALCULATED' : 'MISSING_FACTOR',
+        calculationStatus: allowDemoFactorsForCalculations ? 'CALCULATED' : 'FACTOR_NOT_APPROVED',
         calculatedEmissionsKgCO2e: allowDemoFactorsForCalculations ? 519.4 : null,
         selected: allowDemoFactorsForCalculations,
       });
@@ -367,7 +369,7 @@ it('does not preserve a canonical-ready saved draft when its matched source is s
   vi.mocked(getAllConversionFactors).mockResolvedValue([{ ...factor('GASOLINE', 'Alberta', 2.31), sourceAuthority: 'Synthetic RC fixture' }]);
   const { result } = await saved([savedRow({ status: 'READY', matchingStatus: 'MATCHED', calculationStatus: 'CALCULATED', reportTreatment: 'INCLUDED',
     matchedFactorId: 'GASOLINE-Alberta', matchedFactorSourceAuthority: 'Synthetic RC fixture', calculatedEmissionsKgCO2e: 2.31 })]);
-  expect(result.current.state.parsedActivities[0]).toMatchObject({ calculationStatus: 'MISSING_FACTOR', selected: false, calculatedEmissionsKgCO2e: null });
+  expect(result.current.state.parsedActivities[0]).toMatchObject({ calculationStatus: 'FACTOR_NOT_APPROVED', selected: false, calculatedEmissionsKgCO2e: null });
 });
 
 

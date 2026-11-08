@@ -607,7 +607,6 @@ describe('buildCanonicalReportData', () => {
       detail({ activityDataId: 'fresh-c-gas', activityType: 'NATURAL_GAS', activityQuantity: 8.5, activityUnit: 'GJ', factorValue: 49.44, calculatedEmissionsKgCO2e: 420.24, factorDefaultScope: 'SCOPE_1', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 3, sourceDocumentId: 'fresh-doc-c' }),
       detail({ activityDataId: 'fresh-c-gasoline', activityType: 'GASOLINE', activityQuantity: 350, activityUnit: 'L', factorValue: 2.31, calculatedEmissionsKgCO2e: 808.5, factorDefaultScope: 'SCOPE_1', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 4, sourceDocumentId: 'fresh-doc-c' }),
       detail({ activityDataId: 'fresh-c-hotel', activityType: 'HOTEL', activityQuantity: 3, activityUnit: 'nights', factorValue: 15, calculatedEmissionsKgCO2e: 45, factorDefaultScope: 'SCOPE_3', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 5, sourceDocumentId: 'fresh-doc-c' }),
-      detail({ activityDataId: 'fresh-c-air', activityType: 'AIR_TRAVEL', activityQuantity: 4280, activityUnit: 'km', factorValue: 0.115, calculatedEmissionsKgCO2e: 492.2, factorDefaultScope: 'SCOPE_3', sourceType: 'SPREADSHEET', sourceFileName: 'carbonlite_field_mapping_test.xlsx', sourceRow: 6, sourceDocumentId: 'fresh-doc-c' }),
     ];
     const albertaIssue = [{
       code: 'MISSING_FACTOR',
@@ -622,7 +621,23 @@ describe('buildCanonicalReportData', () => {
     ];
     const goldenCReviewRows = [
       reviewRow({ id: 'c-electricity', sourceDocumentId: 'fresh-doc-c', sourceFileName: 'carbonlite_field_mapping_test.xlsx', status: 'NEEDS_REVIEW', sourceRow: 2, activityType: 'ELECTRICITY', jurisdictionRegion: 'Alberta', quantity: 1250, unit: 'kWh', issues: albertaIssue, calculationStatus: 'MISSING_FACTOR' }),
-      ...[3, 4, 5, 6].map((sourceRow) => reviewRow({ id: `c-ready-${sourceRow}`, sourceDocumentId: 'fresh-doc-c', sourceFileName: 'carbonlite_field_mapping_test.xlsx', status: 'READY', sourceRow })),
+      ...[3, 4, 5].map((sourceRow) => reviewRow({ id: `c-ready-${sourceRow}`, sourceDocumentId: 'fresh-doc-c', sourceFileName: 'carbonlite_field_mapping_test.xlsx', status: 'READY', sourceRow })),
+      reviewRow({
+        id: 'c-air-travel',
+        sourceDocumentId: 'fresh-doc-c',
+        sourceFileName: 'carbonlite_field_mapping_test.xlsx',
+        status: 'NEEDS_REVIEW',
+        sourceRow: 6,
+        activityType: 'AIR_TRAVEL',
+        quantity: 4280,
+        unit: 'km',
+        issues: [{
+          code: 'UNIT_MISMATCH',
+          field: 'unit',
+          message: 'Air Travel requires route metadata and server-derived passenger-km.',
+        }],
+        calculationStatus: 'UNIT_MISMATCH',
+      }),
     ];
     const makeReport = (
       calculationDetails: CalculationAuditDetail[],
@@ -641,38 +656,38 @@ describe('buildCanonicalReportData', () => {
     );
 
     expect(goldenA.inventory.totalKgCO2e).toBe(60);
-    expect(goldenC.inventory.totalKgCO2e).toBe(1765.94);
-    expect(combined.inventory.totalKgCO2e).toBe(1825.94);
+    expect(goldenC.inventory.totalKgCO2e).toBe(1273.74);
+    expect(combined.inventory.totalKgCO2e).toBe(1333.74);
     expect(combined.scopeBreakdown.totals).toEqual({
       'Scope 1': 1228.74,
       'Scope 2': 0,
-      'Scope 3': 597.2,
+      'Scope 3': 105,
       Unclassified: 0,
     });
     expect(combined.inventory).toMatchObject({
-      importedRecordCount: 6,
-      includedRecordCount: 5,
+      importedRecordCount: 5,
+      includedRecordCount: 4,
       trackedMetricCount: 1,
       importedNeedsReviewCount: 0,
     });
     expect(combined.reportCountSummary).toMatchObject({
       totalRecordsFound: 14,
-      processedRecords: 5,
-      skippedRecords: 8,
+      processedRecords: 4,
+      skippedRecords: 9,
     });
     expect(combined.executiveSummary).toMatchObject({
-      recordsIncluded: 5,
-      recordsSkipped: 8,
+      recordsIncluded: 4,
+      recordsSkipped: 9,
       trackedMetrics: 1,
-      recordsRequiringReview: 8,
+      recordsRequiringReview: 9,
     });
     expect(combined.sourceReview).toMatchObject({
       totalRows: 14,
-      readyCount: 5,
+      readyCount: 4,
       trackedOnlyCount: 1,
-      needsReviewCount: 8,
+      needsReviewCount: 9,
     });
-    expect(csvTotal).toBe(1825.94);
+    expect(csvTotal).toBe(1333.74);
     expect(combined.calculationDetails.some((row) => row.activityType === 'ELECTRICITY')).toBe(false);
 
     const afterIncludedDelete = makeReport(
@@ -684,25 +699,25 @@ describe('buildCanonicalReportData', () => {
       0,
     );
     expect(afterIncludedDelete.inventory).toMatchObject({
-      totalKgCO2e: 1405.7,
-      includedRecordCount: 4,
+      totalKgCO2e: 913.5,
+      includedRecordCount: 3,
       trackedMetricCount: 1,
     });
     expect(afterIncludedDelete.reportCountSummary).toMatchObject({
-      processedRecords: 4,
-      skippedRecords: 8,
+      processedRecords: 3,
+      skippedRecords: 9,
     });
-    expect(afterIncludedDeleteCsvTotal).toBe(1405.7);
+    expect(afterIncludedDeleteCsvTotal).toBe(913.5);
 
     const afterNeedsReviewDelete = makeReport(
       [...goldenADetails, ...goldenCDetails],
       [...goldenAReviewRows, ...goldenCReviewRows].filter((row) => row.id !== 'a-review-3'),
     );
-    expect(afterNeedsReviewDelete.inventory.totalKgCO2e).toBe(1825.94);
+    expect(afterNeedsReviewDelete.inventory.totalKgCO2e).toBe(1333.74);
     expect(afterNeedsReviewDelete.reportCountSummary).toMatchObject({
-      processedRecords: 5,
-      skippedRecords: 7,
+      processedRecords: 4,
+      skippedRecords: 8,
     });
-    expect(afterNeedsReviewDelete.sourceReview.needsReviewCount).toBe(7);
+    expect(afterNeedsReviewDelete.sourceReview.needsReviewCount).toBe(8);
   });
 });

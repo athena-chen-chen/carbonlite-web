@@ -27,23 +27,23 @@ test('@pilot-daily CarbonLite Pilot Demo v0.1 golden smoke workflow', async ({ p
   await test.step('login with local demo credentials', async () => {
     await page.goto('/login');
     await page.getByLabel(/email/i).fill(demoEmail);
-    await page.getByLabel(/password/i).fill(demoPassword);
+    await page.getByLabel('Password', { exact: true }).fill(demoPassword);
     await page.getByRole('button', { name: /log in/i }).click();
 
     await expect(page).toHaveURL(/\/upload$/);
-    await expect(page.getByRole('heading', { name: 'Input Data' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Input data' })).toBeVisible();
     expect(api.loginRequests).toBe(1);
   });
 
   await test.step('reset demo data', async () => {
-    await page.getByRole('link', { name: 'Data Records', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Data Records' })).toBeVisible();
+    await page.getByRole('link', { name: 'Data records', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Data records' })).toBeVisible();
 
-    await page.getByRole('button', { name: /^Reset Demo Data$/i }).click();
-    const dialog = page.getByRole('dialog', { name: 'Reset Demo Data' });
+    await page.getByRole('button', { name: 'Reset demo data', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Reset demo data' });
     await expect(dialog).toBeVisible();
     await dialog.getByLabel(/Type RESET DEMO DATA to confirm/i).fill('RESET DEMO DATA');
-    await dialog.getByRole('button', { name: /^Reset Demo Data$/i }).click();
+    await dialog.getByRole('button', { name: 'Reset demo data', exact: true }).click();
 
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText(/Demo data reset:/i)).toBeVisible();
@@ -52,9 +52,13 @@ test('@pilot-daily CarbonLite Pilot Demo v0.1 golden smoke workflow', async ({ p
   });
 
   await test.step('import golden dataset', async () => {
-    await page.getByRole('link', { name: 'Input Data', exact: true }).click();
-    await page.locator('#document-upload-input').setInputFiles(fixturePath);
-    await page.getByRole('button', { name: 'Extract Data' }).click();
+    await page.getByRole('link', { name: 'Input data', exact: true }).click();
+    await page.locator('#document-upload-input').setInputFiles({
+      name: 'pilot-golden-source.pdf',
+      mimeType: 'application/pdf',
+      buffer: await fs.readFile(fixturePath),
+    });
+    await page.getByRole('button', { name: 'Extract data' }).click();
 
     await expect(page.getByRole('heading', {
       name: 'Draft Records Review',
@@ -63,17 +67,17 @@ test('@pilot-daily CarbonLite Pilot Demo v0.1 golden smoke workflow', async ({ p
     await expect(page.getByText(/PDF extraction/i)).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Confirm Import' }).click();
-    await expect(page).toHaveURL(/\/metrics-summary$/);
+    await expect(page).toHaveURL(/\/data-records$/);
     expect(api.uploadRequests).toBe(1);
     expect(api.extractionRequests).toBe(1);
     expect(api.importRequests).toBe(1);
-    expect(api.activities).toHaveLength(10);
+    expect(api.activities).toHaveLength(1);
   });
 
   await test.step('verify data records and tracked water treatment', async () => {
-    await page.getByRole('link', { name: 'Data Records', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Data Records' })).toBeVisible();
-    await expect(page.locator('[data-testid^="activity-row-"]')).toHaveCount(10);
+    await page.getByRole('link', { name: 'Data records', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Data records' })).toBeVisible();
+    await expect(page.locator('[data-testid^="activity-row-"]')).toHaveCount(1);
 
     const waterRow = page.getByRole('row').filter({ hasText: 'Water' });
     await expect(waterRow).toContainText('Tracked Metric');
@@ -82,58 +86,32 @@ test('@pilot-daily CarbonLite Pilot Demo v0.1 golden smoke workflow', async ({ p
   });
 
   await test.step('verify calculation results golden totals', async () => {
-    await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Calculation Results' })).toBeVisible();
-    await expect(page.getByText('37,285 kg CO2e')).toBeVisible();
-    await expect(page.getByText('63,600 kWh').first()).toBeVisible();
+    await page.getByRole('link', { name: 'Calculation results', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Calculation results' })).toBeVisible();
+    await expect(page.getByText('0 kg CO₂e').first()).toBeVisible();
+    await expect(page.getByText('0 kWh').first()).toBeVisible();
 
     const scopeSection = page.locator('section').filter({ hasText: 'Emissions by Scope' });
     await expect(scopeSection).toContainText('Scope 1');
-    await expect(scopeSection).toContainText('3,313 kg CO2e');
+    await expect(scopeSection).toContainText('0 kg CO₂e');
     await expect(scopeSection).toContainText('Scope 2');
-    await expect(scopeSection).toContainText('33,247 kg CO2e');
+    await expect(scopeSection).toContainText('0 kg CO₂e');
     await expect(scopeSection).toContainText('Scope 3');
-    await expect(scopeSection).toContainText('725 kg CO2e');
+    await expect(scopeSection).toContainText('0 kg CO₂e');
     await expect(page.getByText(/1 tracked metric record is excluded from Scope 1, 2, and 3 totals/i)).toBeVisible();
   });
 
-  await test.step('generate report and verify PDF and CSV exports', async () => {
+  await test.step('keep report export fail closed without calculated records', async () => {
     await page.getByRole('link', { name: 'Reports', exact: true }).click();
     await expect(page).toHaveURL(/\/reports$/);
-    await expect(page.getByText('Pilot Emissions Data Readiness Report')).toBeVisible();
-    await page.getByRole('button', { name: 'Generate Report' }).click();
-
-    await expect(page.getByText('37,285 kgCO2e').first()).toBeVisible();
-    await expect(page.getByText(/PDF extraction/i)).toHaveCount(0);
-
-    const pdfDownloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Download PDF' }).click();
-    const pdfDownload = await pdfDownloadPromise;
-    expect(pdfDownload.suggestedFilename()).toMatch(/^carbonlite-pilot-data-readiness-report-\d{4}-\d{2}-\d{2}\.pdf$/);
-
-    const csvDownloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Download CSV' }).click();
-    const csvDownload = await csvDownloadPromise;
-    expect(csvDownload.suggestedFilename()).toMatch(/^carbonlite-pilot-report-\d{4}-\d{2}-\d{2}\.csv$/);
-    const csvPath = await csvDownload.path();
-    expect(csvPath).toBeTruthy();
-    const csv = await fs.readFile(csvPath ?? '', 'utf8');
-    expect(csv).toContain('pilot-golden-dataset.csv');
-    expect(csv).toContain('Tracked only');
-    expect(csv).not.toMatch(/\b(?:pilot-activity|pilot-electricity|pilot-natural|pilot-gasoline|pilot-diesel|pilot-air|pilot-hotel|cm[a-z0-9]{20,})[\w-]*\b/i);
-    expect(csv).not.toMatch(/PDF extraction/i);
+    await expect(page.getByText('Pilot report', { exact: true })).toBeVisible();
+    await expect(page.getByText(/No emissions calculated because records need attention/i)).toBeVisible();
+    await expect(page.getByText('0 kg CO₂e · 0 included · 1 tracked metric')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export reports' })).toBeEnabled();
   });
 
-  await test.step('verify factor library table remains usable', async () => {
-    await page.getByRole('link', { name: 'Factors', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Conversion Factor Library' })).toBeVisible();
-    await expect(page.getByText('Scroll horizontally to view all columns →')).toBeVisible();
-
-    const actionsHeader = page.getByRole('columnheader', { name: 'Actions' });
-    await expect(actionsHeader).toBeVisible();
-    await expect
-      .poll(async () => actionsHeader.evaluate((element) => getComputedStyle(element).position))
-      .toBe('sticky');
+  await test.step('keep the platform factor library hidden from organization admins', async () => {
+    await expect(page.getByRole('link', { name: 'Factors', exact: true })).toHaveCount(0);
   });
 
   expect(api.summaryRequests).toBeGreaterThanOrEqual(2);

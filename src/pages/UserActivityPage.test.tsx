@@ -48,14 +48,14 @@ describe('UserActivityPage', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
-    vi.mocked(getActivityEvents).mockResolvedValue({
+    vi.mocked(getActivityEvents).mockReset().mockResolvedValue({
       items: [event],
       page: 1,
       pageSize: 20,
       total: 1,
       totalPages: 1,
     });
-    vi.mocked(getActivityEventSummary).mockResolvedValue({
+    vi.mocked(getActivityEventSummary).mockReset().mockResolvedValue({
       activeUsers: 1,
       documentsUploaded: 4,
       extractionAttempts: 3,
@@ -64,14 +64,14 @@ describe('UserActivityPage', () => {
       pdfExports: 1,
       feedbackSubmitted: 1,
     });
-    vi.mocked(getAdminActivityEvents).mockResolvedValue({
+    vi.mocked(getAdminActivityEvents).mockReset().mockResolvedValue({
       items: [event],
       page: 1,
       pageSize: 20,
       total: 1,
       totalPages: 1,
     });
-    vi.mocked(getAdminActivityEventSummary).mockResolvedValue({
+    vi.mocked(getAdminActivityEventSummary).mockReset().mockResolvedValue({
       today: 3,
       thisWeek: 7,
       thisMonth: 12,
@@ -85,7 +85,7 @@ describe('UserActivityPage', () => {
       pdfExports: 1,
       feedbackSubmitted: 1,
     });
-    vi.mocked(getAdminActiveUsers).mockResolvedValue({
+    vi.mocked(getAdminActiveUsers).mockReset().mockResolvedValue({
       items: [
         {
           userId: 'user-1',
@@ -157,8 +157,7 @@ describe('UserActivityPage', () => {
   it('uses admin endpoints and filters across users and organizations for admins', async () => {
     renderPage('ADMIN');
 
-    await screen.findByText('Document Uploaded');
-    expect(screen.getByText('Pilot Org')).toBeInTheDocument();
+    expect(await screen.findByText('Pilot Org')).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/User/i), 'advisor@example.com');
     await userEvent.type(screen.getByLabelText(/Organization/i), 'Client Org');
@@ -291,9 +290,8 @@ describe('UserActivityPage', () => {
 
     renderPage('ADMIN');
 
-    await screen.findByText('Document Uploaded');
     const activeUsersCard = screen.getByRole('button', { name: /Active Users/i });
-    expect(activeUsersCard).toHaveTextContent('4');
+    await waitFor(() => expect(activeUsersCard).toHaveTextContent('4'));
 
     await userEvent.click(activeUsersCard);
 

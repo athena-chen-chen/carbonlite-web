@@ -50,6 +50,29 @@ it.each(['documents', 'spreadsheet', 'manual'] as const)('keeps tab order, selec
   }
 });
 
+it('describes each input method as a distinct workflow', () => {
+  render(<InputMethodTabs activeMethod="documents" onChange={vi.fn()} />);
+
+  expect(screen.getByRole('tab', { name: /Upload documents/ })).toHaveTextContent(
+    'Upload utility bills, fuel invoices, hotel receipts, and other source documents.',
+  );
+  expect(screen.getByRole('tab', { name: /Import spreadsheet/ })).toHaveTextContent(
+    'Import structured activity data from CSV or Excel using your existing spreadsheet or a CarbonLite template.',
+  );
+  expect(screen.getByRole('tab', { name: /Manual entry/ })).toHaveTextContent(
+    'Enter one activity record directly when no file is available.',
+  );
+});
+
+it('advertises only source-document formats without restricting the configured file input', () => {
+  const props = documentProps();
+  const { container } = render(<DocumentUploadPanel {...props} />);
+
+  expect(screen.getByText('Supported files: PDF, JPG, JPEG, PNG. Max 10 MB.')).toBeInTheDocument();
+  expect(screen.queryByText(/Supported files:.*(?:CSV|XLS|JSON)/)).not.toBeInTheDocument();
+  expect(container.querySelector('#document-upload-input')).toHaveAttribute('accept', props.uploadAccept);
+});
+
 it('shows remaining quota only when the organization policy is enabled', () => {
   const quotaStatus = {
     enabled: true,
@@ -186,6 +209,9 @@ it('wires spreadsheet templates, mode, success, and source changes to the parent
   const props = { onDownloadCsvTemplate: vi.fn(), onDownloadExcelTemplate: vi.fn(), onSuccess: vi.fn(), onSourceChange: vi.fn() };
   render(<SpreadsheetImportPanel {...props} />);
   expect(screen.getByRole('heading', { name: 'Import spreadsheet', level: 2 })).toBeInTheDocument();
+  expect(screen.getByText(
+    'Import structured activity data from CSV or Excel using your existing spreadsheet or a CarbonLite template.',
+  )).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Download CSV template' }));
   await userEvent.click(screen.getByRole('button', { name: 'Download Excel template' }));
   expect(props.onDownloadCsvTemplate).toHaveBeenCalledOnce();

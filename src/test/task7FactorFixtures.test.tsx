@@ -7,6 +7,7 @@ import { findBestConversionFactorMatch } from '../utils/conversionFactorMatching
 import { isInventoryFactorEligible } from '../utils/factorGovernance';
 import { FactorDetailsPage } from '../pages/FactorDetailsPage';
 import { getFactorVersion, getFactorVersions, getFactorHistory, getFactorVersionUsage } from '../services/factorVersions';
+import { LEGITIMATE_OFFICIAL_FACTOR } from './legitimateFactorMetadata';
 
 vi.mock('../services/factorVersions', () => ({ getFactorVersion: vi.fn(), getFactorVersions: vi.fn(), getFactorHistory: vi.fn(), getFactorVersionUsage: vi.fn() }));
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
@@ -61,6 +62,7 @@ describe('exact seeded fixture matching', () => {
       activityType: fixture.activityType, unit: fixture.activityType === 'DIESEL' ? 'L' : 'kWh',
       factorValue: fixture.activityType === 'DIESEL' ? 2.68 : .53, resultUnit: 'kgCO2e',
       region: 'Alberta', country: 'Canada', sourceYear: 2025, isSystemDefault: true,
+      ...LEGITIMATE_OFFICIAL_FACTOR,
     };
     const input = { activityType: fixture.activityType, inputUnit: inventory.unit,
       quantity: fixture.activityType === 'DIESEL' ? 100 : 1000,

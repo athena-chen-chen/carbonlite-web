@@ -53,7 +53,7 @@ export function DocumentUploadPanel({
     <div style={uploadCardStyle}>
       <h2 style={{ marginTop: 0 }}>Upload documents</h2>
       <p style={{ color: '#666' }}>
-        Upload utility bills, fuel invoices, water bills, travel documents, hotel invoices, or operational PDFs.
+        Upload utility bills, fuel invoices, hotel receipts, and other source documents.
       </p>
       {quotaStatus?.enabled ? (
         <p aria-label="Organization upload quota" style={{ color: '#475569' }}>
@@ -88,7 +88,7 @@ export function DocumentUploadPanel({
             {isDraggingUpload ? 'Drop files here' : 'Drop files here or choose files'}
           </strong>
           <span style={{ color: '#666' }}>
-            Supported files: PDF, CSV, XLS, XLSX, JSON, JPG, JPEG, PNG. Max 10 MB.
+            Supported files: PDF, JPG, JPEG, PNG. Max 10 MB.
           </span>
         </div>
 

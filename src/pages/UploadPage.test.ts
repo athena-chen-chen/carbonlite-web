@@ -41,8 +41,6 @@ const approvedTestAlbertaElectricityFactor = {
   jurisdictionRegion: 'Alberta',
   ...LEGITIMATE_OFFICIAL_FACTOR,
   factorVersion: 'v1.0',
-  verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
-  confidenceLevel: 'LOW',
   assumptions: 'Historical arithmetic only; numerical methodology is outside this test.',
   isSystemDefault: true,
   isDefault: true,
@@ -343,6 +341,7 @@ describe('document import factor matching metadata', () => {
           unit: 'kWh',
           factorValue: 0.02,
           resultUnit: 'kgCO2e/kWh',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2025,
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'British Columbia',
@@ -428,8 +427,8 @@ describe('document import factor matching metadata', () => {
       matchedFactorVersion: 'v1.0',
       matchedFactorSourceAuthority: LEGITIMATE_OFFICIAL_FACTOR.sourceAuthority,
       matchedFactorSourceDocument: LEGITIMATE_OFFICIAL_FACTOR.sourceDocument,
-      matchedFactorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
-      matchedFactorConfidenceLevel: 'LOW',
+      matchedFactorVerificationStatus: 'VERIFIED',
+      matchedFactorConfidenceLevel: 'OFFICIAL_GOVERNMENT',
       factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
       calculatedEmissionsKgCO2e: excelEvaluation.calculatedEmissionsKgCO2e,
     });
@@ -468,12 +467,12 @@ describe('document import factor matching metadata', () => {
     });
 
     expect(excelEvaluation).toMatchObject({
-      status: 'NEEDS_REVIEW', matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      status: 'NEEDS_REVIEW', matchingStatus: 'FACTOR_NOT_APPROVED', calculationStatus: 'FACTOR_NOT_APPROVED',
       reportTreatment: 'EXCLUDED', importEligible: false,
       calculatedEmissionsKgCO2e: null,
     });
     expect(documentPayload).toMatchObject({
-      matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      matchingStatus: 'FACTOR_NOT_APPROVED', calculationStatus: 'FACTOR_NOT_APPROVED',
       reportTreatment: 'EXCLUDED',
     });
     expect(excelEvaluation.matchedFactorId).toBeUndefined();
@@ -656,7 +655,7 @@ describe('document import factor matching metadata', () => {
       matchedFactorId: undefined,
       matchedFactorSourceYear: undefined,
       calculatedEmissionsKgCO2e: undefined,
-      calculationStatus: 'MISSING_FACTOR',
+      calculationStatus: 'FACTOR_NOT_APPROVED',
     });
   });
 
@@ -678,9 +677,9 @@ describe('document import factor matching metadata', () => {
     expect(payload).toMatchObject({
       activityType: 'ELECTRICITY',
       jurisdictionRegion: 'Saskatchewan',
-      matchingStatus: 'MISSING_FACTOR',
+      matchingStatus: 'NO_FACTOR_FOUND',
       reportTreatment: 'EXCLUDED',
-      calculationStatus: 'MISSING_FACTOR',
+      calculationStatus: 'NO_FACTOR_FOUND',
     });
   });
 });

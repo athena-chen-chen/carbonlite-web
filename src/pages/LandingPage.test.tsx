@@ -21,7 +21,7 @@ function renderLanding(authenticated = false) {
     </MemoryRouter>,
   );
 }
-const actions = ['Set Boundary', 'Add Data', 'Resolve Issues', 'Calculation Results', 'Generate Report'];
+const actions = ['Set boundary', 'Add data', 'Resolve issues', 'Calculation results', 'Generate report'];
 
 it('offers Sign In and Request Pilot Access to public visitors', () => {
   renderLanding();

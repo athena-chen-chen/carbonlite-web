@@ -75,7 +75,7 @@ it('preserves historical Golden A, Golden C and combined report totals without r
   expect(Number((a + c).toFixed(2))).toBe(3007.84);
 });
 
-it('reconciles fresh Golden A and C calculations after Alberta pilot electricity fails closed', () => {
+it('reconciles fresh Golden A and C calculations after unsupported electricity and air travel fail closed', () => {
   const approvedTestFactors = [
     { id: 'test-approved-hotel', name: 'Test-approved hotel', activityType: 'HOTEL', unit: 'nights', factorValue: 15, region: 'Canada', country: 'Canada' },
     { id: 'test-approved-natural-gas', name: 'Test-approved natural gas', activityType: 'NATURAL_GAS', unit: 'GJ', factorValue: 49.44, region: 'Canada', country: 'Canada' },
@@ -119,9 +119,16 @@ it('reconciles fresh Golden A and C calculations after Alberta pilot electricity
   });
 
   expect(summarize(goldenA)).toEqual({ included: 1, tracked: 1, needsReview: 7, total: 60 });
-  expect(summarize(goldenC)).toEqual({ included: 4, tracked: 0, needsReview: 1, total: 1765.94 });
-  expect(summarize([...goldenA, ...goldenC])).toEqual({ included: 5, tracked: 1, needsReview: 8, total: 1825.94 });
+  expect(summarize(goldenC)).toEqual({ included: 3, tracked: 0, needsReview: 2, total: 1273.74 });
+  expect(summarize([...goldenA, ...goldenC])).toEqual({ included: 4, tracked: 1, needsReview: 9, total: 1333.74 });
+  expect(goldenC[4]).toMatchObject({
+    status: 'NEEDS_REVIEW',
+    matchingStatus: 'UNIT_MISMATCH',
+    calculationStatus: 'UNIT_MISMATCH',
+    reportTreatment: 'EXCLUDED',
+    calculatedEmissionsKgCO2e: null,
+  });
   expect(980 * .53).toBe(519.4);
   expect(1250 * .53).toBe(662.5);
-  expect(Number((3007.84 - 519.4 - 662.5).toFixed(2))).toBe(1825.94);
+  expect(Number((3007.84 - 519.4 - 662.5 - (4280 * 0.115)).toFixed(2))).toBe(1333.74);
 });

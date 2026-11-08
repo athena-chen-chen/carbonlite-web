@@ -92,7 +92,7 @@ it('deletes only the later-page source, keeps other later sources, and preserves
   await userEvent.click(screen.getByRole('menuitem', { name: 'Delete Source Document' }));
   const dialog = screen.getByRole('dialog');
   expect(dialog).toHaveTextContent('will NOT delete the imported Activity Records');
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete Source Document', exact: true }));
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete source document', exact: true }));
   await waitFor(() => expect(screen.queryByText('source-25.xlsx')).not.toBeInTheDocument());
   expect(screen.getByText('source-24.xlsx')).toBeInTheDocument();
   expect(screen.getAllByRole('checkbox', { name: /^Select document / })).toHaveLength(24);
@@ -115,7 +115,7 @@ it('retry extraction for a later-page source refreshes the whole collection', as
 it('upload with 25 sources keeps every older source accessible after refresh', async () => {
   mount(); await expand();
   await userEvent.upload(document.getElementById('document-upload-input') as HTMLInputElement, new File(['bill'], 'new-source.pdf', { type: 'application/pdf' }));
-  await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
   await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /^Select document / })).toHaveLength(26));
   expect(screen.getByText('source-25.xlsx')).toBeInTheDocument();
   const names = screen.getAllByRole('checkbox', { name: /^Select document / }).map((box) => box.getAttribute('aria-label'));
