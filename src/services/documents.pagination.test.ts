@@ -25,6 +25,25 @@ it('loads all 25 documents across the default 20-item server boundary, preservin
   expect(String(fetch.mock.calls[1][0])).toMatch(/\/documents\?page=2&pageSize=20$/);
 });
 
+it('returns enabled quota status from the authoritative first page', async () => {
+  const quotaStatus = {
+    enabled: true,
+    period: { startsAt: '2026-11-01T00:00:00.000Z', endsAt: '2026-11-29T00:00:00.000Z' },
+    uploads: {
+      periodLimit: 20, periodUsed: 7, periodRemaining: 13,
+      dailyLimit: 10, dailyUsed: 2, dailyRemaining: 8,
+      maxFileSizeBytes: 10 * 1024 * 1024,
+    },
+    extraction: { concurrentLimit: 2, running: 0, remaining: 2 },
+    importRows: { limit: 500 },
+  };
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(respond({ ...page(documents.slice(0, 20), 1), quotaStatus }))
+    .mockResolvedValueOnce(respond(page(documents.slice(20), 2)));
+
+  await expect(getDocuments()).resolves.toEqual({ items: documents, total: 25, quotaStatus });
+});
+
 it('deduplicates overlapping page boundaries by ID while retaining distinct documents with identical names', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(respond(page(documents.slice(0, 20), 1))).mockResolvedValueOnce(respond(page(documents.slice(19), 2)));
   const result = await getDocuments();

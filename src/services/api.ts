@@ -16,7 +16,17 @@ export type ApiErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'SERVER_ERROR'
-  | 'REQUEST_FAILED';
+  | 'REQUEST_FAILED'
+  | 'QUOTA_EXCEEDED';
+
+const QUOTA_ERROR_CODES = new Set([
+  'UPLOAD_PERIOD_QUOTA_EXCEEDED',
+  'DAILY_UPLOAD_QUOTA_EXCEEDED',
+  'FILE_SIZE_QUOTA_EXCEEDED',
+  'IMPORT_ROW_QUOTA_EXCEEDED',
+  'EXTRACTION_CONCURRENCY_EXCEEDED',
+  'EXTRACTION_ALREADY_RUNNING',
+]);
 
 function parseApiErrorBody(text: string) {
   try {
@@ -41,9 +51,12 @@ function getApiErrorCode(
   status: number,
   path: string,
   backendMessage: string,
+  backendCode?: string,
 ): ApiErrorCode {
   const lowerMessage = backendMessage.toLowerCase();
   const lowerPath = path.toLowerCase();
+
+  if (backendCode && QUOTA_ERROR_CODES.has(backendCode)) return 'QUOTA_EXCEEDED';
 
   if (/file is no longer available|file.*missing|uploaded file.*available/i.test(backendMessage)) {
     return 'FILE_MISSING';
@@ -112,6 +125,8 @@ function getFriendlyApiErrorMessage(code: ApiErrorCode, backendMessage = '') {
       return 'The requested information is no longer available.';
     case 'SERVER_ERROR':
       return getUserFriendlyErrorMessage(null, 'unknown');
+    case 'QUOTA_EXCEEDED':
+      return backendMessage || 'Your organization quota has been reached.';
     default:
       return code === 'REQUEST_FAILED'
         ? getUserFriendlyErrorMessage(null, 'network')
@@ -177,7 +192,12 @@ export async function apiFetch<T>(
     const text = await response.text();
     const parsedBody = parseApiErrorBody(text);
     const backendMessage = extractBackendMessage(text, parsedBody);
-    const code = getApiErrorCode(response.status, path, backendMessage);
+    const backendCode =
+      parsedBody && typeof parsedBody === 'object' &&
+      typeof (parsedBody as Record<string, unknown>).code === 'string'
+        ? (parsedBody as Record<string, string>).code
+        : undefined;
+    const code = getApiErrorCode(response.status, path, backendMessage, backendCode);
     const apiError = new ApiError(
       response.status,
       getFriendlyApiErrorMessage(code, backendMessage),

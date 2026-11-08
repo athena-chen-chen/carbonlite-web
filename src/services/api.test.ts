@@ -215,6 +215,45 @@ describe('apiFetch authenticated requests', () => {
     });
   });
 
+  it('preserves safe organization quota messages and code for 429 responses', async () => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        code: 'UPLOAD_PERIOD_QUOTA_EXCEEDED',
+        message: 'Your organization has reached its upload limit for this quota period.',
+        limit: 20,
+        remaining: 0,
+      }), { status: 429 }),
+    );
+
+    await expect(apiFetch('/documents/upload')).rejects.toMatchObject({
+      status: 429,
+      code: 'QUOTA_EXCEEDED',
+      message: 'Your organization has reached its upload limit for this quota period.',
+      technicalMessage: 'Your organization has reached its upload limit for this quota period.',
+    });
+  });
+
+  it.each([
+    [429, 'RATE_LIMITED', 'Too many requests. Please retry later.'],
+    [413, 'PAYLOAD_TOO_LARGE', 'The request payload is too large.'],
+  ])('does not classify non-quota %i responses as organization quota errors', async (
+    status,
+    backendCode,
+    message,
+  ) => {
+    const { apiFetch } = await loadApiFetch();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ code: backendCode, message }), { status }),
+    );
+
+    await expect(apiFetch('/unrelated-endpoint')).rejects.toMatchObject({
+      status,
+      code: 'REQUEST_FAILED',
+      data: { code: backendCode, message },
+    });
+  });
+
   it('maps failed network requests to the shared connection message', async () => {
     const { apiFetch } = await loadApiFetch();
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED localhost:3333'));

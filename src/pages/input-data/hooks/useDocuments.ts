@@ -3,6 +3,7 @@ import { deleteDocument, getDocuments } from '../../../services/documents';
 import { getCurrentUser, getOrganizationId } from '../../../services/auth';
 import { getUserFriendlyErrorMessage } from '../../../utils/userFriendlyErrors';
 import type { DocumentItem } from '../inputData.types';
+import type { OrganizationQuotaStatus } from '../../../services/organizationQuota';
 
 type DocumentsOptions = {
   skipLoad: boolean;
@@ -16,12 +17,13 @@ type DocumentCollection = {
   loading: boolean;
   hasLoaded: boolean;
   error: string | null;
+  quotaStatus: OrganizationQuotaStatus | null;
 };
 
 export function useDocuments({ skipLoad, onError }: DocumentsOptions) {
   const workspaceId = getOrganizationId(getCurrentUser());
   const emptyCollection = (hasLoaded = false): DocumentCollection => ({
-    workspaceId, items: [], total: 0, loading: false, hasLoaded, error: null,
+    workspaceId, items: [], total: 0, loading: false, hasLoaded, error: null, quotaStatus: null,
   });
   const [collection, setCollection] = useState<DocumentCollection>(emptyCollection);
   const requestGenerationRef = useRef(0);
@@ -51,7 +53,7 @@ export function useDocuments({ skipLoad, onError }: DocumentsOptions) {
     try {
       const data = await getDocuments();
       if (!isCurrent(generation)) return [];
-      setCollection({ workspaceId, items: data.items, total: data.total, loading: false, hasLoaded: true, error: null });
+      setCollection({ workspaceId, items: data.items, total: data.total, loading: false, hasLoaded: true, error: null, quotaStatus: data.quotaStatus ?? null });
       return data.items;
     } catch (error) {
       if (!isCurrent(generation)) return [];
@@ -104,6 +106,7 @@ export function useDocuments({ skipLoad, onError }: DocumentsOptions) {
     loading: current.loading,
     hasLoaded: current.hasLoaded,
     error: current.error,
+    quotaStatus: current.quotaStatus,
     replace,
     loadDocuments,
     refresh,

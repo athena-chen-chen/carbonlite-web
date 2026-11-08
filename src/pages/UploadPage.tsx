@@ -1267,6 +1267,7 @@ export function UploadPage() {
           uploadExtractInProgress={upload.uploadExtractInProgress}
           fileInputRef={upload.fileInputRef}
           uploadDisabledReason={!canUploadData ? getUploadPermissionDeniedReason(currentUser) : undefined}
+          quotaStatus={documents.quotaStatus}
           onChooseFiles={upload.handleChooseFile}
           onFileChange={upload.handleFileChange}
           onDragEnter={upload.handleUploadDragEnter}

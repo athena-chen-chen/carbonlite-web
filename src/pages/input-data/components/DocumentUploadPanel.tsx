@@ -1,4 +1,5 @@
 import type { ChangeEvent, DragEvent, Ref } from 'react';
+import type { OrganizationQuotaStatus } from '../../../services/organizationQuota';
 import {
   uploadCardStyle,
   uploadDropzoneStyle,
@@ -20,6 +21,7 @@ type DocumentUploadPanelProps = {
   uploadExtractInProgress: boolean;
   fileInputRef: Ref<HTMLInputElement>;
   uploadDisabledReason?: string;
+  quotaStatus?: OrganizationQuotaStatus | null;
   onChooseFiles: () => void;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onDragEnter: (event: DragEvent<HTMLDivElement>) => void;
@@ -38,6 +40,7 @@ export function DocumentUploadPanel({
   uploadExtractInProgress,
   fileInputRef,
   uploadDisabledReason,
+  quotaStatus,
   onChooseFiles,
   onFileChange,
   onDragEnter,
@@ -52,6 +55,12 @@ export function DocumentUploadPanel({
       <p style={{ color: '#666' }}>
         Upload utility bills, fuel invoices, water bills, travel documents, hotel invoices, or operational PDFs.
       </p>
+      {quotaStatus?.enabled ? (
+        <p aria-label="Organization upload quota" style={{ color: '#475569' }}>
+          {quotaStatus.uploads.periodRemaining} of {quotaStatus.uploads.periodLimit} uploads remaining this period ·{' '}
+          {quotaStatus.uploads.dailyRemaining} of {quotaStatus.uploads.dailyLimit} remaining today
+        </p>
+      ) : null}
 
       <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
         <div

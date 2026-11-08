@@ -10,6 +10,7 @@ import {
   getCurrentUser,
   getOrganizationId,
 } from './auth';
+import type { OrganizationQuotaStatus } from './organizationQuota';
 
 export type UploadDocumentInput = {
   file: File;
@@ -64,6 +65,7 @@ export type DocumentListResponse = {
   pageSize: number;
   total: number;
   totalPages: number;
+  quotaStatus?: OrganizationQuotaStatus | null;
 };
 
 export type DeleteDocumentResponse = {
@@ -176,7 +178,11 @@ export async function calculateFileSha256(file: File) {
     .join('');
 }
 
-export type DocumentCollectionResponse = { items: DocumentItem[]; total: number };
+export type DocumentCollectionResponse = {
+  items: DocumentItem[];
+  total: number;
+  quotaStatus?: OrganizationQuotaStatus | null;
+};
 
 // Review Data owns the complete collection (recent three / expand all), not a server page.
 export async function getDocuments(): Promise<DocumentCollectionResponse> {
@@ -185,6 +191,7 @@ export async function getDocuments(): Promise<DocumentCollectionResponse> {
 
   const itemsById = new Map<string, DocumentItem>();
   let pageSize: number | undefined;
+  let quotaStatus: OrganizationQuotaStatus | null = null;
   // Explicitly fail rather than silently truncate or follow inconsistent metadata forever.
   const maxPages = 1000;
   for (let page = 1; page <= maxPages; page += 1) {
@@ -197,6 +204,7 @@ export async function getDocuments(): Promise<DocumentCollectionResponse> {
       throw new Error('The workspace changed. Please reload input sources.');
     }
     const { total, totalPages } = response;
+    if (page === 1) quotaStatus = response.quotaStatus ?? null;
     if (!Array.isArray(response.items) || response.page !== page ||
         !Number.isSafeInteger(total) || total < 0 ||
         !Number.isSafeInteger(response.pageSize) || response.pageSize < 1 || response.pageSize > 100 ||
@@ -218,7 +226,11 @@ export async function getDocuments(): Promise<DocumentCollectionResponse> {
       if (itemsById.size !== total) {
         throw new Error('The input source collection changed or was incomplete. Please try again.');
       }
-      return { items: [...itemsById.values()], total };
+      return {
+        items: [...itemsById.values()],
+        total,
+        ...(quotaStatus ? { quotaStatus } : {}),
+      };
     }
     if (response.items.length === 0) {
       throw new Error('An input source page was missing. Please try again.');

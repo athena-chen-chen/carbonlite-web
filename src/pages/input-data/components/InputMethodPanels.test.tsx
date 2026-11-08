@@ -50,6 +50,31 @@ it.each(['documents', 'spreadsheet', 'manual'] as const)('keeps tab order, selec
   }
 });
 
+it('shows remaining quota only when the organization policy is enabled', () => {
+  const quotaStatus = {
+    enabled: true,
+    period: { startsAt: '2026-11-01T00:00:00.000Z', endsAt: '2026-11-29T00:00:00.000Z' },
+    uploads: {
+      periodLimit: 20, periodUsed: 7, periodRemaining: 13,
+      dailyLimit: 10, dailyUsed: 2, dailyRemaining: 8,
+      maxFileSizeBytes: 10 * 1024 * 1024,
+    },
+    extraction: { concurrentLimit: 2, running: 0, remaining: 2 },
+    importRows: { limit: 500 },
+  };
+  const { rerender } = render(
+    <DocumentUploadPanel {...documentProps()} quotaStatus={quotaStatus} />,
+  );
+  expect(screen.getByLabelText('Organization upload quota')).toHaveTextContent(
+    '13 of 20 uploads remaining this period · 8 of 10 remaining today',
+  );
+
+  rerender(
+    <DocumentUploadPanel {...documentProps()} quotaStatus={{ ...quotaStatus, enabled: false }} />,
+  );
+  expect(screen.queryByLabelText('Organization upload quota')).not.toBeInTheDocument();
+});
+
 it('delegates choosing files from a click', () => {
   const props = documentProps();
   render(<DocumentUploadPanel {...props} />);
