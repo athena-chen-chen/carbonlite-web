@@ -1,7 +1,14 @@
 import { getToken, handleUnauthorized } from './auth';
 import { buildApiUrl } from '../config/api';
 import { captureFrontendException } from '../sentry';
-import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import {
+  getUserFriendlyErrorMessage,
+  sanitizeErrorMessage,
+} from '../utils/userFriendlyErrors';
+
+const BAD_REQUEST_FALLBACK_MESSAGE =
+  'The request could not be completed. Please review the information and try again.';
+const MAX_BAD_REQUEST_MESSAGE_LENGTH = 500;
 
 export type ApiErrorCode =
   | 'FILE_MISSING'
@@ -12,6 +19,7 @@ export type ApiErrorCode =
   | 'MISSING_UNIT'
   | 'MISSING_QUANTITY'
   | 'MISSING_ACTIVITY_TYPE'
+  | 'BAD_REQUEST'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'NOT_FOUND'
@@ -45,6 +53,18 @@ function extractBackendMessage(text: string, parsedBody: unknown) {
   }
 
   return Array.isArray(message) ? message.join(', ') : String(message);
+}
+
+function getSafeBadRequestMessage(backendMessage: string) {
+  const trimmedMessage = backendMessage.trim();
+  if (!trimmedMessage || /<[^>]*>/.test(trimmedMessage)) {
+    return BAD_REQUEST_FALLBACK_MESSAGE;
+  }
+
+  const sanitizedMessage = sanitizeErrorMessage(trimmedMessage);
+  if (!sanitizedMessage) return BAD_REQUEST_FALLBACK_MESSAGE;
+
+  return sanitizedMessage.slice(0, MAX_BAD_REQUEST_MESSAGE_LENGTH);
 }
 
 function getApiErrorCode(
@@ -91,6 +111,8 @@ function getApiErrorCode(
     return 'MISSING_ACTIVITY_TYPE';
   }
 
+  if (status === 400) return 'BAD_REQUEST';
+
   if (status === 401) return 'UNAUTHORIZED';
   if (status === 403) return 'FORBIDDEN';
   if (status === 404) return 'NOT_FOUND';
@@ -117,6 +139,8 @@ function getFriendlyApiErrorMessage(code: ApiErrorCode, backendMessage = '') {
       return 'Quantity is required.';
     case 'MISSING_ACTIVITY_TYPE':
       return 'Activity type is required.';
+    case 'BAD_REQUEST':
+      return getSafeBadRequestMessage(backendMessage);
     case 'UNAUTHORIZED':
       return 'Your session has expired. Please sign in again.';
     case 'FORBIDDEN':
