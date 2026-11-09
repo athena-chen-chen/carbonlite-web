@@ -12,7 +12,7 @@ describe('pilot reviewer admin service', () => {
     localStorage.clear();
   });
 
-  it('creates a read-only pilot reviewer through the admin endpoint', async () => {
+  it('creates a customer invitation with an explicit CUSTOMER purpose', async () => {
     localStorage.setItem('accessToken', 'admin-token');
     localStorage.setItem(
       'currentUser',
@@ -34,6 +34,7 @@ describe('pilot reviewer admin service', () => {
       name: 'Alexander',
       email: 'Alexander@Example.com',
       workspaceName: 'CarbonLite Sample Workspace',
+      invitationPurpose: 'CUSTOMER',
       expiresAt: '2026-09-01',
     });
 
@@ -48,34 +49,65 @@ describe('pilot reviewer admin service', () => {
       }),
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body).toMatchObject({
+    expect(body).toEqual({
+      invitationPurpose: 'CUSTOMER',
       name: 'Alexander',
       email: 'alexander@example.com',
-      workspace: 'CarbonLite Sample Workspace',
       workspaceName: 'CarbonLite Sample Workspace',
-      expires: '2026-09-01',
       expiresAt: '2026-09-01',
-      role: 'REVIEWER',
-      accountType: 'PILOT_REVIEWER',
-      invite: {
-        delivery: 'SETUP_LINK',
-        sendEmail: true,
-        tokenExpiresHours: 72,
-        passwordResetRequired: true,
-      },
-      accessScope: 'SAMPLE_WORKSPACE_ONLY',
-      permissions: {
-        canViewSampleData: true,
-        canUpload: false,
-        canImport: false,
-        canEditRecords: false,
-        canDeleteRecords: false,
-        canResetDemoData: false,
-        canEditFactors: false,
-        canManageUsers: false,
-        canAccessAdminDashboard: false,
-      },
     });
+  });
+
+  it('creates a demo invitation with an explicit DEMO purpose', async () => {
+    localStorage.setItem('accessToken', 'admin-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        platformRole: 'ADMIN',
+        organizationId: 'sample-org',
+      }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ email: 'demo@example.com' }), { status: 200 }),
+    );
+
+    await createPilotReviewer({
+      name: 'Demo User',
+      email: 'demo@example.com',
+      workspaceName: 'CarbonLite Sample Workspace',
+      invitationPurpose: 'DEMO',
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body).toEqual({
+      invitationPurpose: 'DEMO',
+      name: 'Demo User',
+      email: 'demo@example.com',
+      workspaceName: 'CarbonLite Sample Workspace',
+    });
+  });
+
+  it('rejects a missing invitation purpose instead of falling back to DEMO', () => {
+    localStorage.setItem('accessToken', 'admin-token');
+    localStorage.setItem(
+      'currentUser',
+      JSON.stringify({
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        platformRole: 'ADMIN',
+        organizationId: 'sample-org',
+      }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    expect(() => createPilotReviewer({
+      name: 'Missing Purpose',
+      email: 'missing@example.com',
+      workspaceName: 'Missing Purpose Workspace',
+    } as never)).toThrow('Choose Customer or Demo before creating the invitation.');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('blocks non-admin users before calling the API', async () => {
@@ -95,6 +127,7 @@ describe('pilot reviewer admin service', () => {
         name: 'Alexander',
         email: 'alexander@example.com',
         workspaceName: 'CarbonLite Sample Workspace',
+        invitationPurpose: 'DEMO',
       }),
     ).toThrow('You do not have permission to perform this action.');
 
@@ -121,6 +154,7 @@ describe('pilot reviewer admin service', () => {
         name: 'Reviewer',
         email: 'reviewer@example.com',
         workspaceName: 'Sample workspace',
+        invitationPurpose: 'CUSTOMER',
       }),
     ).toThrow('You do not have permission to perform this action.');
     expect(fetchMock).not.toHaveBeenCalled();
@@ -144,6 +178,7 @@ describe('pilot reviewer admin service', () => {
         name: 'Alexander',
         email: '[mint_pp@hotmail.com](mailto:mint_pp@hotmail.com)',
         workspaceName: 'CarbonLite Sample Workspace',
+        invitationPurpose: 'DEMO',
       }),
     ).toThrow('Please enter a valid email address, for example name@example.com.');
 
