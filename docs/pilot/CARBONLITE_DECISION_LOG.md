@@ -109,7 +109,7 @@ The identifiers below are decision-record identifiers, not Master TODO task IDs.
 
 ## Release Evidence Note — 2026-11-08 (Non-decision)
 
-The locally reviewed application candidates are frontend `ecd58a7e522a3756680cc6dd92183871eb3690df` and backend `6ffd2a62479c3a11ff25522178c85f8ed7e3c015`. The later frontend commit `05789a1` adds repository agent instructions only. This evidence does not approve deployment, provider configuration, production migration, factor use, AI processing, or real-data operation. `DEC-PENDING-004` remains `PENDING`, `FDR-2026-003` remains `PENDING_FOUNDER_APPROVAL`, `AI-001` remains `READY_FOR_REVIEW`, `FAC-001` remains `NOT_STARTED`, and the real-data pilot remains **NO-GO**.
+The final locally tested candidate HEADs are frontend `6c97582e77b526e9158af53071d68f50dc4b5cf9` and backend `4a31421a2005fcb0d7103647f14acb90f58af891`. Frontend evidence records typecheck, pilot build, the complete Vitest suite at 117/117 files and 1569/1569 tests, and Chromium smoke 1/1. Backend evidence records 59/59 migrations replayed from empty, the normal E2E suite at 44/44 suites and 265/265 tests, Prisma validation, and pre/post-commit builds. The demonstrated evidence level is `LOCAL_TESTED`. This non-decision evidence does not approve deployment, provider configuration, production migration, factor use, AI processing, or real-data operation. `REL-001` remains `IN_PROGRESS`, `DEC-PENDING-004` remains `PENDING`, `FDR-2026-003` remains `PENDING_FOUNDER_APPROVAL`, `AI-001` remains `READY_FOR_REVIEW`, `FAC-001` remains `NOT_STARTED`, `DAT-002` remains `IN_PROGRESS`, `COM-003` remains `BLOCKED`, and the real-data pilot remains **NO-GO**.
 
 ## Current Control State
 
