@@ -12,7 +12,12 @@ if (typeof Blob !== 'undefined' && !Blob.prototype.arrayBuffer) {
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   localStorage.clear();
   sessionStorage.clear();
-  vi.restoreAllMocks();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockRejectedValue(new TypeError('Network access is disabled in frontend unit tests.')),
+  );
 });

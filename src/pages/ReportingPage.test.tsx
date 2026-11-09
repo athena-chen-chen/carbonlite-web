@@ -406,7 +406,12 @@ describe('ReportingPage audit trail', () => {
   };
 
   beforeEach(() => {
+    vi.mocked(loadDefaultMetricsDateRange).mockReset();
+    vi.mocked(loadMetricsOverview).mockReset();
+    vi.mocked(getWorkflowActivityEvents).mockReset();
+    vi.mocked(trackActivityEvent).mockReset();
     vi.clearAllMocks();
+    localStorage.clear();
     localStorage.setItem('accessToken', 'token');
     localStorage.setItem(
       'currentUser',
