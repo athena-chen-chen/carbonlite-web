@@ -1,5 +1,11 @@
 import { FormEvent, useMemo, useState } from 'react';
 import {
+  getCustomerPreflight,
+  suspendCustomerOrganization,
+  type CustomerPreflightResponse,
+  type SuspendCustomerOrganizationResponse,
+} from '../services/customerSafeguards';
+import {
   createPilotReviewer,
   deactivatePilotReviewer,
   normalizePilotReviewerEmail,
@@ -33,6 +39,17 @@ export default function PilotReviewersPage() {
     useState<RegeneratePilotReviewerInviteResponse | null>(null);
   const [regenerateError, setRegenerateError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [preflightEmail, setPreflightEmail] = useState('');
+  const [preflightOrganizationName, setPreflightOrganizationName] = useState('');
+  const [preflightResult, setPreflightResult] =
+    useState<CustomerPreflightResponse | null>(null);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [runningPreflight, setRunningPreflight] = useState(false);
+  const [slugConfirmation, setSlugConfirmation] = useState('');
+  const [suspensionResult, setSuspensionResult] =
+    useState<SuspendCustomerOrganizationResponse | null>(null);
+  const [suspensionError, setSuspensionError] = useState<string | null>(null);
+  const [suspending, setSuspending] = useState(false);
 
   const setupLink = useMemo(() => getInviteLink(result), [result]);
   const regeneratedSetupLink = useMemo(
@@ -144,6 +161,60 @@ export default function PilotReviewersPage() {
       setRegenerateError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setRegenerating(false);
+    }
+  }
+
+  async function handlePreflight(event: FormEvent) {
+    event.preventDefault();
+    setPreflightError(null);
+    setPreflightResult(null);
+    setSuspensionResult(null);
+    setSuspensionError(null);
+    setSlugConfirmation('');
+    setRunningPreflight(true);
+
+    try {
+      const normalizedEmail = preflightEmail.trim().toLowerCase();
+      const organizationName = preflightOrganizationName.trim();
+      setPreflightEmail(normalizedEmail);
+      setPreflightOrganizationName(organizationName);
+      setPreflightResult(await getCustomerPreflight({
+        email: normalizedEmail,
+        organizationName,
+      }));
+    } catch (err) {
+      setPreflightError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setRunningPreflight(false);
+    }
+  }
+
+  async function handleSuspendCustomer() {
+    const organization = preflightResult?.organization;
+    if (!organization || organization.customerStatus !== 'ACTIVE') return;
+    if (slugConfirmation !== organization.slug) return;
+    if (!window.confirm(
+      `Suspend access for ${organization.name}? Customer data will be retained, but login and existing sessions will be blocked.`,
+    )) return;
+
+    setSuspensionError(null);
+    setSuspensionResult(null);
+    setSuspending(true);
+    try {
+      const response = await suspendCustomerOrganization({
+        organizationId: organization.id,
+        organizationSlug: organization.slug,
+      });
+      setSuspensionResult(response);
+      setSlugConfirmation('');
+      setPreflightResult(await getCustomerPreflight({
+        email: preflightEmail,
+        organizationName: preflightOrganizationName,
+      }));
+    } catch (err) {
+      setSuspensionError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setSuspending(false);
     }
   }
 
@@ -469,6 +540,172 @@ export default function PilotReviewersPage() {
           {deactivating ? 'Deactivating...' : 'Deactivate Pilot Reviewer'}
         </button>
       </form>
+
+      <section style={safeguardsSectionStyle} aria-labelledby="customer-safeguards-title">
+        <h2 id="customer-safeguards-title" style={safeguardsTitleStyle}>Customer safeguards</h2>
+
+        <form onSubmit={handlePreflight} style={formCardStyle}>
+          <h3 style={sectionTitleStyle}>Customer preflight</h3>
+          <p style={helperTextStyle}>
+            Check an external pilot account and organization before creating, provisioning,
+            suspending, or troubleshooting access.
+          </p>
+          <div style={fieldGridStyle}>
+            <label style={labelStyle}>
+              Preflight email
+              <input
+                type="text"
+                inputMode="email"
+                value={preflightEmail}
+                onChange={(event) => setPreflightEmail(event.target.value)}
+                onBlur={(event) => setPreflightEmail(event.target.value.trim().toLowerCase())}
+                placeholder="customer@example.com"
+                autoComplete="email"
+                style={inputStyle}
+              />
+            </label>
+            <label style={labelStyle}>
+              Organization name
+              <input
+                value={preflightOrganizationName}
+                onChange={(event) => setPreflightOrganizationName(event.target.value)}
+                placeholder="Customer organization"
+                style={inputStyle}
+              />
+            </label>
+          </div>
+          <p style={helperTextStyle}>Enter at least one lookup value. Preflight is read-only.</p>
+          {preflightError ? <div style={errorStyle}>{preflightError}</div> : null}
+          <button type="submit" disabled={runningPreflight} style={primaryButtonStyle(runningPreflight)}>
+            {runningPreflight ? 'Running preflight...' : 'Run preflight'}
+          </button>
+        </form>
+
+        {preflightResult ? (
+          <section style={resultCardStyle} aria-label="Customer preflight result">
+            <h3 style={sectionTitleStyle}>Preflight result</h3>
+            <h4 style={summaryHeadingStyle}>User</h4>
+            {!preflightResult.user.exists ? (
+              <div style={warningStyle}>No matching user found.</div>
+            ) : null}
+            <div style={resultGridStyle}>
+              <ResultItem label="Exists" value={yesNo(preflightResult.user.exists)} />
+              <ResultItem label="Email" value={preflightResult.user.normalizedEmail || 'Not available'} />
+              <ResultItem label="User ID" value={preflightResult.user.id || 'Not available'} />
+              <ResultItem label="Platform role" value={preflightResult.user.platformRole || 'Not available'} />
+              <ResultItem label="Account type" value={preflightResult.user.accountType || 'Not available'} />
+              <ResultItem label="Active" value={optionalYesNo(preflightResult.user.isActive)} />
+              <ResultItem label="Password setup required" value={optionalYesNo(preflightResult.user.passwordSetupRequired)} />
+              <ResultItem label="Invitation status" value={preflightResult.user.invitationStatus || 'Not available'} />
+              <ResultItem label="Membership role" value={preflightResult.user.membershipRole || 'Not available'} />
+            </div>
+
+            <h4 style={summaryHeadingStyle}>Organization</h4>
+            {!preflightResult.organization ? (
+              <div style={warningStyle}>No matching organization found.</div>
+            ) : (
+              <>
+                <div style={resultGridStyle}>
+                  <ResultItem label="Organization name" value={preflightResult.organization.name} />
+                  <ResultItem label="Organization ID" value={preflightResult.organization.id} />
+                  <ResultItem label="Slug" value={preflightResult.organization.slug} />
+                  <ResultItem label="Customer status" value={preflightResult.organization.customerStatus} />
+                  <ResultItem label="Provisioned at" value={preflightResult.organization.provisionedAt || 'Not provisioned'} />
+                  <ResultItem label="Active" value={yesNo(preflightResult.organization.isActive)} />
+                  <ResultItem label="Demo factors enabled" value={yesNo(preflightResult.organization.allowDemoFactorsForCalculations)} />
+                </div>
+
+                <h4 style={summaryHeadingStyle}>Data counts</h4>
+                <div style={resultGridStyle}>
+                  <ResultItem label="Activity records" value={String(preflightResult.organization.counts.activityData)} />
+                  <ResultItem label="Reports" value={String(preflightResult.organization.counts.reports)} />
+                  <ResultItem label="Documents" value={String(preflightResult.organization.counts.documents)} />
+                  <ResultItem label="Golden Sample artifacts" value={String(preflightResult.organization.counts.goldenSampleArtifacts)} />
+                  <ResultItem label="Memberships" value={String(preflightResult.organization.counts.memberships)} />
+                </div>
+
+                <h4 style={summaryHeadingStyle}>Quota</h4>
+                {preflightResult.organization.quota ? (
+                  <div style={resultGridStyle}>
+                    <ResultItem label="Enabled" value={optionalYesNo(preflightResult.organization.quota.enabled)} />
+                    <ResultItem label="Period days" value={optionalValue(preflightResult.organization.quota.periodDays)} />
+                    <ResultItem label="Upload limit" value={optionalValue(preflightResult.organization.quota.uploadLimit)} />
+                    <ResultItem label="Daily upload limit" value={optionalValue(preflightResult.organization.quota.dailyUploadLimit)} />
+                    <ResultItem label="Max file size" value={optionalValue(preflightResult.organization.quota.maxFileSize)} />
+                    <ResultItem label="Extraction concurrency" value={optionalValue(preflightResult.organization.quota.extractionConcurrency)} />
+                    <ResultItem label="Import row limit" value={optionalValue(preflightResult.organization.quota.importRowLimit)} />
+                  </div>
+                ) : <p style={helperTextStyle}>No organization quota configured.</p>}
+
+                <h4 style={summaryHeadingStyle}>AI authorization</h4>
+                {preflightResult.organization.aiAuthorization ? (
+                  <div style={resultGridStyle}>
+                    <ResultItem label="Status" value={preflightResult.organization.aiAuthorization.status || 'Not available'} />
+                    <ResultItem label="Provider" value={preflightResult.organization.aiAuthorization.provider || 'Not available'} />
+                    <ResultItem label="Processing scope" value={preflightResult.organization.aiAuthorization.processingScope || 'Not available'} />
+                    <ResultItem label="Effective date" value={preflightResult.organization.aiAuthorization.effectiveDate || 'Not available'} />
+                    <ResultItem label="Expiry" value={preflightResult.organization.aiAuthorization.expiry || 'Not available'} />
+                    <ResultItem label="Withdrawn date" value={preflightResult.organization.aiAuthorization.withdrawnDate || 'Not available'} />
+                  </div>
+                ) : <p style={helperTextStyle}>No organization AI authorization configured.</p>}
+              </>
+            )}
+          </section>
+        ) : null}
+
+        {preflightResult?.organization ? (
+          <section style={suspendCardStyle} aria-label="Suspend customer access">
+            <h3 style={sectionTitleStyle}>Suspend customer access</h3>
+            <p style={helperTextStyle}>
+              Suspension blocks login and existing authenticated sessions without deleting customer data.
+            </p>
+            <div style={readonlySummaryStyle}>
+              <div><strong>Organization:</strong> {preflightResult.organization.name}</div>
+              <div><strong>Slug:</strong> {preflightResult.organization.slug}</div>
+            </div>
+            <label style={labelStyle}>
+              Type the organization slug to confirm
+              <input
+                value={slugConfirmation}
+                onChange={(event) => setSlugConfirmation(event.target.value)}
+                style={inputStyle}
+                autoComplete="off"
+              />
+            </label>
+            {preflightResult.organization.customerStatus !== 'ACTIVE' ? (
+              <div style={warningStyle}>
+                Suspension is available only when customer status is ACTIVE.
+              </div>
+            ) : null}
+            {suspensionError ? <div style={errorStyle}>{suspensionError}</div> : null}
+            {suspensionResult ? (
+              <div style={successStyle}>
+                {suspensionResult.status === 'ALREADY_SUSPENDED'
+                  ? 'This customer organization is already suspended.'
+                  : 'Customer access suspended.'}
+                <div>Status: {suspensionResult.status}</div>
+                <div>Organization ID: {suspensionResult.organizationId}</div>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleSuspendCustomer}
+              disabled={
+                suspending ||
+                preflightResult.organization.customerStatus !== 'ACTIVE' ||
+                slugConfirmation !== preflightResult.organization.slug
+              }
+              style={dangerButtonStyle(
+                suspending ||
+                preflightResult.organization.customerStatus !== 'ACTIVE' ||
+                slugConfirmation !== preflightResult.organization.slug,
+              )}
+            >
+              {suspending ? 'Suspending...' : 'Suspend customer'}
+            </button>
+          </section>
+        ) : null}
+      </section>
     </div>
   );
 }
@@ -486,6 +723,18 @@ function ResultItem({ label, value }: { label: string; value: string }) {
       <span style={resultValueStyle}>{value}</span>
     </div>
   );
+}
+
+function yesNo(value: boolean) {
+  return value ? 'Yes' : 'No';
+}
+
+function optionalYesNo(value: boolean | undefined) {
+  return value === undefined ? 'Not available' : yesNo(value);
+}
+
+function optionalValue(value: number | undefined) {
+  return value === undefined ? 'Not available' : String(value);
 }
 
 const pageStyle: React.CSSProperties = {
@@ -534,6 +783,31 @@ const deactivateCardStyle: React.CSSProperties = {
   ...formCardStyle,
   marginTop: 18,
   borderColor: '#fecaca',
+};
+
+const safeguardsSectionStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 18,
+  marginTop: 32,
+  paddingTop: 24,
+  borderTop: '2px solid #cbd5e1',
+};
+
+const safeguardsTitleStyle: React.CSSProperties = {
+  ...titleStyle,
+  fontSize: 24,
+};
+
+const suspendCardStyle: React.CSSProperties = {
+  ...formCardStyle,
+  borderColor: '#fca5a5',
+  background: '#fffafa',
+};
+
+const summaryHeadingStyle: React.CSSProperties = {
+  margin: '4px 0 0',
+  color: '#334155',
+  fontSize: 16,
 };
 
 const formCardWithMarginStyle: React.CSSProperties = {

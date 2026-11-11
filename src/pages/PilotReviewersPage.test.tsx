@@ -6,6 +6,11 @@ import {
   deactivatePilotReviewer,
   regeneratePilotReviewerInvite,
 } from '../services/pilotReviewers';
+import {
+  getCustomerPreflight,
+  suspendCustomerOrganization,
+  type CustomerPreflightResponse,
+} from '../services/customerSafeguards';
 
 vi.mock('../services/pilotReviewers', async () => {
   const actual = await vi.importActual<typeof import('../services/pilotReviewers')>(
@@ -19,6 +24,46 @@ vi.mock('../services/pilotReviewers', async () => {
     regeneratePilotReviewerInvite: vi.fn(),
   };
 });
+
+vi.mock('../services/customerSafeguards', () => ({
+  getCustomerPreflight: vi.fn(),
+  suspendCustomerOrganization: vi.fn(),
+}));
+
+const activeCustomerPreflight: CustomerPreflightResponse = {
+  lookup: {
+    normalizedEmail: 'customer@example.com',
+    organizationName: null,
+  },
+  user: {
+    exists: true,
+    id: 'user-123',
+    normalizedEmail: 'customer@example.com',
+    platformRole: 'USER',
+    accountType: 'CUSTOMER',
+    isActive: true,
+    passwordSetupRequired: false,
+    invitationStatus: 'completed',
+    organizationId: 'org-123',
+    membershipRole: 'OWNER',
+  },
+  organization: {
+    id: 'org-123',
+    name: 'Acme Pilot',
+    slug: 'acme-pilot',
+    customerStatus: 'ACTIVE',
+    provisionedAt: '2026-11-10T12:00:00.000Z',
+    isActive: true,
+    allowDemoFactorsForCalculations: false,
+    counts: {
+      activityData: 2,
+      reports: 1,
+      documents: 3,
+      goldenSampleArtifacts: 0,
+      memberships: 1,
+    },
+  },
+};
 
 describe('PilotReviewersPage', () => {
   beforeEach(() => {
@@ -261,5 +306,148 @@ describe('PilotReviewersPage', () => {
       'https://www.carbonliteapp.ca/set-password?token=new-token',
     );
     expect(screen.getByText('Regenerated setup link copied.')).toBeInTheDocument();
+  });
+
+  it('runs a read-only preflight, normalizes email, and renders only safe summary fields', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(activeCustomerPreflight);
+
+    render(<PilotReviewersPage />);
+
+    await userEvent.type(
+      screen.getByLabelText(/preflight email/i),
+      'Customer@Example.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    expect(getCustomerPreflight).toHaveBeenCalledTimes(1);
+    expect(getCustomerPreflight).toHaveBeenCalledWith({
+      email: 'customer@example.com',
+      organizationName: '',
+    });
+    expect(await screen.findByText('user-123')).toBeInTheDocument();
+    expect(screen.getAllByText('Acme Pilot').length).toBeGreaterThan(0);
+    expect(screen.getByText('No organization quota configured.')).toBeInTheDocument();
+    expect(screen.getByText('No organization AI authorization configured.')).toBeInTheDocument();
+    expect(screen.queryByText(/token|hash|credential|document contents/i)).not.toBeInTheDocument();
+    expect(suspendCustomerOrganization).not.toHaveBeenCalled();
+  });
+
+  it('supports organization-name-only preflight and requires at least one lookup value', async () => {
+    vi.mocked(getCustomerPreflight)
+      .mockRejectedValueOnce(new Error('Enter an email or organization name to run preflight.'))
+      .mockResolvedValueOnce({
+        lookup: { normalizedEmail: null, organizationName: 'Missing Org' },
+        user: { exists: false, normalizedEmail: null },
+        organization: null,
+      });
+
+    render(<PilotReviewersPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    expect(await screen.findByText('Enter an email or organization name to run preflight.')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/organization name/i), '  Missing Org  ');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    expect(getCustomerPreflight).toHaveBeenLastCalledWith({
+      email: '',
+      organizationName: 'Missing Org',
+    });
+    expect(await screen.findByText('No matching user found.')).toBeInTheDocument();
+    expect(screen.getByText('No matching organization found.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /suspend customer/i })).not.toBeInTheDocument();
+  });
+
+  it('requires the exact returned slug and uses the preflight organization ID to suspend', async () => {
+    const suspendedPreflight: CustomerPreflightResponse = {
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        customerStatus: 'SUSPENDED',
+      },
+    };
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(activeCustomerPreflight)
+      .mockResolvedValueOnce(suspendedPreflight);
+    vi.mocked(suspendCustomerOrganization).mockResolvedValue({
+      organizationId: 'org-123',
+      status: 'SUSPENDED',
+      suspended: true,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    const suspendButton = await screen.findByRole('button', { name: /suspend customer/i });
+    expect(suspendButton).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/type the organization slug/i), 'wrong-slug');
+    expect(suspendButton).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText(/type the organization slug/i));
+    await userEvent.type(screen.getByLabelText(/type the organization slug/i), 'acme-pilot');
+    expect(suspendButton).toBeEnabled();
+    await userEvent.click(suspendButton);
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Suspend access for Acme Pilot? Customer data will be retained, but login and existing sessions will be blocked.',
+    );
+    expect(suspendCustomerOrganization).toHaveBeenCalledWith({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+    });
+    expect(await screen.findByText('Customer access suspended.')).toBeInTheDocument();
+    expect(getCustomerPreflight).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByText('SUSPENDED').length).toBeGreaterThan(0);
+  });
+
+  it('disables suspension for a non-ACTIVE organization', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue({
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        customerStatus: 'PENDING',
+      },
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    await userEvent.type(
+      await screen.findByLabelText(/type the organization slug/i),
+      'acme-pilot',
+    );
+
+    expect(screen.getByRole('button', { name: /suspend customer/i })).toBeDisabled();
+    expect(screen.getByText(/only when customer status is ACTIVE/i)).toBeInTheDocument();
+  });
+
+  it('handles an ALREADY_SUSPENDED race without a second mutation', async () => {
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(activeCustomerPreflight)
+      .mockResolvedValueOnce({
+        ...activeCustomerPreflight,
+        organization: {
+          ...activeCustomerPreflight.organization!,
+          customerStatus: 'SUSPENDED',
+        },
+      });
+    vi.mocked(suspendCustomerOrganization).mockResolvedValue({
+      organizationId: 'org-123',
+      status: 'ALREADY_SUSPENDED',
+      suspended: true,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    await userEvent.type(
+      await screen.findByLabelText(/type the organization slug/i),
+      'acme-pilot',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /suspend customer/i }));
+
+    expect(await screen.findByText('This customer organization is already suspended.')).toBeInTheDocument();
+    expect(suspendCustomerOrganization).toHaveBeenCalledTimes(1);
+    expect(getCustomerPreflight).toHaveBeenCalledTimes(2);
   });
 });
