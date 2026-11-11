@@ -74,6 +74,36 @@ export type ProvisionPaidPilotCustomerResponse = {
   alreadyProvisioned?: boolean;
 };
 
+export type OrganizationErasureInventory = {
+  organizationId: string;
+  organizationSlug: string;
+  users: number;
+  memberships: number;
+  facilities: number;
+  assets: number;
+  documents: number;
+  physicalFiles: number;
+  documentExtractions: number;
+  spreadsheetReviewRows: number;
+  activityRecords: number;
+  calculationSnapshots: number;
+  importBatches: number;
+  metricResults: number;
+  reports: number;
+  reportArtifacts: number;
+  aiJobs: number;
+  customConversionFactors: number;
+  auditLogs: number;
+  feedback: number;
+  activityEvents: number;
+};
+
+export type OrganizationErasureDryRunResponse = {
+  status: 'DRY_RUN';
+  inventory: OrganizationErasureInventory;
+  dataDeleted: false;
+};
+
 export function getCustomerPreflight(input: CustomerPreflightLookup) {
   requirePlatformAdmin();
   const email = input.email?.trim()
@@ -128,6 +158,17 @@ export function provisionPaidPilotCustomer(input: {
         primaryAdminUserId: input.primaryAdminUserId,
         confirmProvision: true,
       }),
+    },
+  );
+}
+
+export function runOrganizationErasureDryRun(organizationId: string) {
+  requirePlatformAdmin();
+  return apiFetch<OrganizationErasureDryRunResponse>(
+    '/admin/workspace-erasure/dry-run',
+    {
+      method: 'POST',
+      body: JSON.stringify({ organizationId }),
     },
   );
 }

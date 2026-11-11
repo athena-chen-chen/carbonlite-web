@@ -2,8 +2,11 @@ import { FormEvent, useMemo, useState } from 'react';
 import {
   getCustomerPreflight,
   provisionPaidPilotCustomer,
+  runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   type CustomerPreflightResponse,
+  type OrganizationErasureDryRunResponse,
+  type OrganizationErasureInventory,
   type ProvisionPaidPilotCustomerResponse,
   type SuspendCustomerOrganizationResponse,
 } from '../services/customerSafeguards';
@@ -57,6 +60,11 @@ export default function PilotReviewersPage() {
     useState<SuspendCustomerOrganizationResponse | null>(null);
   const [suspensionError, setSuspensionError] = useState<string | null>(null);
   const [suspending, setSuspending] = useState(false);
+  const [erasureSlugConfirmation, setErasureSlugConfirmation] = useState('');
+  const [erasureDryRunResult, setErasureDryRunResult] =
+    useState<OrganizationErasureDryRunResponse | null>(null);
+  const [erasureDryRunError, setErasureDryRunError] = useState<string | null>(null);
+  const [runningErasureDryRun, setRunningErasureDryRun] = useState(false);
 
   const setupLink = useMemo(() => getInviteLink(result), [result]);
   const regeneratedSetupLink = useMemo(
@@ -182,6 +190,9 @@ export default function PilotReviewersPage() {
     setSuspensionResult(null);
     setSuspensionError(null);
     setSlugConfirmation('');
+    setErasureSlugConfirmation('');
+    setErasureDryRunResult(null);
+    setErasureDryRunError(null);
     setRunningPreflight(true);
 
     try {
@@ -257,6 +268,26 @@ export default function PilotReviewersPage() {
       setSuspensionError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setSuspending(false);
+    }
+  }
+
+  async function handleErasureDryRun() {
+    const organization = preflightResult?.organization;
+    if (!organization || organization.customerStatus !== 'SUSPENDED') return;
+    if (erasureSlugConfirmation !== organization.slug) return;
+
+    setErasureDryRunError(null);
+    setErasureDryRunResult(null);
+    setRunningErasureDryRun(true);
+    try {
+      setErasureDryRunResult(
+        await runOrganizationErasureDryRun(organization.id),
+      );
+      setErasureSlugConfirmation('');
+    } catch (err) {
+      setErasureDryRunError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setRunningErasureDryRun(false);
     }
   }
 
@@ -827,6 +858,74 @@ export default function PilotReviewersPage() {
             </button>
           </section>
         ) : null}
+
+        {preflightResult?.organization ? (
+          <section style={erasureDryRunCardStyle} aria-label="Organization erasure dry-run">
+            <h3 style={sectionTitleStyle}>Organization erasure dry-run</h3>
+            <p style={helperTextStyle}>
+              Preview what would be deleted if this organization were erased. This operation does not delete data.
+            </p>
+            <div style={resultGridStyle}>
+              <ResultItem label="Organization name" value={preflightResult.organization.name} />
+              <ResultItem label="Organization ID" value={preflightResult.organization.id} />
+              <ResultItem label="Organization slug" value={preflightResult.organization.slug} />
+              <ResultItem label="Lifecycle" value={preflightResult.organization.customerStatus} />
+              <ResultItem label="User email" value={preflightResult.user.normalizedEmail || 'Not available'} />
+            </div>
+            {preflightResult.organization.customerStatus !== 'SUSPENDED' ? (
+              <div style={warningStyle}>
+                Erasure dry-run is available only when customer status is SUSPENDED.
+              </div>
+            ) : null}
+            <label style={labelStyle}>
+              Type the organization slug to confirm dry-run
+              <input
+                value={erasureSlugConfirmation}
+                onChange={(event) => setErasureSlugConfirmation(event.target.value)}
+                disabled={preflightResult.organization.customerStatus !== 'SUSPENDED'}
+                style={inputStyle}
+                autoComplete="off"
+              />
+            </label>
+            {erasureDryRunError ? <div style={errorStyle}>{erasureDryRunError}</div> : null}
+            {erasureDryRunResult ? (
+              <div style={successStyle}>
+                <strong>Erasure dry-run complete. No data was deleted.</strong>
+                <div style={resultGridStyle}>
+                  <ResultItem label="Status" value={erasureDryRunResult.status} />
+                  <ResultItem label="dataDeleted" value={String(erasureDryRunResult.dataDeleted)} />
+                  <ResultItem label="Organizations" value="1" />
+                  {ERASURE_INVENTORY_FIELDS.map(([key, label]) => (
+                    <ResultItem
+                      key={key}
+                      label={label}
+                      value={String(erasureDryRunResult.inventory[key])}
+                    />
+                  ))}
+                </div>
+                <p style={helperTextStyle}>
+                  Global and shared factor records are excluded from organization erasure.
+                </p>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleErasureDryRun}
+              disabled={
+                runningErasureDryRun ||
+                preflightResult.organization.customerStatus !== 'SUSPENDED' ||
+                erasureSlugConfirmation !== preflightResult.organization.slug
+              }
+              style={primaryButtonStyle(
+                runningErasureDryRun ||
+                preflightResult.organization.customerStatus !== 'SUSPENDED' ||
+                erasureSlugConfirmation !== preflightResult.organization.slug,
+              )}
+            >
+              {runningErasureDryRun ? 'Running erasure dry-run...' : 'Run erasure dry-run'}
+            </button>
+          </section>
+        ) : null}
       </section>
     </div>
   );
@@ -883,6 +982,31 @@ function getProvisioningBlockers(result: CustomerPreflightResponse | null) {
   }
   return blockers;
 }
+
+const ERASURE_INVENTORY_FIELDS: ReadonlyArray<[
+  Exclude<keyof OrganizationErasureInventory, 'organizationId' | 'organizationSlug'>,
+  string,
+]> = [
+  ['users', 'Users'],
+  ['memberships', 'Memberships'],
+  ['facilities', 'Facilities'],
+  ['assets', 'Assets'],
+  ['documents', 'Documents'],
+  ['physicalFiles', 'Physical files'],
+  ['documentExtractions', 'Document extractions'],
+  ['spreadsheetReviewRows', 'Spreadsheet review rows'],
+  ['activityRecords', 'ActivityData'],
+  ['calculationSnapshots', 'Calculation snapshots'],
+  ['importBatches', 'Import batches'],
+  ['metricResults', 'Metric results'],
+  ['reports', 'Reports'],
+  ['reportArtifacts', 'Report artifacts'],
+  ['customConversionFactors', 'Custom factors'],
+  ['auditLogs', 'Audit logs'],
+  ['activityEvents', 'Activity events'],
+  ['aiJobs', 'AI jobs'],
+  ['feedback', 'Feedback'],
+];
 
 const pageStyle: React.CSSProperties = {
   maxWidth: 980,
@@ -955,6 +1079,12 @@ const provisionCardStyle: React.CSSProperties = {
   ...formCardStyle,
   borderColor: '#facc15',
   background: '#fffdf5',
+};
+
+const erasureDryRunCardStyle: React.CSSProperties = {
+  ...formCardStyle,
+  borderColor: '#93c5fd',
+  background: '#f8fbff',
 };
 
 const reasonListStyle: React.CSSProperties = {

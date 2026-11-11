@@ -9,6 +9,7 @@ import {
 import {
   getCustomerPreflight,
   provisionPaidPilotCustomer,
+  runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   type CustomerPreflightResponse,
 } from '../services/customerSafeguards';
@@ -29,6 +30,7 @@ vi.mock('../services/pilotReviewers', async () => {
 vi.mock('../services/customerSafeguards', () => ({
   getCustomerPreflight: vi.fn(),
   provisionPaidPilotCustomer: vi.fn(),
+  runOrganizationErasureDryRun: vi.fn(),
   suspendCustomerOrganization: vi.fn(),
 }));
 
@@ -374,6 +376,111 @@ describe('PilotReviewersPage', () => {
 
     expect(screen.queryByRole('region', { name: 'Provision paid-pilot customer' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Provision paid-pilot customer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Organization erasure dry-run' })).not.toBeInTheDocument();
+  });
+
+  it('runs erasure dry-run only for the exact preflight organization and renders the inventory', async () => {
+    const suspendedPreflight: CustomerPreflightResponse = {
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        customerStatus: 'SUSPENDED',
+      },
+    };
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: {
+        organizationId: 'org-123',
+        organizationSlug: 'acme-pilot',
+        users: 1,
+        memberships: 1,
+        facilities: 2,
+        assets: 3,
+        documents: 4,
+        physicalFiles: 5,
+        documentExtractions: 6,
+        spreadsheetReviewRows: 7,
+        activityRecords: 8,
+        calculationSnapshots: 9,
+        importBatches: 10,
+        metricResults: 11,
+        reports: 12,
+        reportArtifacts: 13,
+        aiJobs: 14,
+        customConversionFactors: 15,
+        auditLogs: 16,
+        feedback: 17,
+        activityEvents: 18,
+      },
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    const dryRunCard = await screen.findByRole('region', {
+      name: 'Organization erasure dry-run',
+    });
+    expect(within(dryRunCard).getByText('Acme Pilot')).toBeInTheDocument();
+    expect(within(dryRunCard).getByText('org-123')).toBeInTheDocument();
+    expect(within(dryRunCard).getAllByText('acme-pilot').length).toBeGreaterThan(0);
+    expect(within(dryRunCard).getByText('SUSPENDED')).toBeInTheDocument();
+    expect(within(dryRunCard).getByText('customer@example.com')).toBeInTheDocument();
+
+    const confirmation = within(dryRunCard).getByLabelText(
+      'Type the organization slug to confirm dry-run',
+    );
+    const button = within(dryRunCard).getByRole('button', {
+      name: 'Run erasure dry-run',
+    });
+    expect(button).toBeDisabled();
+    await userEvent.type(confirmation, 'wrong-slug');
+    expect(button).toBeDisabled();
+    await userEvent.clear(confirmation);
+    await userEvent.type(confirmation, 'acme-pilot');
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+
+    expect(runOrganizationErasureDryRun).toHaveBeenCalledTimes(1);
+    expect(runOrganizationErasureDryRun).toHaveBeenCalledWith('org-123');
+    expect(getCustomerPreflight).toHaveBeenCalledTimes(1);
+    expect(provisionPaidPilotCustomer).not.toHaveBeenCalled();
+    expect(suspendCustomerOrganization).not.toHaveBeenCalled();
+    expect(await within(dryRunCard).findByText(
+      'Erasure dry-run complete. No data was deleted.',
+    )).toBeInTheDocument();
+    expect(within(dryRunCard).getByText('DRY_RUN')).toBeInTheDocument();
+    expect(within(dryRunCard).getByText('false')).toBeInTheDocument();
+    expect(within(dryRunCard).getByText('Physical files')).toBeInTheDocument();
+    expect(within(dryRunCard).getByText('Calculation snapshots')).toBeInTheDocument();
+    expect(within(dryRunCard).getByText('Global and shared factor records are excluded from organization erasure.')).toBeInTheDocument();
+    expect(within(dryRunCard).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(within(dryRunCard).queryByRole('button', { name: 'Erase' })).not.toBeInTheDocument();
+    expect(within(dryRunCard).queryByRole('button', { name: 'Execute erasure' })).not.toBeInTheDocument();
+  });
+
+  it('keeps erasure dry-run disabled unless the preflight organization is suspended', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(activeCustomerPreflight);
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    const dryRunCard = await screen.findByRole('region', {
+      name: 'Organization erasure dry-run',
+    });
+    expect(within(dryRunCard).getByText(
+      'Erasure dry-run is available only when customer status is SUSPENDED.',
+    )).toBeInTheDocument();
+    expect(within(dryRunCard).getByLabelText(
+      'Type the organization slug to confirm dry-run',
+    )).toBeDisabled();
+    expect(within(dryRunCard).getByRole('button', {
+      name: 'Run erasure dry-run',
+    })).toBeDisabled();
+    expect(runOrganizationErasureDryRun).not.toHaveBeenCalled();
   });
 
   it('requires the exact slug, submits trusted identifiers, and refreshes preflight after provisioning', async () => {

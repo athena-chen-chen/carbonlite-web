@@ -2,6 +2,7 @@ import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
   getCustomerPreflight,
   provisionPaidPilotCustomer,
+  runOrganizationErasureDryRun,
   suspendCustomerOrganization,
 } from './customerSafeguards';
 
@@ -88,7 +89,41 @@ describe('customer safeguard admin service', () => {
       organizationSlug: 'customer-org',
       primaryAdminUserId: 'customer-user',
     })).toThrow('You do not have permission to perform this action.');
+    expect(() => runOrganizationErasureDryRun('customer-org')).toThrow(
+      'You do not have permission to perform this action.',
+    );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('posts only the trusted organization ID to the dry-run endpoint', async () => {
+    setCurrentUser('ADMIN');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        status: 'DRY_RUN',
+        inventory: {
+          organizationId: 'org-123',
+          organizationSlug: 'acme-pilot',
+          users: 1,
+          memberships: 1,
+        },
+        dataDeleted: false,
+      }), { status: 200 }),
+    );
+
+    await runOrganizationErasureDryRun('org-123');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/admin/workspace-erasure/dry-run`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ organizationId: 'org-123' }),
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/admin/workspace-erasure/erase'),
+      expect.anything(),
+    );
   });
 
   it('builds the exact provisioning payload from trusted preflight values', async () => {
