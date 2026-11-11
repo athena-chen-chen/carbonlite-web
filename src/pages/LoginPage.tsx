@@ -7,6 +7,7 @@ import { isPilotReviewer } from '../utils/permissions';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
+import { SYNTHETIC_ONLY_PILOT_NOTICE } from '../constants/syntheticOnlyPilot';
 
 export function LoginPage() {
   const { isAuthenticated, login, user } = useAuth();
@@ -53,6 +54,10 @@ export function LoginPage() {
       subtitle="Securely access your emissions data, calculations, and reports."
     >
       <form onSubmit={handleSubmit} style={formStyle}>
+        <div role="note" style={pilotNoticeStyle}>
+          <strong>Synthetic data only.</strong> {SYNTHETIC_ONLY_PILOT_NOTICE}
+        </div>
+
         <label style={labelStyle}>
           Email
           <input
@@ -230,6 +235,15 @@ const subtitleStyle: React.CSSProperties = {
 const formStyle: React.CSSProperties = {
   display: 'grid',
   gap: 14,
+};
+
+const pilotNoticeStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #fbbf24',
+  background: '#fffbeb',
+  color: '#78350f',
+  lineHeight: 1.5,
 };
 
 const labelStyle: React.CSSProperties = {

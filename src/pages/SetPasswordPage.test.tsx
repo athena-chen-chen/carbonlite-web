@@ -19,6 +19,13 @@ describe('SetPasswordPage', () => {
     vi.restoreAllMocks();
   });
 
+  it('shows the synthetic-only safeguard before onboarding', () => {
+    renderPage();
+
+    expect(screen.getByRole('note')).toHaveTextContent(/Use synthetic or test data only/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/Do not upload real client, employee, customer, or confidential business data/i);
+  });
+
   it('sets password from an invite token and returns to login', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('', { status: 200 }),

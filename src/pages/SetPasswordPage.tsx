@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { setPasswordFromToken } from '../services/auth';
 import { getSupportEmail } from '../config/api';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import { SYNTHETIC_ONLY_PILOT_NOTICE } from '../constants/syntheticOnlyPilot';
 
 const LOGIN_URL = 'https://www.carbonliteapp.ca/login';
 
@@ -53,6 +54,10 @@ export default function SetPasswordPage() {
         <p style={subtitleStyle}>
           Use your invite or password reset token to set a password for your invite-only CarbonLite account.
         </p>
+
+        <div role="note" style={pilotNoticeStyle}>
+          <strong>Synthetic data only.</strong> {SYNTHETIC_ONLY_PILOT_NOTICE}
+        </div>
 
         <form onSubmit={handleSubmit} style={formStyle}>
           <label style={labelStyle}>
@@ -147,6 +152,16 @@ const subtitleStyle: React.CSSProperties = {
 const formStyle: React.CSSProperties = {
   display: 'grid',
   gap: 14,
+  marginTop: 18,
+};
+
+const pilotNoticeStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid #fbbf24',
+  background: '#fffbeb',
+  color: '#78350f',
+  lineHeight: 1.5,
 };
 
 const labelStyle: React.CSSProperties = {
