@@ -66,6 +66,14 @@ export type SuspendCustomerOrganizationResponse = {
   suspended: boolean;
 };
 
+export type ProvisionPaidPilotCustomerResponse = {
+  organizationId: string;
+  status: 'PROVISIONED' | 'ALREADY_PROVISIONED';
+  primaryAdminUserId: string;
+  provisionedAt: string;
+  alreadyProvisioned?: boolean;
+};
+
 export function getCustomerPreflight(input: CustomerPreflightLookup) {
   requirePlatformAdmin();
   const email = input.email?.trim()
@@ -98,6 +106,27 @@ export function suspendCustomerOrganization(input: {
         confirmationOrganizationId: input.organizationId,
         confirmationOrganizationSlug: input.organizationSlug,
         confirmSuspend: true,
+      }),
+    },
+  );
+}
+
+export function provisionPaidPilotCustomer(input: {
+  organizationId: string;
+  organizationSlug: string;
+  primaryAdminUserId: string;
+}) {
+  requirePlatformAdmin();
+  return apiFetch<ProvisionPaidPilotCustomerResponse>(
+    '/admin/customer-provisioning/paid-pilot',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        organizationId: input.organizationId,
+        confirmationOrganizationId: input.organizationId,
+        confirmationOrganizationSlug: input.organizationSlug,
+        primaryAdminUserId: input.primaryAdminUserId,
+        confirmProvision: true,
       }),
     },
   );

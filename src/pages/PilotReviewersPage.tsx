@@ -1,8 +1,10 @@
 import { FormEvent, useMemo, useState } from 'react';
 import {
   getCustomerPreflight,
+  provisionPaidPilotCustomer,
   suspendCustomerOrganization,
   type CustomerPreflightResponse,
+  type ProvisionPaidPilotCustomerResponse,
   type SuspendCustomerOrganizationResponse,
 } from '../services/customerSafeguards';
 import {
@@ -45,6 +47,11 @@ export default function PilotReviewersPage() {
     useState<CustomerPreflightResponse | null>(null);
   const [preflightError, setPreflightError] = useState<string | null>(null);
   const [runningPreflight, setRunningPreflight] = useState(false);
+  const [provisionSlugConfirmation, setProvisionSlugConfirmation] = useState('');
+  const [provisionResult, setProvisionResult] =
+    useState<ProvisionPaidPilotCustomerResponse | null>(null);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [provisioning, setProvisioning] = useState(false);
   const [slugConfirmation, setSlugConfirmation] = useState('');
   const [suspensionResult, setSuspensionResult] =
     useState<SuspendCustomerOrganizationResponse | null>(null);
@@ -56,6 +63,7 @@ export default function PilotReviewersPage() {
     () => getInviteLink(regenerateResult),
     [regenerateResult],
   );
+  const provisioningBlockers = getProvisioningBlockers(preflightResult);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -168,6 +176,9 @@ export default function PilotReviewersPage() {
     event.preventDefault();
     setPreflightError(null);
     setPreflightResult(null);
+    setProvisionResult(null);
+    setProvisionError(null);
+    setProvisionSlugConfirmation('');
     setSuspensionResult(null);
     setSuspensionError(null);
     setSlugConfirmation('');
@@ -186,6 +197,37 @@ export default function PilotReviewersPage() {
       setPreflightError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setRunningPreflight(false);
+    }
+  }
+
+  async function handleProvisionCustomer() {
+    const user = preflightResult?.user;
+    const organization = preflightResult?.organization;
+    if (!organization || !user?.id || provisioningBlockers.length > 0) return;
+    if (provisionSlugConfirmation !== organization.slug) return;
+    if (!window.confirm(
+      `Provision ${organization.name} as an ACTIVE paid-pilot CUSTOMER? The selected user will become the organization OWNER.`,
+    )) return;
+
+    setProvisionError(null);
+    setProvisionResult(null);
+    setProvisioning(true);
+    try {
+      const response = await provisionPaidPilotCustomer({
+        organizationId: organization.id,
+        organizationSlug: organization.slug,
+        primaryAdminUserId: user.id,
+      });
+      setProvisionResult(response);
+      setProvisionSlugConfirmation('');
+      setPreflightResult(await getCustomerPreflight({
+        email: preflightEmail,
+        organizationName: preflightOrganizationName,
+      }));
+    } catch (err) {
+      setProvisionError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setProvisioning(false);
     }
   }
 
@@ -653,6 +695,86 @@ export default function PilotReviewersPage() {
           </section>
         ) : null}
 
+        {preflightResult ? (
+          <section style={provisionCardStyle} aria-label="Provision paid-pilot customer">
+            <h3 style={sectionTitleStyle}>Provision paid-pilot customer</h3>
+            <p style={helperTextStyle}>
+              Convert an eligible invited pilot account into an ACTIVE CUSTOMER organization
+              with the selected user as OWNER.
+            </p>
+            <div style={resultGridStyle}>
+              <ResultItem label="Organization name" value={preflightResult.organization?.name || 'Not available'} />
+              <ResultItem label="Organization ID" value={preflightResult.organization?.id || 'Not available'} />
+              <ResultItem label="Organization slug" value={preflightResult.organization?.slug || 'Not available'} />
+              <ResultItem label="User email" value={preflightResult.user.normalizedEmail || 'Not available'} />
+              <ResultItem label="User ID" value={preflightResult.user.id || 'Not available'} />
+              <ResultItem label="Customer status" value={preflightResult.organization?.customerStatus || 'Not available'} />
+              <ResultItem label="Account type" value={preflightResult.user.accountType || 'Not available'} />
+              <ResultItem label="Membership role" value={preflightResult.user.membershipRole || 'Not available'} />
+              <ResultItem
+                label="Golden Sample artifacts"
+                value={preflightResult.organization
+                  ? String(preflightResult.organization.counts.goldenSampleArtifacts)
+                  : 'Not available'}
+              />
+            </div>
+
+            {provisioningBlockers.length > 0 ? (
+              <div style={warningStyle}>
+                <strong>Provisioning unavailable:</strong>
+                <ul style={reasonListStyle}>
+                  {provisioningBlockers.map((reason) => <li key={reason}>{reason}</li>)}
+                </ul>
+              </div>
+            ) : (
+              <div style={readonlySummaryStyle}>
+                All provisioning preconditions passed. Confirm the exact organization slug to continue.
+              </div>
+            )}
+
+            <label style={labelStyle}>
+              Type the organization slug to confirm provisioning
+              <input
+                value={provisionSlugConfirmation}
+                onChange={(event) => setProvisionSlugConfirmation(event.target.value)}
+                disabled={!preflightResult.organization || provisioningBlockers.length > 0}
+                style={inputStyle}
+                autoComplete="off"
+              />
+            </label>
+            {provisionError ? <div style={errorStyle}>{provisionError}</div> : null}
+            {provisionResult ? (
+              <div style={successStyle}>
+                {provisionResult.status === 'ALREADY_PROVISIONED'
+                  ? 'This customer organization is already provisioned.'
+                  : 'Customer organization provisioned.'}
+                <div>Status: {provisionResult.status}</div>
+                <div>Organization ID: {provisionResult.organizationId}</div>
+                <div>Primary admin user ID: {provisionResult.primaryAdminUserId}</div>
+                <div>Provisioned at: {provisionResult.provisionedAt}</div>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleProvisionCustomer}
+              disabled={
+                provisioning ||
+                provisioningBlockers.length > 0 ||
+                !preflightResult.organization ||
+                provisionSlugConfirmation !== preflightResult.organization.slug
+              }
+              style={primaryButtonStyle(
+                provisioning ||
+                provisioningBlockers.length > 0 ||
+                !preflightResult.organization ||
+                provisionSlugConfirmation !== preflightResult.organization.slug,
+              )}
+            >
+              {provisioning ? 'Provisioning...' : 'Provision paid-pilot customer'}
+            </button>
+          </section>
+        ) : null}
+
         {preflightResult?.organization ? (
           <section style={suspendCardStyle} aria-label="Suspend customer access">
             <h3 style={sectionTitleStyle}>Suspend customer access</h3>
@@ -737,6 +859,31 @@ function optionalValue(value: number | undefined) {
   return value === undefined ? 'Not available' : String(value);
 }
 
+function getProvisioningBlockers(result: CustomerPreflightResponse | null) {
+  if (!result) return ['Run preflight before provisioning.'];
+  const blockers: string[] = [];
+  const { user, organization } = result;
+  if (!user.exists || !user.id) blockers.push('A matching user is required.');
+  if (!organization) blockers.push('A matching organization is required.');
+  if (organization && !['PENDING', 'PILOT'].includes(organization.customerStatus)) {
+    blockers.push('Organization status must be PENDING or PILOT.');
+  }
+  if (organization && user.organizationId !== organization.id) {
+    blockers.push('The user must belong to the selected organization.');
+  }
+  if (user.accountType !== 'PILOT_REVIEWER') {
+    blockers.push('The user account type must be PILOT_REVIEWER.');
+  }
+  if (user.isActive !== true) blockers.push('The user must be active.');
+  if (user.passwordSetupRequired !== false || user.invitationStatus === 'pending') {
+    blockers.push('Password setup must be complete.');
+  }
+  if (organization && organization.counts.goldenSampleArtifacts > 0) {
+    blockers.push('Golden Sample artifacts must be removed before provisioning.');
+  }
+  return blockers;
+}
+
 const pageStyle: React.CSSProperties = {
   maxWidth: 980,
   margin: '0 auto',
@@ -802,6 +949,17 @@ const suspendCardStyle: React.CSSProperties = {
   ...formCardStyle,
   borderColor: '#fca5a5',
   background: '#fffafa',
+};
+
+const provisionCardStyle: React.CSSProperties = {
+  ...formCardStyle,
+  borderColor: '#facc15',
+  background: '#fffdf5',
+};
+
+const reasonListStyle: React.CSSProperties = {
+  margin: '8px 0 0',
+  paddingLeft: 20,
 };
 
 const summaryHeadingStyle: React.CSSProperties = {

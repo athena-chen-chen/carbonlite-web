@@ -1,6 +1,7 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
   getCustomerPreflight,
+  provisionPaidPilotCustomer,
   suspendCustomerOrganization,
 } from './customerSafeguards';
 
@@ -71,7 +72,7 @@ describe('customer safeguard admin service', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('blocks a customer organization admin before calling either safeguard endpoint', () => {
+  it('blocks a customer organization admin before calling any safeguard endpoint', () => {
     setCurrentUser('USER');
     const fetchMock = vi.spyOn(globalThis, 'fetch');
 
@@ -82,7 +83,45 @@ describe('customer safeguard admin service', () => {
       organizationId: 'customer-org',
       organizationSlug: 'customer-org',
     })).toThrow('You do not have permission to perform this action.');
+    expect(() => provisionPaidPilotCustomer({
+      organizationId: 'customer-org',
+      organizationSlug: 'customer-org',
+      primaryAdminUserId: 'customer-user',
+    })).toThrow('You do not have permission to perform this action.');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('builds the exact provisioning payload from trusted preflight values', async () => {
+    setCurrentUser('ADMIN');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        organizationId: 'org-123',
+        status: 'PROVISIONED',
+        primaryAdminUserId: 'user-123',
+        provisionedAt: '2026-11-11T12:00:00.000Z',
+      }), { status: 200 }),
+    );
+
+    await provisionPaidPilotCustomer({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+      primaryAdminUserId: 'user-123',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/admin/customer-provisioning/paid-pilot`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          organizationId: 'org-123',
+          confirmationOrganizationId: 'org-123',
+          confirmationOrganizationSlug: 'acme-pilot',
+          primaryAdminUserId: 'user-123',
+          confirmProvision: true,
+        }),
+      }),
+    );
   });
 
   it('builds the exact suspension confirmation payload from trusted preflight values', async () => {

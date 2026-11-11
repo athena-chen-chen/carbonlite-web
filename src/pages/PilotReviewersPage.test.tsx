@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PilotReviewersPage from './PilotReviewersPage';
 import {
@@ -8,6 +8,7 @@ import {
 } from '../services/pilotReviewers';
 import {
   getCustomerPreflight,
+  provisionPaidPilotCustomer,
   suspendCustomerOrganization,
   type CustomerPreflightResponse,
 } from '../services/customerSafeguards';
@@ -27,8 +28,44 @@ vi.mock('../services/pilotReviewers', async () => {
 
 vi.mock('../services/customerSafeguards', () => ({
   getCustomerPreflight: vi.fn(),
+  provisionPaidPilotCustomer: vi.fn(),
   suspendCustomerOrganization: vi.fn(),
 }));
+
+const pendingPilotPreflight: CustomerPreflightResponse = {
+  lookup: {
+    normalizedEmail: 'pilot@example.com',
+    organizationName: null,
+  },
+  user: {
+    exists: true,
+    id: 'user-123',
+    normalizedEmail: 'pilot@example.com',
+    platformRole: 'USER',
+    accountType: 'PILOT_REVIEWER',
+    isActive: true,
+    passwordSetupRequired: false,
+    invitationStatus: 'completed',
+    organizationId: 'org-123',
+    membershipRole: 'VIEWER',
+  },
+  organization: {
+    id: 'org-123',
+    name: 'Acme Pilot',
+    slug: 'acme-pilot',
+    customerStatus: 'PENDING',
+    provisionedAt: null,
+    isActive: true,
+    allowDemoFactorsForCalculations: false,
+    counts: {
+      activityData: 0,
+      reports: 0,
+      documents: 0,
+      goldenSampleArtifacts: 0,
+      memberships: 1,
+    },
+  },
+};
 
 const activeCustomerPreflight: CustomerPreflightResponse = {
   lookup: {
@@ -324,12 +361,126 @@ describe('PilotReviewersPage', () => {
       email: 'customer@example.com',
       organizationName: '',
     });
-    expect(await screen.findByText('user-123')).toBeInTheDocument();
+    expect((await screen.findAllByText('user-123')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Acme Pilot').length).toBeGreaterThan(0);
     expect(screen.getByText('No organization quota configured.')).toBeInTheDocument();
     expect(screen.getByText('No organization AI authorization configured.')).toBeInTheDocument();
     expect(screen.queryByText(/token|hash|credential|document contents/i)).not.toBeInTheDocument();
     expect(suspendCustomerOrganization).not.toHaveBeenCalled();
+  });
+
+  it('keeps provisioning hidden until preflight succeeds', () => {
+    render(<PilotReviewersPage />);
+
+    expect(screen.queryByRole('region', { name: 'Provision paid-pilot customer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Provision paid-pilot customer' })).not.toBeInTheDocument();
+  });
+
+  it('requires the exact slug, submits trusted identifiers, and refreshes preflight after provisioning', async () => {
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(pendingPilotPreflight)
+      .mockResolvedValueOnce(activeCustomerPreflight);
+    vi.mocked(provisionPaidPilotCustomer).mockResolvedValue({
+      organizationId: 'org-123',
+      status: 'PROVISIONED',
+      primaryAdminUserId: 'user-123',
+      provisionedAt: '2026-11-11T12:00:00.000Z',
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'pilot@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    const provisionButton = await screen.findByRole('button', {
+      name: 'Provision paid-pilot customer',
+    });
+    const slugInput = screen.getByLabelText(/confirm provisioning/i);
+    expect(provisionButton).toBeDisabled();
+    expect(screen.queryByRole('textbox', { name: /organization id/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /user id/i })).not.toBeInTheDocument();
+
+    await userEvent.type(slugInput, 'wrong-slug');
+    expect(provisionButton).toBeDisabled();
+    await userEvent.clear(slugInput);
+    await userEvent.type(slugInput, 'acme-pilot');
+    expect(provisionButton).toBeEnabled();
+    await userEvent.click(provisionButton);
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Provision Acme Pilot as an ACTIVE paid-pilot CUSTOMER? The selected user will become the organization OWNER.',
+    );
+    expect(provisionPaidPilotCustomer).toHaveBeenCalledTimes(1);
+    expect(provisionPaidPilotCustomer).toHaveBeenCalledWith({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+      primaryAdminUserId: 'user-123',
+    });
+    expect(await screen.findByText('Customer organization provisioned.')).toBeInTheDocument();
+    expect(getCustomerPreflight).toHaveBeenCalledTimes(2);
+    expect(getCustomerPreflight).toHaveBeenLastCalledWith({
+      email: 'pilot@example.com',
+      organizationName: '',
+    });
+    expect(screen.getAllByText('ACTIVE').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('CUSTOMER').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('OWNER').length).toBeGreaterThan(0);
+    const suspendCard = screen.getByRole('region', { name: 'Suspend customer access' });
+    const suspendButton = within(suspendCard).getByRole('button', { name: /suspend customer/i });
+    expect(suspendButton).toBeDisabled();
+    await userEvent.type(
+      within(suspendCard).getByLabelText(/type the organization slug/i),
+      'acme-pilot',
+    );
+    expect(suspendButton).toBeEnabled();
+  });
+
+  it.each([
+    ['pending setup', { user: { ...pendingPilotPreflight.user, passwordSetupRequired: true } }, 'Password setup must be complete.'],
+    ['Golden Sample data', { organization: { ...pendingPilotPreflight.organization!, counts: { ...pendingPilotPreflight.organization!.counts, goldenSampleArtifacts: 1 } } }, 'Golden Sample artifacts must be removed before provisioning.'],
+    ['ACTIVE status', { organization: { ...pendingPilotPreflight.organization!, customerStatus: 'ACTIVE' } }, 'Organization status must be PENDING or PILOT.'],
+    ['SUSPENDED status', { organization: { ...pendingPilotPreflight.organization!, customerStatus: 'SUSPENDED' } }, 'Organization status must be PENDING or PILOT.'],
+    ['DEMO status', { organization: { ...pendingPilotPreflight.organization!, customerStatus: 'DEMO' } }, 'Organization status must be PENDING or PILOT.'],
+    ['CUSTOMER account', { user: { ...pendingPilotPreflight.user, accountType: 'CUSTOMER' } }, 'The user account type must be PILOT_REVIEWER.'],
+    ['missing user', { user: { exists: false, normalizedEmail: 'pilot@example.com' } }, 'A matching user is required.'],
+  ])('disables provisioning for %s', async (_caseName, overrides, reason) => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue({
+      ...pendingPilotPreflight,
+      ...overrides,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'pilot@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    expect(await screen.findByText(reason)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Provision paid-pilot customer' })).toBeDisabled();
+    expect(provisionPaidPilotCustomer).not.toHaveBeenCalled();
+  });
+
+  it('handles an ALREADY_PROVISIONED response and refreshes current state', async () => {
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(pendingPilotPreflight)
+      .mockResolvedValueOnce(activeCustomerPreflight);
+    vi.mocked(provisionPaidPilotCustomer).mockResolvedValue({
+      organizationId: 'org-123',
+      status: 'ALREADY_PROVISIONED',
+      primaryAdminUserId: 'user-123',
+      provisionedAt: '2026-11-11T12:00:00.000Z',
+      alreadyProvisioned: true,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'pilot@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    await userEvent.type(
+      await screen.findByLabelText(/confirm provisioning/i),
+      'acme-pilot',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Provision paid-pilot customer' }));
+
+    expect(await screen.findByText('This customer organization is already provisioned.')).toBeInTheDocument();
+    expect(provisionPaidPilotCustomer).toHaveBeenCalledTimes(1);
+    expect(getCustomerPreflight).toHaveBeenCalledTimes(2);
   });
 
   it('supports organization-name-only preflight and requires at least one lookup value', async () => {
@@ -380,11 +531,13 @@ describe('PilotReviewersPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
 
     const suspendButton = await screen.findByRole('button', { name: /suspend customer/i });
+    const suspendCard = screen.getByRole('region', { name: 'Suspend customer access' });
+    const suspensionSlugInput = within(suspendCard).getByLabelText(/type the organization slug/i);
     expect(suspendButton).toBeDisabled();
-    await userEvent.type(screen.getByLabelText(/type the organization slug/i), 'wrong-slug');
+    await userEvent.type(suspensionSlugInput, 'wrong-slug');
     expect(suspendButton).toBeDisabled();
-    await userEvent.clear(screen.getByLabelText(/type the organization slug/i));
-    await userEvent.type(screen.getByLabelText(/type the organization slug/i), 'acme-pilot');
+    await userEvent.clear(suspensionSlugInput);
+    await userEvent.type(suspensionSlugInput, 'acme-pilot');
     expect(suspendButton).toBeEnabled();
     await userEvent.click(suspendButton);
 
@@ -412,10 +565,8 @@ describe('PilotReviewersPage', () => {
     render(<PilotReviewersPage />);
     await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
     await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
-    await userEvent.type(
-      await screen.findByLabelText(/type the organization slug/i),
-      'acme-pilot',
-    );
+    const suspendCard = await screen.findByRole('region', { name: 'Suspend customer access' });
+    await userEvent.type(within(suspendCard).getByLabelText(/type the organization slug/i), 'acme-pilot');
 
     expect(screen.getByRole('button', { name: /suspend customer/i })).toBeDisabled();
     expect(screen.getByText(/only when customer status is ACTIVE/i)).toBeInTheDocument();
@@ -440,10 +591,8 @@ describe('PilotReviewersPage', () => {
     render(<PilotReviewersPage />);
     await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
     await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
-    await userEvent.type(
-      await screen.findByLabelText(/type the organization slug/i),
-      'acme-pilot',
-    );
+    const suspendCard = await screen.findByRole('region', { name: 'Suspend customer access' });
+    await userEvent.type(within(suspendCard).getByLabelText(/type the organization slug/i), 'acme-pilot');
     await userEvent.click(screen.getByRole('button', { name: /suspend customer/i }));
 
     expect(await screen.findByText('This customer organization is already suspended.')).toBeInTheDocument();
