@@ -104,6 +104,19 @@ export type OrganizationErasureDryRunResponse = {
   dataDeleted: false;
 };
 
+export type OrganizationErasureResponse =
+  | {
+      status: 'ERASED';
+      organizationIdHash: string;
+      inventory: OrganizationErasureInventory;
+      deletedPhysicalFiles: number;
+      alreadyMissingPhysicalFiles: number;
+    }
+  | {
+      status: 'ALREADY_ERASED';
+      organizationIdHash: string;
+    };
+
 export function getCustomerPreflight(input: CustomerPreflightLookup) {
   requirePlatformAdmin();
   const email = input.email?.trim()
@@ -169,6 +182,25 @@ export function runOrganizationErasureDryRun(organizationId: string) {
     {
       method: 'POST',
       body: JSON.stringify({ organizationId }),
+    },
+  );
+}
+
+export function eraseOrganization(input: {
+  organizationId: string;
+  organizationSlug: string;
+}) {
+  requirePlatformAdmin();
+  return apiFetch<OrganizationErasureResponse>(
+    '/admin/workspace-erasure/erase',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        organizationId: input.organizationId,
+        confirmationOrganizationId: input.organizationId,
+        confirmationOrganizationSlug: input.organizationSlug,
+        confirmErase: true,
+      }),
     },
   );
 }

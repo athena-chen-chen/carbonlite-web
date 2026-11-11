@@ -7,6 +7,7 @@ import {
   regeneratePilotReviewerInvite,
 } from '../services/pilotReviewers';
 import {
+  eraseOrganization,
   getCustomerPreflight,
   provisionPaidPilotCustomer,
   runOrganizationErasureDryRun,
@@ -28,6 +29,7 @@ vi.mock('../services/pilotReviewers', async () => {
 });
 
 vi.mock('../services/customerSafeguards', () => ({
+  eraseOrganization: vi.fn(),
   getCustomerPreflight: vi.fn(),
   provisionPaidPilotCustomer: vi.fn(),
   runOrganizationErasureDryRun: vi.fn(),
@@ -102,6 +104,38 @@ const activeCustomerPreflight: CustomerPreflightResponse = {
       memberships: 1,
     },
   },
+};
+
+const suspendedCustomerPreflight: CustomerPreflightResponse = {
+  ...activeCustomerPreflight,
+  organization: {
+    ...activeCustomerPreflight.organization!,
+    customerStatus: 'SUSPENDED',
+  },
+};
+
+const erasureInventory = {
+  organizationId: 'org-123',
+  organizationSlug: 'acme-pilot',
+  users: 1,
+  memberships: 1,
+  facilities: 2,
+  assets: 3,
+  documents: 4,
+  physicalFiles: 5,
+  documentExtractions: 6,
+  spreadsheetReviewRows: 7,
+  activityRecords: 8,
+  calculationSnapshots: 9,
+  importBatches: 10,
+  metricResults: 11,
+  reports: 12,
+  reportArtifacts: 13,
+  aiJobs: 14,
+  customConversionFactors: 15,
+  auditLogs: 16,
+  feedback: 17,
+  activityEvents: 18,
 };
 
 describe('PilotReviewersPage', () => {
@@ -453,8 +487,8 @@ describe('PilotReviewersPage', () => {
     )).toBeInTheDocument();
     expect(within(dryRunCard).getByText('DRY_RUN')).toBeInTheDocument();
     expect(within(dryRunCard).getByText('false')).toBeInTheDocument();
-    expect(within(dryRunCard).getByText('Physical files')).toBeInTheDocument();
-    expect(within(dryRunCard).getByText('Calculation snapshots')).toBeInTheDocument();
+    expect(within(dryRunCard).getAllByText('Physical files').length).toBeGreaterThan(0);
+    expect(within(dryRunCard).getAllByText('Calculation snapshots').length).toBeGreaterThan(0);
     expect(within(dryRunCard).getByText('Global and shared factor records are excluded from organization erasure.')).toBeInTheDocument();
     expect(within(dryRunCard).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
     expect(within(dryRunCard).queryByRole('button', { name: 'Erase' })).not.toBeInTheDocument();
@@ -481,6 +515,207 @@ describe('PilotReviewersPage', () => {
       name: 'Run erasure dry-run',
     })).toBeDisabled();
     expect(runOrganizationErasureDryRun).not.toHaveBeenCalled();
+  });
+
+  it.each(['ACTIVE', 'PENDING'])('does not expose actual erasure for %s organizations', async (customerStatus) => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue({
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        customerStatus,
+      },
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    expect(await screen.findByRole('region', { name: 'Organization erasure dry-run' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Erase organization' })).not.toBeInTheDocument();
+    expect(eraseOrganization).not.toHaveBeenCalled();
+  });
+
+  it('requires a same-organization successful dry-run and both exact confirmations before erasure', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedCustomerPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: erasureInventory,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    expect(screen.queryByRole('region', { name: 'Erase organization' })).not.toBeInTheDocument();
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(
+      within(dryRunCard).getByLabelText('Type the organization slug to confirm dry-run'),
+      'acme-pilot',
+    );
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+
+    const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
+    expect(within(eraseCard).getByText(/cannot be undone/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText('org-123')).toBeInTheDocument();
+    expect(within(eraseCard).queryByRole('textbox', { name: /organization id/i })).not.toBeInTheDocument();
+    const eraseButton = within(eraseCard).getByRole('button', { name: 'Permanently erase organization' });
+    const slugInput = within(eraseCard).getByLabelText('Type the exact organization slug');
+    const phraseInput = within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm');
+
+    expect(eraseButton).toBeDisabled();
+    await userEvent.type(slugInput, 'acme-pilot');
+    expect(eraseButton).toBeDisabled();
+    await userEvent.type(phraseInput, 'ERASE ORGANIZATION');
+    expect(eraseButton).toBeEnabled();
+    expect(eraseOrganization).not.toHaveBeenCalled();
+  });
+
+  it('invalidates dry-run eligibility when the lookup changes', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedCustomerPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: erasureInventory,
+    });
+
+    render(<PilotReviewersPage />);
+    const preflightEmail = screen.getByLabelText(/preflight email/i);
+    await userEvent.type(preflightEmail, 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(
+      within(dryRunCard).getByLabelText('Type the organization slug to confirm dry-run'),
+      'acme-pilot',
+    );
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+    expect(await screen.findByRole('region', { name: 'Erase organization' })).toBeInTheDocument();
+
+    await userEvent.type(preflightEmail, '.changed');
+
+    expect(screen.queryByRole('region', { name: 'Erase organization' })).not.toBeInTheDocument();
+    expect(eraseOrganization).not.toHaveBeenCalled();
+  });
+
+  it('rejects a dry-run result whose organization ID differs from preflight', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedCustomerPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: { ...erasureInventory, organizationId: 'different-org' },
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(within(dryRunCard).getByLabelText(/confirm dry-run/i), 'acme-pilot');
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+
+    expect(await within(dryRunCard).findByText(/dry-run complete/i)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Erase organization' })).not.toBeInTheDocument();
+    expect(eraseOrganization).not.toHaveBeenCalled();
+  });
+
+  it('submits the trusted erasure target exactly once, then performs read-only verification', async () => {
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(suspendedCustomerPreflight)
+      .mockResolvedValueOnce({
+        lookup: { normalizedEmail: 'customer@example.com', organizationName: null },
+        user: { exists: false, normalizedEmail: 'customer@example.com' },
+        organization: null,
+      });
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: erasureInventory,
+    });
+    vi.mocked(eraseOrganization).mockResolvedValue({
+      status: 'ERASED',
+      organizationIdHash: 'hashed-org-id',
+      inventory: erasureInventory,
+      deletedPhysicalFiles: 5,
+      alreadyMissingPhysicalFiles: 0,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(
+      within(dryRunCard).getByLabelText('Type the organization slug to confirm dry-run'),
+      'acme-pilot',
+    );
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+    const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
+    await userEvent.type(within(eraseCard).getByLabelText('Type the exact organization slug'), 'acme-pilot');
+    await userEvent.type(within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm'), 'ERASE ORGANIZATION');
+    await userEvent.click(within(eraseCard).getByRole('button', { name: 'Permanently erase organization' }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Permanently erase Acme Pilot and its owned data? This cannot be undone.',
+    );
+    expect(eraseOrganization).toHaveBeenCalledTimes(1);
+    expect(eraseOrganization).toHaveBeenCalledWith({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+    });
+    expect(getCustomerPreflight).toHaveBeenCalledTimes(2);
+    const result = await screen.findByRole('region', { name: 'Organization erasure result' });
+    expect(within(result).getByText('Organization erased successfully.')).toBeInTheDocument();
+    expect(within(result).getByText(/organization, user, and membership are no longer present/i)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Erase organization' })).not.toBeInTheDocument();
+  });
+
+  it('does not call erasure when final browser confirmation is cancelled', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedCustomerPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: erasureInventory,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(within(dryRunCard).getByLabelText(/confirm dry-run/i), 'acme-pilot');
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+    const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
+    await userEvent.type(within(eraseCard).getByLabelText('Type the exact organization slug'), 'acme-pilot');
+    await userEvent.type(within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm'), 'ERASE ORGANIZATION');
+    await userEvent.click(within(eraseCard).getByRole('button', { name: 'Permanently erase organization' }));
+
+    expect(eraseOrganization).not.toHaveBeenCalled();
+  });
+
+  it('surfaces erasure failure without retrying or clearing trusted target state', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedCustomerPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: erasureInventory,
+    });
+    vi.mocked(eraseOrganization).mockRejectedValue(new Error('Safe backend erasure error.'));
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(within(dryRunCard).getByLabelText(/confirm dry-run/i), 'acme-pilot');
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+    const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
+    await userEvent.type(within(eraseCard).getByLabelText('Type the exact organization slug'), 'acme-pilot');
+    await userEvent.type(within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm'), 'ERASE ORGANIZATION');
+    const eraseButton = within(eraseCard).getByRole('button', { name: 'Permanently erase organization' });
+    await userEvent.click(eraseButton);
+
+    expect(await within(eraseCard).findByText('Safe backend erasure error.')).toBeInTheDocument();
+    expect(eraseOrganization).toHaveBeenCalledTimes(1);
+    expect(eraseButton).toBeEnabled();
+    expect(within(eraseCard).getByDisplayValue('acme-pilot')).toBeInTheDocument();
+    expect(within(eraseCard).getByDisplayValue('ERASE ORGANIZATION')).toBeInTheDocument();
   });
 
   it('requires the exact slug, submits trusted identifiers, and refreshes preflight after provisioning', async () => {

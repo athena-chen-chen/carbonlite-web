@@ -1,5 +1,6 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
+  eraseOrganization,
   getCustomerPreflight,
   provisionPaidPilotCustomer,
   runOrganizationErasureDryRun,
@@ -92,6 +93,10 @@ describe('customer safeguard admin service', () => {
     expect(() => runOrganizationErasureDryRun('customer-org')).toThrow(
       'You do not have permission to perform this action.',
     );
+    expect(() => eraseOrganization({
+      organizationId: 'customer-org',
+      organizationSlug: 'customer-org',
+    })).toThrow('You do not have permission to perform this action.');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -123,6 +128,43 @@ describe('customer safeguard admin service', () => {
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringContaining('/admin/workspace-erasure/erase'),
       expect.anything(),
+    );
+  });
+
+  it('posts the exact guarded erasure DTO built from trusted values', async () => {
+    setCurrentUser('ADMIN');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        status: 'ERASED',
+        organizationIdHash: 'hashed-org-id',
+        inventory: {
+          organizationId: 'org-123',
+          organizationSlug: 'acme-pilot',
+          users: 1,
+          memberships: 1,
+        },
+        deletedPhysicalFiles: 0,
+        alreadyMissingPhysicalFiles: 0,
+      }), { status: 200 }),
+    );
+
+    await eraseOrganization({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/admin/workspace-erasure/erase`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          organizationId: 'org-123',
+          confirmationOrganizationId: 'org-123',
+          confirmationOrganizationSlug: 'acme-pilot',
+          confirmErase: true,
+        }),
+      }),
     );
   });
 

@@ -1,11 +1,13 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useRef, useState } from 'react';
 import {
+  eraseOrganization,
   getCustomerPreflight,
   provisionPaidPilotCustomer,
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   type CustomerPreflightResponse,
   type OrganizationErasureDryRunResponse,
+  type OrganizationErasureResponse,
   type OrganizationErasureInventory,
   type ProvisionPaidPilotCustomerResponse,
   type SuspendCustomerOrganizationResponse,
@@ -65,6 +67,14 @@ export default function PilotReviewersPage() {
     useState<OrganizationErasureDryRunResponse | null>(null);
   const [erasureDryRunError, setErasureDryRunError] = useState<string | null>(null);
   const [runningErasureDryRun, setRunningErasureDryRun] = useState(false);
+  const [eraseSlugConfirmation, setEraseSlugConfirmation] = useState('');
+  const [erasePhraseConfirmation, setErasePhraseConfirmation] = useState('');
+  const [erasureResult, setErasureResult] =
+    useState<OrganizationErasureResponse | null>(null);
+  const [erasureError, setErasureError] = useState<string | null>(null);
+  const [erasureVerification, setErasureVerification] = useState<string | null>(null);
+  const [erasingOrganization, setErasingOrganization] = useState(false);
+  const erasureRequestInFlight = useRef(false);
 
   const setupLink = useMemo(() => getInviteLink(result), [result]);
   const regeneratedSetupLink = useMemo(
@@ -72,6 +82,24 @@ export default function PilotReviewersPage() {
     [regenerateResult],
   );
   const provisioningBlockers = getProvisioningBlockers(preflightResult);
+  const eraseEligible = Boolean(
+    preflightResult?.organization &&
+    preflightResult.organization.customerStatus === 'SUSPENDED' &&
+    erasureDryRunResult?.status === 'DRY_RUN' &&
+    erasureDryRunResult.dataDeleted === false &&
+    erasureDryRunResult.inventory.organizationId === preflightResult.organization.id,
+  );
+
+  function invalidateErasureState() {
+    setErasureSlugConfirmation('');
+    setErasureDryRunResult(null);
+    setErasureDryRunError(null);
+    setEraseSlugConfirmation('');
+    setErasePhraseConfirmation('');
+    setErasureResult(null);
+    setErasureError(null);
+    setErasureVerification(null);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -190,9 +218,7 @@ export default function PilotReviewersPage() {
     setSuspensionResult(null);
     setSuspensionError(null);
     setSlugConfirmation('');
-    setErasureSlugConfirmation('');
-    setErasureDryRunResult(null);
-    setErasureDryRunError(null);
+    invalidateErasureState();
     setRunningPreflight(true);
 
     try {
@@ -288,6 +314,55 @@ export default function PilotReviewersPage() {
       setErasureDryRunError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setRunningErasureDryRun(false);
+    }
+  }
+
+  async function handleEraseOrganization() {
+    const organization = preflightResult?.organization;
+    if (!organization || !eraseEligible || erasureRequestInFlight.current) return;
+    if (eraseSlugConfirmation !== organization.slug) return;
+    if (erasePhraseConfirmation !== 'ERASE ORGANIZATION') return;
+    if (!window.confirm(
+      `Permanently erase ${organization.name} and its owned data? This cannot be undone.`,
+    )) return;
+
+    erasureRequestInFlight.current = true;
+    setErasingOrganization(true);
+    setErasureError(null);
+    setErasureResult(null);
+    setErasureVerification(null);
+    try {
+      const response = await eraseOrganization({
+        organizationId: organization.id,
+        organizationSlug: organization.slug,
+      });
+      setErasureResult(response);
+      setEraseSlugConfirmation('');
+      setErasePhraseConfirmation('');
+      setErasureSlugConfirmation('');
+      setErasureDryRunResult(null);
+
+      try {
+        const verification = await getCustomerPreflight({
+          email: preflightEmail,
+          organizationName: preflightOrganizationName,
+        });
+        setPreflightResult(verification);
+        setErasureVerification(
+          !verification.user.exists && !verification.organization
+            ? 'Read-only verification confirmed that the organization, user, and membership are no longer present.'
+            : 'Read-only verification did not confirm complete removal. Review the current preflight result.',
+        );
+      } catch (verificationError) {
+        setErasureVerification(
+          `Organization erasure completed, but read-only verification failed: ${getUserFriendlyErrorMessage(verificationError, 'unknown')}`,
+        );
+      }
+    } catch (err) {
+      setErasureError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      erasureRequestInFlight.current = false;
+      setErasingOrganization(false);
     }
   }
 
@@ -630,7 +705,10 @@ export default function PilotReviewersPage() {
                 type="text"
                 inputMode="email"
                 value={preflightEmail}
-                onChange={(event) => setPreflightEmail(event.target.value)}
+                onChange={(event) => {
+                  setPreflightEmail(event.target.value);
+                  invalidateErasureState();
+                }}
                 onBlur={(event) => setPreflightEmail(event.target.value.trim().toLowerCase())}
                 placeholder="customer@example.com"
                 autoComplete="email"
@@ -641,7 +719,10 @@ export default function PilotReviewersPage() {
               Organization name
               <input
                 value={preflightOrganizationName}
-                onChange={(event) => setPreflightOrganizationName(event.target.value)}
+                onChange={(event) => {
+                  setPreflightOrganizationName(event.target.value);
+                  invalidateErasureState();
+                }}
                 placeholder="Customer organization"
                 style={inputStyle}
               />
@@ -723,6 +804,30 @@ export default function PilotReviewersPage() {
                 ) : <p style={helperTextStyle}>No organization AI authorization configured.</p>}
               </>
             )}
+          </section>
+        ) : null}
+
+        {erasureResult ? (
+          <section style={successStyle} aria-label="Organization erasure result">
+            <h3 style={sectionTitleStyle}>Organization erased successfully.</h3>
+            <div style={resultGridStyle}>
+              <ResultItem label="Status" value={erasureResult.status} />
+              {'inventory' in erasureResult ? (
+                <>
+                  <ResultItem label="Organizations" value="1" />
+                  {ERASURE_INVENTORY_FIELDS.map(([key, label]) => (
+                    <ResultItem
+                      key={key}
+                      label={label}
+                      value={String(erasureResult.inventory[key])}
+                    />
+                  ))}
+                  <ResultItem label="Deleted physical files" value={String(erasureResult.deletedPhysicalFiles)} />
+                  <ResultItem label="Already missing physical files" value={String(erasureResult.alreadyMissingPhysicalFiles)} />
+                </>
+              ) : null}
+            </div>
+            {erasureVerification ? <p>{erasureVerification}</p> : null}
           </section>
         ) : null}
 
@@ -899,7 +1004,7 @@ export default function PilotReviewersPage() {
                     <ResultItem
                       key={key}
                       label={label}
-                      value={String(erasureDryRunResult.inventory[key])}
+                      value={String(erasureDryRunResult!.inventory[key])}
                     />
                   ))}
                 </div>
@@ -924,6 +1029,68 @@ export default function PilotReviewersPage() {
             >
               {runningErasureDryRun ? 'Running erasure dry-run...' : 'Run erasure dry-run'}
             </button>
+
+            {eraseEligible ? (
+              <section style={eraseCardStyle} aria-label="Erase organization">
+                <h3 style={dangerTitleStyle}>Erase organization</h3>
+                <div style={destructiveWarningStyle}>
+                  <strong>This permanently deletes this organization and its owned data. This action cannot be undone.</strong>
+                </div>
+                <div style={resultGridStyle}>
+                  <ResultItem label="Organization name" value={preflightResult.organization.name} />
+                  <ResultItem label="Organization ID" value={preflightResult.organization.id} />
+                  <ResultItem label="Organization slug" value={preflightResult.organization.slug} />
+                  <ResultItem label="Lifecycle" value={preflightResult.organization.customerStatus} />
+                  <ResultItem label="User email" value={preflightResult.user.normalizedEmail || 'Not available'} />
+                  <ResultItem label="Organizations" value="1" />
+                  {ERASURE_INVENTORY_FIELDS.map(([key, label]) => (
+                    <ResultItem
+                      key={key}
+                      label={label}
+                      value={String(erasureDryRunResult!.inventory[key])}
+                    />
+                  ))}
+                </div>
+                <p style={helperTextStyle}>
+                  Global/shared emission factors are not part of this organization deletion.
+                </p>
+                <label style={labelStyle}>
+                  Type the exact organization slug
+                  <input
+                    value={eraseSlugConfirmation}
+                    onChange={(event) => setEraseSlugConfirmation(event.target.value)}
+                    style={inputStyle}
+                    autoComplete="off"
+                  />
+                </label>
+                <label style={labelStyle}>
+                  Type ERASE ORGANIZATION to confirm
+                  <input
+                    value={erasePhraseConfirmation}
+                    onChange={(event) => setErasePhraseConfirmation(event.target.value)}
+                    style={inputStyle}
+                    autoComplete="off"
+                  />
+                </label>
+                {erasureError ? <div style={errorStyle}>{erasureError}</div> : null}
+                <button
+                  type="button"
+                  onClick={handleEraseOrganization}
+                  disabled={
+                    erasingOrganization ||
+                    eraseSlugConfirmation !== preflightResult.organization.slug ||
+                    erasePhraseConfirmation !== 'ERASE ORGANIZATION'
+                  }
+                  style={dangerButtonStyle(
+                    erasingOrganization ||
+                    eraseSlugConfirmation !== preflightResult.organization.slug ||
+                    erasePhraseConfirmation !== 'ERASE ORGANIZATION',
+                  )}
+                >
+                  {erasingOrganization ? 'Erasing organization...' : 'Permanently erase organization'}
+                </button>
+              </section>
+            ) : null}
           </section>
         ) : null}
       </section>
@@ -1085,6 +1252,30 @@ const erasureDryRunCardStyle: React.CSSProperties = {
   ...formCardStyle,
   borderColor: '#93c5fd',
   background: '#f8fbff',
+};
+
+const eraseCardStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 16,
+  padding: 18,
+  borderRadius: 14,
+  border: '2px solid #b91c1c',
+  background: '#fff7f7',
+};
+
+const dangerTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#991b1b',
+  fontSize: 20,
+};
+
+const destructiveWarningStyle: React.CSSProperties = {
+  padding: 14,
+  borderRadius: 10,
+  border: '1px solid #ef4444',
+  background: '#fef2f2',
+  color: '#991b1b',
+  lineHeight: 1.5,
 };
 
 const reasonListStyle: React.CSSProperties = {
