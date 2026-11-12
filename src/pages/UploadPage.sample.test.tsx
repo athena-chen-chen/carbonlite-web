@@ -34,6 +34,7 @@ import {
 } from '../services/activityData';
 import { getAllConversionFactors } from '../services/conversionFactors';
 import { trackActivityEvent } from '../services/activityEvents';
+import { getOrganizationAiStatus } from '../services/aiAuthorization';
 
 function LocationProbe() {
   const location = useLocation();
@@ -244,6 +245,10 @@ vi.mock('../services/conversionFactors', () => ({
   getAllConversionFactors: vi.fn(() => Promise.resolve([])),
 }));
 
+vi.mock('../services/aiAuthorization', () => ({
+  getOrganizationAiStatus: vi.fn(),
+}));
+
 const approvedFactorMetadata = {
   verified: true,
   verificationStatus: 'VERIFIED',
@@ -444,6 +449,16 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(createActivityData).mockReset();
     vi.mocked(getAllActivityData).mockReset();
     vi.mocked(getAllConversionFactors).mockReset();
+    vi.mocked(getOrganizationAiStatus).mockReset();
+    vi.mocked(getOrganizationAiStatus).mockResolvedValue({
+      enabled: true,
+      status: 'ENABLED',
+      provider: 'OPENAI',
+      processingScope: 'DOCUMENT_EXTRACTION',
+      effectiveAt: '2026-11-11T00:00:00.000Z',
+      expiresAt: null,
+      withdrawnAt: null,
+    });
     vi.mocked(getDocuments).mockResolvedValue({
       items: [],
       page: 1,
@@ -498,6 +513,30 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(getDocuments).mockImplementation(service.getDocuments);
     return { fetchPages, get: () => sources, set: (next: typeof sources) => { sources = next; } };
   }
+
+  it('shows the explicit organization AI-disabled state while keeping local input methods available', async () => {
+    vi.mocked(getOrganizationAiStatus).mockResolvedValue({
+      enabled: false,
+      status: 'NOT_CONFIGURED',
+      provider: 'OPENAI',
+      processingScope: 'DOCUMENT_EXTRACTION',
+      effectiveAt: null,
+      expiresAt: null,
+      withdrawnAt: null,
+    });
+
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+
+    expect(await screen.findByText(
+      'AI document extraction is not enabled for this organization.',
+    )).toBeInTheDocument();
+    expect(screen.getByText('Manual entry and spreadsheet import remain available.')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /import spreadsheet/i })).toBeEnabled();
+    expect(screen.getByRole('tab', { name: /manual entry/i })).toBeEnabled();
+    expect(screen.getByText(
+      'Use synthetic or test data only. Do not upload real client, employee, customer, or confidential business data during this pilot.',
+    )).toBeInTheDocument();
+  });
 
   it('F14: expands all 25 sources, opens later-page details, and scopes calculation results across pages', async () => {
     await paginatedSources();

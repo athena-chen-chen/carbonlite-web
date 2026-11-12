@@ -1,10 +1,13 @@
 import { FALLBACK_API_BASE_URL } from '../config/api';
 import {
+  authorizeOrganizationAi,
+  configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
   provisionPaidPilotCustomer,
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
+  withdrawOrganizationAi,
 } from './customerSafeguards';
 
 function setCurrentUser(platformRole: 'ADMIN' | 'USER') {
@@ -96,6 +99,26 @@ describe('customer safeguard admin service', () => {
     expect(() => eraseOrganization({
       organizationId: 'customer-org',
       organizationSlug: 'customer-org',
+    })).toThrow('You do not have permission to perform this action.');
+    expect(() => configureOrganizationQuota('customer-org', {
+      enabled: true,
+      periodDays: 28,
+      uploadLimit: 20,
+      dailyUploadLimit: 3,
+      maxFileSizeBytes: 10_485_760,
+      maxConcurrentExtractions: 1,
+      maxImportRows: 500,
+    })).toThrow('You do not have permission to perform this action.');
+    expect(() => authorizeOrganizationAi({
+      organizationId: 'customer-org',
+      consentVersion: 'v1',
+      evidenceReference: 'evidence',
+      authorizedRepresentativeReference: 'representative',
+      effectiveAt: '2026-11-11T00:00:00.000Z',
+    })).toThrow('You do not have permission to perform this action.');
+    expect(() => withdrawOrganizationAi({
+      organizationId: 'customer-org',
+      withdrawalReference: 'withdrawal',
     })).toThrow('You do not have permission to perform this action.');
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -226,6 +249,66 @@ describe('customer safeguard admin service', () => {
           confirmationOrganizationSlug: 'acme-pilot',
           confirmSuspend: true,
         }),
+      }),
+    );
+  });
+
+  it('sends the exact organization-scoped quota and AI authorization payloads', async () => {
+    setCurrentUser('ADMIN');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ organizationId: 'org-123', status: 'ENABLED' }), { status: 200 }),
+    );
+    const quota = {
+      enabled: true,
+      periodDays: 28,
+      uploadLimit: 20,
+      dailyUploadLimit: 3,
+      maxFileSizeBytes: 10_485_760,
+      maxConcurrentExtractions: 1,
+      maxImportRows: 500,
+    };
+
+    await configureOrganizationQuota('org-123', quota);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `${FALLBACK_API_BASE_URL}/admin/organization-quotas/org-123`,
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify(quota) }),
+    );
+
+    await authorizeOrganizationAi({
+      organizationId: 'org-123',
+      consentVersion: 'external-pilot-v1',
+      evidenceReference: 'consent-ticket-123',
+      authorizedRepresentativeReference: 'customer-owner-123',
+      effectiveAt: '2026-11-11T19:00:00.000Z',
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${FALLBACK_API_BASE_URL}/admin/organizations/org-123/ai-authorization`,
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'ENABLED',
+          consentVersion: 'external-pilot-v1',
+          provider: 'OPENAI',
+          processingScope: 'DOCUMENT_EXTRACTION',
+          evidenceReference: 'consent-ticket-123',
+          authorizedRepresentativeReference: 'customer-owner-123',
+          effectiveAt: '2026-11-11T19:00:00.000Z',
+        }),
+      }),
+    );
+
+    await withdrawOrganizationAi({
+      organizationId: 'org-123',
+      withdrawalReference: 'withdrawal-ticket-456',
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      `${FALLBACK_API_BASE_URL}/admin/organizations/org-123/ai-authorization/withdraw`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ withdrawalReference: 'withdrawal-ticket-456' }),
       }),
     );
   });

@@ -49,6 +49,7 @@ import {
   REPORTS_ROUTE,
 } from '../constants/routes';
 import { queryClient } from '../queryClient';
+import { getOrganizationAiStatus } from '../services/aiAuthorization';
 import {
   readOnlyNoticeStyle,
   sampleBannerStyle,
@@ -278,12 +279,14 @@ export function UploadPage() {
     right: number;
   } | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [aiExtractionEnabled, setAiExtractionEnabled] = useState<boolean | null>(null);
   const currentUser = getCurrentUser();
   const canUploadData = canUploadFiles(currentUser);
   const canImportData = canImportDraftRows(currentUser);
   const canDeleteDocuments = canImportData;
   const canSetProvinceOnDraftRows = canSetProvinceForActivityRecords(currentUser);
   const pilotReviewerReadOnly = isPilotReviewer(currentUser);
+  const customerAccount = getAccountType(currentUser) === 'CUSTOMER';
   const showSampleDataControls =
     getAccountType(currentUser) === 'INTERNAL_TEST' &&
     String(currentUser?.status ?? '').trim().toUpperCase() === 'DEMO';
@@ -374,6 +377,23 @@ export function UploadPage() {
     searchParams.get('view') === 'review'
       ? searchParams.get('documentId')?.trim() || null
       : null;
+
+  useEffect(() => {
+    let current = true;
+    if (!customerAccount) {
+      setAiExtractionEnabled(null);
+      return () => { current = false; };
+    }
+    setAiExtractionEnabled(null);
+    void getOrganizationAiStatus()
+      .then((status) => {
+        if (current) setAiExtractionEnabled(status.enabled);
+      })
+      .catch(() => {
+        if (current) setAiExtractionEnabled(false);
+      });
+    return () => { current = false; };
+  }, [customerAccount, currentUser?.organizationId]);
 
   function clearFeedback() {
     setError(null);
@@ -1232,10 +1252,9 @@ export function UploadPage() {
         <div style={dataHandlingNoticeStyle}>
           <strong>Data handling notice</strong>
           <span>
-            Upload only information you are authorized to provide. CarbonLite processes source files to
-            extract operational rows, calculate emissions, and prepare review outputs. Workspace access is
-            controlled by organization membership and role; avoid unnecessary personal or sensitive
-            information in uploaded files.
+            {customerAccount
+              ? 'Use synthetic or test data only. Do not upload real client, employee, customer, or confidential business data during this pilot.'
+              : 'Upload only information you are authorized to provide. CarbonLite processes source files to extract operational rows, calculate emissions, and prepare review outputs. Workspace access is controlled by organization membership and role; avoid unnecessary personal or sensitive information in uploaded files.'}
           </span>
         </div>
       ) : null}
@@ -1258,7 +1277,14 @@ export function UploadPage() {
       </div> : null}
 
       {!pilotReviewerReadOnly && activeInputMethod === 'documents' ? (
-      <DocumentUploadPanel
+      <>
+        {customerAccount && aiExtractionEnabled === false ? (
+          <div style={dataHandlingNoticeStyle} role="status">
+            <strong>AI document extraction is not enabled for this organization.</strong>
+            <span>Manual entry and spreadsheet import remain available.</span>
+          </div>
+        ) : null}
+        <DocumentUploadPanel
           selectedFiles={upload.selectedFiles}
           isDraggingUpload={upload.isDraggingUpload}
           isProcessing={isProcessing}
@@ -1275,6 +1301,7 @@ export function UploadPage() {
           onDrop={upload.handleUploadDrop}
           onUploadAndExtract={handleUploadAndExtract}
         />
+      </>
       ) : null}
 
       {!pilotReviewerReadOnly && activeInputMethod === 'spreadsheet' ? (

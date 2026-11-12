@@ -7,11 +7,14 @@ import {
   regeneratePilotReviewerInvite,
 } from '../services/pilotReviewers';
 import {
+  authorizeOrganizationAi,
+  configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
   provisionPaidPilotCustomer,
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
+  withdrawOrganizationAi,
   type CustomerPreflightResponse,
 } from '../services/customerSafeguards';
 
@@ -29,11 +32,14 @@ vi.mock('../services/pilotReviewers', async () => {
 });
 
 vi.mock('../services/customerSafeguards', () => ({
+  authorizeOrganizationAi: vi.fn(),
+  configureOrganizationQuota: vi.fn(),
   eraseOrganization: vi.fn(),
   getCustomerPreflight: vi.fn(),
   provisionPaidPilotCustomer: vi.fn(),
   runOrganizationErasureDryRun: vi.fn(),
   suspendCustomerOrganization: vi.fn(),
+  withdrawOrganizationAi: vi.fn(),
 }));
 
 const pendingPilotPreflight: CustomerPreflightResponse = {
@@ -136,6 +142,10 @@ const erasureInventory = {
   auditLogs: 16,
   feedback: 17,
   activityEvents: 18,
+  quotaPolicies: 1,
+  quotaPeriods: 1,
+  quotaUsages: 2,
+  aiAuthorizations: 1,
 };
 
 describe('PilotReviewersPage', () => {
@@ -413,6 +423,167 @@ describe('PilotReviewersPage', () => {
     expect(screen.queryByRole('region', { name: 'Organization erasure dry-run' })).not.toBeInTheDocument();
   });
 
+  it('loads and explicitly saves the approved organization quota profile for the preflight identity', async () => {
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(activeCustomerPreflight)
+      .mockResolvedValueOnce({
+        ...activeCustomerPreflight,
+        organization: {
+          ...activeCustomerPreflight.organization!,
+          quota: {
+            enabled: true,
+            periodDays: 28,
+            uploadLimit: 20,
+            dailyUploadLimit: 3,
+            maxFileSizeBytes: 10_485_760,
+            maxConcurrentExtractions: 1,
+            maxImportRows: 500,
+          },
+        },
+      });
+    vi.mocked(configureOrganizationQuota).mockResolvedValue({
+      organizationId: 'org-123',
+      enabled: true,
+      periodDays: 28,
+      uploadLimit: 20,
+      dailyUploadLimit: 3,
+      maxFileSizeBytes: 10_485_760,
+      maxConcurrentExtractions: 1,
+      maxImportRows: 500,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const panel = await screen.findByRole('region', { name: 'Organization quota configuration' });
+    await userEvent.click(within(panel).getByRole('button', { name: /load approved synthetic-pilot profile/i }));
+    expect(within(panel).getByLabelText('Daily upload limit')).toHaveValue(3);
+    expect(within(panel).getByLabelText('Extraction concurrency')).toHaveValue(1);
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /confirm these limits are intended for this exact organization/i,
+    }));
+    await userEvent.click(within(panel).getByRole('button', { name: /save organization quota/i }));
+
+    expect(configureOrganizationQuota).toHaveBeenCalledWith('org-123', {
+      enabled: true,
+      periodDays: 28,
+      uploadLimit: 20,
+      dailyUploadLimit: 3,
+      maxFileSizeBytes: 10_485_760,
+      maxConcurrentExtractions: 1,
+      maxImportRows: 500,
+    });
+    expect(await within(panel).findByText('Organization quota configuration saved.')).toBeInTheDocument();
+  });
+
+  it('requires explicit consent confirmation before authorizing AI document extraction', async () => {
+    const authorizedPreflight: CustomerPreflightResponse = {
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        aiAuthorization: {
+          status: 'ENABLED',
+          provider: 'OPENAI',
+          processingScope: 'DOCUMENT_EXTRACTION',
+          consentVersion: 'external-pilot-v1',
+          effectiveAt: '2026-11-11T19:00:00.000Z',
+          expiresAt: null,
+          withdrawnAt: null,
+        },
+      },
+    };
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(activeCustomerPreflight)
+      .mockResolvedValueOnce(authorizedPreflight);
+    vi.mocked(authorizeOrganizationAi).mockResolvedValue({
+      organizationId: 'org-123',
+      status: 'ENABLED',
+      consentVersion: 'external-pilot-v1',
+      provider: 'OPENAI',
+      processingScope: 'DOCUMENT_EXTRACTION',
+      effectiveAt: '2026-11-11T19:00:00.000Z',
+      expiresAt: null,
+      withdrawnAt: null,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const panel = await screen.findByRole('region', { name: 'Organization AI authorization' });
+    await userEvent.type(within(panel).getByLabelText('Consent version'), 'external-pilot-v1');
+    await userEvent.type(within(panel).getByLabelText('Consent evidence reference'), 'consent-ticket-123');
+    await userEvent.type(within(panel).getByLabelText('Authorized representative reference'), 'customer-owner-123');
+    fireEvent.change(within(panel).getByLabelText('Effective date and time'), {
+      target: { value: '2026-11-11T12:00' },
+    });
+    expect(within(panel).getByRole('button', { name: 'Authorize AI document extraction' })).toBeDisabled();
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /explicitly authorized AI document extraction for synthetic\/test data/i,
+    }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Authorize AI document extraction' }));
+
+    expect(authorizeOrganizationAi).toHaveBeenCalledWith({
+      organizationId: 'org-123',
+      consentVersion: 'external-pilot-v1',
+      evidenceReference: 'consent-ticket-123',
+      authorizedRepresentativeReference: 'customer-owner-123',
+      effectiveAt: new Date('2026-11-11T12:00').toISOString(),
+    });
+  });
+
+  it('withdraws only the current preflight organization AI authorization', async () => {
+    const authorizedPreflight: CustomerPreflightResponse = {
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        aiAuthorization: {
+          status: 'ENABLED',
+          provider: 'OPENAI',
+          processingScope: 'DOCUMENT_EXTRACTION',
+          consentVersion: 'external-pilot-v1',
+          effectiveAt: '2026-11-11T19:00:00.000Z',
+          expiresAt: null,
+          withdrawnAt: null,
+        },
+      },
+    };
+    vi.mocked(getCustomerPreflight)
+      .mockResolvedValueOnce(authorizedPreflight)
+      .mockResolvedValueOnce({
+        ...authorizedPreflight,
+        organization: {
+          ...authorizedPreflight.organization!,
+          aiAuthorization: {
+            ...authorizedPreflight.organization!.aiAuthorization!,
+            status: 'WITHDRAWN',
+            withdrawnAt: '2026-11-11T20:00:00.000Z',
+          },
+        },
+      });
+    vi.mocked(withdrawOrganizationAi).mockResolvedValue({
+      organizationId: 'org-123',
+      status: 'WITHDRAWN',
+      consentVersion: 'external-pilot-v1',
+      provider: 'OPENAI',
+      processingScope: 'DOCUMENT_EXTRACTION',
+      effectiveAt: '2026-11-11T19:00:00.000Z',
+      expiresAt: null,
+      withdrawnAt: '2026-11-11T20:00:00.000Z',
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const panel = await screen.findByRole('region', { name: 'Organization AI authorization' });
+    await userEvent.type(within(panel).getByLabelText('Withdrawal evidence reference'), 'withdrawal-ticket-456');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Withdraw AI authorization' }));
+
+    expect(withdrawOrganizationAi).toHaveBeenCalledWith({
+      organizationId: 'org-123',
+      withdrawalReference: 'withdrawal-ticket-456',
+    });
+  });
+
   it('runs erasure dry-run only for the exact preflight organization and renders the inventory', async () => {
     const suspendedPreflight: CustomerPreflightResponse = {
       ...activeCustomerPreflight,
@@ -447,6 +618,10 @@ describe('PilotReviewersPage', () => {
         auditLogs: 16,
         feedback: 17,
         activityEvents: 18,
+        quotaPolicies: 1,
+        quotaPeriods: 1,
+        quotaUsages: 2,
+        aiAuthorizations: 1,
       },
     });
 

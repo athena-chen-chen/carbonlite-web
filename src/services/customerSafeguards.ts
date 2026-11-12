@@ -41,21 +41,22 @@ export type CustomerPreflightResponse = {
       memberships: number;
     };
     quota?: {
-      enabled?: boolean;
-      periodDays?: number;
-      uploadLimit?: number;
-      dailyUploadLimit?: number;
-      maxFileSize?: number;
-      extractionConcurrency?: number;
-      importRowLimit?: number;
+      enabled: boolean;
+      periodDays: number;
+      uploadLimit: number;
+      dailyUploadLimit: number;
+      maxFileSizeBytes: number;
+      maxConcurrentExtractions: number;
+      maxImportRows: number;
     } | null;
     aiAuthorization?: {
-      status?: string;
-      provider?: string;
-      processingScope?: string;
-      effectiveDate?: string | null;
-      expiry?: string | null;
-      withdrawnDate?: string | null;
+      status: string;
+      provider: string;
+      processingScope: string;
+      consentVersion: string;
+      effectiveAt: string | null;
+      expiresAt: string | null;
+      withdrawnAt: string | null;
     } | null;
   } | null;
 };
@@ -96,6 +97,31 @@ export type OrganizationErasureInventory = {
   auditLogs: number;
   feedback: number;
   activityEvents: number;
+  quotaPolicies: number;
+  quotaPeriods: number;
+  quotaUsages: number;
+  aiAuthorizations: number;
+};
+
+export type OrganizationQuotaInput = {
+  enabled: boolean;
+  periodDays: number;
+  uploadLimit: number;
+  dailyUploadLimit: number;
+  maxFileSizeBytes: number;
+  maxConcurrentExtractions: number;
+  maxImportRows: number;
+};
+
+export type OrganizationAiAuthorization = {
+  organizationId: string;
+  status: 'DISABLED' | 'ENABLED' | 'WITHDRAWN';
+  consentVersion: string;
+  provider: 'OPENAI';
+  processingScope: 'DOCUMENT_EXTRACTION';
+  effectiveAt: string;
+  expiresAt: string | null;
+  withdrawnAt: string | null;
 };
 
 export type OrganizationErasureDryRunResponse = {
@@ -201,6 +227,58 @@ export function eraseOrganization(input: {
         confirmationOrganizationSlug: input.organizationSlug,
         confirmErase: true,
       }),
+    },
+  );
+}
+
+export function configureOrganizationQuota(
+  organizationId: string,
+  input: OrganizationQuotaInput,
+) {
+  requirePlatformAdmin();
+  return apiFetch<OrganizationQuotaInput & { organizationId: string }>(
+    `/admin/organization-quotas/${encodeURIComponent(organizationId)}`,
+    { method: 'PUT', body: JSON.stringify(input) },
+  );
+}
+
+export function authorizeOrganizationAi(input: {
+  organizationId: string;
+  consentVersion: string;
+  evidenceReference: string;
+  authorizedRepresentativeReference: string;
+  effectiveAt: string;
+  expiresAt?: string;
+}) {
+  requirePlatformAdmin();
+  return apiFetch<OrganizationAiAuthorization>(
+    `/admin/organizations/${encodeURIComponent(input.organizationId)}/ai-authorization`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        status: 'ENABLED',
+        consentVersion: input.consentVersion,
+        provider: 'OPENAI',
+        processingScope: 'DOCUMENT_EXTRACTION',
+        evidenceReference: input.evidenceReference,
+        authorizedRepresentativeReference: input.authorizedRepresentativeReference,
+        effectiveAt: input.effectiveAt,
+        ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+      }),
+    },
+  );
+}
+
+export function withdrawOrganizationAi(input: {
+  organizationId: string;
+  withdrawalReference: string;
+}) {
+  requirePlatformAdmin();
+  return apiFetch<OrganizationAiAuthorization>(
+    `/admin/organizations/${encodeURIComponent(input.organizationId)}/ai-authorization/withdraw`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ withdrawalReference: input.withdrawalReference }),
     },
   );
 }

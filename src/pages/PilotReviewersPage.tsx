@@ -1,16 +1,20 @@
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import {
+  authorizeOrganizationAi,
+  configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
   provisionPaidPilotCustomer,
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
+  withdrawOrganizationAi,
   type CustomerPreflightResponse,
   type OrganizationErasureDryRunResponse,
   type OrganizationErasureResponse,
   type OrganizationErasureInventory,
   type ProvisionPaidPilotCustomerResponse,
   type SuspendCustomerOrganizationResponse,
+  type OrganizationQuotaInput,
 } from '../services/customerSafeguards';
 import {
   createPilotReviewer,
@@ -25,6 +29,24 @@ import {
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 const DEFAULT_WORKSPACE = 'CarbonLite Sample Workspace';
+const APPROVED_SYNTHETIC_PILOT_QUOTA: OrganizationQuotaInput = {
+  enabled: true,
+  periodDays: 28,
+  uploadLimit: 20,
+  dailyUploadLimit: 3,
+  maxFileSizeBytes: 10_485_760,
+  maxConcurrentExtractions: 1,
+  maxImportRows: 500,
+};
+const EMPTY_QUOTA_DRAFT: OrganizationQuotaInput = {
+  enabled: false,
+  periodDays: 0,
+  uploadLimit: 0,
+  dailyUploadLimit: 0,
+  maxFileSizeBytes: 0,
+  maxConcurrentExtractions: 0,
+  maxImportRows: 0,
+};
 
 export default function PilotReviewersPage() {
   const [name, setName] = useState('');
@@ -74,6 +96,21 @@ export default function PilotReviewersPage() {
   const [erasureError, setErasureError] = useState<string | null>(null);
   const [erasureVerification, setErasureVerification] = useState<string | null>(null);
   const [erasingOrganization, setErasingOrganization] = useState(false);
+  const [quotaDraft, setQuotaDraft] = useState<OrganizationQuotaInput>(EMPTY_QUOTA_DRAFT);
+  const [quotaConfirmed, setQuotaConfirmed] = useState(false);
+  const [savingQuota, setSavingQuota] = useState(false);
+  const [quotaMessage, setQuotaMessage] = useState<string | null>(null);
+  const [quotaError, setQuotaError] = useState<string | null>(null);
+  const [aiConsentVersion, setAiConsentVersion] = useState('');
+  const [aiEvidenceReference, setAiEvidenceReference] = useState('');
+  const [aiRepresentativeReference, setAiRepresentativeReference] = useState('');
+  const [aiEffectiveAt, setAiEffectiveAt] = useState('');
+  const [aiExpiresAt, setAiExpiresAt] = useState('');
+  const [aiConsentConfirmed, setAiConsentConfirmed] = useState(false);
+  const [aiWithdrawalReference, setAiWithdrawalReference] = useState('');
+  const [savingAiAuthorization, setSavingAiAuthorization] = useState(false);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const erasureRequestInFlight = useRef(false);
 
   const setupLink = useMemo(() => getInviteLink(result), [result]);
@@ -218,6 +255,12 @@ export default function PilotReviewersPage() {
     setSuspensionResult(null);
     setSuspensionError(null);
     setSlugConfirmation('');
+    setQuotaConfirmed(false);
+    setQuotaMessage(null);
+    setQuotaError(null);
+    setAiConsentConfirmed(false);
+    setAiMessage(null);
+    setAiError(null);
     invalidateErasureState();
     setRunningPreflight(true);
 
@@ -226,14 +269,105 @@ export default function PilotReviewersPage() {
       const organizationName = preflightOrganizationName.trim();
       setPreflightEmail(normalizedEmail);
       setPreflightOrganizationName(organizationName);
-      setPreflightResult(await getCustomerPreflight({
+      const response = await getCustomerPreflight({
         email: normalizedEmail,
         organizationName,
-      }));
+      });
+      setPreflightResult(response);
+      setQuotaDraft(response.organization?.quota ?? EMPTY_QUOTA_DRAFT);
     } catch (err) {
       setPreflightError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setRunningPreflight(false);
+    }
+  }
+
+  async function handleConfigureQuota() {
+    const organization = preflightResult?.organization;
+    if (!organization || !quotaConfirmed || !isValidQuota(quotaDraft)) return;
+    if (!window.confirm(`Save the displayed quota policy for ${organization.name}?`)) return;
+
+    setSavingQuota(true);
+    setQuotaError(null);
+    setQuotaMessage(null);
+    try {
+      await configureOrganizationQuota(organization.id, quotaDraft);
+      setQuotaMessage('Organization quota configuration saved.');
+      setQuotaConfirmed(false);
+      const refreshed = await getCustomerPreflight({
+        email: preflightEmail,
+        organizationName: preflightOrganizationName,
+      });
+      setPreflightResult(refreshed);
+      setQuotaDraft(refreshed.organization?.quota ?? EMPTY_QUOTA_DRAFT);
+    } catch (err) {
+      setQuotaError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setSavingQuota(false);
+    }
+  }
+
+  async function handleAuthorizeAi() {
+    const organization = preflightResult?.organization;
+    if (
+      !organization ||
+      organization.customerStatus !== 'ACTIVE' ||
+      !aiConsentConfirmed ||
+      !aiConsentVersion.trim() ||
+      !aiEvidenceReference.trim() ||
+      !aiRepresentativeReference.trim() ||
+      !aiEffectiveAt
+    ) return;
+    if (!window.confirm(`Authorize AI document extraction for ${organization.name}?`)) return;
+
+    setSavingAiAuthorization(true);
+    setAiError(null);
+    setAiMessage(null);
+    try {
+      await authorizeOrganizationAi({
+        organizationId: organization.id,
+        consentVersion: aiConsentVersion.trim(),
+        evidenceReference: aiEvidenceReference.trim(),
+        authorizedRepresentativeReference: aiRepresentativeReference.trim(),
+        effectiveAt: new Date(aiEffectiveAt).toISOString(),
+        ...(aiExpiresAt ? { expiresAt: new Date(aiExpiresAt).toISOString() } : {}),
+      });
+      setAiMessage('AI document extraction authorization recorded.');
+      setAiConsentConfirmed(false);
+      setPreflightResult(await getCustomerPreflight({
+        email: preflightEmail,
+        organizationName: preflightOrganizationName,
+      }));
+    } catch (err) {
+      setAiError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setSavingAiAuthorization(false);
+    }
+  }
+
+  async function handleWithdrawAi() {
+    const organization = preflightResult?.organization;
+    if (!organization || !aiWithdrawalReference.trim()) return;
+    if (!window.confirm(`Withdraw AI document extraction authorization for ${organization.name}?`)) return;
+
+    setSavingAiAuthorization(true);
+    setAiError(null);
+    setAiMessage(null);
+    try {
+      await withdrawOrganizationAi({
+        organizationId: organization.id,
+        withdrawalReference: aiWithdrawalReference.trim(),
+      });
+      setAiMessage('AI document extraction authorization withdrawn.');
+      setAiWithdrawalReference('');
+      setPreflightResult(await getCustomerPreflight({
+        email: preflightEmail,
+        organizationName: preflightOrganizationName,
+      }));
+    } catch (err) {
+      setAiError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setSavingAiAuthorization(false);
     }
   }
 
@@ -785,9 +919,9 @@ export default function PilotReviewersPage() {
                     <ResultItem label="Period days" value={optionalValue(preflightResult.organization.quota.periodDays)} />
                     <ResultItem label="Upload limit" value={optionalValue(preflightResult.organization.quota.uploadLimit)} />
                     <ResultItem label="Daily upload limit" value={optionalValue(preflightResult.organization.quota.dailyUploadLimit)} />
-                    <ResultItem label="Max file size" value={optionalValue(preflightResult.organization.quota.maxFileSize)} />
-                    <ResultItem label="Extraction concurrency" value={optionalValue(preflightResult.organization.quota.extractionConcurrency)} />
-                    <ResultItem label="Import row limit" value={optionalValue(preflightResult.organization.quota.importRowLimit)} />
+                    <ResultItem label="Max file size (bytes)" value={optionalValue(preflightResult.organization.quota.maxFileSizeBytes)} />
+                    <ResultItem label="Extraction concurrency" value={optionalValue(preflightResult.organization.quota.maxConcurrentExtractions)} />
+                    <ResultItem label="Import row limit" value={optionalValue(preflightResult.organization.quota.maxImportRows)} />
                   </div>
                 ) : <p style={helperTextStyle}>No organization quota configured.</p>}
 
@@ -797,13 +931,186 @@ export default function PilotReviewersPage() {
                     <ResultItem label="Status" value={preflightResult.organization.aiAuthorization.status || 'Not available'} />
                     <ResultItem label="Provider" value={preflightResult.organization.aiAuthorization.provider || 'Not available'} />
                     <ResultItem label="Processing scope" value={preflightResult.organization.aiAuthorization.processingScope || 'Not available'} />
-                    <ResultItem label="Effective date" value={preflightResult.organization.aiAuthorization.effectiveDate || 'Not available'} />
-                    <ResultItem label="Expiry" value={preflightResult.organization.aiAuthorization.expiry || 'Not available'} />
-                    <ResultItem label="Withdrawn date" value={preflightResult.organization.aiAuthorization.withdrawnDate || 'Not available'} />
+                    <ResultItem label="Consent version" value={preflightResult.organization.aiAuthorization.consentVersion || 'Not available'} />
+                    <ResultItem label="Effective date" value={preflightResult.organization.aiAuthorization.effectiveAt || 'Not available'} />
+                    <ResultItem label="Expiry" value={preflightResult.organization.aiAuthorization.expiresAt || 'Not available'} />
+                    <ResultItem label="Withdrawn date" value={preflightResult.organization.aiAuthorization.withdrawnAt || 'Not available'} />
                   </div>
                 ) : <p style={helperTextStyle}>No organization AI authorization configured.</p>}
               </>
             )}
+          </section>
+        ) : null}
+
+        {preflightResult?.organization ? (
+          <section style={provisionCardStyle} aria-label="Organization quota configuration">
+            <h3 style={sectionTitleStyle}>Organization pilot quota</h3>
+            <p style={helperTextStyle}>
+              Quotas apply only to this trusted preflight organization. Loading the approved
+              synthetic-pilot profile does not save it until you confirm and submit.
+            </p>
+            <div style={readonlySummaryStyle}>
+              <div><strong>Organization:</strong> {preflightResult.organization.name}</div>
+              <div><strong>Organization ID:</strong> {preflightResult.organization.id}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setQuotaDraft(APPROVED_SYNTHETIC_PILOT_QUOTA);
+                setQuotaConfirmed(false);
+                setQuotaMessage(null);
+              }}
+              style={secondaryButtonStyle}
+            >
+              Load approved synthetic-pilot profile
+            </button>
+            <label style={purposeOptionStyle}>
+              <input
+                type="checkbox"
+                checked={quotaDraft.enabled}
+                onChange={(event) => setQuotaDraft({ ...quotaDraft, enabled: event.target.checked })}
+              />
+              <span>Enable this organization quota policy</span>
+            </label>
+            <div style={fieldGridStyle}>
+              {QUOTA_FIELDS.map(([key, label]) => (
+                <label key={key} style={labelStyle}>
+                  {label}
+                  <input
+                    type="number"
+                    min={1}
+                    value={quotaDraft[key] || ''}
+                    onChange={(event) => setQuotaDraft({
+                      ...quotaDraft,
+                      [key]: Number(event.target.value),
+                    })}
+                    style={inputStyle}
+                  />
+                </label>
+              ))}
+            </div>
+            <label style={purposeOptionStyle}>
+              <input
+                type="checkbox"
+                checked={quotaConfirmed}
+                onChange={(event) => setQuotaConfirmed(event.target.checked)}
+              />
+              <span>I confirm these limits are intended for this exact organization.</span>
+            </label>
+            {quotaError ? <div style={errorStyle}>{quotaError}</div> : null}
+            {quotaMessage ? <div style={successStyle}>{quotaMessage}</div> : null}
+            <button
+              type="button"
+              onClick={handleConfigureQuota}
+              disabled={savingQuota || !quotaConfirmed || !isValidQuota(quotaDraft)}
+              style={primaryButtonStyle(savingQuota || !quotaConfirmed || !isValidQuota(quotaDraft))}
+            >
+              {savingQuota ? 'Saving quota...' : 'Save organization quota'}
+            </button>
+          </section>
+        ) : null}
+
+        {preflightResult?.organization ? (
+          <section style={provisionCardStyle} aria-label="Organization AI authorization">
+            <h3 style={sectionTitleStyle}>AI document extraction authorization</h3>
+            <p style={warningStyle}>
+              AI document extraction is organization scoped and is not enabled by invitation,
+              password setup, or provisioning. Use synthetic or test data only. Do not upload real
+              client, employee, customer, or confidential business data during this pilot.
+            </p>
+            <div style={resultGridStyle}>
+              <ResultItem label="Organization" value={preflightResult.organization.name} />
+              <ResultItem label="Organization ID" value={preflightResult.organization.id} />
+              <ResultItem label="Status" value={preflightResult.organization.aiAuthorization?.status ?? 'NOT_CONFIGURED'} />
+              <ResultItem label="Provider" value={preflightResult.organization.aiAuthorization?.provider ?? 'OPENAI'} />
+              <ResultItem label="Scope" value={preflightResult.organization.aiAuthorization?.processingScope ?? 'DOCUMENT_EXTRACTION'} />
+              <ResultItem label="Effective at" value={preflightResult.organization.aiAuthorization?.effectiveAt ?? 'Not available'} />
+              <ResultItem label="Expires at" value={preflightResult.organization.aiAuthorization?.expiresAt ?? 'Not set'} />
+              <ResultItem label="Withdrawn at" value={preflightResult.organization.aiAuthorization?.withdrawnAt ?? 'Not withdrawn'} />
+            </div>
+            <div style={fieldGridStyle}>
+              <label style={labelStyle}>
+                Consent version
+                <input value={aiConsentVersion} onChange={(event) => setAiConsentVersion(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Consent evidence reference
+                <input value={aiEvidenceReference} onChange={(event) => setAiEvidenceReference(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Authorized representative reference
+                <input value={aiRepresentativeReference} onChange={(event) => setAiRepresentativeReference(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Effective date and time
+                <input type="datetime-local" value={aiEffectiveAt} onChange={(event) => setAiEffectiveAt(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Optional expiry date and time
+                <input type="datetime-local" value={aiExpiresAt} onChange={(event) => setAiExpiresAt(event.target.value)} style={inputStyle} />
+              </label>
+            </div>
+            <label style={purposeOptionStyle}>
+              <input
+                type="checkbox"
+                checked={aiConsentConfirmed}
+                onChange={(event) => setAiConsentConfirmed(event.target.checked)}
+              />
+              <span>I confirm that the organization has explicitly authorized AI document extraction for synthetic/test data.</span>
+            </label>
+            {preflightResult.organization.customerStatus !== 'ACTIVE' ? (
+              <div style={warningStyle}>AI authorization is available only after the customer organization is ACTIVE.</div>
+            ) : null}
+            {aiError ? <div style={errorStyle}>{aiError}</div> : null}
+            {aiMessage ? <div style={successStyle}>{aiMessage}</div> : null}
+            <button
+              type="button"
+              onClick={handleAuthorizeAi}
+              disabled={
+                savingAiAuthorization ||
+                preflightResult.organization.customerStatus !== 'ACTIVE' ||
+                !aiConsentConfirmed ||
+                !aiConsentVersion.trim() ||
+                !aiEvidenceReference.trim() ||
+                !aiRepresentativeReference.trim() ||
+                !aiEffectiveAt
+              }
+              style={primaryButtonStyle(
+                savingAiAuthorization ||
+                preflightResult.organization.customerStatus !== 'ACTIVE' ||
+                !aiConsentConfirmed ||
+                !aiConsentVersion.trim() ||
+                !aiEvidenceReference.trim() ||
+                !aiRepresentativeReference.trim() ||
+                !aiEffectiveAt,
+              )}
+            >
+              {savingAiAuthorization ? 'Saving authorization...' : 'Authorize AI document extraction'}
+            </button>
+            <label style={labelStyle}>
+              Withdrawal evidence reference
+              <input
+                value={aiWithdrawalReference}
+                onChange={(event) => setAiWithdrawalReference(event.target.value)}
+                style={inputStyle}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleWithdrawAi}
+              disabled={
+                savingAiAuthorization ||
+                preflightResult.organization.aiAuthorization?.status !== 'ENABLED' ||
+                !aiWithdrawalReference.trim()
+              }
+              style={dangerButtonStyle(
+                savingAiAuthorization ||
+                preflightResult.organization.aiAuthorization?.status !== 'ENABLED' ||
+                !aiWithdrawalReference.trim(),
+              )}
+            >
+              Withdraw AI authorization
+            </button>
           </section>
         ) : null}
 
@@ -1125,6 +1432,29 @@ function optionalValue(value: number | undefined) {
   return value === undefined ? 'Not available' : String(value);
 }
 
+function isValidQuota(value: OrganizationQuotaInput) {
+  return (
+    Number.isInteger(value.periodDays) && value.periodDays > 0 && value.periodDays <= 365 &&
+    Number.isInteger(value.uploadLimit) && value.uploadLimit > 0 &&
+    Number.isInteger(value.dailyUploadLimit) && value.dailyUploadLimit > 0 &&
+    Number.isInteger(value.maxFileSizeBytes) && value.maxFileSizeBytes > 0 && value.maxFileSizeBytes <= 10_485_760 &&
+    Number.isInteger(value.maxConcurrentExtractions) && value.maxConcurrentExtractions > 0 &&
+    Number.isInteger(value.maxImportRows) && value.maxImportRows > 0
+  );
+}
+
+const QUOTA_FIELDS: ReadonlyArray<[
+  Exclude<keyof OrganizationQuotaInput, 'enabled'>,
+  string,
+]> = [
+  ['periodDays', 'Period days'],
+  ['uploadLimit', 'Period upload limit'],
+  ['dailyUploadLimit', 'Daily upload limit'],
+  ['maxFileSizeBytes', 'Maximum file size (bytes)'],
+  ['maxConcurrentExtractions', 'Extraction concurrency'],
+  ['maxImportRows', 'Maximum spreadsheet rows'],
+];
+
 function getProvisioningBlockers(result: CustomerPreflightResponse | null) {
   if (!result) return ['Run preflight before provisioning.'];
   const blockers: string[] = [];
@@ -1173,6 +1503,10 @@ const ERASURE_INVENTORY_FIELDS: ReadonlyArray<[
   ['activityEvents', 'Activity events'],
   ['aiJobs', 'AI jobs'],
   ['feedback', 'Feedback'],
+  ['quotaPolicies', 'Quota policies'],
+  ['quotaPeriods', 'Quota periods'],
+  ['quotaUsages', 'Quota usage records'],
+  ['aiAuthorizations', 'AI authorizations'],
 ];
 
 const pageStyle: React.CSSProperties = {
