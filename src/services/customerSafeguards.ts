@@ -57,6 +57,18 @@ export type CustomerPreflightResponse = {
       effectiveAt: string | null;
       expiresAt: string | null;
       withdrawnAt: string | null;
+      authorizedDataMode?: 'SYNTHETIC_TEST_ONLY' | 'REAL_CUSTOMER_DATA';
+      realDataApprovalRevision?: number | null;
+    } | null;
+    realDataAuthorization?: {
+      configuredStatus: 'SYNTHETIC_ONLY' | 'REAL_DATA_APPROVED' | 'WITHDRAWN';
+      approvalRevision: number;
+      policyVersion: string;
+      effectiveAt: string;
+      expiresAt: string | null;
+      reviewDueAt: string | null;
+      withdrawnAt: string | null;
+      evidenceReferencesPresent: boolean;
     } | null;
   } | null;
 };
@@ -101,6 +113,7 @@ export type OrganizationErasureInventory = {
   quotaPeriods: number;
   quotaUsages: number;
   aiAuthorizations: number;
+  realDataAuthorizations: number;
 };
 
 export type OrganizationQuotaInput = {
@@ -121,6 +134,20 @@ export type OrganizationAiAuthorization = {
   processingScope: 'DOCUMENT_EXTRACTION';
   effectiveAt: string;
   expiresAt: string | null;
+  withdrawnAt: string | null;
+  authorizedDataMode: 'SYNTHETIC_TEST_ONLY' | 'REAL_CUSTOMER_DATA';
+  realDataApprovalRevision: number | null;
+};
+
+export type OrganizationRealDataAuthorization = {
+  organizationId: string;
+  decisionId: string;
+  status: 'SYNTHETIC_ONLY' | 'REAL_DATA_APPROVED' | 'WITHDRAWN';
+  approvalRevision: number;
+  policyVersion: string;
+  effectiveAt: string;
+  expiresAt: string | null;
+  reviewDueAt: string | null;
   withdrawnAt: string | null;
 };
 
@@ -249,6 +276,8 @@ export function authorizeOrganizationAi(input: {
   authorizedRepresentativeReference: string;
   effectiveAt: string;
   expiresAt?: string;
+  authorizedDataMode?: 'SYNTHETIC_TEST_ONLY' | 'REAL_CUSTOMER_DATA';
+  realDataApprovalRevision?: number;
 }) {
   requirePlatformAdmin();
   return apiFetch<OrganizationAiAuthorization>(
@@ -264,6 +293,64 @@ export function authorizeOrganizationAi(input: {
         authorizedRepresentativeReference: input.authorizedRepresentativeReference,
         effectiveAt: input.effectiveAt,
         ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+        authorizedDataMode: input.authorizedDataMode ?? 'SYNTHETIC_TEST_ONLY',
+        ...(input.realDataApprovalRevision
+          ? { realDataApprovalRevision: input.realDataApprovalRevision }
+          : {}),
+      }),
+    },
+  );
+}
+
+export function approveOrganizationRealData(input: {
+  organizationId: string;
+  organizationSlug: string;
+  policyVersion: string;
+  agreementEvidenceReference: string;
+  allowedDataScopeReference: string;
+  privacySecurityReadinessReference: string;
+  effectiveAt: string;
+  expiresAt?: string;
+  reviewDueAt?: string;
+}) {
+  requirePlatformAdmin();
+  return apiFetch<{ result: 'APPROVED' | 'ALREADY_APPROVED'; authorization: OrganizationRealDataAuthorization }>(
+    `/admin/organizations/${encodeURIComponent(input.organizationId)}/real-data-authorization`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        organizationId: input.organizationId,
+        confirmationOrganizationId: input.organizationId,
+        confirmationOrganizationSlug: input.organizationSlug,
+        confirmRealDataApproval: true,
+        policyVersion: input.policyVersion,
+        agreementEvidenceReference: input.agreementEvidenceReference,
+        allowedDataScopeReference: input.allowedDataScopeReference,
+        privacySecurityReadinessReference: input.privacySecurityReadinessReference,
+        effectiveAt: input.effectiveAt,
+        ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+        ...(input.reviewDueAt ? { reviewDueAt: input.reviewDueAt } : {}),
+      }),
+    },
+  );
+}
+
+export function withdrawOrganizationRealData(input: {
+  organizationId: string;
+  organizationSlug: string;
+  withdrawalReason: string;
+}) {
+  requirePlatformAdmin();
+  return apiFetch<{ result: 'WITHDRAWN' | 'ALREADY_WITHDRAWN'; authorization: OrganizationRealDataAuthorization }>(
+    `/admin/organizations/${encodeURIComponent(input.organizationId)}/real-data-authorization/withdraw`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        organizationId: input.organizationId,
+        confirmationOrganizationId: input.organizationId,
+        confirmationOrganizationSlug: input.organizationSlug,
+        confirmWithdrawal: true,
+        withdrawalReason: input.withdrawalReason,
       }),
     },
   );

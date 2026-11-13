@@ -35,6 +35,7 @@ import {
 import { getAllConversionFactors } from '../services/conversionFactors';
 import { trackActivityEvent } from '../services/activityEvents';
 import { getOrganizationAiStatus } from '../services/aiAuthorization';
+import { getRealDataAuthorizationStatus } from '../services/realDataAuthorization';
 
 function LocationProbe() {
   const location = useLocation();
@@ -248,6 +249,9 @@ vi.mock('../services/conversionFactors', () => ({
 vi.mock('../services/aiAuthorization', () => ({
   getOrganizationAiStatus: vi.fn(),
 }));
+vi.mock('../services/realDataAuthorization', () => ({
+  getRealDataAuthorizationStatus: vi.fn(),
+}));
 
 const approvedFactorMetadata = {
   verified: true,
@@ -459,6 +463,16 @@ describe('UploadPage sample workflow', () => {
       expiresAt: null,
       withdrawnAt: null,
     });
+    vi.mocked(getRealDataAuthorizationStatus).mockReset();
+    vi.mocked(getRealDataAuthorizationStatus).mockResolvedValue({
+      effectiveMode: 'SYNTHETIC_ONLY',
+      configuredStatus: 'NOT_CONFIGURED',
+      policyVersion: null,
+      effectiveAt: null,
+      expiresAt: null,
+      reviewDueAt: null,
+      reason: 'NOT_CONFIGURED',
+    });
     vi.mocked(getDocuments).mockResolvedValue({
       items: [],
       page: 1,
@@ -536,6 +550,26 @@ describe('UploadPage sample workflow', () => {
     expect(screen.getByText(
       'Use synthetic or test data only. Do not upload real client, employee, customer, or confidential business data during this pilot.',
     )).toBeInTheDocument();
+  });
+
+  it('shows approved real-data policy and requires explicit intake acknowledgement', async () => {
+    vi.mocked(getRealDataAuthorizationStatus).mockResolvedValue({
+      effectiveMode: 'REAL_CUSTOMER_DATA',
+      configuredStatus: 'REAL_DATA_APPROVED',
+      policyVersion: '0.2',
+      effectiveAt: '2026-11-13T00:00:00.000Z',
+      expiresAt: null,
+      reviewDueAt: '2027-01-01T00:00:00.000Z',
+      reason: 'REAL_DATA_APPROVED',
+    });
+
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+
+    expect(await screen.findByText(/approved for the controlled real-data pilot/i)).toBeInTheDocument();
+    const acknowledgement = screen.getByRole('checkbox', { name: /within the organization's approved real-data scope/i });
+    expect(acknowledgement).not.toBeChecked();
+    await userEvent.click(acknowledgement);
+    expect(acknowledgement).toBeChecked();
   });
 
   it('F14: expands all 25 sources, opens later-page details, and scopes calculation results across pages', async () => {

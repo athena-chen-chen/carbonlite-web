@@ -50,6 +50,12 @@ import {
 } from '../constants/routes';
 import { queryClient } from '../queryClient';
 import { getOrganizationAiStatus } from '../services/aiAuthorization';
+import { getRealDataAuthorizationStatus } from '../services/realDataAuthorization';
+import { resetIngestionDataMode, setIngestionDataMode } from '../services/ingestionDataMode';
+import {
+  REAL_DATA_APPROVED_NOTICE,
+  SYNTHETIC_ONLY_PILOT_NOTICE,
+} from '../constants/syntheticOnlyPilot';
 import {
   readOnlyNoticeStyle,
   sampleBannerStyle,
@@ -280,13 +286,17 @@ export function UploadPage() {
   } | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [aiExtractionEnabled, setAiExtractionEnabled] = useState<boolean | null>(null);
+  const [realDataApproved, setRealDataApproved] = useState(false);
+  const [realDataAcknowledged, setRealDataAcknowledged] = useState(false);
+  const [realDataStatusLoaded, setRealDataStatusLoaded] = useState(false);
   const currentUser = getCurrentUser();
-  const canUploadData = canUploadFiles(currentUser);
-  const canImportData = canImportDraftRows(currentUser);
-  const canDeleteDocuments = canImportData;
-  const canSetProvinceOnDraftRows = canSetProvinceForActivityRecords(currentUser);
-  const pilotReviewerReadOnly = isPilotReviewer(currentUser);
   const customerAccount = getAccountType(currentUser) === 'CUSTOMER';
+  const dataModeReady = !customerAccount || realDataStatusLoaded;
+  const canUploadData = canUploadFiles(currentUser) && dataModeReady;
+  const canImportData = canImportDraftRows(currentUser) && dataModeReady;
+  const canDeleteDocuments = canImportData;
+  const canSetProvinceOnDraftRows = canSetProvinceForActivityRecords(currentUser) && dataModeReady;
+  const pilotReviewerReadOnly = isPilotReviewer(currentUser);
   const showSampleDataControls =
     getAccountType(currentUser) === 'INTERNAL_TEST' &&
     String(currentUser?.status ?? '').trim().toUpperCase() === 'DEMO';
@@ -394,6 +404,37 @@ export function UploadPage() {
       });
     return () => { current = false; };
   }, [customerAccount, currentUser?.organizationId]);
+
+  useEffect(() => {
+    let current = true;
+    setRealDataApproved(false);
+    setRealDataAcknowledged(false);
+    setRealDataStatusLoaded(!customerAccount);
+    resetIngestionDataMode();
+    if (!customerAccount) return () => { current = false; resetIngestionDataMode(); };
+    void getRealDataAuthorizationStatus()
+      .then((status) => {
+        if (current) {
+          setRealDataApproved(status.effectiveMode === 'REAL_CUSTOMER_DATA');
+          setRealDataStatusLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (current) {
+          setRealDataApproved(false);
+          setRealDataStatusLoaded(true);
+        }
+      });
+    return () => { current = false; resetIngestionDataMode(); };
+  }, [customerAccount, currentUser?.organizationId]);
+
+  useEffect(() => {
+    setIngestionDataMode(
+      realDataApproved && realDataAcknowledged
+        ? 'REAL_CUSTOMER_DATA'
+        : 'SYNTHETIC_TEST',
+    );
+  }, [realDataApproved, realDataAcknowledged]);
 
   function clearFeedback() {
     setError(null);
@@ -1253,10 +1294,27 @@ export function UploadPage() {
           <strong>Data handling notice</strong>
           <span>
             {customerAccount
-              ? 'Use synthetic or test data only. Do not upload real client, employee, customer, or confidential business data during this pilot.'
+              ? (realDataApproved ? REAL_DATA_APPROVED_NOTICE : SYNTHETIC_ONLY_PILOT_NOTICE)
               : 'Upload only information you are authorized to provide. CarbonLite processes source files to extract operational rows, calculate emissions, and prepare review outputs. Workspace access is controlled by organization membership and role; avoid unnecessary personal or sensitive information in uploaded files.'}
           </span>
         </div>
+      ) : null}
+
+      {!pilotReviewerReadOnly && customerAccount && !realDataStatusLoaded ? (
+        <div style={dataHandlingNoticeStyle}>Verifying this organization&apos;s data permissions. Intake controls remain disabled until the check completes.</div>
+      ) : null}
+
+      {!pilotReviewerReadOnly && customerAccount && realDataApproved ? (
+        <label style={{ ...dataHandlingNoticeStyle, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={realDataAcknowledged}
+            onChange={(event) => setRealDataAcknowledged(event.target.checked)}
+          />
+          <span>
+            I confirm this intake is within the organization&apos;s approved real-data scope and has been reviewed for prohibited or unnecessary information. Leave unchecked for synthetic/test submissions.
+          </span>
+        </label>
       ) : null}
 
       {showSampleDataControls ? <div style={sampleBannerStyle}>

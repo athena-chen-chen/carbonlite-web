@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { ingestionDataModeHeader } from './ingestionDataMode';
 import { canImportDraftRows, requirePermission } from '../utils/permissions';
 import { getCurrentUser } from './auth';
 import type { AirTravelActivityMetadataV1 } from '../utils/airTravelActivity';
@@ -143,6 +144,7 @@ export async function saveSpreadsheetReviewRows(input: SaveSpreadsheetReviewRows
   return apiFetch<SaveSpreadsheetReviewRowsResponse>('/spreadsheet-import/review-rows', {
     method: 'POST',
     body: JSON.stringify(payload),
+    headers: ingestionDataModeHeader(),
   });
 }
 

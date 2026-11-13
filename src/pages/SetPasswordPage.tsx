@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { setPasswordFromToken } from '../services/auth';
 import { getSupportEmail } from '../config/api';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
-import { SYNTHETIC_ONLY_PILOT_NOTICE } from '../constants/syntheticOnlyPilot';
+import { PRE_AUTH_PILOT_NOTICE } from '../constants/syntheticOnlyPilot';
 
 const LOGIN_URL = 'https://www.carbonliteapp.ca/login';
 
@@ -56,7 +56,7 @@ export default function SetPasswordPage() {
         </p>
 
         <div role="note" style={pilotNoticeStyle}>
-          <strong>Synthetic data only.</strong> {SYNTHETIC_ONLY_PILOT_NOTICE}
+          <strong>Pilot data permissions.</strong> {PRE_AUTH_PILOT_NOTICE}
         </div>
 
         <form onSubmit={handleSubmit} style={formStyle}>

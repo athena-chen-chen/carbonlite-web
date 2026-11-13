@@ -7,7 +7,7 @@ import { isPilotReviewer } from '../utils/permissions';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 import { useSlowLoading } from '../hooks/useSlowLoading';
 import { startDevTiming } from '../utils/performanceDiagnostics';
-import { SYNTHETIC_ONLY_PILOT_NOTICE } from '../constants/syntheticOnlyPilot';
+import { PRE_AUTH_PILOT_NOTICE } from '../constants/syntheticOnlyPilot';
 
 export function LoginPage() {
   const { isAuthenticated, login, user } = useAuth();
@@ -55,7 +55,7 @@ export function LoginPage() {
     >
       <form onSubmit={handleSubmit} style={formStyle}>
         <div role="note" style={pilotNoticeStyle}>
-          <strong>Synthetic data only.</strong> {SYNTHETIC_ONLY_PILOT_NOTICE}
+          <strong>Pilot data permissions.</strong> {PRE_AUTH_PILOT_NOTICE}
         </div>
 
         <label style={labelStyle}>

@@ -19,11 +19,11 @@ describe('SetPasswordPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows the synthetic-only safeguard before onboarding', () => {
+  it('shows the neutral organization-specific data safeguard before onboarding', () => {
     renderPage();
 
-    expect(screen.getByRole('note')).toHaveTextContent(/Use synthetic or test data only/i);
-    expect(screen.getByRole('note')).toHaveTextContent(/Do not upload real client, employee, customer, or confidential business data/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/pilot data permissions are organization-specific/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/unless your organization has received explicit real-data pilot approval/i);
   });
 
   it('sets password from an invite token and returns to login', async () => {

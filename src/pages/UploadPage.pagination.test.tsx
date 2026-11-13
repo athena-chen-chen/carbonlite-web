@@ -11,6 +11,7 @@ vi.mock('../services/documentExtraction', async (original) => ({ ...await origin
 vi.mock('../services/activityData', async (original) => ({ ...await original<typeof import('../services/activityData')>(), getAllActivityData: vi.fn().mockResolvedValue([]) }));
 vi.mock('../services/conversionFactors', async (original) => ({ ...await original<typeof import('../services/conversionFactors')>(), getAllConversionFactors: vi.fn().mockResolvedValue([]) }));
 vi.mock('../services/activityEvents', () => ({ trackActivityEvent: vi.fn().mockResolvedValue({}) }));
+vi.mock('../services/realDataAuthorization', () => ({ getRealDataAuthorizationStatus: vi.fn().mockResolvedValue({ effectiveMode: 'SYNTHETIC_ONLY', configuredStatus: 'NOT_CONFIGURED', policyVersion: null, effectiveAt: null, expiresAt: null, reviewDueAt: null, reason: 'NOT_CONFIGURED' }) }));
 vi.mock('../services/analytics.service', () => ({ track: vi.fn() }));
 vi.mock('../services/ga4.service', () => ({ trackEvent: vi.fn() }));
 vi.mock('../components/AppDialog', () => ({ useAppDialog: () => ({ confirm: vi.fn().mockResolvedValue(true), showError: vi.fn() }) }));

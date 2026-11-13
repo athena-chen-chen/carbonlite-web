@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import {
   authorizeOrganizationAi,
+  approveOrganizationRealData,
   configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
@@ -8,6 +9,7 @@ import {
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   withdrawOrganizationAi,
+  withdrawOrganizationRealData,
   type CustomerPreflightResponse,
   type OrganizationErasureDryRunResponse,
   type OrganizationErasureResponse,
@@ -107,10 +109,24 @@ export default function PilotReviewersPage() {
   const [aiEffectiveAt, setAiEffectiveAt] = useState('');
   const [aiExpiresAt, setAiExpiresAt] = useState('');
   const [aiConsentConfirmed, setAiConsentConfirmed] = useState(false);
+  const [aiAuthorizedDataMode, setAiAuthorizedDataMode] = useState<'SYNTHETIC_TEST_ONLY' | 'REAL_CUSTOMER_DATA'>('SYNTHETIC_TEST_ONLY');
   const [aiWithdrawalReference, setAiWithdrawalReference] = useState('');
   const [savingAiAuthorization, setSavingAiAuthorization] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [realPolicyVersion, setRealPolicyVersion] = useState('0.2');
+  const [realAgreementReference, setRealAgreementReference] = useState('');
+  const [realAllowedDataScopeReference, setRealAllowedDataScopeReference] = useState('');
+  const [realReadinessReference, setRealReadinessReference] = useState('');
+  const [realEffectiveAt, setRealEffectiveAt] = useState('');
+  const [realExpiresAt, setRealExpiresAt] = useState('');
+  const [realReviewDueAt, setRealReviewDueAt] = useState('');
+  const [realSlugConfirmation, setRealSlugConfirmation] = useState('');
+  const [realApprovalConfirmed, setRealApprovalConfirmed] = useState(false);
+  const [realWithdrawalReason, setRealWithdrawalReason] = useState('');
+  const [savingRealAuthorization, setSavingRealAuthorization] = useState(false);
+  const [realMessage, setRealMessage] = useState<string | null>(null);
+  const [realError, setRealError] = useState<string | null>(null);
   const erasureRequestInFlight = useRef(false);
 
   const setupLink = useMemo(() => getInviteLink(result), [result]);
@@ -261,6 +277,10 @@ export default function PilotReviewersPage() {
     setAiConsentConfirmed(false);
     setAiMessage(null);
     setAiError(null);
+    setRealSlugConfirmation('');
+    setRealApprovalConfirmed(false);
+    setRealMessage(null);
+    setRealError(null);
     invalidateErasureState();
     setRunningPreflight(true);
 
@@ -331,6 +351,10 @@ export default function PilotReviewersPage() {
         authorizedRepresentativeReference: aiRepresentativeReference.trim(),
         effectiveAt: new Date(aiEffectiveAt).toISOString(),
         ...(aiExpiresAt ? { expiresAt: new Date(aiExpiresAt).toISOString() } : {}),
+        authorizedDataMode: aiAuthorizedDataMode,
+        ...(aiAuthorizedDataMode === 'REAL_CUSTOMER_DATA'
+          ? { realDataApprovalRevision: organization.realDataAuthorization?.approvalRevision }
+          : {}),
       });
       setAiMessage('AI document extraction authorization recorded.');
       setAiConsentConfirmed(false);
@@ -342,6 +366,66 @@ export default function PilotReviewersPage() {
       setAiError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setSavingAiAuthorization(false);
+    }
+  }
+
+  async function handleApproveRealData() {
+    const organization = preflightResult?.organization;
+    if (!organization || organization.customerStatus !== 'ACTIVE' ||
+      realSlugConfirmation !== organization.slug || !realApprovalConfirmed ||
+      !realAgreementReference.trim() || !realAllowedDataScopeReference.trim() ||
+      !realReadinessReference.trim() || !realEffectiveAt) return;
+    if (!window.confirm(`Approve the controlled real-data pilot for ${organization.name}?`)) return;
+
+    setSavingRealAuthorization(true);
+    setRealError(null);
+    setRealMessage(null);
+    try {
+      await approveOrganizationRealData({
+        organizationId: organization.id,
+        organizationSlug: organization.slug,
+        policyVersion: realPolicyVersion.trim(),
+        agreementEvidenceReference: realAgreementReference.trim(),
+        allowedDataScopeReference: realAllowedDataScopeReference.trim(),
+        privacySecurityReadinessReference: realReadinessReference.trim(),
+        effectiveAt: new Date(realEffectiveAt).toISOString(),
+        ...(realExpiresAt ? { expiresAt: new Date(realExpiresAt).toISOString() } : {}),
+        ...(realReviewDueAt ? { reviewDueAt: new Date(realReviewDueAt).toISOString() } : {}),
+      });
+      setRealMessage('Real-data pilot approval recorded for this organization.');
+      setRealApprovalConfirmed(false);
+      setRealSlugConfirmation('');
+      setPreflightResult(await getCustomerPreflight({ email: preflightEmail, organizationName: preflightOrganizationName }));
+    } catch (err) {
+      setRealError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setSavingRealAuthorization(false);
+    }
+  }
+
+  async function handleWithdrawRealData() {
+    const organization = preflightResult?.organization;
+    if (!organization || organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
+      realSlugConfirmation !== organization.slug || !realWithdrawalReason.trim()) return;
+    if (!window.confirm(`Withdraw real-data approval for ${organization.name}? Real-customer-data ingestion will be blocked immediately.`)) return;
+
+    setSavingRealAuthorization(true);
+    setRealError(null);
+    setRealMessage(null);
+    try {
+      await withdrawOrganizationRealData({
+        organizationId: organization.id,
+        organizationSlug: organization.slug,
+        withdrawalReason: realWithdrawalReason.trim(),
+      });
+      setRealMessage('Real-data approval withdrawn. Any real-data AI authorization was also withdrawn.');
+      setRealWithdrawalReason('');
+      setRealSlugConfirmation('');
+      setPreflightResult(await getCustomerPreflight({ email: preflightEmail, organizationName: preflightOrganizationName }));
+    } catch (err) {
+      setRealError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setSavingRealAuthorization(false);
     }
   }
 
@@ -925,6 +1009,20 @@ export default function PilotReviewersPage() {
                   </div>
                 ) : <p style={helperTextStyle}>No organization quota configured.</p>}
 
+                <h4 style={summaryHeadingStyle}>Real-data authorization</h4>
+                {preflightResult.organization.realDataAuthorization ? (
+                  <div style={resultGridStyle}>
+                    <ResultItem label="Status" value={preflightResult.organization.realDataAuthorization.configuredStatus} />
+                    <ResultItem label="Approval revision" value={String(preflightResult.organization.realDataAuthorization.approvalRevision)} />
+                    <ResultItem label="Policy version" value={preflightResult.organization.realDataAuthorization.policyVersion} />
+                    <ResultItem label="Effective date" value={preflightResult.organization.realDataAuthorization.effectiveAt} />
+                    <ResultItem label="Expiry" value={preflightResult.organization.realDataAuthorization.expiresAt || 'Not set'} />
+                    <ResultItem label="Review due" value={preflightResult.organization.realDataAuthorization.reviewDueAt || 'Not set'} />
+                    <ResultItem label="Withdrawn date" value={preflightResult.organization.realDataAuthorization.withdrawnAt || 'Not withdrawn'} />
+                    <ResultItem label="Approval evidence recorded" value={yesNo(preflightResult.organization.realDataAuthorization.evidenceReferencesPresent)} />
+                  </div>
+                ) : <p style={helperTextStyle}>Synthetic-only by default. No real-data approval configured.</p>}
+
                 <h4 style={summaryHeadingStyle}>AI authorization</h4>
                 {preflightResult.organization.aiAuthorization ? (
                   <div style={resultGridStyle}>
@@ -932,6 +1030,8 @@ export default function PilotReviewersPage() {
                     <ResultItem label="Provider" value={preflightResult.organization.aiAuthorization.provider || 'Not available'} />
                     <ResultItem label="Processing scope" value={preflightResult.organization.aiAuthorization.processingScope || 'Not available'} />
                     <ResultItem label="Consent version" value={preflightResult.organization.aiAuthorization.consentVersion || 'Not available'} />
+                    <ResultItem label="Authorized data mode" value={preflightResult.organization.aiAuthorization.authorizedDataMode || 'SYNTHETIC_TEST_ONLY'} />
+                    <ResultItem label="Real-data approval revision" value={optionalValue(preflightResult.organization.aiAuthorization.realDataApprovalRevision ?? undefined)} />
                     <ResultItem label="Effective date" value={preflightResult.organization.aiAuthorization.effectiveAt || 'Not available'} />
                     <ResultItem label="Expiry" value={preflightResult.organization.aiAuthorization.expiresAt || 'Not available'} />
                     <ResultItem label="Withdrawn date" value={preflightResult.organization.aiAuthorization.withdrawnAt || 'Not available'} />
@@ -939,6 +1039,86 @@ export default function PilotReviewersPage() {
                 ) : <p style={helperTextStyle}>No organization AI authorization configured.</p>}
               </>
             )}
+          </section>
+        ) : null}
+
+        {preflightResult?.organization ? (
+          <section style={provisionCardStyle} aria-label="Organization real-data authorization">
+            <h3 style={sectionTitleStyle}>Real-data pilot approval</h3>
+            <p style={warningStyle}>
+              Customer status and provisioning do not grant real-data permission. Approval is organization scoped,
+              fail closed, and does not enable AI processing. Confirm the trusted organization and record only
+              non-secret evidence references.
+            </p>
+            <div style={resultGridStyle}>
+              <ResultItem label="Organization" value={preflightResult.organization.name} />
+              <ResultItem label="Organization ID" value={preflightResult.organization.id} />
+              <ResultItem label="Slug" value={preflightResult.organization.slug} />
+              <ResultItem label="Lifecycle" value={preflightResult.organization.customerStatus} />
+              <ResultItem label="Configured status" value={preflightResult.organization.realDataAuthorization?.configuredStatus ?? 'SYNTHETIC_ONLY'} />
+              <ResultItem label="Approval revision" value={String(preflightResult.organization.realDataAuthorization?.approvalRevision ?? 0)} />
+            </div>
+            <div style={fieldGridStyle}>
+              <label style={labelStyle}>Policy version
+                <input value={realPolicyVersion} onChange={(event) => setRealPolicyVersion(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>Pilot agreement evidence reference
+                <input value={realAgreementReference} onChange={(event) => setRealAgreementReference(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>Allowed-data scope reference
+                <input value={realAllowedDataScopeReference} onChange={(event) => setRealAllowedDataScopeReference(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>Privacy/security readiness reference
+                <input value={realReadinessReference} onChange={(event) => setRealReadinessReference(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>Effective date and time
+                <input type="datetime-local" value={realEffectiveAt} onChange={(event) => setRealEffectiveAt(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>Optional expiry
+                <input type="datetime-local" value={realExpiresAt} onChange={(event) => setRealExpiresAt(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>Optional review due
+                <input type="datetime-local" value={realReviewDueAt} onChange={(event) => setRealReviewDueAt(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>Type the exact trusted organization slug
+                <input value={realSlugConfirmation} onChange={(event) => setRealSlugConfirmation(event.target.value)} style={inputStyle} autoComplete="off" />
+              </label>
+            </div>
+            <label style={purposeOptionStyle}>
+              <input type="checkbox" checked={realApprovalConfirmed} onChange={(event) => setRealApprovalConfirmed(event.target.checked)} />
+              <span>I confirm the organization completed the documented real-data go/no-go review under the displayed policy version.</span>
+            </label>
+            {preflightResult.organization.customerStatus !== 'ACTIVE' ? <div style={warningStyle}>Approval requires an ACTIVE customer organization.</div> : null}
+            {!preflightResult.organization.quota?.enabled ? <div style={warningStyle}>Approval requires an enabled organization quota.</div> : null}
+            {preflightResult.organization.counts.goldenSampleArtifacts > 0 || preflightResult.organization.allowDemoFactorsForCalculations
+              ? <div style={warningStyle}>Approval is blocked while demo factors or Golden Sample artifacts are present.</div> : null}
+            {realError ? <div style={errorStyle}>{realError}</div> : null}
+            {realMessage ? <div style={successStyle}>{realMessage}</div> : null}
+            <button
+              type="button"
+              onClick={handleApproveRealData}
+              disabled={savingRealAuthorization || preflightResult.organization.customerStatus !== 'ACTIVE' ||
+                !preflightResult.organization.quota?.enabled ||
+                preflightResult.organization.counts.goldenSampleArtifacts > 0 ||
+                preflightResult.organization.allowDemoFactorsForCalculations ||
+                realSlugConfirmation !== preflightResult.organization.slug || !realApprovalConfirmed ||
+                !realPolicyVersion.trim() || !realAgreementReference.trim() ||
+                !realAllowedDataScopeReference.trim() || !realReadinessReference.trim() || !realEffectiveAt}
+              style={primaryButtonStyle(savingRealAuthorization || realSlugConfirmation !== preflightResult.organization.slug || !realApprovalConfirmed)}
+            >
+              {savingRealAuthorization ? 'Saving approval...' : 'Approve controlled real-data pilot'}
+            </button>
+            <label style={labelStyle}>Withdrawal reason
+              <input value={realWithdrawalReason} onChange={(event) => setRealWithdrawalReason(event.target.value)} style={inputStyle} />
+            </label>
+            <button
+              type="button"
+              onClick={handleWithdrawRealData}
+              disabled={savingRealAuthorization || preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
+                realSlugConfirmation !== preflightResult.organization.slug || !realWithdrawalReason.trim()}
+              style={dangerButtonStyle(savingRealAuthorization || preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
+                realSlugConfirmation !== preflightResult.organization.slug || !realWithdrawalReason.trim())}
+            >Withdraw real-data approval</button>
           </section>
         ) : null}
 
@@ -1014,9 +1194,9 @@ export default function PilotReviewersPage() {
           <section style={provisionCardStyle} aria-label="Organization AI authorization">
             <h3 style={sectionTitleStyle}>AI document extraction authorization</h3>
             <p style={warningStyle}>
-              AI document extraction is organization scoped and is not enabled by invitation,
-              password setup, or provisioning. Use synthetic or test data only. Do not upload real
-              client, employee, customer, or confidential business data during this pilot.
+              AI document extraction is a separate organization-scoped authorization. Synthetic consent
+              never authorizes real customer data. Real-data AI requires a currently effective real-data
+              approval at the same revision.
             </p>
             <div style={resultGridStyle}>
               <ResultItem label="Organization" value={preflightResult.organization.name} />
@@ -1024,11 +1204,18 @@ export default function PilotReviewersPage() {
               <ResultItem label="Status" value={preflightResult.organization.aiAuthorization?.status ?? 'NOT_CONFIGURED'} />
               <ResultItem label="Provider" value={preflightResult.organization.aiAuthorization?.provider ?? 'OPENAI'} />
               <ResultItem label="Scope" value={preflightResult.organization.aiAuthorization?.processingScope ?? 'DOCUMENT_EXTRACTION'} />
+              <ResultItem label="Authorized data mode" value={preflightResult.organization.aiAuthorization?.authorizedDataMode ?? 'SYNTHETIC_TEST_ONLY'} />
               <ResultItem label="Effective at" value={preflightResult.organization.aiAuthorization?.effectiveAt ?? 'Not available'} />
               <ResultItem label="Expires at" value={preflightResult.organization.aiAuthorization?.expiresAt ?? 'Not set'} />
               <ResultItem label="Withdrawn at" value={preflightResult.organization.aiAuthorization?.withdrawnAt ?? 'Not withdrawn'} />
             </div>
             <div style={fieldGridStyle}>
+              <label style={labelStyle}>Authorized data mode
+                <select value={aiAuthorizedDataMode} onChange={(event) => setAiAuthorizedDataMode(event.target.value as 'SYNTHETIC_TEST_ONLY' | 'REAL_CUSTOMER_DATA')} style={inputStyle}>
+                  <option value="SYNTHETIC_TEST_ONLY">Synthetic/test data only</option>
+                  <option value="REAL_CUSTOMER_DATA">Real customer data</option>
+                </select>
+              </label>
               <label style={labelStyle}>
                 Consent version
                 <input value={aiConsentVersion} onChange={(event) => setAiConsentVersion(event.target.value)} style={inputStyle} />
@@ -1056,10 +1243,13 @@ export default function PilotReviewersPage() {
                 checked={aiConsentConfirmed}
                 onChange={(event) => setAiConsentConfirmed(event.target.checked)}
               />
-              <span>I confirm that the organization has explicitly authorized AI document extraction for synthetic/test data.</span>
+              <span>I confirm that the organization has explicitly authorized AI document extraction for the selected data mode.</span>
             </label>
             {preflightResult.organization.customerStatus !== 'ACTIVE' ? (
               <div style={warningStyle}>AI authorization is available only after the customer organization is ACTIVE.</div>
+            ) : null}
+            {aiAuthorizedDataMode === 'REAL_CUSTOMER_DATA' && preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ? (
+              <div style={warningStyle}>Real-customer-data AI consent requires an effective real-data approval.</div>
             ) : null}
             {aiError ? <div style={errorStyle}>{aiError}</div> : null}
             {aiMessage ? <div style={successStyle}>{aiMessage}</div> : null}
@@ -1073,7 +1263,9 @@ export default function PilotReviewersPage() {
                 !aiConsentVersion.trim() ||
                 !aiEvidenceReference.trim() ||
                 !aiRepresentativeReference.trim() ||
-                !aiEffectiveAt
+                !aiEffectiveAt ||
+                (aiAuthorizedDataMode === 'REAL_CUSTOMER_DATA' &&
+                  preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED')
               }
               style={primaryButtonStyle(
                 savingAiAuthorization ||
@@ -1082,7 +1274,9 @@ export default function PilotReviewersPage() {
                 !aiConsentVersion.trim() ||
                 !aiEvidenceReference.trim() ||
                 !aiRepresentativeReference.trim() ||
-                !aiEffectiveAt,
+                !aiEffectiveAt ||
+                (aiAuthorizedDataMode === 'REAL_CUSTOMER_DATA' &&
+                  preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED'),
               )}
             >
               {savingAiAuthorization ? 'Saving authorization...' : 'Authorize AI document extraction'}
@@ -1507,6 +1701,7 @@ const ERASURE_INVENTORY_FIELDS: ReadonlyArray<[
   ['quotaPeriods', 'Quota periods'],
   ['quotaUsages', 'Quota usage records'],
   ['aiAuthorizations', 'AI authorizations'],
+  ['realDataAuthorizations', 'Real-data authorizations'],
 ];
 
 const pageStyle: React.CSSProperties = {

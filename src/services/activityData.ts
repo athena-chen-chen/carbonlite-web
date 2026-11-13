@@ -1,4 +1,5 @@
 import { ApiError, apiFetch } from './api';
+import { ingestionDataModeHeader } from './ingestionDataMode';
 import { clampApiPageSize, isDemoResetAvailable } from '../config/api';
 import { track } from './analytics.service';
 import { formatDateOnly } from '../utils/dateOnly';
@@ -183,6 +184,7 @@ export async function createActivityData(data: any) {
   const created = await apiFetch<ActivityDataItem>('/activity-data', {
     method: 'POST',
     body: JSON.stringify(payload),
+    headers: ingestionDataModeHeader(),
   });
 
   track('ACTIVITY_RECORD_CREATED', {

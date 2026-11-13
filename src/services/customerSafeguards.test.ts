@@ -295,6 +295,7 @@ describe('customer safeguard admin service', () => {
           evidenceReference: 'consent-ticket-123',
           authorizedRepresentativeReference: 'customer-owner-123',
           effectiveAt: '2026-11-11T19:00:00.000Z',
+          authorizedDataMode: 'SYNTHETIC_TEST_ONLY',
         }),
       }),
     );

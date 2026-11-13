@@ -128,8 +128,8 @@ describe('LoginPage', () => {
     expect(screen.getByRole('link', { name: /forgot password/i })).toHaveAttribute('href', '/forgot-password');
     expect(screen.getByRole('link', { name: /accept invitation \/ set password/i })).toHaveAttribute('href', '/set-password');
     expect(screen.getByText(/Controlled Paid Pilot access is currently invite-only/i)).toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveTextContent(/Use synthetic or test data only/i);
-    expect(screen.getByRole('note')).toHaveTextContent(/Do not upload real client, employee, customer, or confidential business data/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/pilot data permissions are organization-specific/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/unless your organization has received explicit real-data pilot approval/i);
     expect(screen.getByText(/need help or interested in joining the pilot/i)).toBeInTheDocument();
     expect(screen.queryByText(/pilot reviewer/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'help@carbonliteapp.ca' })).toHaveAttribute(

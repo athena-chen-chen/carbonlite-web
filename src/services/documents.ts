@@ -10,6 +10,7 @@ import {
   getCurrentUser,
   getOrganizationId,
 } from './auth';
+import { ingestionDataModeHeader } from './ingestionDataMode';
 
 export type UploadDocumentInput = {
   file: File;
@@ -105,6 +106,7 @@ export async function uploadDocument(input: UploadDocumentInput) {
     const response = await apiFetch<UploadDocumentResponse>('/documents/upload', {
       method: 'POST',
       body: formData,
+      headers: ingestionDataModeHeader(),
     });
 
     if ('duplicate' in response && response.duplicate) {

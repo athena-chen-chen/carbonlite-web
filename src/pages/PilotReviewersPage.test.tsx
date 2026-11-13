@@ -8,6 +8,7 @@ import {
 } from '../services/pilotReviewers';
 import {
   authorizeOrganizationAi,
+  approveOrganizationRealData,
   configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
@@ -15,6 +16,7 @@ import {
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   withdrawOrganizationAi,
+  withdrawOrganizationRealData,
   type CustomerPreflightResponse,
 } from '../services/customerSafeguards';
 
@@ -33,6 +35,7 @@ vi.mock('../services/pilotReviewers', async () => {
 
 vi.mock('../services/customerSafeguards', () => ({
   authorizeOrganizationAi: vi.fn(),
+  approveOrganizationRealData: vi.fn(),
   configureOrganizationQuota: vi.fn(),
   eraseOrganization: vi.fn(),
   getCustomerPreflight: vi.fn(),
@@ -40,6 +43,7 @@ vi.mock('../services/customerSafeguards', () => ({
   runOrganizationErasureDryRun: vi.fn(),
   suspendCustomerOrganization: vi.fn(),
   withdrawOrganizationAi: vi.fn(),
+  withdrawOrganizationRealData: vi.fn(),
 }));
 
 const pendingPilotPreflight: CustomerPreflightResponse = {
@@ -146,11 +150,12 @@ const erasureInventory = {
   quotaPeriods: 1,
   quotaUsages: 2,
   aiAuthorizations: 1,
+  realDataAuthorizations: 0,
 };
 
 describe('PilotReviewersPage', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     Object.assign(navigator, {
       clipboard: {
@@ -518,7 +523,7 @@ describe('PilotReviewersPage', () => {
     });
     expect(within(panel).getByRole('button', { name: 'Authorize AI document extraction' })).toBeDisabled();
     await userEvent.click(within(panel).getByRole('checkbox', {
-      name: /explicitly authorized AI document extraction for synthetic\/test data/i,
+      name: /explicitly authorized AI document extraction for the selected data mode/i,
     }));
     await userEvent.click(within(panel).getByRole('button', { name: 'Authorize AI document extraction' }));
 
@@ -528,6 +533,7 @@ describe('PilotReviewersPage', () => {
       evidenceReference: 'consent-ticket-123',
       authorizedRepresentativeReference: 'customer-owner-123',
       effectiveAt: new Date('2026-11-11T12:00').toISOString(),
+      authorizedDataMode: 'SYNTHETIC_TEST_ONLY',
     });
   });
 
@@ -622,6 +628,7 @@ describe('PilotReviewersPage', () => {
         quotaPeriods: 1,
         quotaUsages: 2,
         aiAuthorizations: 1,
+        realDataAuthorizations: 0,
       },
     });
 
