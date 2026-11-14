@@ -29,6 +29,7 @@ import {
   type RegeneratePilotReviewerInviteResponse,
 } from '../services/pilotReviewers';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
+import { REAL_DATA_POLICY_IDENTIFIER } from '../constants/syntheticOnlyPilot';
 
 const DEFAULT_WORKSPACE = 'CarbonLite Sample Workspace';
 const APPROVED_SYNTHETIC_PILOT_QUOTA: OrganizationQuotaInput = {
@@ -114,7 +115,6 @@ export default function PilotReviewersPage() {
   const [savingAiAuthorization, setSavingAiAuthorization] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [realPolicyVersion, setRealPolicyVersion] = useState('0.2');
   const [realAgreementReference, setRealAgreementReference] = useState('');
   const [realAllowedDataScopeReference, setRealAllowedDataScopeReference] = useState('');
   const [realReadinessReference, setRealReadinessReference] = useState('');
@@ -384,7 +384,7 @@ export default function PilotReviewersPage() {
       await approveOrganizationRealData({
         organizationId: organization.id,
         organizationSlug: organization.slug,
-        policyVersion: realPolicyVersion.trim(),
+        policyVersion: REAL_DATA_POLICY_IDENTIFIER,
         agreementEvidenceReference: realAgreementReference.trim(),
         allowedDataScopeReference: realAllowedDataScopeReference.trim(),
         privacySecurityReadinessReference: realReadinessReference.trim(),
@@ -1059,8 +1059,8 @@ export default function PilotReviewersPage() {
               <ResultItem label="Approval revision" value={String(preflightResult.organization.realDataAuthorization?.approvalRevision ?? 0)} />
             </div>
             <div style={fieldGridStyle}>
-              <label style={labelStyle}>Policy version
-                <input value={realPolicyVersion} onChange={(event) => setRealPolicyVersion(event.target.value)} style={inputStyle} />
+              <label style={labelStyle}>Policy identifier
+                <input value={REAL_DATA_POLICY_IDENTIFIER} readOnly aria-readonly="true" style={inputStyle} />
               </label>
               <label style={labelStyle}>Pilot agreement evidence reference
                 <input value={realAgreementReference} onChange={(event) => setRealAgreementReference(event.target.value)} style={inputStyle} />
@@ -1102,8 +1102,8 @@ export default function PilotReviewersPage() {
                 preflightResult.organization.counts.goldenSampleArtifacts > 0 ||
                 preflightResult.organization.allowDemoFactorsForCalculations ||
                 realSlugConfirmation !== preflightResult.organization.slug || !realApprovalConfirmed ||
-                !realPolicyVersion.trim() || !realAgreementReference.trim() ||
-                !realAllowedDataScopeReference.trim() || !realReadinessReference.trim() || !realEffectiveAt}
+                !realAgreementReference.trim() || !realAllowedDataScopeReference.trim() ||
+                !realReadinessReference.trim() || !realEffectiveAt}
               style={primaryButtonStyle(savingRealAuthorization || realSlugConfirmation !== preflightResult.organization.slug || !realApprovalConfirmed)}
             >
               {savingRealAuthorization ? 'Saving approval...' : 'Approve controlled real-data pilot'}

@@ -556,7 +556,7 @@ describe('UploadPage sample workflow', () => {
     vi.mocked(getRealDataAuthorizationStatus).mockResolvedValue({
       effectiveMode: 'REAL_CUSTOMER_DATA',
       configuredStatus: 'REAL_DATA_APPROVED',
-      policyVersion: '0.2',
+      policyVersion: 'CARBONLITE_ALLOWED_DATA_POLICY_V0_2',
       effectiveAt: '2026-11-13T00:00:00.000Z',
       expiresAt: null,
       reviewDueAt: '2027-01-01T00:00:00.000Z',

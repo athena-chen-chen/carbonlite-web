@@ -481,6 +481,66 @@ describe('PilotReviewersPage', () => {
     expect(await within(panel).findByText('Organization quota configuration saved.')).toBeInTheDocument();
   });
 
+  it('renders the formal real-data policy identifier read-only and submits only that identifier', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue({
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        quota: {
+          enabled: true,
+          periodDays: 28,
+          uploadLimit: 20,
+          dailyUploadLimit: 3,
+          maxFileSizeBytes: 10_485_760,
+          maxConcurrentExtractions: 1,
+          maxImportRows: 500,
+        },
+      },
+    });
+    vi.mocked(approveOrganizationRealData).mockResolvedValue({
+      result: 'APPROVED',
+      authorization: {
+        organizationId: 'org-123',
+        status: 'REAL_DATA_APPROVED',
+        decisionId: 'decision-123',
+        approvalRevision: 1,
+        policyVersion: 'CARBONLITE_ALLOWED_DATA_POLICY_V0_2',
+        effectiveAt: '2026-11-13T19:00:00.000Z',
+        expiresAt: null,
+        reviewDueAt: null,
+        withdrawnAt: null,
+      },
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const panel = await screen.findByRole('region', { name: 'Organization real-data authorization' });
+    const policyIdentifier = within(panel).getByLabelText('Policy identifier');
+    expect(policyIdentifier).toHaveValue('CARBONLITE_ALLOWED_DATA_POLICY_V0_2');
+    expect(policyIdentifier).toHaveAttribute('readonly');
+
+    await userEvent.type(within(panel).getByLabelText('Pilot agreement evidence reference'), 'agreement-123');
+    await userEvent.type(within(panel).getByLabelText('Allowed-data scope reference'), 'scope-123');
+    await userEvent.type(within(panel).getByLabelText('Privacy/security readiness reference'), 'readiness-123');
+    fireEvent.change(within(panel).getByLabelText('Effective date and time'), {
+      target: { value: '2026-11-13T12:00' },
+    });
+    await userEvent.type(within(panel).getByLabelText(/exact trusted organization slug/i), 'acme-pilot');
+    await userEvent.click(within(panel).getByRole('checkbox', { name: /documented real-data go\/no-go review/i }));
+    await userEvent.click(within(panel).getByRole('button', { name: /approve controlled real-data pilot/i }));
+
+    expect(approveOrganizationRealData).toHaveBeenCalledWith({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+      policyVersion: 'CARBONLITE_ALLOWED_DATA_POLICY_V0_2',
+      agreementEvidenceReference: 'agreement-123',
+      allowedDataScopeReference: 'scope-123',
+      privacySecurityReadinessReference: 'readiness-123',
+      effectiveAt: new Date('2026-11-13T12:00').toISOString(),
+    });
+  });
+
   it('requires explicit consent confirmation before authorizing AI document extraction', async () => {
     const authorizedPreflight: CustomerPreflightResponse = {
       ...activeCustomerPreflight,
