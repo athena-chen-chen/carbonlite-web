@@ -4,7 +4,9 @@ import {
   configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
+  getOrganizationQuotaStatus,
   provisionPaidPilotCustomer,
+  resetOrganizationQuotaPeriod,
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   withdrawOrganizationAi,
@@ -109,6 +111,12 @@ describe('customer safeguard admin service', () => {
       maxConcurrentExtractions: 1,
       maxImportRows: 500,
     })).toThrow('You do not have permission to perform this action.');
+    expect(() => getOrganizationQuotaStatus('customer-org')).toThrow(
+      'You do not have permission to perform this action.',
+    );
+    expect(() => resetOrganizationQuotaPeriod('customer-org')).toThrow(
+      'You do not have permission to perform this action.',
+    );
     expect(() => authorizeOrganizationAi({
       organizationId: 'customer-org',
       consentVersion: 'v1',
@@ -310,6 +318,50 @@ describe('customer safeguard admin service', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ withdrawalReference: 'withdrawal-ticket-456' }),
+      }),
+    );
+  });
+
+  it('reads and resets quota status only for the exact organization ID', async () => {
+    setCurrentUser('ADMIN');
+    const status = {
+      enabled: true,
+      period: {
+        startsAt: '2026-11-14T00:00:00.000Z',
+        endsAt: '2026-12-12T00:00:00.000Z',
+      },
+      uploads: {
+        periodLimit: 20,
+        periodUsed: 3,
+        periodRemaining: 17,
+        dailyLimit: 3,
+        dailyUsed: 3,
+        dailyRemaining: 0,
+        maxFileSizeBytes: 10_485_760,
+      },
+      extraction: { concurrentLimit: 1, running: 0, remaining: 1 },
+      importRows: { limit: 500 },
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify(status), { status: 200 }),
+    );
+
+    await getOrganizationQuotaStatus('org/123');
+    await resetOrganizationQuotaPeriod('org/123');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `${FALLBACK_API_BASE_URL}/admin/organization-quotas/org%2F123`,
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer safeguard-token' }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${FALLBACK_API_BASE_URL}/admin/organization-quotas/org%2F123/reset`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer safeguard-token' }),
       }),
     );
   });

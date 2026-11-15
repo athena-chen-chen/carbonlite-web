@@ -5,7 +5,9 @@ import {
   configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
+  getOrganizationQuotaStatus,
   provisionPaidPilotCustomer,
+  resetOrganizationQuotaPeriod,
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   withdrawOrganizationAi,
@@ -17,6 +19,7 @@ import {
   type ProvisionPaidPilotCustomerResponse,
   type SuspendCustomerOrganizationResponse,
   type OrganizationQuotaInput,
+  type OrganizationQuotaStatus,
 } from '../services/customerSafeguards';
 import {
   createPilotReviewer,
@@ -104,6 +107,14 @@ export default function PilotReviewersPage() {
   const [savingQuota, setSavingQuota] = useState(false);
   const [quotaMessage, setQuotaMessage] = useState<string | null>(null);
   const [quotaError, setQuotaError] = useState<string | null>(null);
+  const [quotaStatus, setQuotaStatus] = useState<OrganizationQuotaStatus | null>(null);
+  const [quotaStatusLoading, setQuotaStatusLoading] = useState(false);
+  const [quotaStatusError, setQuotaStatusError] = useState<string | null>(null);
+  const [quotaResetSlugConfirmation, setQuotaResetSlugConfirmation] = useState('');
+  const [quotaResetConfirmed, setQuotaResetConfirmed] = useState(false);
+  const [resettingQuota, setResettingQuota] = useState(false);
+  const [quotaResetMessage, setQuotaResetMessage] = useState<string | null>(null);
+  const [quotaResetError, setQuotaResetError] = useState<string | null>(null);
   const [aiConsentVersion, setAiConsentVersion] = useState('');
   const [aiEvidenceReference, setAiEvidenceReference] = useState('');
   const [aiRepresentativeReference, setAiRepresentativeReference] = useState('');
@@ -274,6 +285,12 @@ export default function PilotReviewersPage() {
     setQuotaConfirmed(false);
     setQuotaMessage(null);
     setQuotaError(null);
+    setQuotaStatus(null);
+    setQuotaStatusError(null);
+    setQuotaResetSlugConfirmation('');
+    setQuotaResetConfirmed(false);
+    setQuotaResetMessage(null);
+    setQuotaResetError(null);
     setAiConsentConfirmed(false);
     setAiMessage(null);
     setAiError(null);
@@ -295,6 +312,16 @@ export default function PilotReviewersPage() {
       });
       setPreflightResult(response);
       setQuotaDraft(response.organization?.quota ?? EMPTY_QUOTA_DRAFT);
+      if (response.organization) {
+        setQuotaStatusLoading(true);
+        try {
+          setQuotaStatus(await getOrganizationQuotaStatus(response.organization.id));
+        } catch (err) {
+          setQuotaStatusError(getUserFriendlyErrorMessage(err, 'unknown'));
+        } finally {
+          setQuotaStatusLoading(false);
+        }
+      }
     } catch (err) {
       setPreflightError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
@@ -324,6 +351,34 @@ export default function PilotReviewersPage() {
       setQuotaError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
       setSavingQuota(false);
+    }
+  }
+
+  async function handleResetQuotaPeriod() {
+    const organization = preflightResult?.organization;
+    if (
+      !organization ||
+      quotaResetSlugConfirmation !== organization.slug ||
+      !quotaResetConfirmed ||
+      resettingQuota
+    ) return;
+    if (!window.confirm(
+      `Reset the current quota period for ${organization.name}? This resets quota usage counters only; it does not delete customer data or change the quota policy.`,
+    )) return;
+
+    setResettingQuota(true);
+    setQuotaResetError(null);
+    setQuotaResetMessage(null);
+    try {
+      await resetOrganizationQuotaPeriod(organization.id);
+      setQuotaStatus(await getOrganizationQuotaStatus(organization.id));
+      setQuotaResetMessage('Current quota period reset. Usage counters now reflect the new period.');
+      setQuotaResetSlugConfirmation('');
+      setQuotaResetConfirmed(false);
+    } catch (err) {
+      setQuotaResetError(getUserFriendlyErrorMessage(err, 'unknown'));
+    } finally {
+      setResettingQuota(false);
     }
   }
 
@@ -1186,6 +1241,78 @@ export default function PilotReviewersPage() {
               style={primaryButtonStyle(savingQuota || !quotaConfirmed || !isValidQuota(quotaDraft))}
             >
               {savingQuota ? 'Saving quota...' : 'Save organization quota'}
+            </button>
+          </section>
+        ) : null}
+
+        {preflightResult?.organization ? (
+          <section style={provisionCardStyle} aria-label="Organization quota status and reset">
+            <h3 style={sectionTitleStyle}>Organization quota</h3>
+            <p style={warningStyle}>
+              This resets quota usage counters for this organization. It does not delete customer
+              data or change the quota policy.
+            </p>
+            <div style={resultGridStyle}>
+              <ResultItem label="Organization" value={preflightResult.organization.name} />
+              <ResultItem label="Organization ID" value={preflightResult.organization.id} />
+              <ResultItem label="Enabled" value={optionalYesNo(preflightResult.organization.quota?.enabled)} />
+              <ResultItem label="Period days" value={optionalValue(preflightResult.organization.quota?.periodDays)} />
+              <ResultItem label="Upload limit" value={optionalValue(preflightResult.organization.quota?.uploadLimit)} />
+              <ResultItem label="Daily upload limit" value={optionalValue(preflightResult.organization.quota?.dailyUploadLimit)} />
+              <ResultItem label="Max file size (bytes)" value={optionalValue(preflightResult.organization.quota?.maxFileSizeBytes)} />
+              <ResultItem label="Extraction concurrency" value={optionalValue(preflightResult.organization.quota?.maxConcurrentExtractions)} />
+              <ResultItem label="Import row limit" value={optionalValue(preflightResult.organization.quota?.maxImportRows)} />
+              <ResultItem label="Current period usage" value={quotaStatus ? `${quotaStatus.uploads.periodUsed} / ${quotaStatus.uploads.periodLimit}` : 'Not available'} />
+              <ResultItem label="Current daily usage" value={quotaStatus ? `${quotaStatus.uploads.dailyUsed} / ${quotaStatus.uploads.dailyLimit}` : 'Not available'} />
+              <ResultItem label="Period start" value={quotaStatus?.period?.startsAt ?? 'Not available'} />
+              <ResultItem label="Period end" value={quotaStatus?.period?.endsAt ?? 'Not available'} />
+            </div>
+            {quotaStatusLoading ? <p style={helperTextStyle}>Loading current quota usage...</p> : null}
+            {quotaStatusError ? <div style={errorStyle}>{quotaStatusError}</div> : null}
+            <label style={labelStyle}>
+              Type the exact trusted organization slug to reset quota usage
+              <input
+                value={quotaResetSlugConfirmation}
+                onChange={(event) => {
+                  setQuotaResetSlugConfirmation(event.target.value);
+                  setQuotaResetMessage(null);
+                  setQuotaResetError(null);
+                }}
+                autoComplete="off"
+                style={inputStyle}
+              />
+            </label>
+            <label style={purposeOptionStyle}>
+              <input
+                type="checkbox"
+                checked={quotaResetConfirmed}
+                onChange={(event) => setQuotaResetConfirmed(event.target.checked)}
+              />
+              <span>I confirm this operational reset is intended for the exact trusted organization above.</span>
+            </label>
+            {quotaResetError ? <div style={errorStyle}>{quotaResetError}</div> : null}
+            {quotaResetMessage ? <div style={successStyle}>{quotaResetMessage}</div> : null}
+            <button
+              type="button"
+              onClick={handleResetQuotaPeriod}
+              disabled={
+                resettingQuota ||
+                quotaStatusLoading ||
+                !quotaStatus ||
+                !preflightResult.organization.quota ||
+                quotaResetSlugConfirmation !== preflightResult.organization.slug ||
+                !quotaResetConfirmed
+              }
+              style={dangerButtonStyle(
+                resettingQuota ||
+                quotaStatusLoading ||
+                !quotaStatus ||
+                !preflightResult.organization.quota ||
+                quotaResetSlugConfirmation !== preflightResult.organization.slug ||
+                !quotaResetConfirmed,
+              )}
+            >
+              {resettingQuota ? 'Resetting quota period...' : 'Reset current quota period'}
             </button>
           </section>
         ) : null}

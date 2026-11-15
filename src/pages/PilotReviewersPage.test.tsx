@@ -12,7 +12,9 @@ import {
   configureOrganizationQuota,
   eraseOrganization,
   getCustomerPreflight,
+  getOrganizationQuotaStatus,
   provisionPaidPilotCustomer,
+  resetOrganizationQuotaPeriod,
   runOrganizationErasureDryRun,
   suspendCustomerOrganization,
   withdrawOrganizationAi,
@@ -39,7 +41,9 @@ vi.mock('../services/customerSafeguards', () => ({
   configureOrganizationQuota: vi.fn(),
   eraseOrganization: vi.fn(),
   getCustomerPreflight: vi.fn(),
+  getOrganizationQuotaStatus: vi.fn(),
   provisionPaidPilotCustomer: vi.fn(),
+  resetOrganizationQuotaPeriod: vi.fn(),
   runOrganizationErasureDryRun: vi.fn(),
   suspendCustomerOrganization: vi.fn(),
   withdrawOrganizationAi: vi.fn(),
@@ -124,6 +128,44 @@ const suspendedCustomerPreflight: CustomerPreflightResponse = {
   },
 };
 
+const currentQuotaStatus = {
+  enabled: true,
+  period: {
+    startsAt: '2026-11-14T18:30:00.000Z',
+    endsAt: '2026-12-12T18:30:00.000Z',
+  },
+  uploads: {
+    periodLimit: 20,
+    periodUsed: 3,
+    periodRemaining: 17,
+    dailyLimit: 3,
+    dailyUsed: 3,
+    dailyRemaining: 0,
+    maxFileSizeBytes: 10_485_760,
+  },
+  extraction: {
+    concurrentLimit: 1,
+    running: 0,
+    remaining: 1,
+  },
+  importRows: { limit: 500 },
+};
+
+const resetQuotaStatus = {
+  ...currentQuotaStatus,
+  period: {
+    startsAt: '2026-11-15T07:00:00.000Z',
+    endsAt: '2026-12-13T07:00:00.000Z',
+  },
+  uploads: {
+    ...currentQuotaStatus.uploads,
+    periodUsed: 0,
+    periodRemaining: 20,
+    dailyUsed: 0,
+    dailyRemaining: 3,
+  },
+};
+
 const erasureInventory = {
   organizationId: 'org-123',
   organizationSlug: 'acme-pilot',
@@ -156,6 +198,7 @@ const erasureInventory = {
 describe('PilotReviewersPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(getOrganizationQuotaStatus).mockResolvedValue(currentQuotaStatus);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     Object.assign(navigator, {
       clipboard: {
@@ -479,6 +522,111 @@ describe('PilotReviewersPage', () => {
       maxImportRows: 500,
     });
     expect(await within(panel).findByText('Organization quota configuration saved.')).toBeInTheDocument();
+  });
+
+  it('shows trusted quota status and resets exactly once only after exact slug confirmation', async () => {
+    const preflightWithQuota: CustomerPreflightResponse = {
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        quota: {
+          enabled: true,
+          periodDays: 28,
+          uploadLimit: 20,
+          dailyUploadLimit: 3,
+          maxFileSizeBytes: 10_485_760,
+          maxConcurrentExtractions: 1,
+          maxImportRows: 500,
+        },
+      },
+    };
+    vi.mocked(getCustomerPreflight).mockResolvedValue(preflightWithQuota);
+    vi.mocked(getOrganizationQuotaStatus)
+      .mockResolvedValueOnce(currentQuotaStatus)
+      .mockResolvedValueOnce(resetQuotaStatus);
+    vi.mocked(resetOrganizationQuotaPeriod).mockResolvedValue(resetQuotaStatus);
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    const panel = await screen.findByRole('region', { name: 'Organization quota status and reset' });
+    expect(within(panel).getByText('3 / 20')).toBeInTheDocument();
+    expect(within(panel).getByText('3 / 3')).toBeInTheDocument();
+    expect(within(panel).getByText('2026-11-14T18:30:00.000Z')).toBeInTheDocument();
+    expect(within(panel).getByText('2026-12-12T18:30:00.000Z')).toBeInTheDocument();
+    expect(within(panel).getByText('Period days').parentElement).toHaveTextContent('28');
+    expect(within(panel).getByText('Upload limit').parentElement).toHaveTextContent('20');
+    expect(within(panel).getByText('Daily upload limit').parentElement).toHaveTextContent('3');
+
+    const resetButton = within(panel).getByRole('button', { name: 'Reset current quota period' });
+    expect(resetButton).toBeDisabled();
+    await userEvent.type(
+      within(panel).getByLabelText(/exact trusted organization slug to reset quota usage/i),
+      'wrong-slug',
+    );
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /operational reset is intended for the exact trusted organization/i,
+    }));
+    expect(resetButton).toBeDisabled();
+
+    const slugInput = within(panel).getByLabelText(/exact trusted organization slug to reset quota usage/i);
+    await userEvent.clear(slugInput);
+    await userEvent.type(slugInput, 'acme-pilot');
+    expect(resetButton).toBeEnabled();
+    await userEvent.click(resetButton);
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('This resets quota usage counters only'),
+    );
+    expect(resetOrganizationQuotaPeriod).toHaveBeenCalledTimes(1);
+    expect(resetOrganizationQuotaPeriod).toHaveBeenCalledWith('org-123');
+    expect(getOrganizationQuotaStatus).toHaveBeenNthCalledWith(1, 'org-123');
+    expect(getOrganizationQuotaStatus).toHaveBeenNthCalledWith(2, 'org-123');
+    expect(await within(panel).findByText('0 / 20')).toBeInTheDocument();
+    expect(within(panel).getByText('0 / 3')).toBeInTheDocument();
+    expect(within(panel).getByText('Period days').parentElement).toHaveTextContent('28');
+    expect(configureOrganizationQuota).not.toHaveBeenCalled();
+    expect(suspendCustomerOrganization).not.toHaveBeenCalled();
+    expect(eraseOrganization).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a failed quota reset', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue({
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        quota: {
+          enabled: true,
+          periodDays: 28,
+          uploadLimit: 20,
+          dailyUploadLimit: 3,
+          maxFileSizeBytes: 10_485_760,
+          maxConcurrentExtractions: 1,
+          maxImportRows: 500,
+        },
+      },
+    });
+    vi.mocked(resetOrganizationQuotaPeriod).mockRejectedValue(
+      new Error('Quota reset is temporarily unavailable.'),
+    );
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const panel = await screen.findByRole('region', { name: 'Organization quota status and reset' });
+    await userEvent.type(
+      within(panel).getByLabelText(/exact trusted organization slug to reset quota usage/i),
+      'acme-pilot',
+    );
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /operational reset is intended for the exact trusted organization/i,
+    }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Reset current quota period' }));
+
+    expect(await within(panel).findByText('Quota reset is temporarily unavailable.')).toBeInTheDocument();
+    expect(resetOrganizationQuotaPeriod).toHaveBeenCalledTimes(1);
+    expect(getOrganizationQuotaStatus).toHaveBeenCalledTimes(1);
   });
 
   it('renders the formal real-data policy identifier read-only and submits only that identifier', async () => {

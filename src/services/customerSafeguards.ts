@@ -126,6 +126,31 @@ export type OrganizationQuotaInput = {
   maxImportRows: number;
 };
 
+export type OrganizationQuotaStatus = {
+  enabled: boolean;
+  period: {
+    startsAt: string;
+    endsAt: string;
+  } | null;
+  uploads: {
+    periodLimit: number;
+    periodUsed: number;
+    periodRemaining: number;
+    dailyLimit: number;
+    dailyUsed: number;
+    dailyRemaining: number;
+    maxFileSizeBytes: number;
+  };
+  extraction: {
+    concurrentLimit: number;
+    running: number;
+    remaining: number;
+  };
+  importRows: {
+    limit: number;
+  };
+};
+
 export type OrganizationAiAuthorization = {
   organizationId: string;
   status: 'DISABLED' | 'ENABLED' | 'WITHDRAWN';
@@ -266,6 +291,21 @@ export function configureOrganizationQuota(
   return apiFetch<OrganizationQuotaInput & { organizationId: string }>(
     `/admin/organization-quotas/${encodeURIComponent(organizationId)}`,
     { method: 'PUT', body: JSON.stringify(input) },
+  );
+}
+
+export function getOrganizationQuotaStatus(organizationId: string) {
+  requirePlatformAdmin();
+  return apiFetch<OrganizationQuotaStatus>(
+    `/admin/organization-quotas/${encodeURIComponent(organizationId)}`,
+  );
+}
+
+export function resetOrganizationQuotaPeriod(organizationId: string) {
+  requirePlatformAdmin();
+  return apiFetch<OrganizationQuotaStatus>(
+    `/admin/organization-quotas/${encodeURIComponent(organizationId)}/reset`,
+    { method: 'POST' },
   );
 }
 
