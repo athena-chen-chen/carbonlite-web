@@ -68,9 +68,60 @@ describe('apiFetch authenticated requests', () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer abc123',
+          'Content-Type': 'application/json',
         }),
       }),
     );
+  });
+
+  it('retains auth and JSON defaults when caller headers include an ingestion mode', async () => {
+    const { apiFetch } = await loadApiFetch();
+    localStorage.setItem('accessToken', 'mode-token');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'activity-1' }), { status: 200 }),
+    );
+
+    await apiFetch('/activity-data', {
+      method: 'POST',
+      body: JSON.stringify({ activityType: 'ELECTRICITY' }),
+      headers: { 'X-CarbonLite-Data-Mode': 'REAL_CUSTOMER_DATA' },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${FALLBACK_API_BASE_URL}/activity-data`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer mode-token',
+          'Content-Type': 'application/json',
+          'X-CarbonLite-Data-Mode': 'REAL_CUSTOMER_DATA',
+        },
+      }),
+    );
+  });
+
+  it('retains auth and caller headers for FormData without forcing JSON content type', async () => {
+    const { apiFetch } = await loadApiFetch();
+    localStorage.setItem('accessToken', 'upload-token');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'document-1' }), { status: 200 }),
+    );
+    const formData = new FormData();
+    formData.append('file', new File(['test'], 'test.pdf', { type: 'application/pdf' }));
+
+    await apiFetch('/documents/upload', {
+      method: 'POST',
+      body: formData,
+      headers: { 'X-CarbonLite-Data-Mode': 'SYNTHETIC_TEST' },
+    });
+
+    const [, request] = fetchMock.mock.calls[0];
+    expect(request).toMatchObject({ method: 'POST', body: formData });
+    expect((request as RequestInit).headers).toEqual({
+      Authorization: 'Bearer upload-token',
+      'X-CarbonLite-Data-Mode': 'SYNTHETIC_TEST',
+    });
+    expect((request as RequestInit).headers).not.toHaveProperty('Content-Type');
   });
 
   it('omits Authorization header when token does not exist', async () => {
@@ -146,6 +197,25 @@ describe('apiFetch authenticated requests', () => {
 
     await expect(apiFetch('/activity-data?pageSize=1000')).rejects.toThrow(
       'Too many records were requested. Please refresh and try again.',
+    );
+  });
+
+  it('does not invalidate the session for non-401 HTTP errors', async () => {
+    const { apiFetch } = await loadApiFetch();
+    localStorage.setItem('accessToken', 'still-valid-token');
+    localStorage.setItem('currentUser', JSON.stringify({ email: 'user@example.com' }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'Validation failed.' }), { status: 400 }),
+    );
+
+    await expect(apiFetch('/activity-data')).rejects.toMatchObject({
+      status: 400,
+      code: 'BAD_REQUEST',
+    });
+
+    expect(localStorage.getItem('accessToken')).toBe('still-valid-token');
+    expect(localStorage.getItem('currentUser')).toBe(
+      JSON.stringify({ email: 'user@example.com' }),
     );
   });
 

@@ -162,18 +162,19 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const token = getToken();
   const isFormData = options?.body instanceof FormData;
+  const { headers: callerHeaders, ...restOptions } = options ?? {};
   const url = buildApiUrl(path);
 
   let response: Response;
 
   try {
     response = await fetch(url, {
+      ...restOptions,
       headers: {
         ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options?.headers ?? {}),
+        ...(callerHeaders ?? {}),
       },
-      ...options,
     });
   } catch (error) {
     const isTimeout =
