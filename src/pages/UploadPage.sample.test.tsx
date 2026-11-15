@@ -552,6 +552,94 @@ describe('UploadPage sample workflow', () => {
     )).toBeInTheDocument();
   });
 
+  it('uploads a customer document without calling extraction when AI is disabled', async () => {
+    vi.mocked(getOrganizationAiStatus).mockResolvedValue({
+      enabled: false,
+      status: 'NOT_CONFIGURED',
+      provider: 'OPENAI',
+      processingScope: 'DOCUMENT_EXTRACTION',
+      effectiveAt: null,
+      expiresAt: null,
+      withdrawnAt: null,
+    });
+    const uploadedDocument = {
+      id: 'uploaded-without-ai',
+      fileName: 'upload-only.pdf',
+      fileUrl: '',
+      type: 'PDF',
+      status: 'UPLOADED',
+      createdAt: '2026-11-14T00:00:00.000Z',
+      updatedAt: '2026-11-14T00:00:00.000Z',
+    };
+    vi.mocked(uploadDocument).mockResolvedValue(uploadedDocument as any);
+    vi.mocked(getDocuments)
+      .mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 1 } as any)
+      .mockResolvedValue({ items: [uploadedDocument], page: 1, pageSize: 20, total: 1, totalPages: 1 } as any);
+
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+
+    expect(await screen.findByText('AI document extraction is not enabled for this organization.')).toBeInTheDocument();
+    const fileInput = document.getElementById('document-upload-input') as HTMLInputElement;
+    await userEvent.upload(fileInput, new File(['pdf'], 'upload-only.pdf', { type: 'application/pdf' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Upload document' }));
+
+    expect(await screen.findByText('Document uploaded. AI document extraction is not enabled for this organization.')).toBeInTheDocument();
+    expect(uploadDocument).toHaveBeenCalledTimes(1);
+    expect(extractDocument).not.toHaveBeenCalled();
+    expect(await screen.findByText('upload-only.pdf')).toBeInTheDocument();
+  });
+
+  it('keeps real-data document upload available without treating real-data approval as AI authorization', async () => {
+    vi.mocked(getOrganizationAiStatus).mockResolvedValue({
+      enabled: false,
+      status: 'NOT_CONFIGURED',
+      provider: 'OPENAI',
+      processingScope: 'DOCUMENT_EXTRACTION',
+      effectiveAt: null,
+      expiresAt: null,
+      withdrawnAt: null,
+    });
+    vi.mocked(getRealDataAuthorizationStatus).mockResolvedValue({
+      effectiveMode: 'REAL_CUSTOMER_DATA',
+      configuredStatus: 'REAL_DATA_APPROVED',
+      policyVersion: 'CARBONLITE_ALLOWED_DATA_POLICY_V0_2',
+      effectiveAt: '2026-11-13T00:00:00.000Z',
+      expiresAt: null,
+      reviewDueAt: null,
+      reason: 'REAL_DATA_APPROVED',
+    });
+
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+
+    expect(await screen.findByText(/approved for the controlled real-data pilot/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload document' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: /import spreadsheet/i })).toBeEnabled();
+    expect(screen.getByRole('tab', { name: /manual entry/i })).toBeEnabled();
+    expect(extractDocument).not.toHaveBeenCalled();
+  });
+
+  it('keeps Extract and Re-extract unavailable while customer AI status is unresolved', async () => {
+    vi.mocked(getOrganizationAiStatus).mockReturnValue(new Promise(() => {}));
+    vi.mocked(getDocuments).mockResolvedValue({
+      items: [failedDocument],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    } as any);
+
+    render(<MemoryRouter><UploadPage /></MemoryRouter>);
+
+    const retry = await screen.findByRole('button', { name: 'Retry Extraction' });
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveAttribute(
+      'title',
+      'AI document extraction is not enabled for this organization.',
+    );
+    expect(screen.getByRole('button', { name: 'Upload document' })).toBeDisabled();
+    expect(extractDocument).not.toHaveBeenCalled();
+  });
+
   it('shows approved real-data policy and requires explicit intake acknowledgement', async () => {
     vi.mocked(getRealDataAuthorizationStatus).mockResolvedValue({
       effectiveMode: 'REAL_CUSTOMER_DATA',

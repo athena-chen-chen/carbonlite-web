@@ -18,6 +18,7 @@ type DocumentUploadPanelProps = {
   canUploadData: boolean;
   uploadAccept: string;
   uploadExtractInProgress: boolean;
+  automaticExtractionEnabled: boolean;
   fileInputRef: Ref<HTMLInputElement>;
   uploadDisabledReason?: string;
   onChooseFiles: () => void;
@@ -36,6 +37,7 @@ export function DocumentUploadPanel({
   canUploadData,
   uploadAccept,
   uploadExtractInProgress,
+  automaticExtractionEnabled,
   fileInputRef,
   uploadDisabledReason,
   onChooseFiles,
@@ -109,7 +111,10 @@ export function DocumentUploadPanel({
         ) : null}
 
         <div style={uploadWorkflowStyle} aria-label="Input data local steps">
-          {['Select source document', 'Extract activity data', 'Review parser results', 'Save rows for review'].map((step, index) => (
+          {(automaticExtractionEnabled
+            ? ['Select source document', 'Extract activity data', 'Review parser results', 'Save rows for review']
+            : ['Select source document', 'Upload source document', 'Use manual entry or spreadsheet import']
+          ).map((step, index) => (
             <div key={step} style={uploadWorkflowStepStyle}>
               <span style={uploadWorkflowNumberStyle}>{index + 1}</span>
               <span>{step}</span>
@@ -127,11 +132,21 @@ export function DocumentUploadPanel({
               !canUploadData
                 ? uploadDisabledReason
                 : selectedFiles.length === 0
-                ? 'Select a document before extracting data.'
-                : 'Upload the selected document and extract activity data.'
+                ? automaticExtractionEnabled
+                  ? 'Select a document before extracting data.'
+                  : 'Select a document before uploading.'
+                : automaticExtractionEnabled
+                  ? 'Upload the selected document and extract activity data.'
+                  : 'Upload the selected document without AI extraction.'
             }
           >
-            {uploadExtractInProgress ? 'Extracting...' : 'Extract data'}
+            {uploadExtractInProgress
+              ? automaticExtractionEnabled
+                ? 'Extracting...'
+                : 'Uploading...'
+              : automaticExtractionEnabled
+                ? 'Extract data'
+                : 'Upload document'}
           </button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { UploadPage } from './UploadPage';
 import { uploadDocument, type DocumentItem } from '../services/documents';
 import { extractDocument, getDocumentExtraction } from '../services/documentExtraction';
+import { getOrganizationAiStatus } from '../services/aiAuthorization';
 
 // Exercise the real paged document service and useDocuments through the existing page UI.
 vi.mock('../services/documents', async (original) => ({ ...await original<typeof import('../services/documents')>(), uploadDocument: vi.fn() }));
@@ -12,6 +13,7 @@ vi.mock('../services/activityData', async (original) => ({ ...await original<typ
 vi.mock('../services/conversionFactors', async (original) => ({ ...await original<typeof import('../services/conversionFactors')>(), getAllConversionFactors: vi.fn().mockResolvedValue([]) }));
 vi.mock('../services/activityEvents', () => ({ trackActivityEvent: vi.fn().mockResolvedValue({}) }));
 vi.mock('../services/realDataAuthorization', () => ({ getRealDataAuthorizationStatus: vi.fn().mockResolvedValue({ effectiveMode: 'SYNTHETIC_ONLY', configuredStatus: 'NOT_CONFIGURED', policyVersion: null, effectiveAt: null, expiresAt: null, reviewDueAt: null, reason: 'NOT_CONFIGURED' }) }));
+vi.mock('../services/aiAuthorization', () => ({ getOrganizationAiStatus: vi.fn() }));
 vi.mock('../services/analytics.service', () => ({ track: vi.fn() }));
 vi.mock('../services/ga4.service', () => ({ trackEvent: vi.fn() }));
 vi.mock('../components/AppDialog', () => ({ useAppDialog: () => ({ confirm: vi.fn().mockResolvedValue(true), showError: vi.fn() }) }));
@@ -39,6 +41,15 @@ beforeEach(() => {
   localStorage.setItem('currentUser', JSON.stringify({ id: 'user', organizationId: 'org-1', role: 'ADMIN', accountType: 'CUSTOMER' }));
   localStorage.setItem('accessToken', 'token');
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+  vi.mocked(getOrganizationAiStatus).mockResolvedValue({
+    enabled: true,
+    status: 'ENABLED',
+    provider: 'OPENAI',
+    processingScope: 'DOCUMENT_EXTRACTION',
+    effectiveAt: '2026-11-14T00:00:00.000Z',
+    expiresAt: null,
+    withdrawnAt: null,
+  });
   documents = Array.from({ length: 25 }, (_, i) => ({ id: `doc-${i + 1}`, organizationId: 'org-1', fileName: `source-${i + 1}.xlsx`, fileUrl: '', type: 'SPREADSHEET', status: i === 24 ? 'REVIEW_REQUIRED' : i === 23 ? 'EXTRACTION_FAILED' : 'IMPORTED', importedRecordCount: i === 23 ? 0 : i === 24 ? 3 : 1, createdAt: new Date(Date.UTC(2026, 0, 25 - i)).toISOString(), updatedAt: '2026-01-01' }));
   requests = []; failSecondPage = false; holdSecondPage = null;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
@@ -69,7 +80,7 @@ it('loads all 25 sources and opens details for document 25', async () => {
   mount(); await expand();
   expect(screen.getAllByRole('checkbox', { name: /^Select document / })).toHaveLength(25);
   await userEvent.click(screen.getByRole('button', { name: 'Open document actions for source-25.xlsx' }));
-  await userEvent.click(screen.getByRole('menuitem', { name: 'View Details' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: 'View details' }));
   const dialog = screen.getByRole('dialog');
   expect(dialog).toHaveTextContent('source-25.xlsx');
   expect(dialog).toHaveTextContent('3');
@@ -90,10 +101,10 @@ it('selects imported documents across pages, including a later Needs Review docu
 it('deletes only the later-page source, keeps other later sources, and preserves the F01 delete contract', async () => {
   mount(); await expand();
   await userEvent.click(screen.getByRole('button', { name: 'Open document actions for source-25.xlsx' }));
-  await userEvent.click(screen.getByRole('menuitem', { name: 'Delete Source Document' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Delete source document' }));
   const dialog = screen.getByRole('dialog');
   expect(dialog).toHaveTextContent('will NOT delete the imported Activity Records');
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete Source Document', exact: true }));
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete source document', exact: true }));
   await waitFor(() => expect(screen.queryByText('source-25.xlsx')).not.toBeInTheDocument());
   expect(screen.getByText('source-24.xlsx')).toBeInTheDocument();
   expect(screen.getAllByRole('checkbox', { name: /^Select document / })).toHaveLength(24);
@@ -116,7 +127,7 @@ it('retry extraction for a later-page source refreshes the whole collection', as
 it('upload with 25 sources keeps every older source accessible after refresh', async () => {
   mount(); await expand();
   await userEvent.upload(document.getElementById('document-upload-input') as HTMLInputElement, new File(['bill'], 'new-source.pdf', { type: 'application/pdf' }));
-  await userEvent.click(screen.getByRole('button', { name: 'Extract Data' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Extract data' }));
   await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /^Select document / })).toHaveLength(26));
   expect(screen.getByText('source-25.xlsx')).toBeInTheDocument();
   const names = screen.getAllByRole('checkbox', { name: /^Select document / }).map((box) => box.getAttribute('aria-label'));

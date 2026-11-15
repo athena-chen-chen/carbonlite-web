@@ -291,6 +291,8 @@ export function UploadPage() {
   const [realDataStatusLoaded, setRealDataStatusLoaded] = useState(false);
   const currentUser = getCurrentUser();
   const customerAccount = getAccountType(currentUser) === 'CUSTOMER';
+  const automaticDocumentExtractionEnabled =
+    !customerAccount || aiExtractionEnabled === true;
   const dataModeReady = !customerAccount || realDataStatusLoaded;
   const canUploadData = canUploadFiles(currentUser) && dataModeReady;
   const canImportData = canImportDraftRows(currentUser) && dataModeReady;
@@ -755,6 +757,13 @@ export function UploadPage() {
       const latest = refreshedDocuments[0];
       if (!latest) throw new Error('Upload completed, but no uploaded document was found.');
       setLatestDocumentId(uploadedDocuments[0]?.id ?? latest.id);
+      if (!automaticDocumentExtractionEnabled) {
+        setError(null);
+        setSuccessMessage(
+          'Document uploaded. AI document extraction is not enabled for this organization.',
+        );
+        return;
+      }
       setSuccessMessage(
         upload.selectedFiles.length > 1
           ? `Uploaded ${upload.selectedFiles.length} files. Extracting data now...`
@@ -818,7 +827,13 @@ export function UploadPage() {
         ? {
             ...actionModel.primaryAction,
             disabled: true,
-            title: 'You do not have permission to perform this action.',
+            title:
+              customerAccount &&
+              (actionModel.primaryAction.kind === 'extract' ||
+                actionModel.primaryAction.kind === 'reextract') &&
+              aiExtractionEnabled !== true
+                ? 'AI document extraction is not enabled for this organization.'
+                : 'You do not have permission to perform this action.',
           }
         : actionModel.primaryAction,
       menuActions: actionModel.menuActions.filter((action) => canUseDocumentAction(action.kind)),
@@ -827,7 +842,10 @@ export function UploadPage() {
 
   function canUseDocumentAction(kind: DocumentActionKind) {
     if (kind === 'delete') return canDeleteDocuments;
-    if (kind === 'uploadAgain' || kind === 'extract' || kind === 'reextract') return canUploadData;
+    if (kind === 'uploadAgain') return canUploadData;
+    if (kind === 'extract' || kind === 'reextract') {
+      return canUploadData && (!customerAccount || aiExtractionEnabled === true);
+    }
     if (kind === 'import') return canImportData;
     return true;
   }
@@ -934,6 +952,10 @@ export function UploadPage() {
   }
 
   async function handleExtractDocuments(documentsToExtract: Array<{ id: string; fileName: string; createdAt?: string | null }>) {
+    if (customerAccount && aiExtractionEnabled !== true) {
+      setError('AI document extraction is not enabled for this organization.');
+      return;
+    }
     if (documentsToExtract.length === 0) {
       setError('No uploaded documents were found to extract.');
       return;
@@ -1349,6 +1371,7 @@ export function UploadPage() {
           canUploadData={canUploadData}
           uploadAccept={upload.uploadAccept}
           uploadExtractInProgress={upload.uploadExtractInProgress}
+          automaticExtractionEnabled={automaticDocumentExtractionEnabled}
           fileInputRef={upload.fileInputRef}
           uploadDisabledReason={!canUploadData ? getUploadPermissionDeniedReason(currentUser) : undefined}
           onChooseFiles={upload.handleChooseFile}

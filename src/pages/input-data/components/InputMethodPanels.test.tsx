@@ -19,6 +19,7 @@ function documentProps(): ComponentProps<typeof DocumentUploadPanel> {
     canUploadData: true,
     uploadAccept: '.pdf,.xlsx',
     uploadExtractInProgress: false,
+    automaticExtractionEnabled: true,
     fileInputRef: createRef<HTMLInputElement>(),
     onChooseFiles: vi.fn(),
     onFileChange: vi.fn(),
@@ -29,6 +30,20 @@ function documentProps(): ComponentProps<typeof DocumentUploadPanel> {
     onUploadAndExtract: vi.fn(),
   };
 }
+
+it('labels the document action as upload-only when automatic AI extraction is unavailable', () => {
+  render(
+    <DocumentUploadPanel
+      {...documentProps()}
+      selectedFiles={selectedFiles().slice(0, 1)}
+      automaticExtractionEnabled={false}
+    />,
+  );
+
+  expect(screen.getByRole('button', { name: 'Upload document' })).toBeEnabled();
+  expect(screen.getByText('Upload source document')).toBeInTheDocument();
+  expect(screen.queryByText('Extract activity data')).not.toBeInTheDocument();
+});
 
 const selectedFiles = () => [
   new File(['invoice'], 'invoice.pdf', { type: 'application/pdf', lastModified: 123 }),
