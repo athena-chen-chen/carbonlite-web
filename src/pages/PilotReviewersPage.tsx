@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useMemo, useRef, useState } from 'react';
 import {
   authorizeOrganizationAi,
   approveOrganizationRealData,
@@ -120,12 +120,14 @@ export default function PilotReviewersPage() {
   const [aiRepresentativeReference, setAiRepresentativeReference] = useState('');
   const [aiEffectiveAt, setAiEffectiveAt] = useState('');
   const [aiExpiresAt, setAiExpiresAt] = useState('');
+  const [aiSlugConfirmation, setAiSlugConfirmation] = useState('');
   const [aiConsentConfirmed, setAiConsentConfirmed] = useState(false);
   const [aiAuthorizedDataMode, setAiAuthorizedDataMode] = useState<'SYNTHETIC_TEST_ONLY' | 'REAL_CUSTOMER_DATA'>('SYNTHETIC_TEST_ONLY');
   const [aiWithdrawalReference, setAiWithdrawalReference] = useState('');
   const [savingAiAuthorization, setSavingAiAuthorization] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const aiAuthorizationSubmissionRef = useRef(false);
   const [realAgreementReference, setRealAgreementReference] = useState('');
   const [realAllowedDataScopeReference, setRealAllowedDataScopeReference] = useState('');
   const [realReadinessReference, setRealReadinessReference] = useState('');
@@ -292,6 +294,7 @@ export default function PilotReviewersPage() {
     setQuotaResetMessage(null);
     setQuotaResetError(null);
     setAiConsentConfirmed(false);
+    setAiSlugConfirmation('');
     setAiMessage(null);
     setAiError(null);
     setRealSlugConfirmation('');
@@ -387,14 +390,18 @@ export default function PilotReviewersPage() {
     if (
       !organization ||
       organization.customerStatus !== 'ACTIVE' ||
+      aiSlugConfirmation !== organization.slug ||
       !aiConsentConfirmed ||
       !aiConsentVersion.trim() ||
       !aiEvidenceReference.trim() ||
       !aiRepresentativeReference.trim() ||
-      !aiEffectiveAt
+      !aiEffectiveAt ||
+      savingAiAuthorization ||
+      aiAuthorizationSubmissionRef.current
     ) return;
     if (!window.confirm(`Authorize AI document extraction for ${organization.name}?`)) return;
 
+    aiAuthorizationSubmissionRef.current = true;
     setSavingAiAuthorization(true);
     setAiError(null);
     setAiMessage(null);
@@ -413,6 +420,7 @@ export default function PilotReviewersPage() {
       });
       setAiMessage('AI document extraction authorization recorded.');
       setAiConsentConfirmed(false);
+      setAiSlugConfirmation('');
       setPreflightResult(await getCustomerPreflight({
         email: preflightEmail,
         organizationName: preflightOrganizationName,
@@ -420,7 +428,18 @@ export default function PilotReviewersPage() {
     } catch (err) {
       setAiError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
+      aiAuthorizationSubmissionRef.current = false;
       setSavingAiAuthorization(false);
+    }
+  }
+
+  function preventAiAuthorizationImplicitSubmit(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== 'Enter') return;
+
+    const target = event.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   }
 
@@ -1318,7 +1337,11 @@ export default function PilotReviewersPage() {
         ) : null}
 
         {preflightResult?.organization ? (
-          <section style={provisionCardStyle} aria-label="Organization AI authorization">
+          <section
+            style={provisionCardStyle}
+            aria-label="Organization AI authorization"
+            onKeyDown={preventAiAuthorizationImplicitSubmit}
+          >
             <h3 style={sectionTitleStyle}>AI document extraction authorization</h3>
             <p style={warningStyle}>
               AI document extraction is a separate organization-scoped authorization. Synthetic consent
@@ -1364,6 +1387,19 @@ export default function PilotReviewersPage() {
                 <input type="datetime-local" value={aiExpiresAt} onChange={(event) => setAiExpiresAt(event.target.value)} style={inputStyle} />
               </label>
             </div>
+            <label style={labelStyle}>
+              Type the exact trusted organization slug to authorize AI extraction
+              <input
+                value={aiSlugConfirmation}
+                onChange={(event) => {
+                  setAiSlugConfirmation(event.target.value);
+                  setAiMessage(null);
+                  setAiError(null);
+                }}
+                autoComplete="off"
+                style={inputStyle}
+              />
+            </label>
             <label style={purposeOptionStyle}>
               <input
                 type="checkbox"
@@ -1386,6 +1422,7 @@ export default function PilotReviewersPage() {
               disabled={
                 savingAiAuthorization ||
                 preflightResult.organization.customerStatus !== 'ACTIVE' ||
+                aiSlugConfirmation !== preflightResult.organization.slug ||
                 !aiConsentConfirmed ||
                 !aiConsentVersion.trim() ||
                 !aiEvidenceReference.trim() ||
@@ -1397,6 +1434,7 @@ export default function PilotReviewersPage() {
               style={primaryButtonStyle(
                 savingAiAuthorization ||
                 preflightResult.organization.customerStatus !== 'ACTIVE' ||
+                aiSlugConfirmation !== preflightResult.organization.slug ||
                 !aiConsentConfirmed ||
                 !aiConsentVersion.trim() ||
                 !aiEvidenceReference.trim() ||

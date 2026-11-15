@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PilotReviewersPage from './PilotReviewersPage';
 import {
@@ -206,6 +206,26 @@ describe('PilotReviewersPage', () => {
       },
     });
   });
+
+  async function prepareAiAuthorizationPanel() {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(activeCustomerPreflight);
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    const panel = await screen.findByRole('region', { name: 'Organization AI authorization' });
+    await userEvent.type(within(panel).getByLabelText('Consent version'), 'external-pilot-v1');
+    await userEvent.type(within(panel).getByLabelText('Consent evidence reference'), 'consent-ticket-123');
+    await userEvent.type(within(panel).getByLabelText('Authorized representative reference'), 'customer-owner-123');
+    fireEvent.change(within(panel).getByLabelText('Effective date and time'), {
+      target: { value: '2026-11-11T12:00' },
+    });
+    await userEvent.type(
+      within(panel).getByLabelText(/exact trusted organization slug to authorize AI extraction/i),
+      'acme-pilot',
+    );
+    return panel;
+  }
 
   it('creates a demo invitation with sample workspace defaults and shows setup link', async () => {
     vi.mocked(createPilotReviewer).mockResolvedValue({
@@ -729,6 +749,10 @@ describe('PilotReviewersPage', () => {
     fireEvent.change(within(panel).getByLabelText('Effective date and time'), {
       target: { value: '2026-11-11T12:00' },
     });
+    await userEvent.type(
+      within(panel).getByLabelText(/exact trusted organization slug to authorize AI extraction/i),
+      'acme-pilot',
+    );
     expect(within(panel).getByRole('button', { name: 'Authorize AI document extraction' })).toBeDisabled();
     await userEvent.click(within(panel).getByRole('checkbox', {
       name: /explicitly authorized AI document extraction for the selected data mode/i,
@@ -743,6 +767,102 @@ describe('PilotReviewersPage', () => {
       effectiveAt: new Date('2026-11-11T12:00').toISOString(),
       authorizedDataMode: 'SYNTHETIC_TEST_ONLY',
     });
+    expect(authorizeOrganizationAi).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    'Effective date and time',
+    'Consent version',
+    'Consent evidence reference',
+    'Authorized representative reference',
+    'Type the exact trusted organization slug to authorize AI extraction',
+  ])('does not submit AI authorization when Enter is pressed in %s', async (label) => {
+    const panel = await prepareAiAuthorizationPanel();
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /explicitly authorized AI document extraction for the selected data mode/i,
+    }));
+    const authorizeButton = within(panel).getByRole('button', {
+      name: 'Authorize AI document extraction',
+    });
+    expect(authorizeButton).toBeEnabled();
+
+    const input = within(panel).getByLabelText(label);
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(authorizeOrganizationAi).not.toHaveBeenCalled();
+  });
+
+  it('does not submit AI authorization when confirmation is checked', async () => {
+    const panel = await prepareAiAuthorizationPanel();
+
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /explicitly authorized AI document extraction for the selected data mode/i,
+    }));
+
+    expect(within(panel).getByRole('button', {
+      name: 'Authorize AI document extraction',
+    })).toBeEnabled();
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(authorizeOrganizationAi).not.toHaveBeenCalled();
+  });
+
+  it('requires the exact trusted slug before explicit AI authorization', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(activeCustomerPreflight);
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const panel = await screen.findByRole('region', { name: 'Organization AI authorization' });
+    await userEvent.type(within(panel).getByLabelText('Consent version'), 'external-pilot-v1');
+    await userEvent.type(within(panel).getByLabelText('Consent evidence reference'), 'consent-ticket-123');
+    await userEvent.type(within(panel).getByLabelText('Authorized representative reference'), 'customer-owner-123');
+    fireEvent.change(within(panel).getByLabelText('Effective date and time'), {
+      target: { value: '2026-11-11T12:00' },
+    });
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /explicitly authorized AI document extraction for the selected data mode/i,
+    }));
+    const slugInput = within(panel).getByLabelText(/exact trusted organization slug to authorize AI extraction/i);
+    await userEvent.type(slugInput, 'wrong-slug');
+
+    const authorizeButton = within(panel).getByRole('button', {
+      name: 'Authorize AI document extraction',
+    });
+    expect(authorizeButton).toBeDisabled();
+    fireEvent.click(authorizeButton);
+    expect(authorizeOrganizationAi).not.toHaveBeenCalled();
+  });
+
+  it('prevents rapid duplicate AI authorization submissions', async () => {
+    vi.mocked(authorizeOrganizationAi).mockResolvedValue({
+      organizationId: 'org-123',
+      status: 'ENABLED',
+      consentVersion: 'external-pilot-v1',
+      provider: 'OPENAI',
+      processingScope: 'DOCUMENT_EXTRACTION',
+      effectiveAt: '2026-11-11T19:00:00.000Z',
+      expiresAt: null,
+      withdrawnAt: null,
+    });
+    const panel = await prepareAiAuthorizationPanel();
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /explicitly authorized AI document extraction for the selected data mode/i,
+    }));
+    const authorizeButton = within(panel).getByRole('button', {
+      name: 'Authorize AI document extraction',
+    });
+
+    fireEvent.click(authorizeButton);
+    fireEvent.click(authorizeButton);
+
+    await waitFor(() => expect(authorizeOrganizationAi).toHaveBeenCalledTimes(1));
   });
 
   it('withdraws only the current preflight organization AI authorization', async () => {
