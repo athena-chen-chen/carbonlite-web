@@ -137,9 +137,11 @@ export default function PilotReviewersPage() {
   const [realSlugConfirmation, setRealSlugConfirmation] = useState('');
   const [realApprovalConfirmed, setRealApprovalConfirmed] = useState(false);
   const [realWithdrawalReason, setRealWithdrawalReason] = useState('');
+  const [realWithdrawalConfirmed, setRealWithdrawalConfirmed] = useState(false);
   const [savingRealAuthorization, setSavingRealAuthorization] = useState(false);
   const [realMessage, setRealMessage] = useState<string | null>(null);
   const [realError, setRealError] = useState<string | null>(null);
+  const realWithdrawalSubmissionRef = useRef(false);
   const erasureRequestInFlight = useRef(false);
 
   const setupLink = useMemo(() => getInviteLink(result), [result]);
@@ -299,6 +301,8 @@ export default function PilotReviewersPage() {
     setAiError(null);
     setRealSlugConfirmation('');
     setRealApprovalConfirmed(false);
+    setRealWithdrawalReason('');
+    setRealWithdrawalConfirmed(false);
     setRealMessage(null);
     setRealError(null);
     invalidateErasureState();
@@ -480,9 +484,11 @@ export default function PilotReviewersPage() {
   async function handleWithdrawRealData() {
     const organization = preflightResult?.organization;
     if (!organization || organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
-      realSlugConfirmation !== organization.slug || !realWithdrawalReason.trim()) return;
+      realSlugConfirmation !== organization.slug || !realWithdrawalReason.trim() ||
+      !realWithdrawalConfirmed || realWithdrawalSubmissionRef.current) return;
     if (!window.confirm(`Withdraw real-data approval for ${organization.name}? Real-customer-data ingestion will be blocked immediately.`)) return;
 
+    realWithdrawalSubmissionRef.current = true;
     setSavingRealAuthorization(true);
     setRealError(null);
     setRealMessage(null);
@@ -494,12 +500,24 @@ export default function PilotReviewersPage() {
       });
       setRealMessage('Real-data approval withdrawn. Any real-data AI authorization was also withdrawn.');
       setRealWithdrawalReason('');
+      setRealWithdrawalConfirmed(false);
       setRealSlugConfirmation('');
       setPreflightResult(await getCustomerPreflight({ email: preflightEmail, organizationName: preflightOrganizationName }));
     } catch (err) {
       setRealError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
+      realWithdrawalSubmissionRef.current = false;
       setSavingRealAuthorization(false);
+    }
+  }
+
+  function preventRealDataWithdrawalImplicitSubmit(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== 'Enter') return;
+
+    const target = event.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   }
 
@@ -1155,7 +1173,13 @@ export default function PilotReviewersPage() {
                 <input type="datetime-local" value={realReviewDueAt} onChange={(event) => setRealReviewDueAt(event.target.value)} style={inputStyle} />
               </label>
               <label style={labelStyle}>Type the exact trusted organization slug
-                <input value={realSlugConfirmation} onChange={(event) => setRealSlugConfirmation(event.target.value)} style={inputStyle} autoComplete="off" />
+                <input
+                  value={realSlugConfirmation}
+                  onChange={(event) => setRealSlugConfirmation(event.target.value)}
+                  onKeyDown={preventRealDataWithdrawalImplicitSubmit}
+                  style={inputStyle}
+                  autoComplete="off"
+                />
               </label>
             </div>
             <label style={purposeOptionStyle}>
@@ -1182,17 +1206,40 @@ export default function PilotReviewersPage() {
             >
               {savingRealAuthorization ? 'Saving approval...' : 'Approve controlled real-data pilot'}
             </button>
-            <label style={labelStyle}>Withdrawal reason
-              <input value={realWithdrawalReason} onChange={(event) => setRealWithdrawalReason(event.target.value)} style={inputStyle} />
-            </label>
-            <button
-              type="button"
-              onClick={handleWithdrawRealData}
-              disabled={savingRealAuthorization || preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
-                realSlugConfirmation !== preflightResult.organization.slug || !realWithdrawalReason.trim()}
-              style={dangerButtonStyle(savingRealAuthorization || preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
-                realSlugConfirmation !== preflightResult.organization.slug || !realWithdrawalReason.trim())}
-            >Withdraw real-data approval</button>
+            <div onKeyDown={preventRealDataWithdrawalImplicitSubmit}>
+              <div role="note" aria-label="Real-data withdrawal consequences" style={warningStyle}>
+                <strong>Withdrawal consequences</strong>
+                <p>
+                  Withdrawing real-data authorization will stop future REAL_CUSTOMER_DATA intake and make the
+                  current real-data approval revision ineffective. Any active REAL_CUSTOMER_DATA AI authorization
+                  bound to this approval will also be withdrawn.
+                </p>
+                <p>
+                  Existing ActivityData, Documents, reports, other customer workspace data, and historical
+                  audit/compliance evidence will be preserved. This action does not erase the workspace, does not
+                  delete previously stored customer data, and does not change the organization quota policy.
+                </p>
+              </div>
+              <label style={labelStyle}>Withdrawal reason
+                <input value={realWithdrawalReason} onChange={(event) => setRealWithdrawalReason(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={purposeOptionStyle}>
+                <input
+                  type="checkbox"
+                  checked={realWithdrawalConfirmed}
+                  onChange={(event) => setRealWithdrawalConfirmed(event.target.checked)}
+                />
+                <span>I understand and confirm the real-data withdrawal consequences described above.</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleWithdrawRealData}
+                disabled={savingRealAuthorization || preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
+                  realSlugConfirmation !== preflightResult.organization.slug || !realWithdrawalReason.trim() || !realWithdrawalConfirmed}
+                style={dangerButtonStyle(savingRealAuthorization || preflightResult.organization.realDataAuthorization?.configuredStatus !== 'REAL_DATA_APPROVED' ||
+                  realSlugConfirmation !== preflightResult.organization.slug || !realWithdrawalReason.trim() || !realWithdrawalConfirmed)}
+              >Withdraw real-data approval</button>
+            </div>
           </section>
         ) : null}
 

@@ -227,6 +227,42 @@ describe('PilotReviewersPage', () => {
     return panel;
   }
 
+  async function prepareRealDataWithdrawalPanel() {
+    const approvedPreflight: CustomerPreflightResponse = {
+      ...activeCustomerPreflight,
+      organization: {
+        ...activeCustomerPreflight.organization!,
+        realDataAuthorization: {
+          configuredStatus: 'REAL_DATA_APPROVED',
+          approvalRevision: 1,
+          policyVersion: 'CARBONLITE_ALLOWED_DATA_POLICY_V0_2',
+          effectiveAt: '2026-11-13T19:00:00.000Z',
+          expiresAt: null,
+          reviewDueAt: null,
+          withdrawnAt: null,
+          evidenceReferencesPresent: true,
+        },
+        aiAuthorization: {
+          status: 'ENABLED',
+          provider: 'OPENAI',
+          processingScope: 'DOCUMENT_EXTRACTION',
+          consentVersion: 'P0-AI-MATRIX-REAL-DATA-R1',
+          effectiveAt: '2026-11-15T22:04:00.000Z',
+          expiresAt: null,
+          withdrawnAt: null,
+          authorizedDataMode: 'REAL_CUSTOMER_DATA',
+          realDataApprovalRevision: 1,
+        },
+      },
+    };
+    vi.mocked(getCustomerPreflight).mockResolvedValue(approvedPreflight);
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    return screen.findByRole('region', { name: 'Organization real-data authorization' });
+  }
+
   it('creates a demo invitation with sample workspace defaults and shows setup link', async () => {
     vi.mocked(createPilotReviewer).mockResolvedValue({
       name: 'Alexander',
@@ -706,6 +742,102 @@ describe('PilotReviewersPage', () => {
       allowedDataScopeReference: 'scope-123',
       privacySecurityReadinessReference: 'readiness-123',
       effectiveAt: new Date('2026-11-13T12:00').toISOString(),
+    });
+  });
+
+  it('shows explicit real-data withdrawal consequences before submission', async () => {
+    const panel = await prepareRealDataWithdrawalPanel();
+    const warning = within(panel).getByRole('note', { name: 'Real-data withdrawal consequences' });
+
+    expect(warning).toHaveTextContent(/stop future REAL_CUSTOMER_DATA intake/i);
+    expect(warning).toHaveTextContent(/current real-data approval revision ineffective/i);
+    expect(warning).toHaveTextContent(/REAL_CUSTOMER_DATA AI authorization.*will also be withdrawn/i);
+    expect(warning).toHaveTextContent(/ActivityData, Documents, reports.*will be preserved/i);
+    expect(warning).toHaveTextContent(/does not change the organization quota policy/i);
+    expect(warning).toHaveTextContent(/does not erase the workspace/i);
+    expect(warning).toHaveTextContent(/does not delete previously stored customer data/i);
+    expect(warning).toHaveTextContent(/historical audit\/compliance evidence will be preserved/i);
+  });
+
+  it('requires exact slug and explicit consequence confirmation for real-data withdrawal', async () => {
+    const panel = await prepareRealDataWithdrawalPanel();
+    const withdrawButton = within(panel).getByRole('button', { name: 'Withdraw real-data approval' });
+    const confirmation = within(panel).getByRole('checkbox', {
+      name: /understand and confirm the real-data withdrawal consequences/i,
+    });
+
+    await userEvent.type(within(panel).getByLabelText('Withdrawal reason'), 'revision rollover test');
+    await userEvent.click(confirmation);
+    expect(withdrawButton).toBeDisabled();
+
+    await userEvent.type(within(panel).getByLabelText(/exact trusted organization slug/i), 'wrong-slug');
+    expect(withdrawButton).toBeDisabled();
+    await userEvent.clear(within(panel).getByLabelText(/exact trusted organization slug/i));
+    await userEvent.type(within(panel).getByLabelText(/exact trusted organization slug/i), 'acme-pilot');
+    expect(withdrawButton).toBeEnabled();
+
+    await userEvent.click(confirmation);
+    expect(withdrawButton).toBeDisabled();
+    expect(withdrawOrganizationRealData).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'Withdrawal reason',
+    'Type the exact trusted organization slug',
+  ])('does not submit real-data withdrawal when Enter is pressed in %s', async (label) => {
+    const panel = await prepareRealDataWithdrawalPanel();
+    await userEvent.type(within(panel).getByLabelText('Withdrawal reason'), 'revision rollover test');
+    await userEvent.type(within(panel).getByLabelText(/exact trusted organization slug/i), 'acme-pilot');
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /understand and confirm the real-data withdrawal consequences/i,
+    }));
+    expect(within(panel).getByRole('button', { name: 'Withdraw real-data approval' })).toBeEnabled();
+
+    const input = within(panel).getByLabelText(label);
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(withdrawOrganizationRealData).not.toHaveBeenCalled();
+  });
+
+  it('submits real-data withdrawal exactly once through deliberate button activation', async () => {
+    vi.mocked(withdrawOrganizationRealData).mockResolvedValue({
+      result: 'WITHDRAWN',
+      authorization: {
+        organizationId: 'org-123',
+        status: 'WITHDRAWN',
+        decisionId: 'decision-123',
+        approvalRevision: 1,
+        policyVersion: 'CARBONLITE_ALLOWED_DATA_POLICY_V0_2',
+        effectiveAt: '2026-11-13T19:00:00.000Z',
+        expiresAt: null,
+        reviewDueAt: null,
+        withdrawnAt: '2026-11-15T23:00:00.000Z',
+      },
+    });
+    const panel = await prepareRealDataWithdrawalPanel();
+    await userEvent.type(within(panel).getByLabelText('Withdrawal reason'), 'revision rollover test');
+    await userEvent.type(within(panel).getByLabelText(/exact trusted organization slug/i), 'acme-pilot');
+    await userEvent.click(within(panel).getByRole('checkbox', {
+      name: /understand and confirm the real-data withdrawal consequences/i,
+    }));
+    const withdrawButton = within(panel).getByRole('button', { name: 'Withdraw real-data approval' });
+
+    fireEvent.click(withdrawButton);
+    fireEvent.click(withdrawButton);
+
+    await waitFor(() => expect(withdrawOrganizationRealData).toHaveBeenCalledTimes(1));
+    expect(withdrawOrganizationRealData).toHaveBeenCalledWith({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+      withdrawalReason: 'revision rollover test',
     });
   });
 
