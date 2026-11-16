@@ -100,6 +100,7 @@ export default function PilotReviewersPage() {
   const [runningErasureDryRun, setRunningErasureDryRun] = useState(false);
   const [eraseSlugConfirmation, setEraseSlugConfirmation] = useState('');
   const [erasePhraseConfirmation, setErasePhraseConfirmation] = useState('');
+  const [eraseConsequencesConfirmed, setEraseConsequencesConfirmed] = useState(false);
   const [erasureResult, setErasureResult] =
     useState<OrganizationErasureResponse | null>(null);
   const [erasureError, setErasureError] = useState<string | null>(null);
@@ -168,6 +169,7 @@ export default function PilotReviewersPage() {
     setErasureDryRunError(null);
     setEraseSlugConfirmation('');
     setErasePhraseConfirmation('');
+    setEraseConsequencesConfirmed(false);
     setErasureResult(null);
     setErasureError(null);
     setErasureVerification(null);
@@ -641,6 +643,7 @@ export default function PilotReviewersPage() {
 
     setErasureDryRunError(null);
     setErasureDryRunResult(null);
+    setEraseConsequencesConfirmed(false);
     setRunningErasureDryRun(true);
     try {
       setErasureDryRunResult(
@@ -659,6 +662,7 @@ export default function PilotReviewersPage() {
     if (!organization || !eraseEligible || erasureRequestInFlight.current) return;
     if (eraseSlugConfirmation !== organization.slug) return;
     if (erasePhraseConfirmation !== 'ERASE ORGANIZATION') return;
+    if (!eraseConsequencesConfirmed) return;
     if (!window.confirm(
       `Permanently erase ${organization.name} and its owned data? This cannot be undone.`,
     )) return;
@@ -676,6 +680,7 @@ export default function PilotReviewersPage() {
       setErasureResult(response);
       setEraseSlugConfirmation('');
       setErasePhraseConfirmation('');
+      setEraseConsequencesConfirmed(false);
       setErasureSlugConfirmation('');
       setErasureDryRunResult(null);
 
@@ -700,6 +705,16 @@ export default function PilotReviewersPage() {
     } finally {
       erasureRequestInFlight.current = false;
       setErasingOrganization(false);
+    }
+  }
+
+  function preventErasureImplicitSubmit(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== 'Enter') return;
+
+    const target = event.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   }
 
@@ -1820,10 +1835,32 @@ export default function PilotReviewersPage() {
             </button>
 
             {eraseEligible ? (
-              <section style={eraseCardStyle} aria-label="Erase organization">
+              <section
+                style={eraseCardStyle}
+                aria-label="Erase organization"
+                onKeyDown={preventErasureImplicitSubmit}
+              >
                 <h3 style={dangerTitleStyle}>Erase organization</h3>
                 <div style={destructiveWarningStyle}>
-                  <strong>This permanently deletes this organization and its owned data. This action cannot be undone.</strong>
+                  <strong>Actual workspace erasure is permanent.</strong>
+                  <p>
+                    It removes this organization&apos;s ordinary workspace and customer data,
+                    including ActivityData; organization-scoped calculated, derived, import, and
+                    review state; Documents; quota state; live real-data and AI authorization
+                    state; and organization-scoped customer, user, and membership state.
+                  </p>
+                  <p>
+                    Managed physical uploaded files are removed or quarantined through the
+                    configured deletion-recovery lifecycle. Shared/global conversion factors and
+                    global factor versions are preserved. Minimal append-only compliance evidence
+                    is preserved and marked with the workspace-erasure timestamp
+                    (<code>workspaceErasedAt</code>).
+                  </p>
+                  <p>
+                    This is not customer suspension, deleting an individual source document, or
+                    recoverable deletion of one document. It cannot be undone through normal
+                    application workflows.
+                  </p>
                 </div>
                 <div style={resultGridStyle}>
                   <ResultItem label="Organization name" value={preflightResult.organization.name} />
@@ -1861,6 +1898,16 @@ export default function PilotReviewersPage() {
                     autoComplete="off"
                   />
                 </label>
+                <label style={purposeOptionStyle}>
+                  <input
+                    type="checkbox"
+                    checked={eraseConsequencesConfirmed}
+                    onChange={(event) => setEraseConsequencesConfirmed(event.target.checked)}
+                  />
+                  I understand that this permanently erases the organization&apos;s ordinary
+                  workspace/customer data and is not the same as suspension or deleting an
+                  individual source document.
+                </label>
                 {erasureError ? <div style={errorStyle}>{erasureError}</div> : null}
                 <button
                   type="button"
@@ -1868,12 +1915,14 @@ export default function PilotReviewersPage() {
                   disabled={
                     erasingOrganization ||
                     eraseSlugConfirmation !== preflightResult.organization.slug ||
-                    erasePhraseConfirmation !== 'ERASE ORGANIZATION'
+                    erasePhraseConfirmation !== 'ERASE ORGANIZATION' ||
+                    !eraseConsequencesConfirmed
                   }
                   style={dangerButtonStyle(
                     erasingOrganization ||
                     eraseSlugConfirmation !== preflightResult.organization.slug ||
-                    erasePhraseConfirmation !== 'ERASE ORGANIZATION',
+                    erasePhraseConfirmation !== 'ERASE ORGANIZATION' ||
+                    !eraseConsequencesConfirmed,
                   )}
                 >
                   {erasingOrganization ? 'Erasing organization...' : 'Permanently erase organization'}

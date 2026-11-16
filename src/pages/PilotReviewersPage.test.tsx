@@ -1198,19 +1198,62 @@ describe('PilotReviewersPage', () => {
     await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
 
     const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
-    expect(within(eraseCard).getByText(/cannot be undone/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/actual workspace erasure is permanent/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/ActivityData.*calculated, derived, import, and review state/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/physical uploaded files are removed or quarantined/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/quota state.*live real-data and AI authorization/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/customer, user, and membership state/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/shared\/global conversion factors and global factor versions are preserved/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/append-only compliance evidence.*workspace-erasure timestamp/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/not customer suspension.*individual source document/i)).toBeInTheDocument();
+    expect(within(eraseCard).getByText(/cannot be undone through normal application workflows/i)).toBeInTheDocument();
     expect(within(eraseCard).getByText('org-123')).toBeInTheDocument();
     expect(within(eraseCard).queryByRole('textbox', { name: /organization id/i })).not.toBeInTheDocument();
     const eraseButton = within(eraseCard).getByRole('button', { name: 'Permanently erase organization' });
     const slugInput = within(eraseCard).getByLabelText('Type the exact organization slug');
     const phraseInput = within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm');
+    const acknowledgment = within(eraseCard).getByRole('checkbox', {
+      name: /I understand that this permanently erases/i,
+    });
 
     expect(eraseButton).toBeDisabled();
     await userEvent.type(slugInput, 'acme-pilot');
     expect(eraseButton).toBeDisabled();
     await userEvent.type(phraseInput, 'ERASE ORGANIZATION');
+    expect(eraseButton).toBeDisabled();
+    await userEvent.click(acknowledgment);
     expect(eraseButton).toBeEnabled();
     expect(eraseOrganization).not.toHaveBeenCalled();
+  });
+
+  it('does not submit erasure from Enter or the destructive acknowledgment toggle', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedCustomerPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: erasureInventory,
+    });
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(within(dryRunCard).getByLabelText(/confirm dry-run/i), 'acme-pilot');
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+    const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
+    const slugInput = within(eraseCard).getByLabelText('Type the exact organization slug');
+    const phraseInput = within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm');
+    const acknowledgment = within(eraseCard).getByRole('checkbox', {
+      name: /I understand that this permanently erases/i,
+    });
+
+    await userEvent.type(slugInput, 'acme-pilot{Enter}');
+    await userEvent.type(phraseInput, 'ERASE ORGANIZATION{Enter}');
+    await userEvent.click(acknowledgment);
+
+    expect(eraseOrganization).not.toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(within(eraseCard).getByRole('button', { name: 'Permanently erase organization' })).toBeEnabled();
   });
 
   it('invalidates dry-run eligibility when the lookup changes', async () => {
@@ -1292,6 +1335,7 @@ describe('PilotReviewersPage', () => {
     const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
     await userEvent.type(within(eraseCard).getByLabelText('Type the exact organization slug'), 'acme-pilot');
     await userEvent.type(within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm'), 'ERASE ORGANIZATION');
+    await userEvent.click(within(eraseCard).getByRole('checkbox', { name: /I understand that this permanently erases/i }));
     await userEvent.click(within(eraseCard).getByRole('button', { name: 'Permanently erase organization' }));
 
     expect(window.confirm).toHaveBeenCalledWith(
@@ -1307,6 +1351,47 @@ describe('PilotReviewersPage', () => {
     expect(within(result).getByText('Organization erased successfully.')).toBeInTheDocument();
     expect(within(result).getByText(/organization, user, and membership are no longer present/i)).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Erase organization' })).not.toBeInTheDocument();
+  });
+
+  it('prevents rapid duplicate actual-erasure activation', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(suspendedCustomerPreflight);
+    vi.mocked(runOrganizationErasureDryRun).mockResolvedValue({
+      status: 'DRY_RUN',
+      dataDeleted: false,
+      inventory: erasureInventory,
+    });
+    let resolveErasure!: (value: Awaited<ReturnType<typeof eraseOrganization>>) => void;
+    vi.mocked(eraseOrganization).mockImplementation(() => new Promise((resolve) => {
+      resolveErasure = resolve;
+    }));
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+    const dryRunCard = await screen.findByRole('region', { name: 'Organization erasure dry-run' });
+    await userEvent.type(within(dryRunCard).getByLabelText(/confirm dry-run/i), 'acme-pilot');
+    await userEvent.click(within(dryRunCard).getByRole('button', { name: 'Run erasure dry-run' }));
+    const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
+    await userEvent.type(within(eraseCard).getByLabelText('Type the exact organization slug'), 'acme-pilot');
+    await userEvent.type(within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm'), 'ERASE ORGANIZATION');
+    await userEvent.click(within(eraseCard).getByRole('checkbox', { name: /I understand that this permanently erases/i }));
+    const eraseButton = within(eraseCard).getByRole('button', { name: 'Permanently erase organization' });
+
+    fireEvent.click(eraseButton);
+    fireEvent.click(eraseButton);
+
+    expect(eraseOrganization).toHaveBeenCalledTimes(1);
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveErasure({
+        status: 'ERASED',
+        organizationIdHash: 'hashed-org-id',
+        inventory: erasureInventory,
+        deletedPhysicalFiles: 5,
+        alreadyMissingPhysicalFiles: 0,
+      });
+    });
   });
 
   it('does not call erasure when final browser confirmation is cancelled', async () => {
@@ -1327,6 +1412,7 @@ describe('PilotReviewersPage', () => {
     const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
     await userEvent.type(within(eraseCard).getByLabelText('Type the exact organization slug'), 'acme-pilot');
     await userEvent.type(within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm'), 'ERASE ORGANIZATION');
+    await userEvent.click(within(eraseCard).getByRole('checkbox', { name: /I understand that this permanently erases/i }));
     await userEvent.click(within(eraseCard).getByRole('button', { name: 'Permanently erase organization' }));
 
     expect(eraseOrganization).not.toHaveBeenCalled();
@@ -1350,6 +1436,7 @@ describe('PilotReviewersPage', () => {
     const eraseCard = await screen.findByRole('region', { name: 'Erase organization' });
     await userEvent.type(within(eraseCard).getByLabelText('Type the exact organization slug'), 'acme-pilot');
     await userEvent.type(within(eraseCard).getByLabelText('Type ERASE ORGANIZATION to confirm'), 'ERASE ORGANIZATION');
+    await userEvent.click(within(eraseCard).getByRole('checkbox', { name: /I understand that this permanently erases/i }));
     const eraseButton = within(eraseCard).getByRole('button', { name: 'Permanently erase organization' });
     await userEvent.click(eraseButton);
 
