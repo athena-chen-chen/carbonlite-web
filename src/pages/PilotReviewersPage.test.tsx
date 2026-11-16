@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PilotReviewersPage from './PilotReviewersPage';
 import {
@@ -1415,7 +1415,7 @@ describe('PilotReviewersPage', () => {
       within(suspendCard).getByLabelText(/type the organization slug/i),
       'acme-pilot',
     );
-    expect(suspendButton).toBeEnabled();
+    expect(suspendButton).toBeDisabled();
   });
 
   it.each([
@@ -1493,7 +1493,48 @@ describe('PilotReviewersPage', () => {
     expect(screen.queryByRole('button', { name: /suspend customer/i })).not.toBeInTheDocument();
   });
 
-  it('requires the exact returned slug and uses the preflight organization ID to suspend', async () => {
+  it('discloses suspension consequences and requires all guarded inputs', async () => {
+    vi.mocked(getCustomerPreflight).mockResolvedValue(activeCustomerPreflight);
+
+    render(<PilotReviewersPage />);
+    await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
+
+    const suspendCard = await screen.findByRole('region', { name: 'Suspend customer access' });
+    const warning = within(suspendCard).getByRole('note', { name: 'Customer suspension consequences' });
+    expect(warning).toHaveTextContent(/blocks login and existing authenticated access/i);
+    expect(warning).toHaveTextContent(/stops future customer mutations and intake/i);
+    expect(warning).toHaveTextContent(/real-data authorization.*will be withdrawn/i);
+    expect(warning).toHaveTextContent(/REAL_CUSTOMER_DATA AI authorization will be withdrawn/i);
+    expect(warning).toHaveTextContent(/ActivityData, Documents\/files, reports/i);
+    expect(warning).toHaveTextContent(/quota policy and configuration/i);
+    expect(warning).toHaveTextContent(/historical audit\/compliance evidence are preserved/i);
+    expect(warning).toHaveTextContent(/does not erase the workspace/i);
+    expect(warning).toHaveTextContent(/does not.*delete existing customer data/i);
+
+    const suspendButton = within(suspendCard).getByRole('button', { name: /suspend customer/i });
+    const slugInput = within(suspendCard).getByLabelText(/type the organization slug/i);
+    const reasonInput = within(suspendCard).getByLabelText(/^Suspension reason/i);
+    const acknowledgement = within(suspendCard).getByLabelText(/understand and confirm/i);
+    expect(suspendButton).toBeDisabled();
+
+    await userEvent.type(slugInput, 'acme-pilot');
+    await userEvent.type(reasonInput, '   ');
+    await userEvent.click(acknowledgement);
+    expect(within(suspendCard).getByText(/cannot be blank or whitespace only/i)).toBeInTheDocument();
+    expect(suspendButton).toBeDisabled();
+
+    await userEvent.clear(reasonInput);
+    fireEvent.change(reasonInput, { target: { value: 'x'.repeat(501) } });
+    expect(within(suspendCard).getByText(/must be 500 characters or fewer/i)).toBeInTheDocument();
+    expect(suspendButton).toBeDisabled();
+
+    fireEvent.change(reasonInput, { target: { value: 'P0-PREVIEW-SMOKE-SUSPENSION-TEST' } });
+    expect(suspendButton).toBeEnabled();
+    expect(suspendCustomerOrganization).not.toHaveBeenCalled();
+  });
+
+  it('prevents Enter submission and sends one trimmed guarded suspension request', async () => {
     const suspendedPreflight: CustomerPreflightResponse = {
       ...activeCustomerPreflight,
       organization: {
@@ -1504,11 +1545,14 @@ describe('PilotReviewersPage', () => {
     vi.mocked(getCustomerPreflight)
       .mockResolvedValueOnce(activeCustomerPreflight)
       .mockResolvedValueOnce(suspendedPreflight);
-    vi.mocked(suspendCustomerOrganization).mockResolvedValue({
-      organizationId: 'org-123',
-      status: 'SUSPENDED',
-      suspended: true,
-    });
+    let resolveSuspension!: (response: {
+      organizationId: string;
+      status: 'SUSPENDED';
+      suspended: boolean;
+    }) => void;
+    vi.mocked(suspendCustomerOrganization).mockReturnValue(new Promise((resolve) => {
+      resolveSuspension = resolve;
+    }));
 
     render(<PilotReviewersPage />);
     await userEvent.type(screen.getByLabelText(/preflight email/i), 'customer@example.com');
@@ -1517,21 +1561,38 @@ describe('PilotReviewersPage', () => {
     const suspendButton = await screen.findByRole('button', { name: /suspend customer/i });
     const suspendCard = screen.getByRole('region', { name: 'Suspend customer access' });
     const suspensionSlugInput = within(suspendCard).getByLabelText(/type the organization slug/i);
+    const suspensionReasonInput = within(suspendCard).getByLabelText(/^Suspension reason/i);
+    const suspensionAcknowledgement = within(suspendCard).getByLabelText(/understand and confirm/i);
     expect(suspendButton).toBeDisabled();
     await userEvent.type(suspensionSlugInput, 'wrong-slug');
     expect(suspendButton).toBeDisabled();
     await userEvent.clear(suspensionSlugInput);
     await userEvent.type(suspensionSlugInput, 'acme-pilot');
+    await userEvent.type(suspensionReasonInput, '  P0-PREVIEW-SMOKE-SUSPENSION-TEST  ');
+    await userEvent.click(suspensionAcknowledgement);
     expect(suspendButton).toBeEnabled();
-    await userEvent.click(suspendButton);
+
+    fireEvent.keyDown(suspensionReasonInput, { key: 'Enter', code: 'Enter' });
+    fireEvent.keyDown(suspensionSlugInput, { key: 'Enter', code: 'Enter' });
+    expect(suspendCustomerOrganization).not.toHaveBeenCalled();
+
+    fireEvent.click(suspendButton);
+    fireEvent.click(suspendButton);
 
     expect(window.confirm).toHaveBeenCalledWith(
-      'Suspend access for Acme Pilot? Customer data will be retained, but login and existing sessions will be blocked.',
+      'Suspend access for Acme Pilot? Login, existing sessions, and future customer mutations will be blocked. Existing customer data and quota configuration will be retained.',
     );
+    expect(suspendCustomerOrganization).toHaveBeenCalledTimes(1);
     expect(suspendCustomerOrganization).toHaveBeenCalledWith({
       organizationId: 'org-123',
       organizationSlug: 'acme-pilot',
+      suspensionReason: 'P0-PREVIEW-SMOKE-SUSPENSION-TEST',
     });
+    await act(async () => resolveSuspension({
+      organizationId: 'org-123',
+      status: 'SUSPENDED',
+      suspended: true,
+    }));
     expect(await screen.findByText('Customer access suspended.')).toBeInTheDocument();
     expect(getCustomerPreflight).toHaveBeenCalledTimes(2);
     expect(screen.getAllByText('SUSPENDED').length).toBeGreaterThan(0);
@@ -1551,6 +1612,8 @@ describe('PilotReviewersPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
     const suspendCard = await screen.findByRole('region', { name: 'Suspend customer access' });
     await userEvent.type(within(suspendCard).getByLabelText(/type the organization slug/i), 'acme-pilot');
+    await userEvent.type(within(suspendCard).getByLabelText(/^Suspension reason/i), 'Test reason');
+    await userEvent.click(within(suspendCard).getByLabelText(/understand and confirm/i));
 
     expect(screen.getByRole('button', { name: /suspend customer/i })).toBeDisabled();
     expect(screen.getByText(/only when customer status is ACTIVE/i)).toBeInTheDocument();
@@ -1577,6 +1640,8 @@ describe('PilotReviewersPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /run preflight/i }));
     const suspendCard = await screen.findByRole('region', { name: 'Suspend customer access' });
     await userEvent.type(within(suspendCard).getByLabelText(/type the organization slug/i), 'acme-pilot');
+    await userEvent.type(within(suspendCard).getByLabelText(/^Suspension reason/i), 'Test reason');
+    await userEvent.click(within(suspendCard).getByLabelText(/understand and confirm/i));
     await userEvent.click(screen.getByRole('button', { name: /suspend customer/i }));
 
     expect(await screen.findByText('This customer organization is already suspended.')).toBeInTheDocument();

@@ -86,6 +86,9 @@ export default function PilotReviewersPage() {
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState(false);
   const [slugConfirmation, setSlugConfirmation] = useState('');
+  const [suspensionReason, setSuspensionReason] = useState('');
+  const [suspensionConsequencesConfirmed, setSuspensionConsequencesConfirmed] =
+    useState(false);
   const [suspensionResult, setSuspensionResult] =
     useState<SuspendCustomerOrganizationResponse | null>(null);
   const [suspensionError, setSuspensionError] = useState<string | null>(null);
@@ -142,6 +145,7 @@ export default function PilotReviewersPage() {
   const [realMessage, setRealMessage] = useState<string | null>(null);
   const [realError, setRealError] = useState<string | null>(null);
   const realWithdrawalSubmissionRef = useRef(false);
+  const suspensionSubmissionRef = useRef(false);
   const erasureRequestInFlight = useRef(false);
 
   const setupLink = useMemo(() => getInviteLink(result), [result]);
@@ -286,6 +290,8 @@ export default function PilotReviewersPage() {
     setSuspensionResult(null);
     setSuspensionError(null);
     setSlugConfirmation('');
+    setSuspensionReason('');
+    setSuspensionConsequencesConfirmed(false);
     setQuotaConfirmed(false);
     setQuotaMessage(null);
     setQuotaError(null);
@@ -580,11 +586,18 @@ export default function PilotReviewersPage() {
 
   async function handleSuspendCustomer() {
     const organization = preflightResult?.organization;
+    const trimmedSuspensionReason = suspensionReason.trim();
     if (!organization || organization.customerStatus !== 'ACTIVE') return;
     if (slugConfirmation !== organization.slug) return;
+    if (!trimmedSuspensionReason || trimmedSuspensionReason.length > 500) return;
+    if (!suspensionConsequencesConfirmed || suspensionSubmissionRef.current) return;
+    suspensionSubmissionRef.current = true;
     if (!window.confirm(
-      `Suspend access for ${organization.name}? Customer data will be retained, but login and existing sessions will be blocked.`,
-    )) return;
+      `Suspend access for ${organization.name}? Login, existing sessions, and future customer mutations will be blocked. Existing customer data and quota configuration will be retained.`,
+    )) {
+      suspensionSubmissionRef.current = false;
+      return;
+    }
 
     setSuspensionError(null);
     setSuspensionResult(null);
@@ -593,9 +606,12 @@ export default function PilotReviewersPage() {
       const response = await suspendCustomerOrganization({
         organizationId: organization.id,
         organizationSlug: organization.slug,
+        suspensionReason: trimmedSuspensionReason,
       });
       setSuspensionResult(response);
       setSlugConfirmation('');
+      setSuspensionReason('');
+      setSuspensionConsequencesConfirmed(false);
       setPreflightResult(await getCustomerPreflight({
         email: preflightEmail,
         organizationName: preflightOrganizationName,
@@ -603,7 +619,18 @@ export default function PilotReviewersPage() {
     } catch (err) {
       setSuspensionError(getUserFriendlyErrorMessage(err, 'unknown'));
     } finally {
+      suspensionSubmissionRef.current = false;
       setSuspending(false);
+    }
+  }
+
+  function preventSuspensionImplicitSubmit(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== 'Enter') return;
+
+    const target = event.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   }
 
@@ -1625,11 +1652,25 @@ export default function PilotReviewersPage() {
         ) : null}
 
         {preflightResult?.organization ? (
-          <section style={suspendCardStyle} aria-label="Suspend customer access">
+          <section
+            style={suspendCardStyle}
+            aria-label="Suspend customer access"
+            onKeyDown={preventSuspensionImplicitSubmit}
+          >
             <h3 style={sectionTitleStyle}>Suspend customer access</h3>
-            <p style={helperTextStyle}>
-              Suspension blocks login and existing authenticated sessions without deleting customer data.
-            </p>
+            <div role="note" aria-label="Customer suspension consequences" style={warningStyle}>
+              <strong>Suspension consequences</strong>
+              <p>
+                Suspending this customer blocks login and existing authenticated access and stops future customer
+                mutations and intake while suspended. The current real-data authorization and any active bound
+                REAL_CUSTOMER_DATA AI authorization will be withdrawn.
+              </p>
+              <p>
+                Existing ActivityData, Documents/files, reports, quota policy and configuration, and historical
+                audit/compliance evidence are preserved. Suspension does not erase the workspace or delete existing
+                customer data.
+              </p>
+            </div>
             <div style={readonlySummaryStyle}>
               <div><strong>Organization:</strong> {preflightResult.organization.name}</div>
               <div><strong>Slug:</strong> {preflightResult.organization.slug}</div>
@@ -1642,6 +1683,35 @@ export default function PilotReviewersPage() {
                 style={inputStyle}
                 autoComplete="off"
               />
+            </label>
+            <label style={labelStyle}>
+              Suspension reason
+              <textarea
+                value={suspensionReason}
+                onChange={(event) => setSuspensionReason(event.target.value)}
+                style={textareaStyle}
+                aria-describedby="suspension-reason-count suspension-reason-error"
+              />
+              <span id="suspension-reason-count" style={helperTextStyle}>
+                {suspensionReason.length} / 500 characters
+              </span>
+            </label>
+            {suspensionReason.length > 0 && !suspensionReason.trim() ? (
+              <div id="suspension-reason-error" style={errorStyle}>
+                Suspension reason cannot be blank or whitespace only.
+              </div>
+            ) : suspensionReason.length > 500 ? (
+              <div id="suspension-reason-error" style={errorStyle}>
+                Suspension reason must be 500 characters or fewer.
+              </div>
+            ) : null}
+            <label style={purposeOptionStyle}>
+              <input
+                type="checkbox"
+                checked={suspensionConsequencesConfirmed}
+                onChange={(event) => setSuspensionConsequencesConfirmed(event.target.checked)}
+              />
+              <span>I understand and confirm the customer suspension consequences described above.</span>
             </label>
             {preflightResult.organization.customerStatus !== 'ACTIVE' ? (
               <div style={warningStyle}>
@@ -1664,12 +1734,18 @@ export default function PilotReviewersPage() {
               disabled={
                 suspending ||
                 preflightResult.organization.customerStatus !== 'ACTIVE' ||
-                slugConfirmation !== preflightResult.organization.slug
+                slugConfirmation !== preflightResult.organization.slug ||
+                !suspensionReason.trim() ||
+                suspensionReason.trim().length > 500 ||
+                !suspensionConsequencesConfirmed
               }
               style={dangerButtonStyle(
                 suspending ||
                 preflightResult.organization.customerStatus !== 'ACTIVE' ||
-                slugConfirmation !== preflightResult.organization.slug,
+                slugConfirmation !== preflightResult.organization.slug ||
+                !suspensionReason.trim() ||
+                suspensionReason.trim().length > 500 ||
+                !suspensionConsequencesConfirmed,
               )}
             >
               {suspending ? 'Suspending...' : 'Suspend customer'}

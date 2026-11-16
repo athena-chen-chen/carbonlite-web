@@ -216,8 +216,16 @@ export function getCustomerPreflight(input: CustomerPreflightLookup) {
 export function suspendCustomerOrganization(input: {
   organizationId: string;
   organizationSlug: string;
+  suspensionReason: string;
 }) {
   requirePlatformAdmin();
+  const suspensionReason = input.suspensionReason.trim();
+  if (!suspensionReason) {
+    throw new Error('Suspension reason is required.');
+  }
+  if (suspensionReason.length > 500) {
+    throw new Error('Suspension reason must be 500 characters or fewer.');
+  }
   return apiFetch<SuspendCustomerOrganizationResponse>(
     '/admin/customer-provisioning/suspend',
     {
@@ -226,6 +234,7 @@ export function suspendCustomerOrganization(input: {
         organizationId: input.organizationId,
         confirmationOrganizationId: input.organizationId,
         confirmationOrganizationSlug: input.organizationSlug,
+        suspensionReason,
         confirmSuspend: true,
       }),
     },

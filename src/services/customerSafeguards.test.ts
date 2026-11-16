@@ -89,6 +89,7 @@ describe('customer safeguard admin service', () => {
     expect(() => suspendCustomerOrganization({
       organizationId: 'customer-org',
       organizationSlug: 'customer-org',
+      suspensionReason: 'Test suspension',
     })).toThrow('You do not have permission to perform this action.');
     expect(() => provisionPaidPilotCustomer({
       organizationId: 'customer-org',
@@ -245,6 +246,7 @@ describe('customer safeguard admin service', () => {
     await suspendCustomerOrganization({
       organizationId: 'org-123',
       organizationSlug: 'acme-pilot',
+      suspensionReason: '  P0 synthetic suspension rehearsal  ',
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -255,10 +257,26 @@ describe('customer safeguard admin service', () => {
           organizationId: 'org-123',
           confirmationOrganizationId: 'org-123',
           confirmationOrganizationSlug: 'acme-pilot',
+          suspensionReason: 'P0 synthetic suspension rehearsal',
           confirmSuspend: true,
         }),
       }),
     );
+  });
+
+  it.each([
+    ['blank', '   ', 'Suspension reason is required.'],
+    ['over-length', 'x'.repeat(501), 'Suspension reason must be 500 characters or fewer.'],
+  ])('rejects a %s suspension reason without calling the API', (_case, suspensionReason, message) => {
+    setCurrentUser('ADMIN');
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    expect(() => suspendCustomerOrganization({
+      organizationId: 'org-123',
+      organizationSlug: 'acme-pilot',
+      suspensionReason,
+    })).toThrow(message);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('sends the exact organization-scoped quota and AI authorization payloads', async () => {
