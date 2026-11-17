@@ -2231,7 +2231,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
   });
 
   it('uses the selected non-current report period in the Inventory boundary', async () => {
-    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValueOnce({
+    vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({
       startDate: '2024-01-01',
       endDate: '2024-12-31',
       hasActivityRecords: true,
