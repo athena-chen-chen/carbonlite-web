@@ -12,6 +12,7 @@ import { formatDisplayNumber, formatEmissionsValue } from './numberFormatting';
 import { escapeCsvValue } from './csv';
 import {
   getDisplayFactorVersion,
+  formatReportAssumptions,
   formatReportSourceReference,
   isRecordRequiringCorrection,
   isTrackedMetricDetail,
@@ -307,7 +308,7 @@ export function buildReviewPackageFactorSourceSummaryCsv(factors: FormalConversi
         clean(factor.confidence || factor.confidenceLevel),
       clean(factor.boundary),
       clean(factor.sourceUrl || factor.sourceDocument),
-      clean(factor.notes || factor.assumptions),
+      formatReportAssumptions({ ...factor, assumptions: factor.notes || factor.assumptions }),
     ]),
   );
 }
