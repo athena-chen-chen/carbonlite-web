@@ -293,7 +293,7 @@ describe('UserActivityPage', () => {
 
     await screen.findByText('Document Uploaded');
     const activeUsersCard = screen.getByRole('button', { name: /Active Users/i });
-    expect(activeUsersCard).toHaveTextContent('4');
+    await waitFor(() => expect(activeUsersCard).toHaveTextContent('4'));
 
     await userEvent.click(activeUsersCard);
 
