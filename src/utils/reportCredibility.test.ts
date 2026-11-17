@@ -6,6 +6,7 @@ import {
   EXACT_YEAR_ELECTRICITY_ASSUMPTION,
   PRIOR_YEAR_ELECTRICITY_ASSUMPTION,
   REFERENCE_ONLY_RESTRICTION,
+  classifyReportFactorGovernance,
   formatReportAssumptions,
   formatTraceabilityReviewNote,
   isReportFactorPilotStage,
@@ -55,6 +56,8 @@ function detail(overrides: Partial<CalculationAuditDetail> = {}): CalculationAud
     activityUnit: 'kWh',
     factorName: 'Electricity - Alberta - 2026 Location-based',
     factorValue: 0.438,
+    factorInputUnit: 'kWh',
+    factorResultUnit: 'kgCO2e',
     factorYear: 2026,
     sourceYear: 2026,
     factorSource: 'Environment and Climate Change Canada',
@@ -147,5 +150,46 @@ describe('report factor-governance wording', () => {
       factorStatus: 'REFERENCE_ONLY',
       factorProvenance: { applicability: 'REFERENCE_ONLY', emissionBasis: 'DIRECT_CO2E' },
     }))).toBe(false);
+  });
+
+  it('fails closed when report governance metadata is missing or incomplete', () => {
+    expect(classifyReportFactorGovernance(factor({ factorProvenance: null })))
+      .toBe('NEEDS_REVIEW');
+    expect(classifyReportFactorGovernance(factor({
+      factorProvenance: {
+        applicability: 'CORPORATE_INVENTORY',
+        emissionBasis: 'DIRECT_CO2E',
+        factorStatus: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+      },
+    }))).toBe('NEEDS_REVIEW');
+  });
+
+  it('delegates governed eligibility to the canonical inventory predicate', () => {
+    expect(classifyReportFactorGovernance(factor())).toBe('CALCULATION_ELIGIBLE');
+    expect(classifyReportFactorGovernance(factor({
+      verified: true,
+      factorStatus: 'REFERENCE_ONLY',
+      factorProvenance: {
+        applicability: 'REFERENCE_ONLY',
+        emissionBasis: 'DIRECT_CO2E',
+        calculationEligible: true,
+        factorStatus: 'REFERENCE_ONLY',
+        verificationStatus: 'VERIFIED',
+      },
+    }))).toBe('NEEDS_REVIEW');
+    expect(classifyReportFactorGovernance(factor({
+      factorProvenance: {
+        applicability: 'CORPORATE_INVENTORY',
+        emissionBasis: 'DIRECT_CO2E',
+        calculationEligible: true,
+        factorStatus: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+        isActive: false,
+      },
+    }))).toBe('NEEDS_REVIEW');
+    expect(classifyReportFactorGovernance(factor({
+      factorId: 'pilot-electricity-ab-2026',
+    }))).toBe('NEEDS_REVIEW');
   });
 });
