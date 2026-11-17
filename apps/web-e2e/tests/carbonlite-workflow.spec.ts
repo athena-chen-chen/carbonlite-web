@@ -65,7 +65,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
     });
 
     await expectExtractedPreview();
-    await expect(documentRow).toContainText('Needs Review');
+    await expect(documentRow).toContainText('Ready for Review');
     expect(api.extractionRequests).toBe(1);
   });
 
