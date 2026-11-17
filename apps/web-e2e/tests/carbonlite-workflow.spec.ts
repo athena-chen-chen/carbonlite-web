@@ -40,7 +40,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
 
   await test.step('upload document', async () => {
     await page.goto('/upload');
-    await expect(page.getByRole('heading', { name: 'Input Data' }))
+    await expect(page.getByRole('heading', { name: 'Input data' }))
       .toBeVisible();
 
     await page.locator('#document-upload-input').setInputFiles({
@@ -73,9 +73,9 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
     await page.reload();
     await openPersistedPreview();
 
-    await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
+    await page.getByRole('link', { name: 'Calculation results', exact: true }).click();
     await expect(page).toHaveURL(/\/metrics-summary$/);
-    await page.getByRole('link', { name: 'Input Data', exact: true }).click();
+    await page.getByRole('link', { name: 'Input data', exact: true }).click();
     await openPersistedPreview();
 
     await page.evaluate(() => {
@@ -103,10 +103,10 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
   await test.step('import activity records once and generate metrics', async () => {
     await page.getByRole('button', { name: 'Confirm Import' }).click();
     await expect(page).toHaveURL(/\/data-records$/);
-    await expect(page.getByRole('heading', { name: 'Data Records' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Data records' })).toBeVisible();
     await expect(page.getByRole('main').getByText('Import completed successfully')).toBeVisible();
 
-    await page.getByRole('link', { name: 'Calculation Results', exact: true }).click();
+    await page.getByRole('link', { name: 'Calculation results', exact: true }).click();
     await expect(page).toHaveURL(/\/metrics-summary$/);
     await expect(page.getByText('85.60 kg CO₂e').first()).toBeVisible();
     await expect(page.getByText('4,280 kWh').first()).toBeVisible();
@@ -118,7 +118,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
   });
 
   await test.step('confirm imported document status', async () => {
-    await page.getByRole('link', { name: 'Input Data', exact: true }).click();
+    await page.getByRole('link', { name: 'Input data', exact: true }).click();
     const documentRow = page.getByRole('row').filter({
       hasText: sourceFileName,
     });
