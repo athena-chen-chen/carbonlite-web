@@ -6,6 +6,7 @@ import { getAllConversionFactors } from '../../../services/conversionFactors';
 import { calculateMetrics } from '../../../services/metrics';
 import { buildDocumentImportRecordKey } from '../domain/importIdentity';
 import type { DocumentItem } from '../inputData.types';
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../../../test/legitimateFactorMetadata';
 
 vi.mock('../../../services/documentExtraction', async importOriginal => ({ ...await importOriginal<typeof import('../../../services/documentExtraction')>(), confirmDocumentImport: vi.fn(), extractDocument: vi.fn(), getDocumentExtraction: vi.fn() }));
 vi.mock('../../../services/activityData', () => ({ getAllActivityData: vi.fn(), createActivityData: vi.fn() }));
@@ -119,6 +120,7 @@ it('re-evaluates Missing Province rows canonically after applying Alberta and re
   const electricity = { ...water, activityType: 'ELECTRICITY', quantity: 980, unit: 'kWh', jurisdictionCountry: 'Canada', jurisdictionRegion: '' };
   vi.mocked(getDocumentExtraction).mockResolvedValue(extraction('source', [electricity]));
   vi.mocked(getAllConversionFactors).mockResolvedValue([{
+    ...LEGITIMATE_OFFICIAL_FACTOR,
     id: 'electricity-ab', name: 'Electricity Alberta', type: 'EMISSION', activityType: 'ELECTRICITY',
     inputUnit: 'kWh', unit: 'kWh', factorValue: 0.53, resultUnit: 'kgCO2e',
     jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', sourceYear: 2026,

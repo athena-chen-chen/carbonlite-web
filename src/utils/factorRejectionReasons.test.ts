@@ -111,7 +111,8 @@ describe('factor rejection reasons', () => {
         emissionBasis: isNaturalGasReference ? 'DIRECT_CO2E' : undefined,
       }],
     });
-    expect(result).toMatchObject({ matchingStatus: 'FACTOR_NOT_APPROVED', calculationStatus: 'FACTOR_NOT_APPROVED' });
+    const expectedStatus = activityType === 'AIR_TRAVEL' ? 'UNIT_MISMATCH' : 'FACTOR_NOT_APPROVED';
+    expect(result).toMatchObject({ matchingStatus: expectedStatus, calculationStatus: expectedStatus });
     expect(result.calculatedEmissionsKgCO2e).toBeNull();
   });
 

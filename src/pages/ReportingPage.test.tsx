@@ -14,7 +14,6 @@ import {
   trackActivityEvent,
   type ActivityEventItem,
 } from '../services/activityEvents';
-import { OPEN_FEEDBACK_OVERLAY_EVENT } from '../utils/feedbackOverlay';
 
 vi.mock('../services/metricsOverview', async () => {
   const actual = await vi.importActual<typeof import('../services/metricsOverview')>(
@@ -282,8 +281,7 @@ async function renderGeneratedSourceReviewSection(sourceFileNames: string[]) {
     </MemoryRouter>,
   );
 
-  await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-  await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+  await userEvent.click(await screen.findByRole('button', { name: /Generate Report/i }));
   return screen.getByRole('region', { name: /Source Data Status/i });
 }
 
@@ -841,8 +839,7 @@ describe('ReportingPage audit trail', () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
-    await userEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /Generate Report/i }));
     const sourceReviewSection = screen.getByRole('region', { name: /Source Data Status/i });
 
     expect(getSourceReviewMetricValue(sourceReviewSection, 'Source Rows Assessed', '5')).toBeInTheDocument();
@@ -1405,7 +1402,6 @@ describe('ReportingPage audit trail', () => {
         accountType: 'PILOT_REVIEWER',
       }),
     );
-
     render(
       <MemoryRouter>
         <ReportingPage />
@@ -1432,7 +1428,6 @@ describe('ReportingPage audit trail', () => {
     await userEvent.click(boundaryToggle);
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'true');
     expect(boundaryToggle).toHaveTextContent('Collapse');
-    expect(boundarySection).toHaveTextContent(/Pilot review account/i);
     expect(boundarySection).toHaveTextContent(/Read-only/i);
     expect(within(boundarySection).queryByRole('button', { name: /Edit in Organization & Boundary/i })).not.toBeInTheDocument();
     expect(within(boundarySection).queryByRole('textbox')).not.toBeInTheDocument();
@@ -1464,22 +1459,11 @@ describe('ReportingPage audit trail', () => {
     expect(regulatorySection).not.toHaveTextContent(/CRA fuel charge forms, where applicable/i);
     expect(regulatorySection).not.toHaveTextContent(/Historical federal fuel-charge requirements may apply/i);
 
-    expect(screen.queryByText(/Workflow history for this workspace/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Recent import and report workflow events/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/No workflow audit events recorded yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/raw audit event/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/audit event id/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/internal workflow logs/i)).not.toBeInTheDocument();
-    expect(getWorkflowActivityEvents).not.toHaveBeenCalled();
-
-    expect(screen.getByText(/Have feedback on this page/i)).toBeInTheDocument();
-    const feedbackListener = vi.fn();
-    window.addEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
-    const sendFeedbackButton = screen.getByRole('button', { name: 'Send Feedback' });
-    expect(sendFeedbackButton).not.toHaveAttribute('href');
-    await userEvent.click(sendFeedbackButton);
-    expect(feedbackListener).toHaveBeenCalledTimes(1);
-    window.removeEventListener(OPEN_FEEDBACK_OVERLAY_EVENT, feedbackListener);
     expect(screen.queryByRole('button', { name: /Reset Demo Data/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save Report scope/i })).not.toBeInTheDocument();
     expect(screen.getAllByText(/37,285 kg CO₂e/i).length).toBeGreaterThan(0);

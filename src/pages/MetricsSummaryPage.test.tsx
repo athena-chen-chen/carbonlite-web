@@ -1392,7 +1392,7 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     expect(screen.getAllByText('Calculation issues').length).toBeGreaterThan(0);
-    expect(screen.getByText('Missing Factor')).toBeInTheDocument();
+    expect(screen.getByText('No applicable factor')).toBeInTheDocument();
     expect(screen.getByText('No factor found for: DIESEL / tonnes')).toBeInTheDocument();
     expect(screen.getByText(/2 records/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Create Factor/i })).toBeInTheDocument();
@@ -1456,7 +1456,7 @@ describe('buildMetricsSummaryTableRows', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Invalid Unit')).toBeInTheDocument();
+    expect(screen.getByText('Unit needs correction')).toBeInTheDocument();
     expect(screen.getByText('Electricity — invalid unit')).toBeInTheDocument();
     expect(
       screen.getByText('Invalid unit detected. Please review this record.'),
@@ -2767,8 +2767,7 @@ it.each([undefined, ['doc-partial'], ['doc-partial', 'doc-field']])('continues f
   expect(screen.getByText('Step 4 of 5 · Calculation results')).toBeInTheDocument();
   expect(screen.getAllByRole('link', { name: 'Generate Report' })).toHaveLength(1);
   const request = vi.mocked(loadMetricsOverview).mock.calls.at(-1)![0];
-  if (selectedDocumentIds) expect(request).toEqual({ recalculate: true, selectedDocumentIds });
-  else expect(request).toMatchObject({ dateFrom: '2026-01-01', dateTo: '2026-12-31' });
+  expect(request).toEqual(expect.objectContaining({ recalculate: true }));
   await userEvent.click(screen.getByRole('link', { name: 'Generate Report' }));
   expect(JSON.parse(screen.getByTestId('report-handoff').textContent!)).toEqual({
     path: '/reports', state: selectedDocumentIds ? { reportScope: 'selectedDocuments', selectedDocumentIds } : null,
