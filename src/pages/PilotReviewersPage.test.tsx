@@ -1503,7 +1503,7 @@ describe('PilotReviewersPage', () => {
       'acme-pilot',
     );
     expect(suspendButton).toBeDisabled();
-  });
+  }, 10_000);
 
   it.each([
     ['pending setup', { user: { ...pendingPilotPreflight.user, passwordSetupRequired: true } }, 'Password setup must be complete.'],

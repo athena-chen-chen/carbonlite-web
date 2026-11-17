@@ -41,8 +41,8 @@ const approvedTestAlbertaElectricityFactor = {
   jurisdictionRegion: 'Alberta',
   ...LEGITIMATE_OFFICIAL_FACTOR,
   factorVersion: 'v1.0',
-  verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
-  confidenceLevel: 'LOW',
+  verificationStatus: 'VERIFIED',
+  confidenceLevel: 'OFFICIAL_GOVERNMENT',
   assumptions: 'Historical arithmetic only; numerical methodology is outside this test.',
   isSystemDefault: true,
   isDefault: true,
@@ -343,6 +343,7 @@ describe('document import factor matching metadata', () => {
           unit: 'kWh',
           factorValue: 0.02,
           resultUnit: 'kgCO2e/kWh',
+          ...LEGITIMATE_OFFICIAL_FACTOR,
           sourceYear: 2025,
           jurisdictionCountry: 'Canada',
           jurisdictionRegion: 'British Columbia',
@@ -428,8 +429,8 @@ describe('document import factor matching metadata', () => {
       matchedFactorVersion: 'v1.0',
       matchedFactorSourceAuthority: LEGITIMATE_OFFICIAL_FACTOR.sourceAuthority,
       matchedFactorSourceDocument: LEGITIMATE_OFFICIAL_FACTOR.sourceDocument,
-      matchedFactorVerificationStatus: 'INTERNAL_REVIEW_REQUIRED',
-      matchedFactorConfidenceLevel: 'LOW',
+      matchedFactorVerificationStatus: 'VERIFIED',
+      matchedFactorConfidenceLevel: 'OFFICIAL_GOVERNMENT',
       factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
       calculatedEmissionsKgCO2e: excelEvaluation.calculatedEmissionsKgCO2e,
     });
@@ -468,12 +469,12 @@ describe('document import factor matching metadata', () => {
     });
 
     expect(excelEvaluation).toMatchObject({
-      status: 'NEEDS_REVIEW', matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      status: 'NEEDS_REVIEW', matchingStatus: 'FACTOR_NOT_APPROVED', calculationStatus: 'FACTOR_NOT_APPROVED',
       reportTreatment: 'EXCLUDED', importEligible: false,
       calculatedEmissionsKgCO2e: null,
     });
     expect(documentPayload).toMatchObject({
-      matchingStatus: 'MISSING_FACTOR', calculationStatus: 'MISSING_FACTOR',
+      matchingStatus: 'FACTOR_NOT_APPROVED', calculationStatus: 'FACTOR_NOT_APPROVED',
       reportTreatment: 'EXCLUDED',
     });
     expect(excelEvaluation.matchedFactorId).toBeUndefined();
@@ -656,7 +657,7 @@ describe('document import factor matching metadata', () => {
       matchedFactorId: undefined,
       matchedFactorSourceYear: undefined,
       calculatedEmissionsKgCO2e: undefined,
-      calculationStatus: 'MISSING_FACTOR',
+      calculationStatus: 'FACTOR_NOT_APPROVED',
     });
   });
 
@@ -678,9 +679,9 @@ describe('document import factor matching metadata', () => {
     expect(payload).toMatchObject({
       activityType: 'ELECTRICITY',
       jurisdictionRegion: 'Saskatchewan',
-      matchingStatus: 'MISSING_FACTOR',
+      matchingStatus: 'NO_FACTOR_FOUND',
       reportTreatment: 'EXCLUDED',
-      calculationStatus: 'MISSING_FACTOR',
+      calculationStatus: 'NO_FACTOR_FOUND',
     });
   });
 });
@@ -923,9 +924,9 @@ describe('document upload action model', () => {
       label: 'Extract',
     });
     expect(model.menuActions.map((action) => action.label)).toEqual([
-      'View Details',
-      'Download Source File',
-      'Delete Source Document',
+      'View details',
+      'Download source file',
+      'Delete source document',
     ]);
   });
 
@@ -943,11 +944,11 @@ describe('document upload action model', () => {
     });
     expect(model.primaryAction.label).not.toBe('Extract');
     expect(model.menuActions.map((action) => action.label)).toEqual([
-      'View Details',
-      'Download Source File',
+      'View details',
+      'Download source file',
       'Import',
       'Re-extract',
-      'Delete Source Document',
+      'Delete source document',
     ]);
   });
 
@@ -964,9 +965,9 @@ describe('document upload action model', () => {
       label: 'View Imported Records',
     });
     expect(model.menuActions.map((action) => action.label)).toEqual([
-      'View Details',
-      'Download Source File',
-      'Delete Source Document',
+      'View details',
+      'Download source file',
+      'Delete source document',
     ]);
     expect(model.menuActions.map((action) => action.label)).not.toContain('Import');
     expect(model.menuActions.map((action) => action.label)).not.toContain('Extract');
@@ -981,7 +982,7 @@ describe('document upload action model', () => {
       label: 'Retry Extraction',
       title: 'Run extraction again',
     });
-    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete Source Document']);
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete source document']);
   });
 
   it('file missing documents show Upload Again and direct Delete actions', () => {
@@ -993,7 +994,7 @@ describe('document upload action model', () => {
       label: 'Upload Again',
       title: FILE_MISSING_TOOLTIP,
     });
-    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete Source Document']);
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete source document']);
   });
 
   it('handles backend REUPLOAD_REQUIRED status the same as FILE_MISSING', () => {
@@ -1005,7 +1006,7 @@ describe('document upload action model', () => {
       label: 'Upload Again',
       title: FILE_MISSING_TOOLTIP,
     });
-    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete Source Document']);
+    expect(model.menuActions.map((action) => action.label)).toEqual(['Delete source document']);
     expect(FILE_MISSING_EXPLANATION).toContain(
       'system updates or temporary storage cleanup',
     );

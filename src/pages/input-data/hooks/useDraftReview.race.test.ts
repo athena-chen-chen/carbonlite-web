@@ -7,6 +7,7 @@ import { calculateMetrics } from '../../../services/metrics';
 import { buildDocumentImportRecordKey } from '../domain/importIdentity';
 import type { SpreadsheetReviewRowInput } from '../../../services/spreadsheetReviewRows';
 import type { DocumentItem } from '../inputData.types';
+import { LEGITIMATE_OFFICIAL_FACTOR } from '../../../test/legitimateFactorMetadata';
 
 vi.mock('../../../services/documentExtraction', async importOriginal => ({ ...await importOriginal<typeof import('../../../services/documentExtraction')>(), confirmDocumentImport: vi.fn(), extractDocument: vi.fn(), getDocumentExtraction: vi.fn() }));
 vi.mock('../../../services/activityData', () => ({ getAllActivityData: vi.fn(), createActivityData: vi.fn() }));
@@ -44,6 +45,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 const factor = (activityType: string, region: string, value: number) => ({
+  ...LEGITIMATE_OFFICIAL_FACTOR,
   id: `${activityType}-${region}`, name: `${activityType} ${region}`, type: 'EMISSION', activityType,
   inputUnit: activityType === 'ELECTRICITY' ? 'kWh' : 'L', unit: activityType === 'ELECTRICITY' ? 'kWh' : 'L',
   factorValue: value, resultUnit: 'kgCO2e', jurisdictionCountry: 'Canada', jurisdictionRegion: region,

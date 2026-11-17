@@ -9,6 +9,7 @@ import { getConversionFactors } from '../services/conversionFactors';
 import { getFactorVersion, getFactorVersions, getFactorHistory, getFactorVersionUsage } from '../services/factorVersions';
 import { findBestConversionFactorMatch } from '../utils/conversionFactorMatching';
 import { isInventoryFactorEligible } from '../utils/factorGovernance';
+import { LEGITIMATE_OFFICIAL_FACTOR } from './legitimateFactorMetadata';
 
 vi.mock('../services/conversionFactors', () => ({ getConversionFactors: vi.fn(), createConversionFactor: vi.fn(), updateConversionFactor: vi.fn(), deleteConversionFactor: vi.fn() }));
 vi.mock('../services/factorVersions', () => ({ getFactorVersion: vi.fn(), getFactorVersions: vi.fn(), getFactorHistory: vi.fn(), getFactorVersionUsage: vi.fn() }));
@@ -53,7 +54,7 @@ describe('official Alberta EGDF using the exact library seed records', () => {
   });
 
   it('keeps corporate 1000 kWh at 530 with both native and SI-equivalent offset candidates', () => {
-    const inventory = { id: 'existing-alberta', name: 'Electricity - Alberta', activityType: 'ELECTRICITY', unit: 'kWh', resultUnit: 'kgCO2e', factorValue: 0.53, sourceYear: 2025, region: 'Alberta', country: 'Canada', isSystemDefault: true };
+    const inventory = { id: 'existing-alberta', name: 'Electricity - Alberta', activityType: 'ELECTRICITY', unit: 'kWh', resultUnit: 'kgCO2e', factorValue: 0.53, sourceYear: 2025, region: 'Alberta', country: 'Canada', isSystemDefault: true, ...LEGITIMATE_OFFICIAL_FACTOR };
     const input = { activityType: 'ELECTRICITY', inputUnit: 'kWh', quantity: 1000, jurisdictionCountry: 'Canada', jurisdictionRegion: 'Alberta', recordYear: 2026 };
     for (const candidate of [legacy, { ...legacy, unit: 'kWh', resultUnit: 'kgCO2e' }, { ...albertaEgdfFactor, id: ALBERTA_EGDF_FACTOR_ID, name: ALBERTA_EGDF_NAME, currentActiveVersion: { ...version, inputUnit: 'kWh', resultUnit: 'kgCO2e' } }]) {
       expect(isInventoryFactorEligible(albertaEgdfVersion)).toBe(false);
