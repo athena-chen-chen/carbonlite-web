@@ -1,6 +1,4 @@
 import { expect, test } from '@playwright/test';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   createCarbonLiteApiState,
   installCarbonLiteApiMock,
@@ -10,10 +8,7 @@ import {
   monitorCriticalFailures,
 } from '../support/smoke-test';
 
-const fixturePath = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../fixtures/enmax-electricity.csv',
-);
+const sourceFileName = 'enmax-electricity.pdf';
 
 test('@smoke upload, extract, import, summarize, report, and export', async ({ page }) => {
   const api = createCarbonLiteApiState();
@@ -37,7 +32,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
 
   async function openPersistedPreview() {
     const documentRow = page.getByRole('row').filter({
-      hasText: 'enmax-electricity.csv',
+      hasText: sourceFileName,
     });
     await documentRow.getByRole('button', { name: 'Review Rows' }).click();
     await expectExtractedPreview();
@@ -48,11 +43,15 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
     await expect(page.getByRole('heading', { name: 'Input Data' }))
       .toBeVisible();
 
-    await page.locator('#document-upload-input').setInputFiles(fixturePath);
+    await page.locator('#document-upload-input').setInputFiles({
+      name: sourceFileName,
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4\n% CarbonLite synthetic workflow fixture\n'),
+    });
     await page.getByRole('button', { name: 'Extract Data' }).click();
 
     const documentRow = page.getByRole('row').filter({
-      hasText: 'enmax-electricity.csv',
+      hasText: sourceFileName,
     });
     await expect(documentRow).toContainText('Uploaded');
     expect(api.uploadRequests).toBe(1);
@@ -62,7 +61,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
   await test.step('extract and review document', async () => {
     api.releaseExtraction();
     const documentRow = page.getByRole('row').filter({
-      hasText: 'enmax-electricity.csv',
+      hasText: sourceFileName,
     });
 
     await expectExtractedPreview();
@@ -121,7 +120,7 @@ test('@smoke upload, extract, import, summarize, report, and export', async ({ p
   await test.step('confirm imported document status', async () => {
     await page.getByRole('link', { name: 'Input Data', exact: true }).click();
     const documentRow = page.getByRole('row').filter({
-      hasText: 'enmax-electricity.csv',
+      hasText: sourceFileName,
     });
     await expect(documentRow).toContainText('Imported');
     await expect(documentRow.getByRole('button', { name: 'View Imported Records' })).toBeVisible();

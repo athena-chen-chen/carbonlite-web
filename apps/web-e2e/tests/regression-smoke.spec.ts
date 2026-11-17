@@ -277,7 +277,7 @@ test('@smoke data records Columns menu opens and toggles columns', async ({ page
   failures.assertClean(api.unexpectedRequests);
 });
 
-test('@smoke emission factors load as read-only for standard users', async ({ page }) => {
+test('@smoke approved methodology factors load as read-only for standard users', async ({ page }) => {
   const api = createCarbonLiteApiState();
   const failures = monitorCriticalFailures(page);
   await authenticateTestUser(page);
@@ -285,15 +285,14 @@ test('@smoke emission factors load as read-only for standard users', async ({ pa
 
   await page.goto('/conversion-factors');
   await expect(page.getByRole('heading', {
-    name: 'Factor Library',
+    name: 'Methodology & emission factors',
   })).toBeVisible();
   const systemRow = page.getByRole('row').filter({
     hasText: 'Electricity - British Columbia - 2026',
   });
   await expect(systemRow).toBeVisible();
-  await expect(systemRow).toContainText('VERIFIED');
-  await expect(systemRow.getByText('Read-only')).toBeVisible();
-  await expect(page.getByText(/Only Owners and Admins can create, edit, or delete/)).toBeVisible();
+  await expect(systemRow).toContainText('Approved');
+  await expect(page.getByText('Read-only methodology reference')).toBeVisible();
   expect(api.factorCreateRequests).toBe(0);
   expect(api.factorDeleteRequests).toBe(0);
   failures.assertClean(api.unexpectedRequests);
