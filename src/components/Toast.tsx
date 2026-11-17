@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 type ToastType = 'success' | 'error' | 'info';
 type Toast = { id: string; message: string; type: ToastType; duration: number };
@@ -9,11 +9,22 @@ const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const removalTimers = useRef(new Set<number>());
+
+  useEffect(() => () => {
+    removalTimers.current.forEach(timer => window.clearTimeout(timer));
+    removalTimers.current.clear();
+  }, []);
+
   const push = useCallback((message: string, type: ToastType = 'info', duration = 3000) => {
     const id = uid();
     const t: Toast = { id, message, type, duration };
     setToasts(s => [...s, t]);
-    window.setTimeout(() => setToasts(s => s.filter(x => x.id !== id)), duration);
+    const timer = window.setTimeout(() => {
+      removalTimers.current.delete(timer);
+      setToasts(s => s.filter(x => x.id !== id));
+    }, duration);
+    removalTimers.current.add(timer);
   }, []);
   return (
     <Ctx.Provider value={{ push }}>
