@@ -13,6 +13,9 @@ export const EXACT_YEAR_ELECTRICITY_ASSUMPTION =
 export const PRIOR_YEAR_ELECTRICITY_ASSUMPTION =
   'Jurisdiction-specific electricity factor from the latest available prior year was used because no exact activity-year factor was available.';
 
+export const REFERENCE_ONLY_RESTRICTION =
+  'Reference-only factor; not eligible for corporate-inventory calculation.';
+
 export const SCOPE_3_PILOT_ASSUMPTION =
   'Pilot-stage Scope 3 estimate. Scope 3 calculations can vary by methodology, boundary, and factor source. Consultant review recommended before official reporting.';
 
@@ -185,7 +188,14 @@ export function formatReportAssumptions(input: {
   const direct = cleanText(input.assumptions);
 
   if (isReferenceOnlyFactor(input)) {
-    return 'Reference-only factor; not eligible for corporate-inventory calculation.';
+    const methodologyAssumption = direct &&
+      !/^none documented$/i.test(direct) &&
+      !isLegacyElectricityPilotAssumption(direct)
+      ? direct
+      : '';
+    return methodologyAssumption
+      ? `${REFERENCE_ONLY_RESTRICTION} Methodology assumption: ${methodologyAssumption}`
+      : REFERENCE_ONLY_RESTRICTION;
   }
 
   const hasDirectAssumption = direct && !/^none documented$/i.test(direct);
@@ -250,6 +260,23 @@ function isVerifiedInventoryFactor(input: {
   if (lifecycle && !['ACTIVE', 'APPROVED', 'OFFICIAL', 'VERIFIED'].includes(lifecycle)) return false;
   if (/(?:PENDING|REQUIRED|REJECTED|UNVERIFIED|DRAFT|EXPIRED|RETIRED)/.test(verification)) return false;
   return true;
+}
+
+export function isReportFactorPilotStage(input: {
+  verified?: boolean | null;
+  factorStatus?: string | null;
+  verificationStatus?: string | null;
+  factorProvenance?: FactorProvenanceSnapshot | null;
+}) {
+  if (isVerifiedInventoryFactor(input)) return false;
+
+  const lifecycle = normalizeStatus(
+    input.factorStatus ?? input.factorProvenance?.factorStatus ?? input.factorProvenance?.status,
+  );
+  const verification = normalizeStatus(
+    input.verificationStatus ?? input.factorProvenance?.verificationStatus,
+  );
+  return /(?:^|_)(?:PILOT|DEMO|DRAFT|PLACEHOLDER)(?:_|$)/.test(`${lifecycle}_${verification}`);
 }
 
 function factorYearForReport(input: { factorYear?: number | null; effectiveYear?: number | null; sourceYear?: number | null }) {

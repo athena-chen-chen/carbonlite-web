@@ -7,6 +7,7 @@ import { type SiteFacilityBreakdownRow } from '../../utils/siteFacilityBreakdown
 import { type InventoryBoundary } from '../../constants/inventoryBoundary';
 import { formatCalculationStatusLabel } from '../../utils/terminology';
 import { formatReadinessStatus, type ReportingReadinessAssessment } from '../../utils/reportingReadiness';
+import { isReportFactorPilotStage } from '../../utils/reportCredibility';
 import type { ReportDocumentControlMetadata, SourceReviewSummary } from '../domain/reportTypes';
 
 const REPORT_REVIEW_STATUS_NOT_REVIEWED = 'Not reviewed';
@@ -75,37 +76,7 @@ export function getPilotStageFactorCount(factors: FormalConversionFactorUsed[]) 
 }
 
 export function isPilotStageFactor(factor: FormalConversionFactorUsed) {
-  const sourceAuthority = normalizeFactorGovernanceText(factor.sourceAuthority);
-  const factorType = normalizeFactorGovernanceText(factor.factorType);
-  const governanceText = [
-    factor.factorName,
-    factor.factorStatus,
-    factor.verificationStatus,
-    factor.confidence,
-    factor.confidenceLevel,
-    factor.assumptions,
-    factor.notes,
-    factor.sourceAuthority,
-    factor.sourceDocument,
-    factor.factorSet,
-  ]
-    .map((value) => String(value ?? '').trim())
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return (
-    /\b(pilot|demo|draft|placeholder)\b/i.test(governanceText) ||
-    /carbonlite/.test(governanceText) ||
-    (sourceAuthority.includes('CARBONLITE') && factorType === 'SYSTEM')
-  );
-}
-
-export function normalizeFactorGovernanceText(value: unknown) {
-  return String(value ?? '')
-    .trim()
-    .replace(/[\s-]+/g, '_')
-    .toUpperCase();
+  return isReportFactorPilotStage(factor);
 }
 
 export function getReadinessItemStatus(

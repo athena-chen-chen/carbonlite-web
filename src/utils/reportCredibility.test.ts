@@ -5,8 +5,10 @@ import {
   ELECTRICITY_PILOT_ASSUMPTION,
   EXACT_YEAR_ELECTRICITY_ASSUMPTION,
   PRIOR_YEAR_ELECTRICITY_ASSUMPTION,
+  REFERENCE_ONLY_RESTRICTION,
   formatReportAssumptions,
   formatTraceabilityReviewNote,
+  isReportFactorPilotStage,
 } from './reportCredibility';
 
 function factor(overrides: Partial<FormalConversionFactorUsed> = {}): FormalConversionFactorUsed {
@@ -110,8 +112,40 @@ describe('report factor-governance wording', () => {
       .toBe('Reference-only factor is not eligible for corporate-inventory calculation.');
   });
 
+  it('shows a genuine reference-only methodology assumption without weakening the restriction', () => {
+    const assumption = 'Location-based grid average; transmission and distribution losses are excluded.';
+    expect(formatReportAssumptions(factor({
+      assumptions: assumption,
+      factorProvenance: { applicability: 'REFERENCE_ONLY', emissionBasis: 'DIRECT_CO2E' },
+    }))).toBe(`${REFERENCE_ONLY_RESTRICTION} Methodology assumption: ${assumption}`);
+  });
+
+  it('does not repeat legacy pilot or fallback wording for a reference-only factor', () => {
+    expect(formatReportAssumptions(factor({
+      factorYear: 2025,
+      sourceYear: 2025,
+      factorSelectionReason: 'PRIOR_YEAR_FALLBACK',
+      factorProvenance: { applicability: 'REFERENCE_ONLY', emissionBasis: 'DIRECT_CO2E' },
+    }))).toBe(REFERENCE_ONLY_RESTRICTION);
+  });
+
   it('preserves genuine methodology assumptions verbatim', () => {
     const assumption = 'Location-based grid average; transmission and distribution losses are excluded.';
     expect(formatReportAssumptions(factor({ assumptions: assumption }))).toBe(assumption);
+  });
+
+  it('uses canonical governance metadata for pilot-stage classification', () => {
+    expect(isReportFactorPilotStage(factor())).toBe(false);
+    expect(isReportFactorPilotStage(factor({
+      verified: false,
+      factorStatus: 'PILOT_DEMO',
+      verificationStatus: 'INTERNAL_REVIEW_REQUIRED',
+      factorProvenance: null,
+    }))).toBe(true);
+    expect(isReportFactorPilotStage(factor({
+      verified: false,
+      factorStatus: 'REFERENCE_ONLY',
+      factorProvenance: { applicability: 'REFERENCE_ONLY', emissionBasis: 'DIRECT_CO2E' },
+    }))).toBe(false);
   });
 });

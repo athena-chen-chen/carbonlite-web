@@ -201,7 +201,9 @@ describe('canonical report semantics', () => {
 
   it('renders exact-year verified electricity governance accurately without changing draft review status', () => {
     const { report } = goldenReport('enmax');
+    const inventoryTotalBefore = report.inventory.totalKgCO2e;
     const factor = report.factorReview.factors[0];
+    const factorValueBefore = factor.factorValue;
     Object.assign(factor, {
       activityType: 'ELECTRICITY',
       factorName: 'Electricity - Alberta - 2026 Location-based',
@@ -242,6 +244,8 @@ describe('canonical report semantics', () => {
     expect(technicalText).not.toContain('Review factor source before formal reporting.');
     expect(executiveText).toContain('Pilot Draft');
     expect(executiveText).toContain('Not reviewed');
+    expect(report.inventory.totalKgCO2e).toBe(inventoryTotalBefore);
+    expect(factor.factorValue).toBe(factorValueBefore);
     if (process.env.REPORT_SEMANTICS_CAPTURE_PDFS) {
       fs.mkdirSync('/private/tmp/report-semantics', { recursive: true });
       fs.writeFileSync('/private/tmp/report-semantics/exact-year-governance-technical.pdf', Buffer.from(technical.output('arraybuffer')));
