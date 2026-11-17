@@ -166,6 +166,42 @@ describe('report review package CSV exports', () => {
     expect(csv).not.toContain('factor-internal-id');
   });
 
+  it('uses governed report wording for an exact-year verified electricity factor', () => {
+    const csv = buildReviewPackageFactorSourceSummaryCsv([
+      {
+        factorId: 'electricity-ab',
+        activityType: 'ELECTRICITY',
+        factorName: 'Electricity - Alberta - 2026 Location-based',
+        factorValue: 0.438,
+        inputUnit: 'kWh',
+        resultUnit: 'kgCO2e/kWh',
+        jurisdiction: 'Alberta, Canada',
+        factorYear: 2026,
+        reportingYear: 2026,
+        sourceAuthority: 'Environment and Climate Change Canada',
+        sourceDocument: 'Emission factors and reference values',
+        factorStatus: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+        confidenceLevel: 'OFFICIAL_GOVERNMENT',
+        assumptions: 'Pilot-stage default electricity factor. Uses jurisdiction-specific electricity factor and latest available prior-year factor where no reporting-year factor exists. Replace with reviewed official factor before formal reporting.',
+        factorSelectionReason: 'EXACT_MATCH',
+        factorProvenance: {
+          applicability: 'CORPORATE_INVENTORY',
+          emissionBasis: 'DIRECT_CO2E',
+          calculationEligible: true,
+          factorStatus: 'ACTIVE',
+          verificationStatus: 'VERIFIED',
+        },
+        factorType: 'System',
+        verified: true,
+      },
+    ]);
+
+    expect(csv).toContain('Jurisdiction-specific electricity factor matched to the activity year');
+    expect(csv).not.toContain('Pilot-stage default electricity factor');
+    expect(csv).not.toContain('Replace with reviewed official factor');
+  });
+
   it('exports calculation traceability and records needing attention', () => {
     const reviewDetail: CalculationAuditDetail = {
       ...baseDetail,

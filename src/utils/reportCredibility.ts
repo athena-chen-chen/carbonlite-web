@@ -7,6 +7,12 @@ import { formatCredibilityLabel } from './factorCredibility';
 export const ELECTRICITY_PILOT_ASSUMPTION =
   'Pilot-stage default electricity factor. Uses jurisdiction-specific electricity factor and latest available prior-year factor where no reporting-year factor exists. Replace with reviewed official factor before formal reporting.';
 
+export const EXACT_YEAR_ELECTRICITY_ASSUMPTION =
+  'Jurisdiction-specific electricity factor matched to the activity year; no prior-year fallback was used.';
+
+export const PRIOR_YEAR_ELECTRICITY_ASSUMPTION =
+  'Jurisdiction-specific electricity factor from the latest available prior year was used because no exact activity-year factor was available.';
+
 export const SCOPE_3_PILOT_ASSUMPTION =
   'Pilot-stage Scope 3 estimate. Scope 3 calculations can vary by methodology, boundary, and factor source. Consultant review recommended before official reporting.';
 
@@ -165,11 +171,32 @@ export function formatReportAssumptions(input: {
   factorType?: string | null;
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
+  factorYear?: number | null;
+  sourceYear?: number | null;
+  effectiveYear?: number | null;
+  reportingYear?: number | null;
+  verified?: boolean | null;
+  factorStatus?: string | null;
+  verificationStatus?: string | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
+  factorProvenance?: FactorProvenanceSnapshot | null;
 }) {
   const direct = cleanText(input.assumptions);
-  if (direct && !/^none documented$/i.test(direct)) return direct;
+
+  if (isReferenceOnlyFactor(input)) {
+    return 'Reference-only factor; not eligible for corporate-inventory calculation.';
+  }
+
+  const hasDirectAssumption = direct && !/^none documented$/i.test(direct);
+  if (hasDirectAssumption && !isLegacyElectricityPilotAssumption(direct)) return direct;
 
   if (isElectricityActivity(input.activityType)) {
+    if (isExplicitPriorYearMatch(input)) return PRIOR_YEAR_ELECTRICITY_ASSUMPTION;
+    if (isVerifiedInventoryFactor(input) && isExactActivityYearMatch(input)) {
+      return EXACT_YEAR_ELECTRICITY_ASSUMPTION;
+    }
+    if (hasDirectAssumption) return direct;
     return ELECTRICITY_PILOT_ASSUMPTION;
   }
 
@@ -183,6 +210,78 @@ export function formatReportAssumptions(input: {
   }
 
   return 'Assumption not documented. Review recommended before formal reporting.';
+}
+
+function isLegacyElectricityPilotAssumption(value: string) {
+  const normalized = cleanText(value).replace(/\s+/g, ' ').toLowerCase();
+  return normalized === ELECTRICITY_PILOT_ASSUMPTION.toLowerCase() || (
+    normalized.includes('pilot-stage default electricity factor') &&
+    normalized.includes('prior-year factor') &&
+    normalized.includes('replace with reviewed official factor')
+  );
+}
+
+function getGovernanceApplicability(input: { factorProvenance?: FactorProvenanceSnapshot | null }) {
+  return normalizeStatus(input.factorProvenance?.applicability);
+}
+
+function isReferenceOnlyFactor(input: { factorProvenance?: FactorProvenanceSnapshot | null; factorStatus?: string | null }) {
+  return getGovernanceApplicability(input) === 'REFERENCE_ONLY' || normalizeStatus(input.factorStatus) === 'REFERENCE_ONLY';
+}
+
+function isVerifiedInventoryFactor(input: {
+  verified?: boolean | null;
+  factorStatus?: string | null;
+  verificationStatus?: string | null;
+  factorProvenance?: FactorProvenanceSnapshot | null;
+}) {
+  if (input.verified !== true) return false;
+  if (getGovernanceApplicability(input) !== 'CORPORATE_INVENTORY') return false;
+  if (normalizeStatus(input.factorProvenance?.emissionBasis) !== 'DIRECT_CO2E') return false;
+  if ([
+    input.factorProvenance?.isCalculationEligible,
+    input.factorProvenance?.calculationEligible,
+    input.factorProvenance?.isUsableForCalculation,
+    input.factorProvenance?.usableForCalculation,
+  ].some((value) => value === false)) return false;
+
+  const lifecycle = normalizeStatus(input.factorStatus ?? input.factorProvenance?.factorStatus ?? input.factorProvenance?.status);
+  const verification = normalizeStatus(input.verificationStatus ?? input.factorProvenance?.verificationStatus);
+  if (lifecycle && !['ACTIVE', 'APPROVED', 'OFFICIAL', 'VERIFIED'].includes(lifecycle)) return false;
+  if (/(?:PENDING|REQUIRED|REJECTED|UNVERIFIED|DRAFT|EXPIRED|RETIRED)/.test(verification)) return false;
+  return true;
+}
+
+function factorYearForReport(input: { factorYear?: number | null; effectiveYear?: number | null; sourceYear?: number | null }) {
+  return Number(input.factorYear ?? input.effectiveYear ?? input.sourceYear);
+}
+
+function isExplicitPriorYearMatch(input: {
+  factorYear?: number | null;
+  effectiveYear?: number | null;
+  sourceYear?: number | null;
+  reportingYear?: number | null;
+  factorSelectionReason?: string | null;
+  factorSelectionExplanation?: string | null;
+}) {
+  const factorYear = factorYearForReport(input);
+  const reportingYear = Number(input.reportingYear);
+  return normalizeStatus(input.factorSelectionReason).includes('PRIOR_YEAR') ||
+    (Number.isFinite(factorYear) && Number.isFinite(reportingYear) && factorYear > 0 && factorYear < reportingYear) ||
+    /prior[-\s]?year|nearest available|no exact.*year|latest available/i.test(cleanText(input.factorSelectionExplanation));
+}
+
+function isExactActivityYearMatch(input: {
+  factorYear?: number | null;
+  effectiveYear?: number | null;
+  sourceYear?: number | null;
+  reportingYear?: number | null;
+  factorSelectionReason?: string | null;
+}) {
+  if (normalizeStatus(input.factorSelectionReason).includes('EXACT')) return true;
+  const factorYear = factorYearForReport(input);
+  const reportingYear = Number(input.reportingYear);
+  return Number.isFinite(factorYear) && Number.isFinite(reportingYear) && factorYear > 0 && factorYear === reportingYear;
 }
 
 export function formatReportVerification(input: {
@@ -519,6 +618,13 @@ export function formatTraceabilityReviewNote(detail: CalculationAuditDetail) {
     return 'Unit must match an available factor before inclusion.';
   }
 
+  if (isReferenceOnlyFactor({
+    factorProvenance: detail.factorProvenance,
+    factorStatus: detail.factorStatus,
+  })) {
+    return 'Reference-only factor is not eligible for corporate-inventory calculation.';
+  }
+
   if (usedGenericJurisdiction && shouldMentionPriorYear) {
     return 'Canada-generic and prior-year fallback used; review before formal reporting.';
   }
@@ -530,17 +636,23 @@ export function formatTraceabilityReviewNote(detail: CalculationAuditDetail) {
     return 'Pilot-stage Scope 3 estimate; consultant review recommended before formal reporting.';
   }
 
-  const verification = formatReportVerification({
-    activityType: detail.activityType,
-    verified: detail.factorVerified,
-    factorStatus: detail.factorStatus,
-    verificationStatus: detail.factorVerificationStatus,
-  });
-  if (/review|unverified|pilot|draft/i.test(verification)) {
+  if (factorSourceNeedsReview(detail)) {
     return 'Review factor source before formal reporting.';
   }
 
   return 'Calculated with matched factor.';
+}
+
+function factorSourceNeedsReview(detail: CalculationAuditDetail) {
+  const lifecycle = normalizeStatus(detail.factorStatus ?? detail.factorProvenance?.factorStatus ?? detail.factorProvenance?.status);
+  const verification = normalizeStatus(detail.factorVerificationStatus ?? detail.factorProvenance?.verificationStatus);
+  if (/(?:PENDING|REQUIRED|REJECTED|UNVERIFIED|DRAFT|EXPIRED|RETIRED|PLACEHOLDER|PILOT_DEMO)/.test(`${lifecycle} ${verification}`)) {
+    return true;
+  }
+  if (detail.factorVerified === true || ['VERIFIED', 'APPROVED', 'OFFICIAL', 'REVIEWED'].includes(verification)) {
+    return false;
+  }
+  return true;
 }
 
 export function buildSourceEvidenceNote(input: {

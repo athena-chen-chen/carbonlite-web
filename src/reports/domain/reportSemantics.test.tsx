@@ -198,4 +198,53 @@ describe('canonical report semantics', () => {
       fs.writeFileSync('/private/tmp/report-semantics/provenance-executive.pdf', Buffer.from(executive.output('arraybuffer')));
     }
   });
+
+  it('renders exact-year verified electricity governance accurately without changing draft review status', () => {
+    const { report } = goldenReport('enmax');
+    const factor = report.factorReview.factors[0];
+    Object.assign(factor, {
+      activityType: 'ELECTRICITY',
+      factorName: 'Electricity - Alberta - 2026 Location-based',
+      assumptions: 'Pilot-stage default electricity factor. Uses jurisdiction-specific electricity factor and latest available prior-year factor where no reporting-year factor exists. Replace with reviewed official factor before formal reporting.',
+      factorYear: 2026,
+      reportingYear: 2026,
+      factorStatus: 'ACTIVE',
+      verificationStatus: 'VERIFIED',
+      verified: true,
+      factorSelectionReason: 'EXACT_MATCH',
+      factorProvenance: {
+        applicability: 'CORPORATE_INVENTORY',
+        emissionBasis: 'DIRECT_CO2E',
+        calculationEligible: true,
+        factorStatus: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+      },
+    });
+    Object.assign(report.calculationDetails[0], {
+      activityType: 'ELECTRICITY',
+      recordYear: 2026,
+      reportingYear: 2026,
+      factorYear: 2026,
+      sourceYear: 2026,
+      factorStatus: 'ACTIVE',
+      factorVerified: true,
+      factorVerificationStatus: 'VERIFIED',
+      factorSelectionReason: 'EXACT_MATCH',
+      factorProvenance: factor.factorProvenance,
+    });
+
+    const technical = buildTechnicalReviewPdf(report);
+    const technicalText = pdfText(technical);
+    const executiveText = pdfText(buildExecutiveSummaryPdf(report));
+    expect(technicalText).toContain('Jurisdiction-specific electricity factor matched to the activity year');
+    expect(technicalText).toContain('Calculated with matched factor.');
+    expect(technicalText).not.toContain('Pilot-stage default electricity factor');
+    expect(technicalText).not.toContain('Review factor source before formal reporting.');
+    expect(executiveText).toContain('Pilot Draft');
+    expect(executiveText).toContain('Not reviewed');
+    if (process.env.REPORT_SEMANTICS_CAPTURE_PDFS) {
+      fs.mkdirSync('/private/tmp/report-semantics', { recursive: true });
+      fs.writeFileSync('/private/tmp/report-semantics/exact-year-governance-technical.pdf', Buffer.from(technical.output('arraybuffer')));
+    }
+  });
 });
