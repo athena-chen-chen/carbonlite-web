@@ -28,7 +28,7 @@ test('@db @smoke authenticates seeded user and loads primary app routes', async 
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
   await expect(page).toHaveURL(/\/reports$/);
 
-  await page.getByRole('link', { name: 'Data Records', exact: true }).click();
+  await page.getByRole('link', { name: 'Data records', exact: true }).click();
   await expect(page).toHaveURL(/\/activity-records$/);
-  await expect(page.getByRole('heading', { name: 'Activity Records' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Data records' })).toBeVisible();
 });
