@@ -432,6 +432,26 @@ export async function installCarbonLiteApiMock(
       return;
     }
 
+    if (method === 'GET' && path === '/conversion-factors/methodology') {
+      const items = state.conversionFactors.map((factor) => ({
+        activityType: factor.activityType,
+        displayName: factor.name,
+        geography: factor.jurisdiction,
+        applicabilityYear: factor.sourceYear,
+        factorValue: factor.factorValue,
+        inputUnit: factor.unit,
+        resultUnit: factor.resultUnit,
+        source: factor.sourceAuthority,
+        sourceUrl: factor.sourceUrl || null,
+        methodology: factor.methodology,
+        accountingBasis: factor.emissionBasis ?? 'DIRECT_CO2E',
+        assumptions: factor.notes || null,
+        status: 'Approved',
+      }));
+      await fulfillJson(route, { items, total: items.length });
+      return;
+    }
+
     if (method === 'GET' && path === '/conversion-factors') {
       await fulfillJson(route, paginated(state.conversionFactors));
       return;
