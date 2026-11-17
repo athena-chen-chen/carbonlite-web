@@ -155,6 +155,32 @@ export async function installCarbonLiteApiMock(
       return;
     }
 
+    if (method === 'GET' && path === '/ai-authorization/status') {
+      await fulfillJson(route, {
+        enabled: true,
+        status: 'ENABLED',
+        provider: 'OPENAI',
+        processingScope: 'DOCUMENT_EXTRACTION',
+        effectiveAt: now,
+        expiresAt: null,
+        withdrawnAt: null,
+      });
+      return;
+    }
+
+    if (method === 'GET' && path === '/real-data-authorization/status') {
+      await fulfillJson(route, {
+        effectiveMode: 'SYNTHETIC_ONLY',
+        configuredStatus: 'SYNTHETIC_ONLY',
+        policyVersion: null,
+        effectiveAt: now,
+        expiresAt: null,
+        reviewDueAt: null,
+        reason: 'Synthetic-only E2E workspace.',
+      });
+      return;
+    }
+
     if (method === 'POST' && path === '/documents/upload') {
       state.uploadRequests += 1;
       const formData = request.postData() ?? '';

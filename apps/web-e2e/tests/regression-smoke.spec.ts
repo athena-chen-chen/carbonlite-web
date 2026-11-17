@@ -72,14 +72,14 @@ test('@smoke deleting an imported source keeps its related activity records', as
   await expect(page.getByRole('menu', {
     name: 'More actions for enmax-electricity.csv',
   })).toBeVisible();
-  await page.getByRole('menuitem', { name: 'Delete Source Document' }).click();
+  await page.getByRole('menuitem', { name: 'Delete source document' }).click();
 
   const dialog = page.getByRole('dialog', {
     name: 'Delete source document?',
   });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('will NOT delete the imported Activity Records');
-  await dialog.getByRole('button', { name: 'Delete Source Document' }).click();
+  await dialog.getByRole('button', { name: 'Delete source document' }).click();
 
   await expect(documentRow).toHaveCount(0);
   expect(api.documentDeleteRequests).toBe(1);
@@ -115,7 +115,7 @@ test('@smoke missing uploaded files explain re-upload and keep delete available'
 
   await expect(documentRow.getByRole('button', { name: 'Upload Again' }))
     .toHaveAttribute('title', 'The original uploaded file is no longer available. Please upload it again.');
-  await expect(documentRow.getByRole('button', { name: 'Delete Source Document' })).toBeVisible();
+  await expect(documentRow.getByRole('button', { name: 'Delete source document' })).toBeVisible();
   failures.assertClean(api.unexpectedRequests);
 });
 
@@ -240,8 +240,8 @@ test('@smoke data records Columns menu opens and toggles columns', async ({ page
   await authenticateTestUser(page);
   await installCarbonLiteApiMock(page, api);
 
-  await page.goto('/activity-records');
-  await expect(page.getByRole('heading', { name: 'Activity Records' })).toBeVisible();
+  await page.goto('/data-records');
+  await expect(page.getByRole('heading', { name: 'Data records' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Source Reference' })).toBeVisible();
 
   await expect(page.getByText('Scroll horizontally to view all columns →')).toBeVisible();
@@ -285,7 +285,7 @@ test('@smoke emission factors load as read-only for standard users', async ({ pa
 
   await page.goto('/conversion-factors');
   await expect(page.getByRole('heading', {
-    name: 'Emission Factor Library',
+    name: 'Factor Library',
   })).toBeVisible();
   const systemRow = page.getByRole('row').filter({
     hasText: 'Electricity - British Columbia - 2026',
