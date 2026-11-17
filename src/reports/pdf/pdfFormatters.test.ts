@@ -53,10 +53,16 @@ describe('Executive PDF factor governance classification', () => {
   it('distinguishes approved, restricted, and pilot-stage factors in a mixed report', () => {
     const restricted = factor({
       factorName: 'Reference electricity factor',
-      verified: false,
+      verified: true,
       factorStatus: 'REFERENCE_ONLY',
-      verificationStatus: 'UNVERIFIED',
-      factorProvenance: { applicability: 'REFERENCE_ONLY', emissionBasis: 'DIRECT_CO2E' },
+      verificationStatus: 'VERIFIED',
+      factorProvenance: {
+        applicability: 'REFERENCE_ONLY',
+        emissionBasis: 'DIRECT_CO2E',
+        calculationEligible: true,
+        factorStatus: 'REFERENCE_ONLY',
+        verificationStatus: 'VERIFIED',
+      },
     });
     const pilot = factor({
       factorName: 'Pilot electricity factor',
@@ -70,6 +76,34 @@ describe('Executive PDF factor governance classification', () => {
     expect(buildFactorReviewSummary([factor(), restricted, pilot]).factorsRequiringReviewCount).toBe(2);
     expect(formatExecutiveFactorPriority(2, 1))
       .toBe('Validate both emission factors before formal use; replace pilot-stage factors where appropriate.');
+  });
+
+  it('fails Executive review classification closed for incomplete or unsupported governance', () => {
+    const missingProvenance = factor({ factorId: 'missing-provenance', factorProvenance: null });
+    const missingEligibility = factor({
+      factorId: 'missing-eligibility',
+      factorProvenance: {
+        applicability: 'CORPORATE_INVENTORY',
+        emissionBasis: 'DIRECT_CO2E',
+        factorStatus: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+      },
+    });
+    const inactive = factor({
+      factorId: 'inactive-factor',
+      factorProvenance: {
+        applicability: 'CORPORATE_INVENTORY',
+        emissionBasis: 'DIRECT_CO2E',
+        calculationEligible: true,
+        factorStatus: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+        isActive: false,
+      },
+    });
+
+    expect(buildFactorReviewSummary([missingProvenance, missingEligibility, inactive])
+      .factorsRequiringReviewCount).toBe(3);
+    expect(getPilotStageFactorCount([missingProvenance, missingEligibility, inactive])).toBe(0);
   });
 
   it('does not infer approval from a Reviewed label alone', () => {

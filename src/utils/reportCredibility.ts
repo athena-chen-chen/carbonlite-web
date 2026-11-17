@@ -1,4 +1,4 @@
-import type { FactorProvenanceSnapshot } from './factorGovernance';
+import { isInventoryFactorEligible, type FactorProvenanceSnapshot } from './factorGovernance';
 import type { CalculationAuditDetail } from '../services/metrics';
 import { formatEmissionsUnit } from './numberFormatting';
 import { getActivityTypeLabel, getFactorDisplayName, normalizeActivityType } from './activityType';
@@ -18,6 +18,27 @@ export const REFERENCE_ONLY_RESTRICTION =
 
 export const SCOPE_3_PILOT_ASSUMPTION =
   'Pilot-stage Scope 3 estimate. Scope 3 calculations can vary by methodology, boundary, and factor source. Consultant review recommended before official reporting.';
+
+export type ReportFactorGovernanceClassification =
+  | 'CALCULATION_ELIGIBLE'
+  | 'PILOT_STAGE'
+  | 'NEEDS_REVIEW';
+
+type ReportFactorGovernanceInput = {
+  factorId?: string | null;
+  activityType?: string | null;
+  jurisdiction?: string | null;
+  inputUnit?: string | null;
+  resultUnit?: string | null;
+  factorVersion?: string | null;
+  factorSet?: string | null;
+  sourceAuthority?: string | null;
+  sourceDocument?: string | null;
+  verified?: boolean | null;
+  factorStatus?: string | null;
+  verificationStatus?: string | null;
+  factorProvenance?: FactorProvenanceSnapshot | null;
+};
 
 const SCOPE_3_ACTIVITY_TYPES = new Set([
   'AIR_TRAVEL',
@@ -169,9 +190,15 @@ function isElectricityActivity(activityType?: string | null) {
 }
 
 export function formatReportAssumptions(input: {
+  factorId?: string | null;
   activityType?: string | null;
   assumptions?: string | null;
   factorType?: string | null;
+  jurisdiction?: string | null;
+  inputUnit?: string | null;
+  resultUnit?: string | null;
+  factorVersion?: string | null;
+  factorSet?: string | null;
   sourceAuthority?: string | null;
   sourceDocument?: string | null;
   factorYear?: number | null;
@@ -203,7 +230,7 @@ export function formatReportAssumptions(input: {
 
   if (isElectricityActivity(input.activityType)) {
     if (isExplicitPriorYearMatch(input)) return PRIOR_YEAR_ELECTRICITY_ASSUMPTION;
-    if (isVerifiedInventoryFactor(input) && isExactActivityYearMatch(input)) {
+    if (classifyReportFactorGovernance(input) === 'CALCULATION_ELIGIBLE' && isExactActivityYearMatch(input)) {
       return EXACT_YEAR_ELECTRICITY_ASSUMPTION;
     }
     if (hasDirectAssumption) return direct;
@@ -239,44 +266,63 @@ function isReferenceOnlyFactor(input: { factorProvenance?: FactorProvenanceSnaps
   return getGovernanceApplicability(input) === 'REFERENCE_ONLY' || normalizeStatus(input.factorStatus) === 'REFERENCE_ONLY';
 }
 
-function isVerifiedInventoryFactor(input: {
-  verified?: boolean | null;
-  factorStatus?: string | null;
-  verificationStatus?: string | null;
-  factorProvenance?: FactorProvenanceSnapshot | null;
-}) {
-  if (input.verified !== true) return false;
-  if (getGovernanceApplicability(input) !== 'CORPORATE_INVENTORY') return false;
-  if (normalizeStatus(input.factorProvenance?.emissionBasis) !== 'DIRECT_CO2E') return false;
-  if ([
-    input.factorProvenance?.isCalculationEligible,
-    input.factorProvenance?.calculationEligible,
-    input.factorProvenance?.isUsableForCalculation,
-    input.factorProvenance?.usableForCalculation,
-  ].some((value) => value === false)) return false;
-
-  const lifecycle = normalizeStatus(input.factorStatus ?? input.factorProvenance?.factorStatus ?? input.factorProvenance?.status);
-  const verification = normalizeStatus(input.verificationStatus ?? input.factorProvenance?.verificationStatus);
-  if (lifecycle && !['ACTIVE', 'APPROVED', 'OFFICIAL', 'VERIFIED'].includes(lifecycle)) return false;
-  if (/(?:PENDING|REQUIRED|REJECTED|UNVERIFIED|DRAFT|EXPIRED|RETIRED)/.test(verification)) return false;
-  return true;
-}
-
-export function isReportFactorPilotStage(input: {
-  verified?: boolean | null;
-  factorStatus?: string | null;
-  verificationStatus?: string | null;
-  factorProvenance?: FactorProvenanceSnapshot | null;
-}) {
-  if (isVerifiedInventoryFactor(input)) return false;
-
+export function classifyReportFactorGovernance(
+  input: ReportFactorGovernanceInput,
+): ReportFactorGovernanceClassification {
+  const provenance = input.factorProvenance;
   const lifecycle = normalizeStatus(
-    input.factorStatus ?? input.factorProvenance?.factorStatus ?? input.factorProvenance?.status,
+    input.factorStatus ?? provenance?.factorStatus ?? provenance?.status,
   );
   const verification = normalizeStatus(
-    input.verificationStatus ?? input.factorProvenance?.verificationStatus,
+    input.verificationStatus ?? provenance?.verificationStatus,
   );
-  return /(?:^|_)(?:PILOT|DEMO|DRAFT|PLACEHOLDER)(?:_|$)/.test(`${lifecycle}_${verification}`);
+  const explicitlyPilotStage = /(?:^|_)(?:PILOT|DEMO|DRAFT|PLACEHOLDER)(?:_|$)/
+    .test(`${lifecycle}_${verification}`);
+
+  if (!provenance) return explicitlyPilotStage ? 'PILOT_STAGE' : 'NEEDS_REVIEW';
+
+  const explicitEligibility = [
+    provenance.isCalculationEligible,
+    provenance.calculationEligible,
+    provenance.isUsableForCalculation,
+    provenance.usableForCalculation,
+  ];
+  const hasCompleteGovernance = Boolean(
+    provenance.applicability &&
+    provenance.emissionBasis &&
+    lifecycle &&
+    verification &&
+    explicitEligibility.some((value) => value === true),
+  );
+  if (!hasCompleteGovernance) return explicitlyPilotStage ? 'PILOT_STAGE' : 'NEEDS_REVIEW';
+
+  const eligible = isInventoryFactorEligible({
+    ...provenance,
+    factorId: input.factorId ?? provenance.factorId,
+    activityType: input.activityType,
+    jurisdiction: input.jurisdiction,
+    inputUnit: input.inputUnit,
+    resultUnit: input.resultUnit,
+    factorVersion: input.factorVersion ?? provenance.factorVersion,
+    factorSet: input.factorSet,
+    sourceAuthority: input.sourceAuthority ?? provenance.sourceAuthority,
+    sourceDocument: input.sourceDocument ?? provenance.sourceDocument,
+    sourceVersion: provenance.sourceVersion,
+    methodologyProvenance: provenance.methodologyProvenance,
+    verified: input.verified,
+    factorStatus: input.factorStatus ?? provenance.factorStatus ?? provenance.status,
+    verificationStatus: input.verificationStatus ?? provenance.verificationStatus,
+  });
+  if (eligible) return 'CALCULATION_ELIGIBLE';
+  return explicitlyPilotStage ? 'PILOT_STAGE' : 'NEEDS_REVIEW';
+}
+
+export function reportFactorNeedsReview(input: ReportFactorGovernanceInput) {
+  return classifyReportFactorGovernance(input) !== 'CALCULATION_ELIGIBLE';
+}
+
+export function isReportFactorPilotStage(input: ReportFactorGovernanceInput) {
+  return classifyReportFactorGovernance(input) === 'PILOT_STAGE';
 }
 
 function factorYearForReport(input: { factorYear?: number | null; effectiveYear?: number | null; sourceYear?: number | null }) {
@@ -671,15 +717,21 @@ export function formatTraceabilityReviewNote(detail: CalculationAuditDetail) {
 }
 
 function factorSourceNeedsReview(detail: CalculationAuditDetail) {
-  const lifecycle = normalizeStatus(detail.factorStatus ?? detail.factorProvenance?.factorStatus ?? detail.factorProvenance?.status);
-  const verification = normalizeStatus(detail.factorVerificationStatus ?? detail.factorProvenance?.verificationStatus);
-  if (/(?:PENDING|REQUIRED|REJECTED|UNVERIFIED|DRAFT|EXPIRED|RETIRED|PLACEHOLDER|PILOT_DEMO)/.test(`${lifecycle} ${verification}`)) {
-    return true;
-  }
-  if (detail.factorVerified === true || ['VERIFIED', 'APPROVED', 'OFFICIAL', 'REVIEWED'].includes(verification)) {
-    return false;
-  }
-  return true;
+  return reportFactorNeedsReview({
+    factorId: detail.factorId,
+    activityType: detail.activityType,
+    jurisdiction: detail.jurisdiction,
+    inputUnit: detail.factorInputUnit ?? detail.activityUnit,
+    resultUnit: detail.factorResultUnit,
+    factorVersion: detail.factorVersion,
+    factorSet: detail.factorSet,
+    sourceAuthority: detail.sourceAuthority ?? detail.factorSource,
+    sourceDocument: detail.sourceDocument,
+    verified: detail.factorVerified,
+    factorStatus: detail.factorStatus,
+    verificationStatus: detail.factorVerificationStatus,
+    factorProvenance: detail.factorProvenance,
+  });
 }
 
 export function buildSourceEvidenceNote(input: {

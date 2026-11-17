@@ -146,6 +146,7 @@ function factor(input: Partial<FormalConversionFactorUsed> = {}): FormalConversi
     verified: input.verified ?? true,
     factorId: input.factorId,
     sourceDocument: input.sourceDocument,
+    factorProvenance: input.factorProvenance,
   };
 }
 
@@ -294,7 +295,18 @@ describe('report domain builders', () => {
 
   it('builds factor validation and readiness summaries without mutating factor lineage', () => {
     const factors = [
-      factor({ factorId: 'eccc-2026', verified: true, sourceAuthority: 'ECCC' }),
+      factor({
+        factorId: 'eccc-2026',
+        verified: true,
+        sourceAuthority: 'ECCC',
+        factorProvenance: {
+          applicability: 'CORPORATE_INVENTORY',
+          emissionBasis: 'DIRECT_CO2E',
+          factorStatus: 'ACTIVE',
+          verificationStatus: 'VERIFIED',
+          calculationEligible: true,
+        },
+      }),
       factor({ factorId: 'custom-unverified', verified: false, sourceAuthority: 'Customer' }),
     ];
     const sourceReviewSummary = buildSourceReviewSummary({
