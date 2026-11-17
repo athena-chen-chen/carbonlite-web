@@ -16,7 +16,7 @@ test('@db @smoke authenticates seeded user and loads primary app routes', async 
   await expect(page.getByRole('heading', { name: 'Log in to CarbonLite' })).toBeVisible();
 
   await page.getByLabel(/email/i).fill(e2eEmail);
-  await page.getByLabel(/password/i).fill(e2ePassword);
+  await page.getByRole('textbox', { name: /password/i }).fill(e2ePassword);
   await page.getByRole('button', { name: 'Log In' }).click();
 
   await expect(page).toHaveURL(/\/upload$/);

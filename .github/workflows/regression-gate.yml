@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/carbonlite-api
+          ref: 0498646f5721619f91ee710a89386b4b84aaf329
           path: carbonlite-api
 
       - name: Set up pnpm
