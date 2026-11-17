@@ -67,8 +67,7 @@ test('@smoke deleting an imported source keeps its related activity records', as
   const actionMenuButton = documentRow.getByRole('button', {
     name: 'Open document actions for enmax-electricity.csv',
   });
-  await actionMenuButton.focus();
-  await actionMenuButton.press('Enter');
+  await actionMenuButton.click();
   await expect(page.getByRole('menu', {
     name: 'More actions for enmax-electricity.csv',
   })).toBeVisible();
