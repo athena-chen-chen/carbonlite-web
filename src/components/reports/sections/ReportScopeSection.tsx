@@ -81,7 +81,7 @@ export function ReportScopeSection({
           type="date"
           value={draftPeriodStart}
           onChange={(event) => onStartDateChange(event.target.value)}
-          onBlur={onCommitDateRange}
+          onBlur={() => onCommitDateRange()}
           style={styles.input}
           disabled={reportScope !== 'dateRange' || loading}
         />
@@ -93,7 +93,7 @@ export function ReportScopeSection({
           type="date"
           value={draftPeriodEnd}
           onChange={(event) => onEndDateChange(event.target.value)}
-          onBlur={onCommitDateRange}
+          onBlur={() => onCommitDateRange()}
           style={styles.input}
           disabled={reportScope !== 'dateRange' || loading}
         />

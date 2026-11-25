@@ -1,3 +1,4 @@
+import { buildCalculatedFormula } from './calculationTraceability';
 import * as XLSX from 'xlsx';
 import { goldenReport } from '../reports/pdf/__tests__/goldenFixtures';
 import { buildPilotCsv } from './reportCsvExport';
@@ -92,7 +93,10 @@ it.each([
   expect(row.Notes).toBe(`'${attack.notes}`);
   expect(row.Quantity).toBe(kind === 'calculation traceability' ? '25.50' : '25.5');
   expect(row['Calculated Emissions kgCO2e']).toBe('579.4');
-  if ('Formula' in row) expect(row.Formula).toBe("'=SUM(1,2)");
+  if ('Formula' in row) {
+    expect(row.Formula).toBe(buildCalculatedFormula(attack));
+    expect(row.Formula).not.toContain('=SUM(1,2)');
+  }
   expect(JSON.stringify(attack)).toBe(before);
 });
 
@@ -128,7 +132,8 @@ it('protects audit-evidence source filenames, sheets, formulas and report metada
   expect(row['Source File']).toBe("'=evil.csv");
   expect(row['Source Sheet']).toBe("'-1+2");
   expect(row['Source Reference']).toBe(`'${attack.sourceReference}`);
-  expect(row.Formula).toBe("'=SUM(1,2)");
+  expect(row.Formula).toBe(buildCalculatedFormula(attack));
+  expect(row.Formula).not.toContain('=SUM(1,2)');
   expect(row['Report ID']).toBe("'=report");
   expect(row['Report Version']).toBe("'+version");
   expect(row.Quantity).toBe('25.5');

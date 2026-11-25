@@ -364,8 +364,8 @@ describe('loadMetricsOverview', () => {
     });
 
     expect(getCalculationSummary).toHaveBeenCalledWith({
-      periodStart: undefined,
-      periodEnd: undefined,
+      periodStart: '2024-01-01',
+      periodEnd: '2026-12-31',
       selectedActivityRecordIds: ['activity-1', 'activity-2'],
       selectedDocumentIds: [],
     });
@@ -2228,5 +2228,20 @@ describe('metrics date range', () => {
       endDate: '2025-09-30',
       hasActivityRecords: true,
     });
+  });
+});
+
+
+describe('explicit reporting scope requests', () => {
+  it.each(['records', 'documents'])('retains dates alongside selected %s', async kind => {
+    vi.mocked(getCalculationSummary).mockResolvedValue({ ...backendSummary(), activities: [], records: [], calculationDetails: [], matchedActivityEmissions: [], conversionFactorsUsed: [] } as any);
+    const selection = kind === 'records' ? { selectedActivityRecordIds: ['synthetic-A'] } : { selectedDocumentIds: ['synthetic-doc'] };
+    await loadMetricsOverview({ ...selection, dateFrom: '2025-02-01', dateTo: '2025-02-28' });
+    expect(getCalculationSummary).toHaveBeenLastCalledWith({ periodStart:'2025-02-01', periodEnd:'2025-02-28', selectedActivityRecordIds: kind === 'records' ? ['synthetic-A'] : [], selectedDocumentIds: kind === 'documents' ? ['synthetic-doc'] : [] });
+  });
+  it.each([['2026-02-30','2026-03-01'],['2026-04-01','2026-01-01'],['invalid','2026-01-01']])('rejects invalid bounds %s to %s before requesting data', async (dateFrom,dateTo) => {
+    vi.mocked(getCalculationSummary).mockClear();
+    await expect(loadMetricsOverview({dateFrom,dateTo})).rejects.toThrow('valid reporting');
+    expect(getCalculationSummary).not.toHaveBeenCalled();
   });
 });

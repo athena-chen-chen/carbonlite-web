@@ -1,3 +1,4 @@
+import { buildScopeCoverage, type ScopeCoverage } from '../reports/domain/scopeCoverage';
 import type { CalculationAuditDetail } from '../services/metrics';
 import { getActivityTypeLabel } from './activityType';
 import {
@@ -12,6 +13,7 @@ export type SiteFacilityActivityBreakdownRow = {
 };
 
 export type SiteFacilityBreakdownRow = {
+  scopeCoverage?: ScopeCoverage;
   siteFacility: string;
   jurisdictionCountry: string | null;
   jurisdictionRegion: string | null;
@@ -170,6 +172,7 @@ export function buildSiteFacilityRollup(
 
   const rows = Array.from(rowsBySite.values()).map((row) => ({
     ...row,
+    scopeCoverage: buildScopeCoverage(calculationDetails.filter(detail => getSiteFacilityLabel(detail) === row.siteFacility)),
     ...resolveFacilityJurisdiction(
       jurisdictionBySite.get(row.siteFacility) ?? new Set<string>(),
       jurisdictionSourcesBySite.get(row.siteFacility) ?? new Set<string>(),

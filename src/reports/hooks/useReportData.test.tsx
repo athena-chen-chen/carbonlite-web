@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadOrganizationProfile, ORGANIZATION_PROFILE_UPDATED_EVENT } from '../../services/organizationProfile';
 import { getCalculationSummary } from '../../services/metrics';
 import { getSpreadsheetReviewRows } from '../../services/spreadsheetReviewRows';
 import { useReportData, type ReportRouteState } from './useReportData';
@@ -184,4 +185,163 @@ it('restores route scope before requesting data and preserves selected-record sc
   expect(result.current.isExportReady).toBe(false);
   await waitFor(() => expect(result.current.isExportReady).toBe(true));
   expect(loadMetricsOverview).toHaveBeenLastCalledWith({ recalculate: true, requireSourceReviewRows: true, selectedActivityRecordIds: ['record-A', 'record-B'] });
+});
+
+
+describe('report period handoff', () => {
+  it.each(['selectedRecords','selectedDocuments','dateRange'])('retains an explicit narrow period with %s', async reportScope => {
+    const route = {reportScope,periodStart:'2025-02-01',periodEnd:'2025-02-28', ...(reportScope === 'selectedRecords' ? {selectedActivityRecordIds:['A']} : reportScope === 'selectedDocuments' ? {selectedDocumentIds:['D']} : {})};
+    const {result}=mount(route);
+    await waitFor(()=>expect(result.current.isExportReady).toBe(true));
+    expect(loadDefaultMetricsDateRange).not.toHaveBeenCalled();
+    expect(loadMetricsOverview).toHaveBeenLastCalledWith(expect.objectContaining({dateFrom:'2025-02-01',dateTo:'2025-02-28'}));
+    expect(result.current.report.reportingPeriod).toMatchObject({startDate:'2025-02-01',endDate:'2025-02-28',label:'2025-02-01 to 2025-02-28'});
+  });
+  it.each(['2026-02-30','invalid'])('blocks invalid incoming dates %s without widening', async periodStart=>{
+    const {result}=mount({reportScope:'selectedRecords',selectedActivityRecordIds:['A'],periodStart,periodEnd:'2026-03-31'});
+    await waitFor(()=>expect(result.current.error).toContain('valid reporting'));
+    expect(result.current.isExportReady).toBe(false); expect(loadMetricsOverview).not.toHaveBeenCalled();
+  });
+  it('blocks an explicitly empty selection rather than loading every record',async()=>{
+    const {result}=mount({reportScope:'selectedRecords',selectedActivityRecordIds:[],periodStart:'2026-01-01',periodEnd:'2026-01-31'});
+    await waitFor(()=>expect(result.current.error).toContain('No records'));
+    expect(result.current.isExportReady).toBe(false);expect(loadMetricsOverview).not.toHaveBeenCalled();
+  });
+  it('rejects late completion after a route changes only its period',async()=>{
+    const pending=deferred<MetricsOverview>();vi.mocked(loadMetricsOverview).mockReturnValueOnce(pending.promise);
+    const {result,rerender}=mount({reportScope:'selectedRecords',selectedActivityRecordIds:['A'],periodStart:'2025-01-01',periodEnd:'2025-12-31'});
+    await waitFor(()=>expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
+    rerender({routeState:{reportScope:'selectedRecords',selectedActivityRecordIds:['A'],periodStart:'2026-01-01',periodEnd:'2026-12-31'}});
+    expect(result.current.isExportReady).toBe(false);
+    await waitFor(()=>expect(result.current.isExportReady).toBe(true));
+    await act(async()=>pending.resolve(overview('obsolete',99)));
+    expect(result.current.activities[0].id).not.toBe('obsolete');expect(result.current.report.reportingPeriod.startDate).toBe('2026-01-01');
+  });
+});
+
+
+it('does not let delayed inferred defaults overwrite an explicitly applied period',async()=>{
+ const pending=deferred<{startDate:string;endDate:string;hasActivityRecords:boolean}>();vi.mocked(loadDefaultMetricsDateRange).mockReturnValueOnce(pending.promise);
+ const {result}=mount();act(()=>result.current.commitDateRange('2025-02-01','2025-02-28'));
+ await waitFor(()=>expect(result.current.isExportReady).toBe(true));
+ await act(async()=>pending.resolve({startDate:'2026-01-01',endDate:'2026-12-31',hasActivityRecords:true}));
+ expect(result.current.report.reportingPeriod).toMatchObject({startDate:'2025-02-01',endDate:'2025-02-28'});
+});
+
+
+describe('current report validation', () => {
+  it('recovers invalid then valid dates equal to the already loaded scope without refetch', async () => {
+    const { result } = mount();
+    await waitFor(() => expect(result.current.isExportReady).toBe(true));
+    // Establish the same explicit period before a segmented input is cleared.
+    act(() => result.current.commitDateRange('2026-01-01', '2026-03-31'));
+    await waitFor(() => expect(result.current.isExportReady).toBe(true));
+    const calls = vi.mocked(loadMetricsOverview).mock.calls.length;
+    act(() => { result.current.handleEndDateChange(''); result.current.commitDateRange('2026-01-01', ''); });
+    expect(result.current.error).toContain('valid reporting');
+    expect(result.current.isExportReady).toBe(false);
+    act(() => { result.current.handleEndDateChange('2026-03-31'); result.current.commitDateRange('2026-01-01', '2026-03-31'); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.isExportReady).toBe(true);
+    expect(loadMetricsOverview).toHaveBeenCalledTimes(calls);
+  });
+
+  it('keeps valid unapplied draft dates unexportable while underlying data settles', async () => {
+    const pending = deferred<MetricsOverview>();
+    vi.mocked(loadMetricsOverview).mockReturnValueOnce(pending.promise);
+    const { result } = mount();
+    await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
+    act(() => result.current.handleEndDateChange('2026-01-31'));
+    await act(async () => pending.resolve(overview('old-scope', 10)));
+    expect(result.current.isExportReady).toBe(false);
+    act(() => result.current.commitDateRange('2026-01-01', '2026-01-31'));
+    await waitFor(() => expect(result.current.isExportReady).toBe(true));
+    expect(result.current.reportPeriod).toBe('2026-01-01 to 2026-01-31');
+  });
+
+  it('cancels a queued draft commit when a newer period is applied', async () => {
+    const { result } = mount();
+    await waitFor(() => expect(result.current.isExportReady).toBe(true));
+    vi.useFakeTimers();
+    try {
+      act(() => result.current.handleEndDateChange('2026-01-31'));
+      await act(async () => result.current.commitDateRange('2026-02-01', '2026-02-28'));
+      await act(async () => vi.advanceTimersByTimeAsync(600));
+      expect(result.current.reportPeriod).toBe('2026-02-01 to 2026-02-28');
+      expect(result.current.draftPeriodStart).toBe('2026-02-01');
+      expect(result.current.draftPeriodEnd).toBe('2026-02-28');
+      expect(result.current.isExportReady).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+it.each(['selectedRecords', 'selectedDocuments'] as const)('clears an invalid selection error when current %s become valid', async reportScope => {
+  const { result, rerender } = mount({reportScope, selectedActivityRecordIds:[], selectedDocumentIds:[]});
+  await waitFor(() => expect(result.current.error).toContain('No records'));
+  expect(result.current.isExportReady).toBe(false);
+  rerender({routeState:{reportScope, ...(reportScope==='selectedRecords' ? {selectedActivityRecordIds:['A']} : {selectedDocumentIds:['D']})}});
+  await waitFor(() => expect(result.current.isExportReady).toBe(true));
+  expect(result.current.error).toBeNull();
+});
+
+it.each(['success', 'failure'] as const)('ignores an old scope validation/data %s after record-to-document navigation', async outcome => {
+  const pending = deferred<MetricsOverview>();
+  vi.mocked(loadMetricsOverview).mockReturnValueOnce(pending.promise);
+  const {result,rerender}=mount({reportScope:'selectedRecords',selectedActivityRecordIds:['A'],periodStart:'2025-01-01',periodEnd:'2025-12-31'});
+  await waitFor(()=>expect(loadMetricsOverview).toHaveBeenCalledTimes(1));
+  rerender({routeState:{reportScope:'selectedDocuments',selectedDocumentIds:['D'],periodStart:'2026-01-01',periodEnd:'2026-01-31'}});
+  await waitFor(()=>expect(result.current.isExportReady).toBe(true));
+  const identity=result.current.loadedIdentity;
+  await act(async()=>outcome==='success'?pending.resolve(overview('obsolete',99)):pending.reject(new Error('obsolete failure')));
+  expect(result.current.error).toBeNull();
+  expect(result.current.loadedIdentity).toBe(identity);
+  expect(result.current.reportPeriod).toBe('2026-01-01 to 2026-01-31');
+  expect(result.current.selectedDocumentIds).toEqual(['D']);
+  expect(result.current.totalEstimatedEmissionsKgCO2e).toBe(10);
+  expect(result.current.isExportReady).toBe(true);
+});
+
+it('preserves a real current-scope fetch failure when invalid drafts are corrected',async()=>{
+  const {result}=mount();await waitFor(()=>expect(result.current.isExportReady).toBe(true));
+  act(()=>result.current.commitDateRange('2026-01-01','2026-03-31'));
+  vi.mocked(loadMetricsOverview).mockRejectedValueOnce(new Error('current failure'));
+  await act(async()=>result.current.refetch());
+  const fetchError=result.current.error;
+  act(()=>result.current.commitDateRange('2026-01-01',''));
+  expect(result.current.error).toContain('valid reporting');
+  act(()=>result.current.commitDateRange('2026-01-01','2026-03-31'));
+  expect(result.current.error).toBe(fetchError);
+  expect(result.current.isExportReady).toBe(false);
+  await act(async()=>result.current.refetch());
+  expect(result.current.error).toBeNull();expect(result.current.isExportReady).toBe(true);
+});
+
+it('uses the current boundary while an edited period and pending data settle',async()=>{
+  const {result}=mount();await waitFor(()=>expect(result.current.isExportReady).toBe(true));
+  const pending=deferred<MetricsOverview>();vi.mocked(loadMetricsOverview).mockReturnValueOnce(pending.promise);
+  act(()=>result.current.commitDateRange('2026-04-01','2026-06-30'));
+  act(()=>{
+    result.current.handleEndDateChange('');
+    window.dispatchEvent(new CustomEvent(ORGANIZATION_PROFILE_UPDATED_EVENT,{detail:{...loadOrganizationProfile(),geographicBoundary:'Current synthetic Calgary boundary',boundaryStatus:'DRAFT',boundaryVersion:2}}));
+  });
+  await act(async()=>pending.resolve(overview('current-period',20)));
+  expect(result.current.error).toContain('valid reporting');expect(result.current.isExportReady).toBe(false);
+  act(()=>result.current.commitDateRange('2026-04-01','2026-06-30'));
+  expect(result.current.error).toBeNull();expect(result.current.isExportReady).toBe(true);
+  expect(result.current.report.inventoryBoundary).toMatchObject({geographicBoundary:'Current synthetic Calgary boundary',boundaryStatus:'DRAFT',boundaryVersion:2});
+  expect(result.current.reportPeriod).toBe('2026-04-01 to 2026-06-30');
+});
+
+it('applies only the last rapid draft date edit after debounce',async()=>{
+  const {result}=mount();await waitFor(()=>expect(result.current.isExportReady).toBe(true));
+  const calls=vi.mocked(loadMetricsOverview).mock.calls.length;
+  vi.useFakeTimers();
+  try {
+    act(()=>{result.current.handleEndDateChange('2026-01-31');result.current.handleEndDateChange('2026-02-28');result.current.handleEndDateChange('2026-05-31');});
+    expect(result.current.isExportReady).toBe(false);
+    await act(async()=>vi.advanceTimersByTimeAsync(600));
+    expect(result.current.reportPeriod).toBe('2026-01-01 to 2026-05-31');
+    expect(result.current.isExportReady).toBe(true);
+    expect(loadMetricsOverview).toHaveBeenCalledTimes(calls+1);
+  } finally {vi.useRealTimers();}
 });

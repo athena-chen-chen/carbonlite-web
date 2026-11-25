@@ -147,7 +147,7 @@ export function formatExecutiveFactorPriority(factorReviewCount: number, pilotSt
 export function getScopeDescription(scope: string) {
   if (scope === 'Scope 1') return 'Direct fuel emissions';
   if (scope === 'Scope 2') return 'Purchased electricity';
-  if (scope === 'Scope 3') return 'Selected Scope 3 pilot estimates';
+  if (scope === 'Scope 3') return 'Other indirect emissions; see reporting boundary for coverage';
   return 'Unclassified';
 }
 

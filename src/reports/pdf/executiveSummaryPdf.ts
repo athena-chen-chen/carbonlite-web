@@ -1,3 +1,4 @@
+import { formatScopeResult } from '../domain/scopeCoverage';
 import jsPDF from 'jspdf';
 import { formatDisplayNumber, formatEmissionsWithUnit } from '../../utils/numberFormatting';
 import { formatReadinessStatus } from '../../utils/reportingReadiness';
@@ -78,11 +79,11 @@ export function buildExecutiveSummaryPdf(canonicalData: CanonicalReportData): js
     head: [['Measure', 'Value']],
     body: [
       ['Estimated Emissions', executiveSummary.estimatedEmissions],
-      ['Scope 1', formatEmissionsWithUnit(pdfScopeSummary['Scope 1'])],
-      [outputFacts.scope2Accounting.scopeLabel, formatEmissionsWithUnit(pdfScopeSummary['Scope 2'])],
+      ['Scope 1', formatScopeResult(pdfScopeSummary['Scope 1'], outputFacts.scopeCoverage['Scope 1'])],
+      [outputFacts.scope2Accounting.scopeLabel, formatScopeResult(pdfScopeSummary['Scope 2'], outputFacts.scopeCoverage['Scope 2'])],
       ['Scope 2 accounting method', outputFacts.scope2Accounting.accountingMethodLabel],
       ['Market-based Scope 2', outputFacts.scope2Accounting.marketBasedDisclosure],
-      ['Scope 3', formatEmissionsWithUnit(pdfScopeSummary['Scope 3'])],
+      ['Scope 3', formatScopeResult(pdfScopeSummary['Scope 3'], outputFacts.scopeCoverage['Scope 3'])],
       ['Imported Activity Records', canonicalData.inventory.importedRecordCount],
       ['Records Included in GHG Total', reportCountSummary.processedRecords],
       [

@@ -43,3 +43,13 @@ export function isValidDateOnly(value?: string | null) {
     date.getUTCDate() === day
   );
 }
+
+/** Explicit reporting bounds are calendar dates, never timestamps or inferred defaults. */
+export function reportingPeriodError(start?: string, end?: string): string | null {
+  if (start === undefined && end === undefined) return null;
+  if (!start || !end || !/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) ||
+      !isValidDateOnly(start) || !isValidDateOnly(end) || start > end) {
+    return 'Enter a valid reporting start and end date, with start on or before end.';
+  }
+  return null;
+}

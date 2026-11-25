@@ -65,6 +65,7 @@ describe('buildSiteFacilityBreakdown', () => {
 
     expect(rows).toEqual([
       {
+        scopeCoverage: { 'Scope 1': { state: 'INCLUDED', calculatedRecords: 1, conflict: false }, 'Scope 2': { state: 'INCLUDED', calculatedRecords: 1, conflict: false }, 'Scope 3': { state: 'NOT_ASSESSED', calculatedRecords: 0, conflict: false } },
         siteFacility: 'Calgary Shop',
         jurisdictionCountry: null,
         jurisdictionRegion: null,
@@ -80,6 +81,7 @@ describe('buildSiteFacilityBreakdown', () => {
         ],
       },
       {
+        scopeCoverage: { 'Scope 1': { state: 'NOT_ASSESSED', calculatedRecords: 0, conflict: false }, 'Scope 2': { state: 'NOT_ASSESSED', calculatedRecords: 0, conflict: false }, 'Scope 3': { state: 'INCLUDED', calculatedRecords: 1, conflict: false } },
         siteFacility: 'Toronto Office',
         jurisdictionCountry: null,
         jurisdictionRegion: null,
@@ -149,6 +151,7 @@ describe('buildSiteFacilityBreakdown', () => {
 
     expect(rows).toEqual([
       {
+        scopeCoverage: { 'Scope 1': { state: 'INCLUDED', calculatedRecords: 1, conflict: false }, 'Scope 2': { state: 'NOT_ASSESSED', calculatedRecords: 0, conflict: false }, 'Scope 3': { state: 'NOT_ASSESSED', calculatedRecords: 0, conflict: false } },
         siteFacility: 'Unassigned',
         jurisdictionCountry: null,
         jurisdictionRegion: null,

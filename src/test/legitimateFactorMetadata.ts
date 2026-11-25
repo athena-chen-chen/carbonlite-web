@@ -9,6 +9,7 @@ export const LEGITIMATE_OFFICIAL_FACTOR = {
   confidenceLevel: 'OFFICIAL_GOVERNMENT',
   verificationStatus: 'VERIFIED',
   verified: true,
+  status: 'APPROVED',
   applicability: 'CORPORATE_INVENTORY',
   emissionBasis: 'DIRECT_CO2E',
 } as const;

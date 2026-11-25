@@ -1,3 +1,4 @@
+import type { ScopeCoverage, ScopeDeclarations } from './scopeCoverage';
 import type { SourceEvidenceCounts } from './reportSemantics';
 import type { ActivityUsageTotals } from '../../utils/activityAggregation';
 import type { CalculationAuditDetail } from '../../services/metrics';
@@ -101,6 +102,7 @@ export type CanonicalReportData = {
   };
   sourceReview: SourceReviewSummary;
   scopeBreakdown: {
+    coverage?: ScopeCoverage;
     totals: Record<'Scope 1' | 'Scope 2' | 'Scope 3' | 'Unclassified', number>;
     scope2Accounting: Scope2AccountingDisclosure;
   };
@@ -153,6 +155,8 @@ export type ReportLimitations = {
 };
 
 export type BuildCanonicalReportDataInput = {
+  /** Reserved for trusted structured coverage evidence; never populate from boundary prose. */
+  scopeDeclarations?: ScopeDeclarations;
   activities: CanonicalReportActivity[];
   reviewRows: SpreadsheetReviewRowItem[];
   calculationDetails: CalculationAuditDetail[];

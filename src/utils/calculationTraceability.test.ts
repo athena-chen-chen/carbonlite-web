@@ -99,6 +99,7 @@ describe('calculation traceability formatting', () => {
       status: 'CALCULATED',
       activityType: 'ELECTRICITY',
       activityQuantity: 50,
+      calculationQuantity: 50000,
       activityUnit: 'MWh',
       factorValue: 0.53,
       factorInputUnit: 'kWh',

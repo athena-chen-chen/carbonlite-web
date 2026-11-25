@@ -1,3 +1,5 @@
+import { reportingPeriodError } from '../utils/dateOnly';
+import { formatScopeResult } from '../reports/domain/scopeCoverage';
 import { escapeCsvValue } from '../utils/csv';
 import { DocumentScopeContext } from '../components/DocumentScopeContext';
 import { buildSourceReviewSummary } from '../reports/domain/buildSourceReviewSummary';
@@ -91,11 +93,18 @@ export function MetricsSummaryPage() {
     () => routeState?.metricsError ?? null,
   );
   const [reloadKey, setReloadKey] = useState(0);
-  const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
-  const [periodEnd, setPeriodEnd] = useState('2026-12-31');
+  // Only this snapshot is authoritative for requests and report navigation.
+  const [appliedPeriod, setAppliedPeriod] = useState(() => ({
+    start: getDefaultFallbackStartDate(), end: '2026-12-31', explicit: false,
+  }));
+  const { start: periodStart, end: periodEnd, explicit: explicitPeriod } = appliedPeriod;
+  const [periodError, setPeriodError] = useState<string | null>(null);
   const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
   const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
   const [dateRangeReady, setDateRangeReady] = useState(false);
+  const reportNavigationBlocked = !dateRangeReady || Boolean(periodError) ||
+    draftPeriodStart !== periodStart || draftPeriodEnd !== periodEnd;
+
   const [isInventoryBoundaryExpanded, setIsInventoryBoundaryExpanded] = useState(false);
   const [isSiteFacilityBreakdownExpanded, setIsSiteFacilityBreakdownExpanded] = useState(false);
   const [organizationProfile, setOrganizationProfile] = useState(() =>
@@ -105,17 +114,20 @@ export function MetricsSummaryPage() {
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestSequenceRef = useRef(0);
   const dateCommitTimerRef = useRef<number | null>(null);
+  const initializationGeneration = useRef(0);
   const trackedViewRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
     if (!dateRangeReady) return;
-    loadSummary();
+    void loadSummary();
+    return () => { requestSequenceRef.current++; inFlightRequestKeyRef.current = null; };
   }, [
     dateRangeReady,
     reloadKey,
     periodStart,
     periodEnd,
+    explicitPeriod,
     selectedRecordIds.join('|'),
     selectedDocumentIds.join('|'),
   ]);
@@ -125,9 +137,12 @@ export function MetricsSummaryPage() {
   }, []);
 
   useEffect(() => {
-    initializeDateRange();
+    const generation = ++initializationGeneration.current;
+    void initializeDateRange(generation);
 
     return () => {
+      initializationGeneration.current++;
+      requestSequenceRef.current++;
       if (dateCommitTimerRef.current) {
         window.clearTimeout(dateCommitTimerRef.current);
       }
@@ -204,6 +219,7 @@ export function MetricsSummaryPage() {
   async function loadSummary() {
     const request = {
       recalculate: true,
+      ...((explicitPeriod || (!selectedRecordIds.length && !selectedDocumentIds.length)) ? { dateFrom: periodStart, dateTo: periodEnd } : {}),
       ...(selectedRecordIds.length
         ? { selectedActivityRecordIds: selectedRecordIds }
         : selectedDocumentIds.length
@@ -260,39 +276,42 @@ export function MetricsSummaryPage() {
     setReloadKey((key) => key + 1);
   }
 
-  async function initializeDateRange() {
+  async function initializeDateRange(generation: number) {
     try {
       const range = await loadDefaultMetricsDateRange();
-      setPeriodStart(range.startDate);
-      setPeriodEnd(range.endDate);
-      setDraftPeriodStart(range.startDate);
-      setDraftPeriodEnd(range.endDate);
+      if (generation !== initializationGeneration.current) return;
+      const invalid = reportingPeriodError(range.startDate, range.endDate);
+      if (invalid) { setPeriodError(invalid); return; }
+      setAppliedPeriod({ start: range.startDate, end: range.endDate, explicit: false });
+      setDraftPeriodStart(range.startDate); setDraftPeriodEnd(range.endDate);
     } catch {
-      // Keep current-year fallback if activity records cannot be loaded.
+      // Retain the existing fallback only if no operator period has superseded it.
     } finally {
-      setDateRangeReady(true);
+      if (generation === initializationGeneration.current) setDateRangeReady(true);
     }
   }
 
   function commitDateRange(nextStart = draftPeriodStart, nextEnd = draftPeriodEnd) {
-    if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd)) return;
-    if (nextStart > nextEnd) return;
-    setPeriodStart(nextStart);
-    setPeriodEnd(nextEnd);
+    if (dateCommitTimerRef.current) window.clearTimeout(dateCommitTimerRef.current);
+    dateCommitTimerRef.current = null;
+    const invalid = reportingPeriodError(nextStart, nextEnd);
+    setPeriodError(invalid);
+    if (invalid) return;
+    initializationGeneration.current++;
+    setAppliedPeriod({ start: nextStart, end: nextEnd, explicit: true });
+    setDraftPeriodStart(nextStart); setDraftPeriodEnd(nextEnd);
+    setDateRangeReady(true);
   }
 
   function scheduleDateCommit(nextStart: string, nextEnd: string) {
-    if (dateCommitTimerRef.current) {
-      window.clearTimeout(dateCommitTimerRef.current);
-    }
-
-    if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd) || nextStart > nextEnd) {
-      return;
-    }
-
-    dateCommitTimerRef.current = window.setTimeout(() => {
-      commitDateRange(nextStart, nextEnd);
-    }, 500);
+    // Even draft editing supersedes pending inferred defaults. Invalid drafts do
+    // not change the applied snapshot and cannot be handed off as a report.
+    initializationGeneration.current++;
+    if (dateCommitTimerRef.current) window.clearTimeout(dateCommitTimerRef.current);
+    const invalid = reportingPeriodError(nextStart, nextEnd);
+    setPeriodError(invalid);
+    if (invalid) return;
+    dateCommitTimerRef.current = window.setTimeout(() => commitDateRange(nextStart, nextEnd), 500);
   }
 
   function handleStartDateChange(value: string) {
@@ -448,9 +467,13 @@ function handleDownloadPDF() {
     >
       <PageHeader title="Calculation results" headingRef={headingRef} />
       {selectedDocumentIds.length === 0 || selectedRecordIds.length > 0 ? (
-        <Link to="/reports" state={selectedRecordIds.length ? {
+        <Link aria-disabled={reportNavigationBlocked}
+          onClick={event => { if (reportNavigationBlocked) event.preventDefault(); }}
+          to="/reports" state={{ ...(selectedRecordIds.length ? {
           reportScope: 'selectedRecords', selectedActivityRecordIds: selectedRecordIds,
-        } : undefined} style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 8, background: '#047857', color: '#fff', fontWeight: 700, textDecoration: 'none', marginBottom: 20 }}>
+        } : { reportScope: 'dateRange' }),
+          ...((explicitPeriod || (!selectedRecordIds.length && !selectedDocumentIds.length)) ? { periodStart, periodEnd } : {}),
+        }} style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 8, background: '#047857', color: '#fff', fontWeight: 700, textDecoration: 'none', marginBottom: 20 }}>
           Generate Report
         </Link>
       ) : null}
@@ -458,7 +481,9 @@ function handleDownloadPDF() {
         <DocumentScopeContext selectedDocumentIds={selectedDocumentIds} importedRecordCount={activities.length}
           sourceFileNames={(calculationDetails ?? []).flatMap((record) => record.sourceFileName ? [record.sourceFileName] : [])}
           sourceReview={buildSourceReviewSummary({ rows: sourceReviewRows, calculationDetails: calculationDetails ?? [] })}
-          loading={!dateRangeReady || loading || lastUpdated === null} destination="report" />
+          loading={!dateRangeReady || loading || lastUpdated === null} destination="report"
+          periodStart={explicitPeriod ? periodStart : undefined} periodEnd={explicitPeriod ? periodEnd : undefined}
+          navigationBlocked={reportNavigationBlocked} />
       ) : null}
 
 
@@ -623,7 +648,7 @@ function handleDownloadPDF() {
         </div>
       ) : null}
 
-      {error && <div style={warningStyle}>{error}</div>}
+      {(periodError || error) && <div role="alert" style={warningStyle}>{periodError || error}</div>}
 
       {!isInitialLoading ? (
         <MetricsSummarySection
@@ -680,9 +705,9 @@ function SiteFacilityBreakdownTable({ rows }: { rows: SiteFacilityBreakdownRow[]
           {rows.map((row) => (
             <tr key={row.siteFacility}>
               <td style={siteFacilityTdStyle}>{row.siteFacility}</td>
-              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope1KgCO2e)}</td>
-              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope2KgCO2e)}</td>
-              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope3KgCO2e)}</td>
+              <td style={siteFacilityTdStyle}>{formatScopeResult(row.scope1KgCO2e, row.scopeCoverage?.['Scope 1'])}</td>
+              <td style={siteFacilityTdStyle}>{formatScopeResult(row.scope2KgCO2e, row.scopeCoverage?.['Scope 2'])}</td>
+              <td style={siteFacilityTdStyle}>{formatScopeResult(row.scope3KgCO2e, row.scopeCoverage?.['Scope 3'])}</td>
               <td style={siteFacilityTotalTdStyle}>{formatEmissionsWithUnit(row.totalKgCO2e)}</td>
               <td style={siteFacilityTdStyle}>{row.includedRecords}</td>
               <td style={siteFacilityTdStyle}>{formatSiteFacilityActivityBreakdown(row)}</td>
@@ -745,10 +770,6 @@ function formatLastUpdated(date: Date) {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function isValidDateInput(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function getDefaultFallbackStartDate() {

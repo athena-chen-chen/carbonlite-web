@@ -10,8 +10,8 @@ function text(pdf: ReturnType<typeof buildTechnicalReviewPdf>) {
 function freeze(value: any) { if (value && typeof value === 'object') { Object.freeze(value); Object.values(value).forEach(freeze); } return value; }
 
 const scenarios = [
-  { name: 'messy', total: '579.40', scopes: ['0 kg', '519.40', '60 kg'], cost: '3 of 3', percent: '100%', review: [9, 3, 6] },
-  { name: 'enmax', total: '338.06', scopes: ['148.32', '189.74', '0 kg'], cost: '0 of 3', percent: '0%', review: [0, 3, 0] },
+  { name: 'messy', total: '579.40', scopes: ['Not assessed', '519.40', '60 kg'], cost: '3 of 3', percent: '100%', review: [9, 3, 6] },
+  { name: 'enmax', total: '338.06', scopes: ['148.32', '189.74', 'Not assessed'], cost: '0 of 3', percent: '0%', review: [0, 3, 0] },
   { name: 'field', total: '2,428.44', scopes: ['1,228.74', '662.50', '537.20'], cost: '0 of 5', percent: '0%', review: [5, 5, 0] },
 ] as const;
 

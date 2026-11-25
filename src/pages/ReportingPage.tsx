@@ -702,6 +702,7 @@ function setAllReportSections(expanded: boolean) {
             scopeLabel={reportScopeLabel}
             generatedAt={generatedAt}
             inventoryBoundary={inventoryBoundary}
+            scopeCoverage={reportData.scopeBreakdown.coverage}
             usageTotals={usageTotals}
             totalEstimatedEmissionsKgCO2e={totalEstimatedEmissionsKgCO2e}
             countSummary={countSummary}

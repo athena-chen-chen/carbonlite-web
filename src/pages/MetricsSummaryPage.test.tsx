@@ -1,5 +1,6 @@
+import { StrictMode } from 'react';
 import { goldenReport } from '../reports/pdf/__tests__/goldenFixtures';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { vi } from 'vitest';
@@ -1212,9 +1213,9 @@ describe('buildMetricsSummaryTableRows', () => {
     );
 
     const scopeSection = screen.getByRole('region', { name: /Emissions by Scope/i });
-    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('0 kg CO₂e');
+    expect(within(scopeSection).getByText('Scope 1').parentElement).toHaveTextContent('Not assessed');
     expect(within(scopeSection).getByText('Scope 2').parentElement).toHaveTextContent('144 kg CO₂e');
-    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('0 kg CO₂e');
+    expect(within(scopeSection).getByText('Scope 3').parentElement).toHaveTextContent('Not assessed');
   });
 
   it('reconciles total emissions to Scope 1 + Scope 2 + Scope 3 and excludes review rows', () => {
@@ -2520,7 +2521,7 @@ describe('MetricsSummaryPage automatic refresh UX', () => {
     const boundarySection = screen.getByRole('region', { name: 'Inventory boundary' });
     expect(boundarySection).toBeInTheDocument();
     expect(boundarySection).toHaveTextContent(
-      '2025-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
+      '2025-01-01 to 2026-12-31 · Boundary not fully specified',
     );
     const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Inventory boundary' });
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
@@ -2766,10 +2767,62 @@ it.each([undefined, ['doc-partial'], ['doc-partial', 'doc-field']])('continues f
   await waitFor(() => expect(loadMetricsOverview).toHaveBeenCalled());
   expect(screen.getByText('Step 4 of 5 · Calculation results')).toBeInTheDocument();
   expect(screen.getAllByRole('link', { name: 'Generate Report' })).toHaveLength(1);
-  const request = vi.mocked(loadMetricsOverview).mock.calls.at(-1)![0];
-  expect(request).toEqual(expect.objectContaining({ recalculate: true }));
+  await waitFor(() => {
+    const request = vi.mocked(loadMetricsOverview).mock.calls.at(-1)![0];
+    if (selectedDocumentIds) expect(request).toEqual({ recalculate: true, selectedDocumentIds });
+    else expect(request).toMatchObject({ dateFrom: '2026-01-01', dateTo: '2026-12-31' });
+  });
   await userEvent.click(screen.getByRole('link', { name: 'Generate Report' }));
   expect(JSON.parse(screen.getByTestId('report-handoff').textContent!)).toEqual({
-    path: '/reports', state: selectedDocumentIds ? { reportScope: 'selectedDocuments', selectedDocumentIds } : null,
+    path: '/reports', state: selectedDocumentIds ? { reportScope: 'selectedDocuments', selectedDocumentIds } : { reportScope: 'dateRange', periodStart: '2026-01-01', periodEnd: '2026-12-31' },
   });
+});
+
+
+it.each([undefined, ['synthetic-document']])('hands off a narrowed applied period with selection %j',async(selectedDocumentIds)=>{
+ const {input}=goldenReport('messy');
+ vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({startDate:'2026-01-01',endDate:'2026-12-31',hasActivityRecords:true});
+ vi.mocked(loadMetricsOverview).mockResolvedValue({summary:{},activities:input.activities,calculationDetails:input.calculationDetails,sourceReviewRows:input.reviewRows,usageTotals:input.usageTotals,totalEstimatedEmissionsKgCO2e:579.4,totalRecordsFound:3,processedRecords:2,skippedRecords:0,missingFactorRecords:0,missingFactors:[],skippedReasons:{missingFactor:0,outsideDateRange:0,outsideScope:0,invalidData:0}} as any);
+ render(<MemoryRouter initialEntries={[{pathname:'/metrics-summary',state:selectedDocumentIds?{selectedDocumentIds}:undefined}]}><Routes><Route path='/metrics-summary' element={<MetricsSummaryPage/>}/><Route path='/reports' element={<ReportRouteProbe/>}/></Routes></MemoryRouter>);
+ await waitFor(()=>expect(screen.getByDisplayValue('2026-12-31')).toBeInTheDocument());
+ const end=screen.getByDisplayValue('2026-12-31');fireEvent.change(end,{target:{value:'2026-01-31'}});fireEvent.blur(end);
+ await waitFor(()=>expect(loadMetricsOverview).toHaveBeenLastCalledWith(expect.objectContaining({dateFrom:'2026-01-01',dateTo:'2026-01-31'})));
+ await userEvent.click(screen.getByRole('link',{name:'Generate Report'}));
+ expect(JSON.parse(screen.getByTestId('report-handoff').textContent!).state).toMatchObject({periodStart:'2026-01-01',periodEnd:'2026-01-31',...(selectedDocumentIds?{reportScope:'selectedDocuments',selectedDocumentIds}:{reportScope:'dateRange'})});
+});
+
+
+it.each([undefined, ['synthetic-document-2025','synthetic-document-2026']])('late defaults cannot replace an applied period or selection %j',async(selectedDocumentIds)=>{
+ let resolve!: (value: {startDate:string;endDate:string;hasActivityRecords:boolean})=>void;
+ vi.mocked(loadDefaultMetricsDateRange).mockReturnValue(new Promise(r=>{resolve=r;}));
+ vi.mocked(loadMetricsOverview).mockResolvedValue({summary:{},activities:[],calculationDetails:[],sourceReviewRows:[],usageTotals:[],totalEstimatedEmissionsKgCO2e:0,totalRecordsFound:0,processedRecords:0,skippedRecords:0,missingFactorRecords:0,missingFactors:[],skippedReasons:{missingFactor:0,outsideDateRange:0,outsideScope:0,invalidData:0}} as any);
+ render(<MemoryRouter initialEntries={[{pathname:'/metrics-summary',state:selectedDocumentIds?{selectedDocumentIds}:undefined}]}><Routes><Route path='/metrics-summary' element={<MetricsSummaryPage/>}/><Route path='/reports' element={<ReportRouteProbe/>}/></Routes></MemoryRouter>);
+ expect(screen.getByRole('link',{name:'Generate Report'})).toHaveAttribute('aria-disabled','true');
+ const dates=screen.getAllByDisplayValue('2026-12-31');
+ fireEvent.change(dates[0],{target:{value:'2026-01-31'}});
+ expect(screen.getByRole('link',{name:'Generate Report'})).toHaveAttribute('aria-disabled','true');
+ fireEvent.blur(dates[0]);
+ await waitFor(()=>expect(loadMetricsOverview).toHaveBeenLastCalledWith(expect.objectContaining({dateTo:'2026-01-31'})));
+ await act(async()=>resolve({startDate:'2025-01-01',endDate:'2027-12-31',hasActivityRecords:true}));
+ expect(screen.getByDisplayValue('2026-01-31')).toBeInTheDocument();
+ await userEvent.click(screen.getByRole('link',{name:'Generate Report'}));
+ expect(JSON.parse(screen.getByTestId('report-handoff').textContent!).state).toMatchObject({periodEnd:'2026-01-31',...(selectedDocumentIds?{selectedDocumentIds}:{})});
+});
+
+
+it('ignores overlapping initialization responses after an operator applies dates',async()=>{
+ const resolvers: Array<(value:{startDate:string;endDate:string;hasActivityRecords:boolean})=>void>=[];
+ vi.mocked(loadDefaultMetricsDateRange).mockImplementation(()=>new Promise(r=>resolvers.push(r)));
+ vi.mocked(loadMetricsOverview).mockResolvedValue({summary:{},activities:[],calculationDetails:[],sourceReviewRows:[],usageTotals:[],totalEstimatedEmissionsKgCO2e:0,totalRecordsFound:0,processedRecords:0,skippedRecords:0,missingFactorRecords:0,missingFactors:[],skippedReasons:{missingFactor:0,outsideDateRange:0,outsideScope:0,invalidData:0}} as any);
+ render(<StrictMode><MemoryRouter><MetricsSummaryPage/></MemoryRouter></StrictMode>);
+ expect(resolvers.length).toBe(2);
+ const end=screen.getByDisplayValue('2026-12-31');
+ fireEvent.change(end,{target:{value:'2026-02-28'}});fireEvent.blur(end);
+ await act(async()=>{resolvers[1]({startDate:'2024-01-01',endDate:'2028-12-31',hasActivityRecords:true});resolvers[0]({startDate:'2023-01-01',endDate:'2029-12-31',hasActivityRecords:true});});
+ expect(screen.getByDisplayValue('2026-02-28')).toBeInTheDocument();
+ expect(screen.getByRole('link',{name:'Generate Report'})).toHaveAttribute('aria-disabled','false');
+ const start=document.querySelectorAll('input[type="date"]')[0];
+ fireEvent.change(start,{target:{value:'2027-01-01'}});fireEvent.blur(start);
+ expect(screen.getByRole('alert')).toBeInTheDocument();
+ expect(screen.getByRole('link',{name:'Generate Report'})).toHaveAttribute('aria-disabled','true');
 });

@@ -1,3 +1,4 @@
+import { formatSavedFactorUnit } from '../utils/savedFactorUnit';
 
 import { createActivityData, updateActivityData, type ActivityDataItem } from '../services/activityData';
 import {
@@ -1448,9 +1449,7 @@ function getCanonicalCalculationFields(row: Row, estimatedEmission: number | nul
       matchedFactorValue: Number.isFinite(Number(row.factorValue))
         ? Number(row.factorValue)
         : undefined,
-      matchedFactorUnit: row.factorResultUnit
-        ? `${row.factorResultUnit}/${normalizeUnitForDisplay(row.unit).value || row.unit}`
-        : undefined,
+      matchedFactorUnit: formatSavedFactorUnit(row.factorResultUnit, row.unit, row.activityType),
       matchedFactorVersion: row.factorVersion,
       matchedFactorSourceAuthority: row.factorSourceAuthority,
       matchedFactorSourceDocument: row.factorSourceDocument,

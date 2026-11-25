@@ -192,7 +192,7 @@ it.each(['preview', 'extract'] as const)('clear/delete/reset invalidate pending 
       act(() => action === 'removeSourceDocument' ? result.current.actions.removeSourceDocument(document.id) : result.current.actions[action]());
       const snapshot = result.current.state;
       vi.mocked(p.feedback.error).mockClear(); vi.mocked(p.feedback.success).mockClear();
-      await act(async () => { outcome === 'success' ? pending.resolve(response('source')) : pending.reject(new Error('old')); await work; });
+      await act(async () => { if (outcome === 'success') pending.resolve(response('source')); else pending.reject(new Error('old')); await work; });
       expect(result.current.state).toEqual(snapshot);
       expect(result.current.state.extractingId).toBeNull();
       expect(p.feedback.error).not.toHaveBeenCalled(); expect(p.feedback.success).not.toHaveBeenCalled();
@@ -235,7 +235,7 @@ it.each(['success', 'failure'] as const)('unmount prevents late preview %s feedb
   let work!: Promise<void>;
   act(() => { work = result.current.actions.previewDocument(document); });
   unmount(); vi.mocked(p.feedback.error).mockClear(); vi.mocked(p.feedback.success).mockClear();
-  await act(async () => { outcome === 'success' ? pending.resolve(response('source')) : pending.reject(new Error('old')); await work; });
+  await act(async () => { if (outcome === 'success') pending.resolve(response('source')); else pending.reject(new Error('old')); await work; });
   expect(p.feedback.error).not.toHaveBeenCalled(); expect(p.feedback.success).not.toHaveBeenCalled();
   expect(p.collection.updateDocumentStatuses).not.toHaveBeenCalled();
 });
@@ -266,7 +266,7 @@ it('clear invalidates row evaluation and late confirmation success/failure', asy
     await waitFor(() => expect(result.current.state.confirmingId).toBe('source'));
     act(() => result.current.actions.clearReview());
     vi.mocked(p.feedback.error).mockClear(); vi.mocked(p.feedback.success).mockClear();
-    await act(async () => { outcome === 'success' ? pending.resolve({ count: 1, createdIds: ['already-created'] }) : pending.reject(new Error('old')); await work; });
+    await act(async () => { if (outcome === 'success') pending.resolve({ count: 1, createdIds: ['already-created'] }); else pending.reject(new Error('old')); await work; });
     expect(result.current.state.parsedActivities).toEqual([]);
     expect(result.current.state.confirmingId).toBeNull();
     expect(p.feedback.error).not.toHaveBeenCalled(); expect(p.feedback.success).not.toHaveBeenCalled();
@@ -297,7 +297,7 @@ it('preserves partial confirmation 3 → 1 → 0 and tracked Water 18 m3', async
   await act(() => result.current.actions.handleConfirmImport());
   expect(result.current.state.parsedActivities).toHaveLength(1);
   expect(result.current.state.parsedActivities[0].sourceRow).toBe(4);
-  vi.mocked(getAllActivityData).mockResolvedValue(rows.map((row, index) => ({ id: String(index), sourceDocumentId: 'source', sourceRow: row.sourceRow })) as any);
+  vi.mocked(getAllActivityData).mockResolvedValue(rows.slice(0, 2).map((row, index) => ({ id: String(index), sourceDocumentId: 'source', sourceRow: row.sourceRow })) as any);
   await act(async () => result.current.actions.updateParsedActivityField(0, 'unit', 'L'));
   expect(result.current.summary.canConfirmImport).toBe(true);
   await act(() => result.current.actions.handleConfirmImport());

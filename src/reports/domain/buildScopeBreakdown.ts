@@ -1,3 +1,4 @@
+import { buildScopeCoverage, type ScopeDeclarations } from './scopeCoverage';
 import type { CalculationAuditDetail } from '../../services/metrics';
 import {
   formatScopeClassification,
@@ -6,7 +7,7 @@ import {
 import type { ScopeBreakdown } from './reportTypes';
 import { buildScope2AccountingDisclosure } from './buildScope2Accounting';
 
-export function buildScopeBreakdown(calculationDetails: CalculationAuditDetail[]): ScopeBreakdown {
+export function buildScopeBreakdown(calculationDetails: CalculationAuditDetail[], declarations?: ScopeDeclarations): ScopeBreakdown {
   const totals: ScopeBreakdown['totals'] = {
     'Scope 1': 0,
     'Scope 2': 0,
@@ -37,6 +38,7 @@ export function buildScopeBreakdown(calculationDetails: CalculationAuditDetail[]
 
   return {
     totals,
+    coverage: buildScopeCoverage(calculationDetails, declarations),
     scope2Accounting: buildScope2AccountingDisclosure(calculationDetails),
   };
 }

@@ -286,6 +286,8 @@ export type CalculationAuditDetail = {
   facilityId?: string | null;
   facilityName?: string | null;
   activityQuantity: number;
+  /** Effective quantity supplied by the API; presentation must not infer it from emissions. */
+  calculationQuantity?: number | null;
   activityUnit: string;
   quantityUnit?: string | null;
   normalizedQuantity?: number | null;

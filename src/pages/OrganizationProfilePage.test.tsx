@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { OrganizationProfilePage } from './OrganizationProfilePage';
 import {
+  SAMPLE_WORKSPACE_PROFILE,
   isValidPrimaryContactEmail,
   loadOrganizationProfile,
   reviewOrganizationBoundary,
@@ -566,6 +567,8 @@ describe('OrganizationProfilePage', () => {
   });
 
   it('shows pilot reviewers boundary information as a read-only view without save controls', () => {
+    // Explicit values previously returned by the trusted profile API, not a name-derived fallback.
+    localStorage.setItem('carbonlite:organization-profile:sample-workspace', JSON.stringify(SAMPLE_WORKSPACE_PROFILE));
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -677,6 +680,22 @@ describe('OrganizationProfilePage', () => {
     expect(changedProfile.boundaryReviewedAt).toBe('');
     expect(changedProfile.boundaryReviewNote).toBe('');
     expect(changedProfile.boundaryVersion).toBe(2);
+  });
+
+  it.each(['2026-02-30', '2025-02-29', '2026-04-31', '1900-02-29', '2026-13-01', '2026-01-00'])('rejects impossible boundary date %s without changing saved dates', (date) => {
+    setAdminUser();
+    const base = { ...loadOrganizationProfile(), organizationName: 'Admin Workspace', industry: 'Technology', provinceOrState: 'Alberta', reportingPeriodStart: '2026-01-01', reportingPeriodEnd: '2026-12-31' };
+    saveOrganizationProfile(base);
+    for (const key of ['reportingPeriodStart', 'reportingPeriodEnd'] as const) {
+      expect(() => saveOrganizationProfile({ ...base, [key]: date })).toThrow('Please enter valid reporting period dates.');
+      expect(loadOrganizationProfile()).toMatchObject({ reportingPeriodStart: base.reportingPeriodStart, reportingPeriodEnd: base.reportingPeriodEnd });
+    }
+  });
+
+  it.each(['2024-02-29', '2026-02-28', '0900-01-01', '2000-02-29', '0099-01-01'])('preserves valid calendar date %s through save/reload', (date) => {
+    setAdminUser();
+    saveOrganizationProfile({ ...loadOrganizationProfile(), organizationName: 'Admin Workspace', industry: 'Technology', provinceOrState: 'Alberta', reportingPeriodStart: date, reportingPeriodEnd: '2027-01-01' });
+    expect(loadOrganizationProfile().reportingPeriodStart).toBe(date);
   });
 
   it('rejects reporting periods where the end date is not after the start date', () => {

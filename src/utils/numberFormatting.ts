@@ -42,7 +42,7 @@ export function formatEmissionsWithUnit(value?: string | number | null, unit = '
 }
 
 export function formatPdfText(value?: string | number | null) {
-  return String(value ?? '').replace(/\u2082/g, '2');
+  return String(value ?? '').replace(/\u2082/g, '2').replace(/≈/g, '~=');
 }
 
 export function formatPdfEmissionsUnit(unit?: string | null) {

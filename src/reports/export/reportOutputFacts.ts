@@ -1,3 +1,4 @@
+import { buildScopeCoverage } from '../domain/scopeCoverage';
 import type { CanonicalReportData } from '../domain/reportTypes';
 
 export function buildReportOutputFacts(report: CanonicalReportData) {
@@ -9,6 +10,7 @@ export function buildReportOutputFacts(report: CanonicalReportData) {
     importedRecordCount: report.inventory.importedRecordCount,
     includedRecordCount: report.inventory.includedRecordCount,
     trackedMetricCount: report.inventory.trackedMetricCount,
+    scopeCoverage: report.scopeBreakdown.coverage ?? buildScopeCoverage(report.calculationDetails ?? []),
     scopeTotals: report.scopeBreakdown.totals,
     scope2Accounting: report.scopeBreakdown.scope2Accounting,
     calculationCoverage: report.calculationQuality.calculationCoverage,

@@ -46,8 +46,15 @@ export function buildInventoryBoundary(
   reportingPeriod?: string | null,
   overrides?: Partial<InventoryBoundary> | null,
 ): InventoryBoundary {
+  // Generic callers have no authoritative sample designation. Preserve explicit
+  // supplied boundaries, but never synthesize them from an organization name.
+  const defaults: InventoryBoundary = {
+    organizationWorkspace: organizationName?.trim() ?? '', reportingPeriod: '', geographicBoundary: '',
+    includedFacilitiesOrLocations: '', excludedFacilitiesOrLocations: '', includedScopes: '',
+    scope3CoverageNote: '', exclusionsLimitations: '', boundaryNotes: '',
+  };
   const boundary = {
-    ...DEFAULT_INVENTORY_BOUNDARY,
+    ...defaults,
     ...(overrides ?? {}),
   };
 

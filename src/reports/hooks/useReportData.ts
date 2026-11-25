@@ -1,3 +1,4 @@
+import { reportingPeriodError } from '../../utils/dateOnly';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EMPTY_ACTIVITY_USAGE_TOTALS,
@@ -33,6 +34,8 @@ export type ReportScope = 'dateRange' | 'selectedDocuments' | 'selectedRecords';
 
 export type ReportRouteState = {
   reportScope?: string;
+  periodStart?: string;
+  periodEnd?: string;
   selectedRecordIds?: string[];
   selectedActivityRecordIds?: string[];
   selectedDocumentIds?: string[];
@@ -106,13 +109,24 @@ export function useReportData({
   const [totalEstimatedEmissionsKgCO2e, setTotalEstimatedEmissionsKgCO2e] = useState(0);
   const [countSummary, setCountSummary] = useState(DEFAULT_COUNT_SUMMARY);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Request failures belong to a fetched scope; draft validation is derived below.
+  const [requestFailure, setRequestFailure] = useState<{ identity: string; message: string } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [periodStart, setPeriodStart] = useState(getDefaultFallbackStartDate());
   const [periodEnd, setPeriodEnd] = useState('2026-12-31');
   const [draftPeriodStart, setDraftPeriodStart] = useState(getDefaultFallbackStartDate());
   const [draftPeriodEnd, setDraftPeriodEnd] = useState('2026-12-31');
   const [dateRangeReady, setDateRangeReady] = useState(false);
+  const [periodOwner, setPeriodOwner] = useState(routeState);
+  const [explicitPeriod, setExplicitPeriod] = useState(false);
+  const incomingExplicit = routeState?.periodStart !== undefined || routeState?.periodEnd !== undefined;
+  const hasExplicitPeriod = periodOwner === routeState ? explicitPeriod : incomingExplicit;
+  const effectiveStart = periodOwner === routeState ? periodStart : routeState?.periodStart ?? periodStart;
+  const effectiveEnd = periodOwner === routeState ? periodEnd : routeState?.periodEnd ?? periodEnd;
+  const scopeError = reportingPeriodError(
+    hasExplicitPeriod ? (periodOwner === routeState ? effectiveStart : routeState?.periodStart) : undefined,
+    hasExplicitPeriod ? (periodOwner === routeState ? effectiveEnd : routeState?.periodEnd) : undefined,
+  );
   const [organizationProfile, setOrganizationProfile] = useState(() =>
     loadOrganizationProfile(getCurrentUser()),
   );
@@ -121,7 +135,7 @@ export function useReportData({
   const restoredScope: ReportScope =
     selectedDocumentIds.length || routeState?.reportScope === 'selectedDocuments'
       ? 'selectedDocuments'
-      : selectedRecordIds.length ? 'selectedRecords' : 'dateRange';
+      : selectedRecordIds.length || routeState?.reportScope === 'selectedRecords' ? 'selectedRecords' : 'dateRange';
   const [scopeSelection, setScopeSelection] = useState({ routeState, scope: restoredScope });
   // Route restoration must change identity in this render, before effects start fetching.
   const reportScope = scopeSelection.routeState === routeState ? scopeSelection.scope : restoredScope;
@@ -129,21 +143,31 @@ export function useReportData({
     setScopeSelection({ routeState, scope });
   }
   const dateCommitTimerRef = useRef<number | null>(null);
+  const initializationGeneration = useRef(0);
   const inFlightRequestKeyRef = useRef<string | null>(null);
   const requestGenerationRef = useRef(0);
   const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const request = {
     recalculate: true,
     requireSourceReviewRows: true,
+    ...((reportScope === 'dateRange' || hasExplicitPeriod) ? { dateFrom: effectiveStart, dateTo: effectiveEnd } : {}),
     ...(reportScope === 'selectedRecords'
       ? { selectedActivityRecordIds: selectedRecordIds }
       : reportScope === 'selectedDocuments'
       ? { selectedDocumentIds }
-      : { dateFrom: periodStart, dateTo: periodEnd }),
+      : {}),
   };
+  const selectionError = (reportScope === 'selectedRecords' && !selectedRecordIds.length) ||
+    (reportScope === 'selectedDocuments' && !selectedDocumentIds.length) ? 'No records or documents selected. Choose a reporting scope.' : null;
   const requestedIdentity = JSON.stringify({ workspaceId: currentWorkspaceId, scope: reportScope, ...request });
   const isCurrentData = loadedIdentity === requestedIdentity;
-  const isExportReady = dateRangeReady && !loading && !error && isCurrentData;
+  const ownsDraft = periodOwner === routeState;
+  const draftError = ownsDraft && (reportScope === 'dateRange' || hasExplicitPeriod)
+    ? reportingPeriodError(draftPeriodStart, draftPeriodEnd) : null;
+  const unappliedDates = ownsDraft && (draftPeriodStart !== periodStart || draftPeriodEnd !== periodEnd);
+  const error = scopeError ?? selectionError ?? draftError ??
+    (requestFailure?.identity === requestedIdentity ? requestFailure.message : null);
+  const isExportReady = dateRangeReady && !loading && !error && !unappliedDates && isCurrentData;
   const outputGeneratedDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const reportScopeLabel = getReportScopeLabel(
@@ -152,8 +176,8 @@ export function useReportData({
     selectedDocumentIds.length,
   );
   const reportPeriod =
-    reportScope === 'dateRange'
-      ? `${periodStart} to ${periodEnd}`
+    reportScope === 'dateRange' || hasExplicitPeriod
+      ? `${effectiveStart} to ${effectiveEnd}`
       : reportScope === 'selectedDocuments'
       ? 'Selected documents'
       : 'Selected records';
@@ -179,8 +203,8 @@ export function useReportData({
         totalEstimatedEmissionsKgCO2e,
         inventoryBoundary,
         reportingPeriod: {
-          startDate: reportScope === 'dateRange' ? periodStart : null,
-          endDate: reportScope === 'dateRange' ? periodEnd : null,
+          startDate: reportScope === 'dateRange' || hasExplicitPeriod ? effectiveStart : null,
+          endDate: reportScope === 'dateRange' || hasExplicitPeriod ? effectiveEnd : null,
           label: reportPeriod,
         },
         organization: {
@@ -206,8 +230,9 @@ export function useReportData({
       totalEstimatedEmissionsKgCO2e,
       inventoryBoundary,
       reportScope,
-      periodStart,
-      periodEnd,
+      effectiveStart,
+      effectiveEnd,
+      hasExplicitPeriod,
       reportPeriod,
       organizationName,
       currentWorkspaceId,
@@ -221,13 +246,14 @@ export function useReportData({
   );
 
   async function loadReportData() {
+    if (scopeError || selectionError) return;
     const requestKey = requestedIdentity;
     if (inFlightRequestKeyRef.current === requestKey) return;
     inFlightRequestKeyRef.current = requestKey;
     const generation = ++requestGenerationRef.current;
     const endTiming = startDevTiming('loadReportData');
     setLoading(true);
-    setError(null);
+    setRequestFailure(null);
 
     try {
       const overview = await loadMetricsOverview(request);
@@ -270,7 +296,7 @@ export function useReportData({
       }).catch(() => {
         // Failure audit should not block the user-facing error.
       });
-      setError(getUserFriendlyErrorMessage(null, 'reportGeneration'));
+      setRequestFailure({ identity: requestKey, message: getUserFriendlyErrorMessage(null, 'reportGeneration') });
     } finally {
       if (requestGenerationRef.current === generation) {
         inFlightRequestKeyRef.current = null;
@@ -291,14 +317,23 @@ export function useReportData({
   }, [dateRangeReady, reloadKey, requestedIdentity]);
 
   useEffect(() => {
-    initializeDateRange();
-
-    return () => {
-      if (dateCommitTimerRef.current) {
-        window.clearTimeout(dateCommitTimerRef.current);
-      }
-    };
-  }, []);
+    let cancelled = false;
+    const generation = ++initializationGeneration.current;
+    if (incomingExplicit) {
+      setPeriodStart(routeState?.periodStart ?? ''); setPeriodEnd(routeState?.periodEnd ?? '');
+      setDraftPeriodStart(routeState?.periodStart ?? ''); setDraftPeriodEnd(routeState?.periodEnd ?? '');
+      setExplicitPeriod(true); setPeriodOwner(routeState); setDateRangeReady(true);
+    } else {
+      void loadDefaultMetricsDateRange().then(range => {
+        if (cancelled || generation !== initializationGeneration.current) return;
+        setPeriodStart(range.startDate); setPeriodEnd(range.endDate);
+        setDraftPeriodStart(range.startDate); setDraftPeriodEnd(range.endDate);
+      }).catch(() => undefined).finally(() => {
+        if (!cancelled && generation === initializationGeneration.current) { setExplicitPeriod(false); setPeriodOwner(routeState); setDateRangeReady(true); }
+      });
+    }
+    return () => { cancelled = true; if (dateCommitTimerRef.current) window.clearTimeout(dateCommitTimerRef.current); };
+  }, [routeState]);
 
   useEffect(() => {
     function refreshOrganizationProfile(event?: Event) {
@@ -329,39 +364,26 @@ export function useReportData({
       });
   }, [currentUser?.id, currentWorkspaceId, currentUser?.email]);
 
-  async function initializeDateRange() {
-    try {
-      const range = await loadDefaultMetricsDateRange();
-      setPeriodStart(range.startDate);
-      setPeriodEnd(range.endDate);
-      setDraftPeriodStart(range.startDate);
-      setDraftPeriodEnd(range.endDate);
-    } catch {
-      // Keep current-year fallback if activity records cannot be loaded.
-    } finally {
-      setDateRangeReady(true);
-    }
-  }
-
   function commitDateRange(nextStart = draftPeriodStart, nextEnd = draftPeriodEnd) {
-    if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd)) return;
-    if (nextStart > nextEnd) return;
+    if (dateCommitTimerRef.current !== null) window.clearTimeout(dateCommitTimerRef.current);
+    dateCommitTimerRef.current = null;
+    initializationGeneration.current++;
+    setDraftPeriodStart(nextStart);
+    setDraftPeriodEnd(nextEnd);
+    // Invalid drafts block export, but do not invalidate still-correct applied data.
+    if (reportingPeriodError(nextStart, nextEnd)) return;
+    setExplicitPeriod(true); setPeriodOwner(routeState); setDateRangeReady(true);
     setPeriodStart(nextStart);
     setPeriodEnd(nextEnd);
   }
 
   function scheduleDateCommit(nextStart: string, nextEnd: string) {
-    if (dateCommitTimerRef.current) {
-      window.clearTimeout(dateCommitTimerRef.current);
-    }
-
-    if (!isValidDateInput(nextStart) || !isValidDateInput(nextEnd) || nextStart > nextEnd) {
-      return;
-    }
-
-    dateCommitTimerRef.current = window.setTimeout(() => {
-      commitDateRange(nextStart, nextEnd);
-    }, 500);
+    // An operator edit supersedes inferred defaults immediately, even if incomplete.
+    initializationGeneration.current++;
+    if (dateCommitTimerRef.current !== null) window.clearTimeout(dateCommitTimerRef.current);
+    dateCommitTimerRef.current = null;
+    if (reportingPeriodError(nextStart, nextEnd)) return;
+    dateCommitTimerRef.current = window.setTimeout(() => commitDateRange(nextStart, nextEnd), 500);
   }
 
   function handleStartDateChange(value: string) {
@@ -438,10 +460,6 @@ function getReportScopeLabel(
   }
 
   return 'Date Range';
-}
-
-function isValidDateInput(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function getDefaultFallbackStartDate() {

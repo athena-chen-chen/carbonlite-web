@@ -83,18 +83,34 @@ export const SAMPLE_WORKSPACE_PROFILE: OrganizationProfile = {
 export function getDefaultOrganizationProfile(user: AuthUser | null = getCurrentUser()): OrganizationProfile {
   const organizationName = getOrganizationName(user);
 
-  if (organizationName === SAMPLE_WORKSPACE_PROFILE.organizationName) {
-    return SAMPLE_WORKSPACE_PROFILE;
-  }
+  // Names and cached session labels cannot prove demo designation.
+  // Verified sample values arrive through the organization-profile API.
 
   return {
-    ...SAMPLE_WORKSPACE_PROFILE,
+    otherIndustry: '',
+    primaryContactName: '',
+    primaryContactEmail: '',
+    boundaryStatus: 'DRAFT',
+    boundaryReviewedBy: '',
+    boundaryReviewedByUserId: '',
+    boundaryReviewedAt: '',
+    boundaryVersion: 1,
+    boundaryReviewNote: '',
+    boundaryReviewFingerprint: '',
     organizationName,
     industry: '',
     country: DEFAULT_COUNTRY,
     provinceOrState: '',
     city: '',
+    reportingPeriodStart: '',
+    reportingPeriodEnd: '',
+    geographicBoundary: '',
+    includedFacilitiesOrLocations: '',
     excludedFacilitiesOrLocations: '',
+    includedScopes: '',
+    scope3CoverageNote: '',
+    exclusionsAndLimitations: '',
+    boundaryNotes: '',
   };
 }
 
@@ -114,7 +130,7 @@ export function loadOrganizationProfile(user: AuthUser | null = getCurrentUser()
     return normalizeOrganizationProfile({
       ...defaults,
       ...(JSON.parse(raw) as Partial<OrganizationProfile>),
-    });
+    }, defaults);
   } catch {
     return defaults;
   }
@@ -128,7 +144,7 @@ export function saveOrganizationProfile(
     throw new Error('You do not have permission to perform this action.');
   }
 
-  const profile = normalizeOrganizationProfile(input);
+  const profile = normalizeOrganizationProfile(input, getDefaultOrganizationProfile(user));
   const previous = loadOrganizationProfile(user);
   const profileWithBoundaryReview = applyBoundaryReviewInvalidation(previous, profile);
   validateOrganizationProfile(profileWithBoundaryReview);
@@ -162,7 +178,7 @@ export async function persistOrganizationProfile(
     throw new Error('You do not have permission to perform this action.');
   }
 
-  const profile = normalizeOrganizationProfile(input);
+  const profile = normalizeOrganizationProfile(input, getDefaultOrganizationProfile(user));
   const previous = await fetchOrganizationProfile(user).catch(() => loadOrganizationProfile(user));
   const profileWithBoundaryReview = applyBoundaryReviewInvalidation(previous, profile);
   validateOrganizationProfile(profileWithBoundaryReview);
@@ -175,7 +191,7 @@ export async function persistOrganizationProfile(
   const normalizedSaved = normalizeOrganizationProfile({
     ...profileWithBoundaryReview,
     ...saved,
-  });
+  }, getDefaultOrganizationProfile(user));
 
   dispatchOrganizationProfileUpdated(normalizedSaved);
   void trackOrganizationBoundaryAuditEvent('BOUNDARY_UPDATED', previous, normalizedSaved, user);
@@ -218,10 +234,9 @@ export function profileToInventoryBoundary(
   profile: OrganizationProfile,
   fallbackReportingPeriod?: string | null,
 ): InventoryBoundary {
-  const isSampleWorkspace = profile.organizationName === SAMPLE_WORKSPACE_PROFILE.organizationName;
 
   return {
-    organizationWorkspace: profile.organizationName || SAMPLE_WORKSPACE_PROFILE.organizationName,
+    organizationWorkspace: profile.organizationName,
     industry: getDisplayIndustry(profile) || undefined,
     otherIndustry: profile.otherIndustry || undefined,
     country: profile.country || DEFAULT_COUNTRY,
@@ -230,45 +245,14 @@ export function profileToInventoryBoundary(
     reportingPeriod:
       formatReportingPeriod(profile) ||
       fallbackReportingPeriod ||
-      DEFAULT_INVENTORY_BOUNDARY.reportingPeriod,
-    geographicBoundary: getBoundaryProfileValue(
-      profile.geographicBoundary,
-      DEFAULT_INVENTORY_BOUNDARY.geographicBoundary,
-      isSampleWorkspace,
-    ),
-    includedFacilitiesOrLocations:
-      getBoundaryProfileValue(
-        profile.includedFacilitiesOrLocations,
-        DEFAULT_INVENTORY_BOUNDARY.includedFacilitiesOrLocations,
-        isSampleWorkspace,
-      ),
-    excludedFacilitiesOrLocations:
-      getBoundaryProfileValue(
-        profile.excludedFacilitiesOrLocations,
-        DEFAULT_INVENTORY_BOUNDARY.excludedFacilitiesOrLocations ?? '',
-        isSampleWorkspace,
-      ),
-    includedScopes: getBoundaryProfileValue(
-      profile.includedScopes,
-      DEFAULT_INVENTORY_BOUNDARY.includedScopes,
-      isSampleWorkspace,
-    ),
-    scope3CoverageNote: getBoundaryProfileValue(
-      profile.scope3CoverageNote,
-      DEFAULT_INVENTORY_BOUNDARY.scope3CoverageNote,
-      isSampleWorkspace,
-    ),
-    exclusionsLimitations:
-      getBoundaryProfileValue(
-        profile.exclusionsAndLimitations,
-        DEFAULT_INVENTORY_BOUNDARY.exclusionsLimitations,
-        isSampleWorkspace,
-      ),
-    boundaryNotes: getBoundaryProfileValue(
-      profile.boundaryNotes,
-      DEFAULT_INVENTORY_BOUNDARY.boundaryNotes ?? '',
-      isSampleWorkspace,
-    ),
+      '',
+    geographicBoundary: clean(profile.geographicBoundary),
+    includedFacilitiesOrLocations: clean(profile.includedFacilitiesOrLocations),
+    excludedFacilitiesOrLocations: clean(profile.excludedFacilitiesOrLocations),
+    includedScopes: clean(profile.includedScopes),
+    scope3CoverageNote: clean(profile.scope3CoverageNote),
+    exclusionsLimitations: clean(profile.exclusionsAndLimitations),
+    boundaryNotes: clean(profile.boundaryNotes),
     boundaryStatus: profile.boundaryStatus,
     boundaryReviewedBy: profile.boundaryReviewedBy || undefined,
     boundaryReviewedAt: profile.boundaryReviewedAt || undefined,
@@ -288,15 +272,6 @@ export function profileToReportContextInventoryBoundary(
     ...boundary,
     reportingPeriod: selectedReportingPeriod || boundary.reportingPeriod,
   };
-}
-
-function getBoundaryProfileValue(value: string, sampleDefault: string, isSampleWorkspace: boolean) {
-  const trimmed = String(value ?? '').trim();
-
-  if (isSampleWorkspace) return trimmed || sampleDefault;
-  if (!trimmed || trimmed === sampleDefault) return '';
-
-  return trimmed;
 }
 
 function getDisplayIndustry(profile: Pick<OrganizationProfile, 'industry' | 'otherIndustry'>) {
@@ -323,7 +298,7 @@ function getOrganizationProfileStorageKey(user: AuthUser | null) {
 
 function normalizeOrganizationProfile(
   input: Partial<OrganizationProfile>,
-  defaults: OrganizationProfile = SAMPLE_WORKSPACE_PROFILE,
+  defaults: OrganizationProfile,
 ): OrganizationProfile {
   const apiInput = input as Partial<OrganizationProfile> & {
     province?: string | null;
@@ -405,7 +380,7 @@ function validateOrganizationProfile(profile: OrganizationProfile) {
   [profile.reportingPeriodStart, profile.reportingPeriodEnd]
     .filter(Boolean)
     .forEach((date) => {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      if (!isBoundaryCalendarDate(date)) {
         throw new Error('Please enter valid reporting period dates.');
       }
     });
@@ -488,7 +463,7 @@ function markBoundaryReviewed(
     boundaryVersion: Math.max(1, Number(profile.boundaryVersion) || 1),
     boundaryReviewNote: clean(reviewNote),
     boundaryReviewFingerprint: getBoundaryMaterialFingerprint(profile),
-  });
+  }, getDefaultOrganizationProfile(user));
 }
 
 function saveBoundaryReviewLocally(profile: OrganizationProfile, user: AuthUser | null) {
@@ -505,7 +480,7 @@ async function persistBoundaryReview(profile: OrganizationProfile, user: AuthUse
   const normalizedSaved = normalizeOrganizationProfile({
     ...profile,
     ...saved,
-  });
+  }, getDefaultOrganizationProfile(user));
   dispatchOrganizationProfileUpdated(normalizedSaved);
   return normalizedSaved;
 }
@@ -633,4 +608,14 @@ function normalizeIndustry(industry?: string | null, otherIndustry?: string | nu
     industry: 'Other',
     otherIndustry: cleanedIndustry || cleanedOtherIndustry,
   };
+}
+
+// Validate the calendar components directly; never roll an invalid date forward.
+function isBoundaryCalendarDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year === 0 || month < 1 || month > 12 || day < 1) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
 }

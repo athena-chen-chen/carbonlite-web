@@ -1,3 +1,4 @@
+import { formatScopeResult, scopeShare } from '../domain/scopeCoverage';
 import { formatSourceEvidenceCounts } from '../domain/reportSemantics';
 import type { SpreadsheetReviewRowItem } from '../../services/spreadsheetReviewRows';
 import jsPDF from 'jspdf';
@@ -254,12 +255,12 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     body: [
       ...(['Scope 1', 'Scope 2', 'Scope 3'] as const).map((scope) => {
       const emissions = scopeSummary[scope] ?? 0;
-      const share = totalEstimatedEmissionsKgCO2e > 0 ? (emissions / totalEstimatedEmissionsKgCO2e) * 100 : 0;
+      const share = scopeShare(emissions, totalEstimatedEmissionsKgCO2e, outputFacts.scopeCoverage[scope]);
       return [
         scope === 'Scope 2' ? outputFacts.scope2Accounting.scopeLabel : scope,
         getScopeDescription(scope),
-        formatEmissionsWithUnit(emissions),
-        `${formatDisplayNumber(share)}%`,
+        formatScopeResult(emissions, outputFacts.scopeCoverage[scope]),
+        share === null ? 'Not applicable' : `${formatDisplayNumber(share)}%`,
       ];
       }),
       ...(scopeSummary.Unclassified > 0
@@ -294,9 +295,9 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     body: siteFacilityBreakdownRows.length
       ? siteFacilityBreakdownRows.map((row) => [
           row.siteFacility,
-          formatEmissionsWithUnit(row.scope1KgCO2e),
-          formatEmissionsWithUnit(row.scope2KgCO2e),
-          formatEmissionsWithUnit(row.scope3KgCO2e),
+          formatScopeResult(row.scope1KgCO2e, row.scopeCoverage?.['Scope 1']),
+          formatScopeResult(row.scope2KgCO2e, row.scopeCoverage?.['Scope 2']),
+          formatScopeResult(row.scope3KgCO2e, row.scopeCoverage?.['Scope 3']),
           formatEmissionsWithUnit(row.totalKgCO2e),
           row.includedRecords,
           formatSiteFacilityActivityBreakdown(row),
@@ -402,12 +403,12 @@ export function buildTechnicalReviewPdf(canonicalData: CanonicalReportData): jsP
     styles: { fontSize: 7.8, cellPadding: 1.8 },
     headStyles: { fillColor: [15, 23, 42] },
     columnStyles: {
-      0: { cellWidth: 42 },
-      1: { cellWidth: 14 },
+      0: { cellWidth: 36 },
+      1: { cellWidth: 26 },
       2: { cellWidth: 22 },
       3: { cellWidth: 34 },
       4: { cellWidth: 18 },
-      5: { cellWidth: 38 },
+      5: { cellWidth: 30 },
       6: { cellWidth: 16 },
     },
   });

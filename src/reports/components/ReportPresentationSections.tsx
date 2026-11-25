@@ -1,3 +1,4 @@
+import { formatScopeResult } from '../domain/scopeCoverage';
 import type React from 'react';
 import { CollapsibleSection } from '../../components/common/CollapsibleSection';
 import { CollapsibleReportSection } from '../../components/reports/CollapsibleReportSection';
@@ -624,15 +625,15 @@ export function ScopeBreakdownSection({
     <CollapsibleReportSection
       id="scope-breakdown-report-section"
       title="Emissions by Scope"
-      summary={`Scope 1: ${formatDisplayNumber(scopeSummary['Scope 1'])} · Scope 2: ${formatDisplayNumber(scopeSummary['Scope 2'])} · Scope 3: ${formatDisplayNumber(scopeSummary['Scope 3'])}`}
+      summary={`Scope 1: ${formatScopeResult(scopeSummary['Scope 1'], data.coverage?.['Scope 1'])} · Scope 2: ${formatScopeResult(scopeSummary['Scope 2'], data.coverage?.['Scope 2'])} · Scope 3: ${formatScopeResult(scopeSummary['Scope 3'], data.coverage?.['Scope 3'])}`}
       expanded={expanded}
       onToggle={onToggle}
     >
       <ScopeExplanation />
       <div style={scopeCardGridStyle}>
-        <Card title="Scope 1" subtitle={scopeLabelByName['Scope 1']} value={formatEmissionsWithUnit(scopeSummary['Scope 1'])} icon="🏭" />
-        <Card title={data.scope2Accounting.scopeLabel} subtitle={scopeLabelByName['Scope 2']} value={formatEmissionsWithUnit(scopeSummary['Scope 2'])} icon="⚡" />
-        <Card title="Scope 3" subtitle={scopeLabelByName['Scope 3']} value={formatEmissionsWithUnit(scopeSummary['Scope 3'])} icon="🌍" />
+        <Card title="Scope 1" subtitle={scopeLabelByName['Scope 1']} value={formatScopeResult(scopeSummary['Scope 1'], data.coverage?.['Scope 1'])} icon="🏭" />
+        <Card title={data.scope2Accounting.scopeLabel} subtitle={scopeLabelByName['Scope 2']} value={formatScopeResult(scopeSummary['Scope 2'], data.coverage?.['Scope 2'])} icon="⚡" />
+        <Card title="Scope 3" subtitle={scopeLabelByName['Scope 3']} value={formatScopeResult(scopeSummary['Scope 3'], data.coverage?.['Scope 3'])} icon="🌍" />
         {scopeSummary.Unclassified > 0 ? (
           <Card title="Unclassified" subtitle="Requires scope validation" value={formatEmissionsWithUnit(scopeSummary.Unclassified)} icon="?" />
         ) : null}
@@ -980,9 +981,9 @@ function SiteFacilityBreakdownTable({ rows }: { rows: SiteFacilityBreakdownRow[]
           {rows.map((row) => (
             <tr key={row.siteFacility}>
               <td style={siteFacilityTdStyle}>{row.siteFacility}</td>
-              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope1KgCO2e)}</td>
-              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope2KgCO2e)}</td>
-              <td style={siteFacilityTdStyle}>{formatEmissionsWithUnit(row.scope3KgCO2e)}</td>
+              <td style={siteFacilityTdStyle}>{formatScopeResult(row.scope1KgCO2e, row.scopeCoverage?.['Scope 1'])}</td>
+              <td style={siteFacilityTdStyle}>{formatScopeResult(row.scope2KgCO2e, row.scopeCoverage?.['Scope 2'])}</td>
+              <td style={siteFacilityTdStyle}>{formatScopeResult(row.scope3KgCO2e, row.scopeCoverage?.['Scope 3'])}</td>
               <td style={siteFacilityTotalTdStyle}>{formatEmissionsWithUnit(row.totalKgCO2e)}</td>
               <td style={siteFacilityTdStyle}>{row.includedRecords}</td>
               <td style={siteFacilityTdStyle}>{formatSiteFacilityActivityBreakdown(row)}</td>
@@ -1121,7 +1122,7 @@ const SCOPE_HELP = [
     scope: 'Scope 3',
     label: 'Selected indirect pilot estimates',
     description:
-      'Selected Scope 3 activity records in this pilot, focused on business travel and transportation-related estimates. This does not represent a complete Scope 3 inventory.',
+      'CarbonLite can calculate selected indirect-emission activities. This capability does not establish organization-specific Scope 3 coverage; see the reporting boundary.',
     examples: 'Air travel, business travel accommodation, ground transport, shipping',
   },
 ] as const;

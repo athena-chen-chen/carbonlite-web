@@ -1,3 +1,4 @@
+import { formatScopeResult, type ScopeCoverage } from '../../../reports/domain/scopeCoverage';
 import type { CSSProperties, ReactNode } from 'react';
 import type { CalculationAuditDetail } from '../../../services/metrics';
 import { formatDisplayNumber, formatEmissionsWithUnit } from '../../../utils/numberFormatting';
@@ -13,6 +14,7 @@ type ScopeSummary = {
 
 type ScopeBreakdownSectionProps = {
   scopeSummary: ScopeSummary;
+  scopeCoverage?: ScopeCoverage;
   electricityRecordCount: number;
   calculatedElectricityCount: number;
   unclassifiedCalculatedRecords: CalculationAuditDetail[];
@@ -23,6 +25,7 @@ type ScopeBreakdownSectionProps = {
 
 export function ScopeBreakdownSection({
   scopeSummary,
+  scopeCoverage,
   electricityRecordCount,
   calculatedElectricityCount,
   unclassifiedCalculatedRecords,
@@ -33,12 +36,12 @@ export function ScopeBreakdownSection({
   return (
     <>
       <p style={sectionHelperStyle}>
-        Scope totals include only successfully calculated records. Records needing attention are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
+        Scope totals include only successfully calculated records. Records needing attention are excluded from emissions totals. Scope results describe calculated activities only; missing scope evidence is not a calculated zero. See the configured boundary for exclusions.
       </p>
       <div style={summaryGridStyle}>
-        <Fact label="Scope 1" value={formatEmissionsWithUnit(scopeSummary.SCOPE_1)} />
-        <Fact label={scope2Accounting.scopeLabel} value={formatEmissionsWithUnit(scopeSummary.SCOPE_2)} />
-        <Fact label="Scope 3" value={formatEmissionsWithUnit(scopeSummary.SCOPE_3)} />
+        <Fact label="Scope 1" value={formatScopeResult(scopeSummary.SCOPE_1, scopeCoverage?.['Scope 1'])} />
+        <Fact label={scope2Accounting.scopeLabel} value={formatScopeResult(scopeSummary.SCOPE_2, scopeCoverage?.['Scope 2'])} />
+        <Fact label="Scope 3" value={formatScopeResult(scopeSummary.SCOPE_3, scopeCoverage?.['Scope 3'])} />
       </div>
       <p style={sectionHelperStyle}>
         <strong>Scope 2 accounting method:</strong> {scope2Accounting.accountingMethodLabel}.{' '}

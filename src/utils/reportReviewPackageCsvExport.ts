@@ -1,3 +1,4 @@
+import { buildScopeCoverage, scopeCsvValue } from '../reports/domain/scopeCoverage';
 import type { FormalConversionFactorUsed } from '../components/FormalReportPreview';
 import type { CalculationAuditDetail } from '../services/metrics';
 import {
@@ -132,7 +133,7 @@ function getFactorUnit(detail: CalculationAuditDetail) {
 function getFormula(detail: CalculationAuditDetail) {
   if (isTrackedMetricDetail(detail)) return 'Tracked metric — excluded from GHG total';
   if (detail.status !== 'CALCULATED') return getIssueType(detail) || 'Calculation not completed';
-  return detail.calculationFormula || buildCalculatedFormula(detail);
+  return buildCalculatedFormula(detail);
 }
 
 function getIssueType(detail: CalculationAuditDetail) {
@@ -234,9 +235,9 @@ export function buildReviewPackageSiteFacilityBreakdownCsv(
     ],
     rows.map((row) => [
       row.siteFacility || 'Unassigned',
-      numberValue(row.scope1KgCO2e),
-      numberValue(row.scope2KgCO2e),
-      numberValue(row.scope3KgCO2e),
+      scopeCsvValue(row.scope1KgCO2e, row.scopeCoverage?.['Scope 1'] ?? buildScopeCoverage(details.filter(detail => getSiteFacility(detail) === row.siteFacility))['Scope 1']),
+      scopeCsvValue(row.scope2KgCO2e, row.scopeCoverage?.['Scope 2'] ?? buildScopeCoverage(details.filter(detail => getSiteFacility(detail) === row.siteFacility))['Scope 2']),
+      scopeCsvValue(row.scope3KgCO2e, row.scopeCoverage?.['Scope 3'] ?? buildScopeCoverage(details.filter(detail => getSiteFacility(detail) === row.siteFacility))['Scope 3']),
       numberValue(row.totalKgCO2e),
       row.includedRecords,
       countsBySite.get(row.siteFacility)?.trackedMetrics ?? 0,

@@ -7,9 +7,12 @@ type DocumentScopeContextProps = {
   sourceReview: { available: boolean; sourceFiles: string[]; needsReviewCount: number };
   loading: boolean;
   destination: 'calculations' | 'report';
+  periodStart?: string;
+  periodEnd?: string;
+  navigationBlocked?: boolean;
 };
 
-export function DocumentScopeContext({ selectedDocumentIds, importedRecordCount, sourceFileNames = [], sourceReview, loading, destination }: DocumentScopeContextProps) {
+export function DocumentScopeContext({ selectedDocumentIds, importedRecordCount, sourceFileNames = [], sourceReview, loading, destination, periodStart, periodEnd, navigationBlocked = false }: DocumentScopeContextProps) {
   const files = Array.from(new Set([
     ...sourceFileNames,
     ...sourceReview.sourceFiles,
@@ -24,7 +27,7 @@ export function DocumentScopeContext({ selectedDocumentIds, importedRecordCount,
         {' · '}Unresolved source rows: {loading ? 'Loading…' : sourceReview.available ? sourceReview.needsReviewCount : 'Not available'}
       </p>
       <p style={{ margin: '0 0 8px', fontSize: 14 }}>Calculations and reports include imported records only. Unresolved source rows remain excluded until corrected and imported.</p>
-      <Link style={destination === 'report' ? { display: 'inline-block', padding: '10px 16px', borderRadius: 8, background: '#047857', color: '#fff', fontWeight: 700, textDecoration: 'none' } : undefined} to={destination === 'report' ? '/reports' : '/metrics-summary'} state={{ reportScope: 'selectedDocuments', selectedDocumentIds }}>
+      <Link aria-disabled={navigationBlocked} onClick={event => { if (navigationBlocked) event.preventDefault(); }} style={destination === 'report' ? { display: 'inline-block', padding: '10px 16px', borderRadius: 8, background: '#047857', color: '#fff', fontWeight: 700, textDecoration: 'none' } : undefined} to={destination === 'report' ? '/reports' : '/metrics-summary'} state={{ reportScope: 'selectedDocuments', selectedDocumentIds, ...(periodStart !== undefined || periodEnd !== undefined ? { periodStart, periodEnd } : {}) }}>
         {destination === 'report' ? 'Generate Report' : 'View Calculation Results'}
       </Link>
     </section>

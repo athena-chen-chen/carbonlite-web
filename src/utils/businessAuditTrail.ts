@@ -313,7 +313,7 @@ function getCalculation(detail: CalculationAuditDetail): EvidenceChain['calculat
     id: `calc:${detail.activityDataId}:v1`,
     version: 1,
     status: 'Calculated',
-    formula: detail.calculationFormula || buildCalculatedFormula(detail),
+    formula: buildCalculatedFormula(detail),
     resultKgCO2e: cleanNumber(detail.calculatedEmissionsKgCO2e ?? detail.calculatedEmission),
   };
 }

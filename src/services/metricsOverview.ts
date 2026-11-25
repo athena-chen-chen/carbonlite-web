@@ -33,7 +33,7 @@ import {
 } from '../utils/conversionFactorMatching';
 import { normalizeUnitForDisplay } from '../utils/unitNormalization';
 import { normalizeActivityType } from '../utils/activityType';
-import { formatDateOnly, getDateOnlyYear } from '../utils/dateOnly';
+import { formatDateOnly, getDateOnlyYear, reportingPeriodError } from '../utils/dateOnly';
 import {
   getFactorAssumptionDisclosure,
   getFactorConfidenceLevel,
@@ -188,15 +188,11 @@ export async function loadMetricsOverview(options?: {
   const selectedRecordIds =
     options?.selectedActivityRecordIds ?? options?.selectedRecordIds ?? [];
   const selectedDocumentIds = options?.selectedDocumentIds ?? [];
+  const periodError = reportingPeriodError(options?.dateFrom, options?.dateTo);
+  if (periodError) throw new Error(periodError);
   const summary = await getCalculationSummary({
-    periodStart:
-      selectedRecordIds.length || selectedDocumentIds.length
-        ? undefined
-        : options?.dateFrom,
-    periodEnd:
-      selectedRecordIds.length || selectedDocumentIds.length
-        ? undefined
-        : options?.dateTo,
+    periodStart: options?.dateFrom,
+    periodEnd: options?.dateTo,
     selectedActivityRecordIds: selectedRecordIds,
     selectedDocumentIds,
   });

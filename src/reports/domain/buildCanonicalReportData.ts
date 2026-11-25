@@ -25,8 +25,8 @@ export function buildCanonicalReportData(input: BuildCanonicalReportDataInput): 
   });
   const reportTotals = buildReportTotals(input, sourceReview);
   const calculationQuality = buildCalculationQuality(input.calculationDetails);
-  const scopeBreakdown = buildScopeBreakdown(input.calculationDetails);
-  const facilityBreakdown = buildFacilityBreakdown(input.calculationDetails);
+  const scopeBreakdown = buildScopeBreakdown(input.calculationDetails, input.scopeDeclarations);
+  const facilityBreakdown = buildFacilityBreakdown(input.calculationDetails, input.scopeDeclarations);
   const hotspots = buildHotspotSummary(input.calculationDetails);
   const factorReview = buildFactorReviewSummary(input.conversionFactorsUsed ?? [], input.calculationDetails);
   const inventory = buildInventorySummary({

@@ -1,3 +1,4 @@
+import { SAMPLE_WORKSPACE_PROFILE } from '../services/organizationProfile';
 import { goldenReport } from '../reports/pdf/__tests__/goldenFixtures';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -309,7 +310,7 @@ describe('ReportingPage audit trail', () => {
       endDate: '2026-12-31',
       hasActivityRecords: true,
     });
-    vi.mocked(getWorkflowActivityEvents).mockResolvedValue([]);
+    vi.mocked(getWorkflowActivityEvents).mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 0 });
 
     let resolveOverview!: (value: Awaited<ReturnType<typeof loadMetricsOverview>>) => void;
     vi.mocked(loadMetricsOverview).mockReturnValue(
@@ -1393,6 +1394,7 @@ describe('ReportingPage audit trail', () => {
   });
 
   it('shows report context while hiding internal workflow audit details for pilot reviewer accounts', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(SAMPLE_WORKSPACE_PROFILE), {status:200})));
     localStorage.setItem(
       'currentUser',
       JSON.stringify({
@@ -1419,9 +1421,9 @@ describe('ReportingPage audit trail', () => {
     expect(reportScopeSection).toHaveTextContent(/2026-01-01 to 2026-12-31/i);
 
     const boundarySection = screen.getByRole('region', { name: 'Reporting Boundary' });
-    expect(boundarySection).toHaveTextContent(
+    await waitFor(() => expect(boundarySection).toHaveTextContent(
       '2026-01-01 to 2026-12-31 · Scope 1, Scope 2, selected Scope 3 · Sample Canadian operations',
-    );
+    ));
     const boundaryToggle = within(boundarySection).getByRole('button', { name: 'Expand Reporting Boundary' });
     expect(boundaryToggle).toHaveAttribute('aria-expanded', 'false');
     expect(within(boundarySection).queryByText('Organization / Workspace')).not.toBeInTheDocument();
@@ -2852,7 +2854,7 @@ it('shows Golden A imported records separately from unresolved rows in a selecte
     processedRecords: 2, recordsIncluded: 2, dataQualityCoverage: 100,
   };
   vi.mocked(loadDefaultMetricsDateRange).mockResolvedValue({ startDate: '2026-01-01', endDate: '2026-12-31', hasActivityRecords: true });
-  vi.mocked(getWorkflowActivityEvents).mockResolvedValue([]);
+  vi.mocked(getWorkflowActivityEvents).mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 0 });
   vi.mocked(loadMetricsOverview).mockResolvedValue(scopedOverview as any);
   render(<MemoryRouter initialEntries={[{ pathname: '/reports', state: { reportScope: 'selectedDocuments', selectedDocumentIds: ['doc-partial'] } }]}><ReportingPage /></MemoryRouter>);
   const context = screen.getByRole('region', { name: 'Document review scope' });
@@ -2865,4 +2867,32 @@ it('shows Golden A imported records separately from unresolved rows in a selecte
   expect(report.inventory).toMatchObject({ importedRecordCount: 3, includedRecordCount: 2, trackedMetricCount: 1, totalKgCO2e: 579.4 });
   expect(report.sourceReview.needsReviewCount).toBe(6);
   expect(report.calculationQuality.calculationCoverage).toContain('100%');
+});
+
+it('keeps export disabled for a valid empty selected-ID/date intersection',async()=>{
+  vi.mocked(trackActivityEvent).mockResolvedValue({} as ActivityEventItem);
+  localStorage.clear();
+  localStorage.setItem('currentUser',JSON.stringify({id:'synthetic-user',organizationId:'synthetic-workspace',organizationName:'Synthetic Workshop',role:'OWNER',accountType:'CUSTOMER'}));
+  vi.mocked(loadMetricsOverview).mockResolvedValue({...sourceReviewOverview([]),totalRecordsFound:2,recordsInScope:0,activities:[],calculationDetails:[],matchedActivityEmissions:[],conversionFactorsUsed:[]} as any);
+  vi.mocked(getWorkflowActivityEvents).mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 0 });
+  render(<MemoryRouter initialEntries={[{pathname:'/reports',state:{reportScope:'selectedRecords',selectedActivityRecordIds:['A'],periodStart:'2024-01-01',periodEnd:'2024-12-31'}}]}><ReportingPage/></MemoryRouter>);
+  await waitFor(()=>expect(screen.getByText('No records found for the selected period.')).toBeTruthy());
+  expect((screen.getByRole('button',{name:'Export reports'}) as HTMLButtonElement).disabled).toBe(true);
+  expect(loadMetricsOverview).toHaveBeenLastCalledWith(expect.objectContaining({selectedActivityRecordIds:['A'],dateFrom:'2024-01-01',dateTo:'2024-12-31'}));
+});
+
+it('does not treat a native blur event on unchanged valid dates as a date value',async()=>{
+  vi.mocked(trackActivityEvent).mockResolvedValue({} as ActivityEventItem);
+  localStorage.clear();
+  localStorage.setItem('currentUser',JSON.stringify({id:'synthetic-user',organizationId:'synthetic-workspace',organizationName:'Synthetic Workshop',role:'OWNER',accountType:'CUSTOMER'}));
+  vi.mocked(loadMetricsOverview).mockResolvedValue(sourceReviewOverview(['synthetic.csv']));
+  vi.mocked(getWorkflowActivityEvents).mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 0 });
+  const {container}=render(<MemoryRouter initialEntries={[{pathname:'/reports',state:{periodStart:'2026-01-01',periodEnd:'2026-03-31'}}]}><ReportingPage/></MemoryRouter>);
+  const exportButton=screen.getByRole('button',{name:'Export reports'}) as HTMLButtonElement;
+  await waitFor(()=>expect(exportButton.disabled).toBe(false));
+  const calls=vi.mocked(loadMetricsOverview).mock.calls.length;
+  for(const input of container.querySelectorAll<HTMLInputElement>('input[type="date"]'))fireEvent.blur(input);
+  expect(screen.queryByText('Enter a valid reporting start and end date, with start on or before end.')).toBeNull();
+  expect(exportButton.disabled).toBe(false);
+  expect(loadMetricsOverview).toHaveBeenCalledTimes(calls);
 });

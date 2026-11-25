@@ -1,3 +1,4 @@
+import { buildScopeCoverage, formatScopeResult, type ScopeCoverage, type ReportScope } from '../reports/domain/scopeCoverage';
 import { getDisplayFactorProvenanceLines, getDisplayFactorJurisdiction } from '../utils/factorProvenanceDisplay';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -393,6 +394,7 @@ export function MetricsSummarySection({
     : skippedReasons.missingFactor > 0 || skippedReasons.invalidData > 0;
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildScopeSummary(calculationDetails);
+  const scopeCoverage = buildScopeCoverage(calculationDetails);
   const dataReadiness = buildDataReadinessSummary(calculationDetails);
   const reportingReadiness = buildReportingReadinessAssessment({
     calculationDetails,
@@ -493,6 +495,7 @@ export function MetricsSummarySection({
       </div>
 
       <ScopeSummaryCard
+        coverage={scopeCoverage}
         summary={scopeSummary}
         onViewTrail={(scope, label) =>
           openCalculationTrail({ type: 'scope', scope, label })
@@ -651,7 +654,7 @@ export function MetricsSummarySection({
         summary={
           isCalculationSummaryExpanded
             ? 'One activity record can contribute multiple metrics. Input metrics show the activity data used, while calculated results show estimated emissions.'
-            : `Total: ${formatEmissionsWithUnit(totalEstimatedEmissionsKgCO2e)} · Scope 1: ${formatEmissionsWithUnit(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsWithUnit(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsWithUnit(scopeSummary.SCOPE_3)}`
+            : `Total: ${formatEmissionsWithUnit(totalEstimatedEmissionsKgCO2e)} · Scope 1: ${formatScopeResult(scopeSummary.SCOPE_1, scopeCoverage['Scope 1'])} · Scope 2: ${formatScopeResult(scopeSummary.SCOPE_2, scopeCoverage['Scope 2'])} · Scope 3: ${formatScopeResult(scopeSummary.SCOPE_3, scopeCoverage['Scope 3'])}`
         }
         expanded={isCalculationSummaryExpanded}
         onToggle={() => setIsCalculationSummaryExpanded((expanded) => !expanded)}
@@ -2273,15 +2276,17 @@ function buildScopeSummary(calculationDetails: CalculationAuditDetail[]) {
 
 function ScopeSummaryCard({
   summary,
+  coverage,
   onViewTrail,
 }: {
   summary: ReturnType<typeof buildScopeSummary>;
+  coverage: ScopeCoverage;
   onViewTrail: (scope: 'SCOPE_1' | 'SCOPE_2' | 'SCOPE_3', label: string) => void;
 }) {
   const rows = [
     { scope: 'SCOPE_1' as const, label: 'Scope 1', value: summary.SCOPE_1, note: 'Direct fuel emissions' },
     { scope: 'SCOPE_2' as const, label: 'Scope 2', value: summary.SCOPE_2, note: 'Purchased energy' },
-    { scope: 'SCOPE_3' as const, label: 'Scope 3', value: summary.SCOPE_3, note: 'Selected pilot activities' },
+    { scope: 'SCOPE_3' as const, label: 'Scope 3', value: summary.SCOPE_3, note: 'Other indirect emissions; see reporting boundary' },
   ];
 
   return (
@@ -2291,14 +2296,14 @@ function ScopeSummaryCard({
           Emissions by Scope
         </h2>
         <p style={summaryHelperTextStyle}>
-          Scope totals include calculated records only. Tracked metrics and records needing attention are excluded from emissions totals. Scope 3 coverage is limited to selected business travel and transportation-related pilot activity records.
+          Scope totals include calculated records only. Tracked metrics and records needing attention are excluded from emissions totals. Missing scope calculation evidence is not a calculated zero. See the reporting boundary for exclusions.
         </p>
       </div>
       <div style={scopeSummaryGridStyle}>
         {rows.map((row) => (
           <div key={row.label} style={scopeSummaryItemStyle}>
             <span>{row.label}</span>
-            <strong>{formatEmissionsWithUnit(row.value)}</strong>
+            <strong>{formatScopeResult(row.value, coverage[row.label as ReportScope])}</strong>
             <small>{row.note}</small>
             <button
               type="button"

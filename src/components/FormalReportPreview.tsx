@@ -1,3 +1,4 @@
+import { buildScopeCoverage, formatScopeResult, type ScopeCoverage } from '../reports/domain/scopeCoverage';
 import { buildSourceEvidenceCounts, formatSourceEvidenceCounts } from '../reports/domain/reportSemantics';
 import type { FactorProvenanceSnapshot } from '../utils/factorGovernance';
 import { useEffect, useState } from 'react';
@@ -767,6 +768,7 @@ export function FormalReportPreview({
   scopeLabel,
   generatedAt,
   inventoryBoundary: providedInventoryBoundary,
+  scopeCoverage: providedScopeCoverage,
   usageTotals,
   totalEstimatedEmissionsKgCO2e,
   countSummary,
@@ -783,6 +785,7 @@ export function FormalReportPreview({
   scopeLabel: string;
   generatedAt: string;
   inventoryBoundary?: InventoryBoundary;
+  scopeCoverage?: ScopeCoverage;
   usageTotals: ActivityUsageTotals;
   totalEstimatedEmissionsKgCO2e: number;
   countSummary: MetricsCountSummary;
@@ -830,7 +833,8 @@ export function FormalReportPreview({
   const hotspotAnalysis = buildHotspotAnalysis(calculationDetails);
   const scopeSummary = buildFormalScopeSummary(calculationDetails);
   const scope2Accounting = buildScope2AccountingDisclosure(calculationDetails);
-  const scopeSummaryLine = `Scope 1: ${formatEmissionsWithUnit(scopeSummary.SCOPE_1)} · Scope 2: ${formatEmissionsWithUnit(scopeSummary.SCOPE_2)} · Scope 3: ${formatEmissionsWithUnit(scopeSummary.SCOPE_3)}`;
+  const scopeCoverage = providedScopeCoverage ?? buildScopeCoverage(calculationDetails);
+  const scopeSummaryLine = `Scope 1: ${formatScopeResult(scopeSummary.SCOPE_1, scopeCoverage['Scope 1'])} · Scope 2: ${formatScopeResult(scopeSummary.SCOPE_2, scopeCoverage['Scope 2'])} · Scope 3: ${formatScopeResult(scopeSummary.SCOPE_3, scopeCoverage['Scope 3'])}`;
   const inventoryBoundary =
     providedInventoryBoundary ?? buildInventoryBoundary(organizationName, reportPeriod);
   const reportingReadinessAssessment = buildReportingReadinessAssessment({
@@ -1007,6 +1011,7 @@ export function FormalReportPreview({
         summary={scopeSummaryLine}
       >
         <ScopeBreakdownSection
+          scopeCoverage={scopeCoverage}
           scopeSummary={scopeSummary}
           electricityRecordCount={electricityRecordCount}
           calculatedElectricityCount={calculatedElectricityCount}

@@ -1,15 +1,16 @@
 import type { CalculationAuditDetail } from '../services/metrics';
 import { getDisplaySourceLabel } from './reportCredibility';
 import { formatActivityTypeLabel } from './activityAggregation';
-import { formatDisplayNumber, formatEmissionsUnit, formatEmissionsValue, formatEmissionsWithUnit } from './numberFormatting';
+import { formatEmissionsUnit, formatEmissionsWithUnit } from './numberFormatting';
 import { formatCalculationStatusLabel } from './terminology';
 import { normalizeUnitForDisplay } from './unitNormalization';
 
 function formatNumber(value?: string | number | null) {
-  return formatDisplayNumber(value);
+  return formatFactorValue(value);
 }
 
 export function formatFactorValue(value?: string | number | null) {
+  if (value === null || value === undefined || value === '') return '-';
   const numericValue = Number(value);
 
   if (!Number.isFinite(numericValue)) {
@@ -17,7 +18,7 @@ export function formatFactorValue(value?: string | number | null) {
   }
 
   return numericValue.toLocaleString(undefined, {
-    maximumFractionDigits: 4,
+    maximumSignificantDigits: 21,
   });
 }
 
@@ -59,35 +60,23 @@ function formatFactorUnitForFormula(detail: CalculationAuditDetail) {
   return inputUnit ? `${displayResultUnit}/${inputUnit}` : displayResultUnit;
 }
 
-function getConvertedFormulaQuantity(detail: CalculationAuditDetail) {
-  const activityUnit = formatFormulaUnit(detail.activityUnit);
-  const factorInputUnit = formatFormulaUnit(detail.factorInputUnit || detail.normalizedUnit);
-  const activityQuantity = Number(detail.activityQuantity);
-
-  if (!activityUnit || !factorInputUnit || unitsMatch(activityUnit, factorInputUnit)) return null;
-  if (!Number.isFinite(activityQuantity)) return null;
-
-  const normalizedQuantity = Number(detail.normalizedQuantity);
-  if (Number.isFinite(normalizedQuantity) && normalizedQuantity > 0) {
-    const conversionFactor = normalizedQuantity / activityQuantity;
-    if (Number.isFinite(conversionFactor) && conversionFactor > 0) {
-      return {
-        quantity: normalizedQuantity,
-        unit: factorInputUnit,
-        conversionFactor,
-      };
-    }
-  }
-
-  if (activityUnit.toLowerCase() === 'mwh' && factorInputUnit.toLowerCase() === 'kwh') {
-    return {
-      quantity: activityQuantity * 1000,
-      unit: 'kWh',
-      conversionFactor: 1000,
-    };
-  }
-
+// Exact supported pairs mirror calculation-quality.service.ts. Never reconstruct a
+// conversion coefficient from the API's three-decimal effective quantity.
+function supportedConversion(from: string, to: string) {
+  const key = `${from.toLowerCase()}:${to.toLowerCase()}`;
+  if (key === 'mwh:kwh') return { multiplier: 1000, exponent: 3 };
+  if (key === 'kwh:mwh') return { multiplier: 0.001, exponent: -3 };
   return null;
+}
+
+function finiteQuantity(value: unknown): number | null {
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+    ? Number(value) : null;
+}
+
+function shiftDecimal(value: number, shift: number) {
+  const [mantissa, exponent = '0'] = String(value).toLowerCase().split('e');
+  return Number(`${mantissa}e${Number(exponent) + shift}`);
 }
 
 export function buildCalculatedFormula(detail: CalculationAuditDetail) {
@@ -127,16 +116,40 @@ export function buildCalculatedFormula(detail: CalculationAuditDetail) {
 
   const activityUnit = formatFormulaUnit(detail.activityUnit);
   const factorUnit = formatFactorUnitForFormula(detail);
-  const convertedQuantity = getConvertedFormulaQuantity(detail);
-  const emissionsStepQuantity = convertedQuantity?.quantity ?? detail.activityQuantity;
-  const emissionsStepUnit = convertedQuantity?.unit ?? activityUnit;
-  const emissionsStep = `${formatNumber(emissionsStepQuantity)} ${emissionsStepUnit} × ${formatFactorValue(detail.factorValue)} ${factorUnit} = ${formatEmissionsWithUnit(detail.calculatedEmissionsKgCO2e)}`;
-
-  if (convertedQuantity) {
-    return `${formatNumber(detail.activityQuantity)} ${activityUnit} × ${formatNumber(convertedQuantity.conversionFactor)} = ${formatNumber(convertedQuantity.quantity)} ${convertedQuantity.unit}; ${emissionsStep}`;
+  const effectiveUnit = formatFormulaUnit(detail.factorInputUnit || detail.normalizedUnit || detail.activityUnit);
+  const differentUnits = !unitsMatch(activityUnit, effectiveUnit);
+  const conversion = differentUnits ? supportedConversion(activityUnit, effectiveUnit) : null;
+  const recorded = finiteQuantity(detail.activityQuantity);
+  const supplied = finiteQuantity(detail.calculationQuantity)
+    ?? (unitsMatch(detail.normalizedUnit, effectiveUnit) ? finiteQuantity(detail.normalizedQuantity) : null);
+  const effective = supplied ?? (!differentUnits ? recorded : null);
+  const savedResult = Number(detail.calculatedEmissionsKgCO2e);
+  if (effective === null) {
+    return `Recorded quantity: ${formatNumber(detail.activityQuantity)} ${activityUnit}; effective quantity unavailable; saved result: ${formatEmissionsWithUnit(savedResult)} (display rounded to 2 decimals).`;
   }
-
-  return emissionsStep;
+  const expected = recorded === null ? null : conversion ? shiftDecimal(recorded, conversion.exponent)
+    : !differentUnits ? recorded : null;
+  const differs = expected !== null && effective !== expected;
+  const rounded = differs && Math.round(expected * 1000) / 1000 === effective;
+  const quantityNote = rounded
+    ? effective === 0 && expected !== 0
+      ? ' (effective quantity rounded to zero, not an exact zero)'
+      : ' (effective quantity rounded to 3 decimals)'
+    : differs ? ' (effective quantity differs from supported conversion; saved quantity retained)' : '';
+  const approximate = rounded || differs || (differentUnits && !conversion)
+    || effective * Number(detail.factorValue) !== savedResult || Number(savedResult.toFixed(2)) !== savedResult;
+  const roundingNote = approximate ? ' (saved result retained; display rounded to 2 decimals)' : '';
+  const emissionsStep = `${formatNumber(effective)} ${effectiveUnit} × ${formatFactorValue(detail.factorValue)} ${factorUnit} ${approximate ? '≈' : '='} ${formatEmissionsWithUnit(savedResult)}${roundingNote}`;
+  if (conversion && recorded !== null) {
+    // A discrepancy beyond the documented rounding rule is not a conversion equality.
+    const conversionStep = differs && !rounded
+      ? `${formatNumber(recorded)} ${activityUnit} × ${formatNumber(conversion.multiplier)} = ${formatNumber(expected)} ${effectiveUnit}; supplied effective quantity: ${formatNumber(effective)} ${effectiveUnit}${quantityNote}`
+      : `${formatNumber(recorded)} ${activityUnit} × ${formatNumber(conversion.multiplier)} ${rounded ? '≈' : '='} ${formatNumber(effective)} ${effectiveUnit}${quantityNote}`;
+    return `${conversionStep}; ${emissionsStep}`;
+  }
+  return differentUnits || supplied !== null && supplied !== recorded
+    ? `Recorded quantity: ${formatNumber(detail.activityQuantity)} ${activityUnit}; ${differentUnits ? 'conversion coefficient unavailable; ' : ''}${emissionsStep}${quantityNote}`
+    : emissionsStep;
 }
 
 export function buildFormulaInputs(detail: CalculationAuditDetail) {

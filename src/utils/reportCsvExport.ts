@@ -87,11 +87,11 @@ function normalizeStatus(value?: string | null) {
     .toUpperCase();
 }
 
-function csvNumber(value?: string | number | null) {
+function csvNumber(value?: string | number | null, preservePrecision = false) {
   if (value === null || value === undefined || value === '') return '';
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return '';
-  return String(Math.round((numeric + Number.EPSILON) * 1_000_000) / 1_000_000);
+  return preservePrecision ? String(numeric) : String(Math.round((numeric + Number.EPSILON) * 1_000_000) / 1_000_000);
 }
 
 function displayNumber(value?: string | number | null) {
@@ -370,7 +370,7 @@ export function buildPilotCsvRows(input: CsvInput): PilotCsvRow[] {
       'Calculation Status': getCalculationStatus(detail),
       'Matching Status': getMatchingStatus(detail),
       'Matched Factor Name': getMatchedFactorName(detail),
-      'Matched Factor Value': isTrackedMetricDetail(detail) ? '' : csvNumber(detail.factorValue),
+      'Matched Factor Value': isTrackedMetricDetail(detail) ? '' : csvNumber(detail.factorValue, true),
       'Matched Factor Unit': formatCsvFactorUnit(detail),
       'Factor Jurisdiction': formatCsvFactorJurisdiction(detail),
       'Factor Source Year': isTrackedMetricDetail(detail) ? '' : detail.factorYear || detail.sourceYear || 'Not specified',
