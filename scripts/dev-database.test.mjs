@@ -14,6 +14,18 @@ const neon = {
   NEON_DEVELOPMENT_HOST: 'ep-development.neon.tech',
 };
 
+function withIsolatedJwtSecret(run) {
+  const hadJwtSecret = Object.hasOwn(process.env, 'JWT_SECRET');
+  const previousJwtSecret = process.env.JWT_SECRET;
+  try {
+    delete process.env.JWT_SECRET;
+    return run();
+  } finally {
+    if (hadJwtSecret) process.env.JWT_SECRET = previousJwtSecret;
+    else delete process.env.JWT_SECRET;
+  }
+}
+
 test('named modes reject crossed targets and unconfirmed Neon endpoints', () => {
   assert.equal(databaseTarget('localdb', local), 'Local PostgreSQL / carbonlite_dev');
   assert.equal(databaseTarget('neon', neon), 'Neon development');
@@ -27,7 +39,7 @@ test('named modes reject crossed targets and unconfirmed Neon endpoints', () => 
   ]) assert.throws(() => databaseTarget(mode, env));
 });
 
-test('selected file wins over inherited URL and disables demo auth and Neon fixtures', () => {
+test('selected file wins over inherited URL and disables demo auth and Neon fixtures', () => withIsolatedJwtSecret(() => {
   const dir = mkdtempSync(path.join(tmpdir(), 'carbonlite-db-'));
   const previous = process.env.DATABASE_URL;
   try {
@@ -56,5 +68,52 @@ test('selected file wins over inherited URL and disables demo auth and Neon fixt
     if (previous === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = previous;
     rmSync(dir, { recursive: true, force: true });
+  }
+}));
+
+test('inherited JWT secret wins while the selected database URL and auth safeguards remain enforced', () => withIsolatedJwtSecret(() => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'carbonlite-db-'));
+  const previousUrl = process.env.DATABASE_URL;
+  try {
+    writeFileSync(path.join(dir, '.env'), 'JWT_SECRET=file-fixture-only\nLOCAL_DEMO_AUTH_ENABLED=true\n');
+    const file = path.join(dir, '.env.neon.local');
+    writeFileSync(file, `DATABASE_URL=${neon.DATABASE_URL}\nNEON_DEVELOPMENT_HOST=${neon.NEON_DEVELOPMENT_HOST}\n`);
+    process.env.JWT_SECRET = 'inherited-fixture-only';
+    process.env.DATABASE_URL = local.DATABASE_URL;
+    const { env } = loadDatabaseEnvironment('neon', dir, file);
+    assert.equal(env.JWT_SECRET, process.env.JWT_SECRET);
+    assert.equal(env.DATABASE_URL, neon.DATABASE_URL);
+    assert.equal(env.LOCAL_DEMO_AUTH_ENABLED, 'false');
+    assert.equal(env.ALLOW_TASK7_DEV_FIXTURES, 'false');
+    assert.equal(env.DEMO_RESET_ENABLED, 'false');
+  } finally {
+    if (previousUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousUrl;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}));
+
+test('JWT isolation restores absent, empty and populated states after success and assertion failure', () => {
+  const originallyPresent = Object.hasOwn(process.env, 'JWT_SECRET');
+  const original = process.env.JWT_SECRET;
+  try {
+    for (const previous of [undefined, '', 'restoration-fixture-only']) {
+      if (previous === undefined) delete process.env.JWT_SECRET;
+      else process.env.JWT_SECRET = previous;
+      for (const fail of [false, true]) {
+        const run = () => withIsolatedJwtSecret(() => {
+          assert.equal(Object.hasOwn(process.env, 'JWT_SECRET'), false);
+          process.env.JWT_SECRET = 'temporary-fixture-only';
+          if (fail) assert.fail('intentional fixture assertion');
+        });
+        if (fail) assert.throws(run, { code: 'ERR_ASSERTION' });
+        else run();
+        assert.equal(Object.hasOwn(process.env, 'JWT_SECRET'), previous !== undefined);
+        assert.equal(process.env.JWT_SECRET, previous);
+      }
+    }
+  } finally {
+    if (originallyPresent) process.env.JWT_SECRET = original;
+    else delete process.env.JWT_SECRET;
   }
 });
