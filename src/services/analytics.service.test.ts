@@ -1,107 +1,45 @@
 const posthogMock = vi.hoisted(() => ({
-  init: vi.fn(),
-  capture: vi.fn(),
-  identify: vi.fn(),
-  reset: vi.fn(),
+  init: vi.fn(), capture: vi.fn(), identify: vi.fn(), reset: vi.fn(),
+  startSessionRecording: vi.fn(), captureException: vi.fn(),
 }));
+vi.mock('posthog-js', () => ({ default: posthogMock }));
+const canary = 'SYNTHETIC_USER_TENANT_DOCUMENT_BEARER_UPLOAD';
 
-vi.mock('posthog-js', () => ({
-  default: posthogMock,
-}));
-
-async function loadAnalytics() {
+async function loadAnalytics(key: string) {
   vi.resetModules();
+  vi.stubEnv('VITE_POSTHOG_KEY', key);
+  vi.stubEnv('VITE_POSTHOG_HOST', 'https://synthetic.example.invalid');
   return import('./analytics.service');
 }
 
-describe('analytics service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.unstubAllEnvs();
-    localStorage.clear();
+describe('PostHog pilot privacy hold', () => {
+  beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
+  afterEach(() => { vi.unstubAllEnvs(); localStorage.clear(); });
+
+  it.each(['', 'synthetic-configured-key'])('cannot initialize or enable collection with key %j', async key => {
+    const service = await loadAnalytics(key);
+    service.initAnalytics(); service.initAnalytics();
+    expect(service.isAnalyticsEnabled()).toBe(false);
+    Object.values(posthogMock).forEach(mock => expect(mock).not.toHaveBeenCalled());
   });
 
-  it('does not initialize or capture events without a PostHog key', async () => {
-    vi.stubEnv('VITE_POSTHOG_KEY', '');
-    const analytics = await loadAnalytics();
-
-    analytics.initAnalytics();
-    analytics.track('PAGE_VIEW', { pageName: 'Home' });
-
-    expect(posthogMock.init).not.toHaveBeenCalled();
-    expect(posthogMock.capture).not.toHaveBeenCalled();
+  it('does not transmit identity, URLs or sensitive custom properties', async () => {
+    const service = await loadAnalytics('synthetic-configured-key');
+    const user = { id: canary, email: `${canary}@example.invalid`, organizationId: canary };
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    service.identify(user);
+    service.track('PAGE_VIEW', { route: `/documents/${canary}?token=${canary}`, content: canary });
+    service.track('EXTRACTION_FAILED', { error: new Error(canary), stack: canary });
+    service.reset(); service.identify(null);
+    Object.values(posthogMock).forEach(mock => expect(mock).not.toHaveBeenCalled());
+    expect(JSON.parse(localStorage.getItem('currentUser')!)).toEqual(user);
   });
 
-  it('initializes PostHog with automatic capture and replay disabled', async () => {
-    vi.stubEnv('VITE_POSTHOG_KEY', 'phc_test');
-    vi.stubEnv('VITE_POSTHOG_HOST', 'https://us.i.posthog.com');
-    const analytics = await loadAnalytics();
-
-    analytics.initAnalytics();
-
-    expect(posthogMock.init).toHaveBeenCalledWith(
-      'phc_test',
-      expect.objectContaining({
-        api_host: 'https://us.i.posthog.com',
-        autocapture: false,
-        capture_pageview: false,
-        capture_pageleave: false,
-        disable_session_recording: true,
-        advanced_disable_flags: true,
-        disable_surveys: true,
-      }),
-    );
-  });
-
-  it('tracks safe properties with organization context', async () => {
-    vi.stubEnv('VITE_POSTHOG_KEY', 'phc_test');
-    localStorage.setItem(
-      'currentUser',
-      JSON.stringify({
-        id: 'user-1',
-        email: 'pilot@example.com',
-        organizationId: 'org-1',
-        accountType: 'PILOT_REVIEWER',
-        role: 'REVIEWER',
-      }),
-    );
-    const analytics = await loadAnalytics();
-
-    analytics.track('REPORT_GENERATED', {
-      reportType: 'emissions',
-      recordCount: 4,
-      token: 'do-not-send',
-      invoiceContent: 'sensitive text',
-    });
-
-    expect(posthogMock.capture).toHaveBeenCalledWith('REPORT_GENERATED', {
-      organizationId: 'org-1',
-      accountType: 'PILOT_REVIEWER',
-      userRole: 'VIEWER',
-      reportType: 'emissions',
-      recordCount: 4,
-    });
-  });
-
-  it('identifies and resets authenticated users', async () => {
-    vi.stubEnv('VITE_POSTHOG_KEY', 'phc_test');
-    const analytics = await loadAnalytics();
-
-    analytics.identify({
-      id: 'user-1',
-      email: 'pilot@example.com',
-      organizationId: 'org-1',
-      accountType: 'CUSTOMER',
-      role: 'MEMBER',
-    });
-    analytics.reset();
-
-    expect(posthogMock.identify).toHaveBeenCalledWith('user-1', {
-      email: 'pilot@example.com',
-      organizationId: 'org-1',
-      accountType: 'CUSTOMER',
-      userRole: 'MEMBER',
-    });
-    expect(posthogMock.reset).toHaveBeenCalledTimes(1);
+  it('does not inspect arbitrary payloads or disturb application execution', async () => {
+    const service = await loadAnalytics('synthetic-configured-key');
+    const read = vi.fn(() => { throw new Error('Synthetic metadata must not be read'); });
+    const properties = Object.defineProperty({}, 'secret', { get: read });
+    expect(service.track('SYNTHETIC', properties)).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
   });
 });
