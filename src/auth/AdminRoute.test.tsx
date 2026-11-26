@@ -16,6 +16,20 @@ function renderAdminRoute() {
 }
 
 describe('AdminRoute', () => {
+  it.each([
+    ['OWNER', 'USER', 'CUSTOMER', false],
+    ['ADMIN', undefined, 'CUSTOMER', false],
+    ['ADMIN', 'UNKNOWN', 'CUSTOMER', false],
+    ['VIEWER', 'ADMIN', 'CUSTOMER', true],
+    ['ADMIN', 'ADMIN', 'PILOT_REVIEWER', false],
+  ] as const)('preserves explicit platform authority for %s / %s / %s', (role, platformRole, accountType, allowed) => {
+    localStorage.setItem('accessToken', 'synthetic-token');
+    localStorage.setItem('currentUser', JSON.stringify({ email: 'synthetic@example.invalid', role, platformRole, accountType }));
+    renderAdminRoute();
+    expect(Boolean(screen.queryByText('Internal admin content'))).toBe(allowed);
+    expect(Boolean(screen.queryByText('Access Denied'))).toBe(!allowed);
+  });
+
   it('allows platform administrators to view internal pages', () => {
     localStorage.setItem('accessToken', 'valid-token');
     localStorage.setItem(

@@ -14,6 +14,7 @@ import NotFound from '../pages/NotFound';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import PilotPage from '../pages/PilotPage';
+import CalculatorPage from '../pages/CalculatorPage';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { FeedbackManagementPage } from '../pages/FeedbackManagementPage';
 import { AuditLogPage } from '../pages/AuditLogPage';
@@ -61,6 +62,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<CarbonLiteLandingPage />} />
         <Route path="/pilot" element={<PilotPage />} />
+        <Route path="/calculator" element={<CalculatorPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/set-password" element={<SetPasswordPage />} />

@@ -110,6 +110,20 @@ describe('shared permission helpers', () => {
     expect(canViewAdmin(platformAdmin)).toBe(true);
   });
 
+
+  it('keeps platform authority independent from workspace roles and reviewer flags', () => {
+    expect(isPlatformAdmin(user('VIEWER', { platformRole: 'ADMIN', accountType: 'CUSTOMER' }))).toBe(true);
+    expect(canViewAdmin(user('VIEWER', { platformRole: 'ADMIN', accountType: 'CUSTOMER' }))).toBe(true);
+    for (const role of ['ADMIN', 'OWNER'] as const) {
+      for (const platformRole of [undefined, null, 'USER', 'UNKNOWN']) {
+        expect(isPlatformAdmin(user(role, { platformRole, accountType: 'CUSTOMER' }))).toBe(false);
+        expect(canViewAdmin(user(role, { platformRole, accountType: 'CUSTOMER' }))).toBe(false);
+      }
+    }
+    expect(isPlatformAdmin(user('ADMIN', { platformRole: 'ADMIN', accountType: 'PILOT_REVIEWER' }))).toBe(false);
+    expect(canViewAdmin(user('ADMIN', { platformRole: 'ADMIN', accountType: 'PILOT_REVIEWER' }))).toBe(false);
+  });
+
   it('shows demo reset only for explicitly eligible synthetic workspaces', () => {
     expect(canResetDemoData(user('ADMIN', {
       accountType: 'INTERNAL_TEST',
