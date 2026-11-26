@@ -24,6 +24,7 @@ function detail(overrides: Partial<CalculationAuditDetail> = {}): CalculationAud
     factorValue: 0.53,
     factorInputUnit: 'kWh',
     factorResultUnit: 'kgCO2e/kWh',
+    factorSource: 'CarbonLite',
     sourceAuthority: 'CarbonLite',
     sourceDocument: 'CarbonLite Default Factor Library v1.0',
     sourceYear: 2025,

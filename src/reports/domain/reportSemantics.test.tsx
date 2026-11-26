@@ -34,7 +34,7 @@ function combinedInput() {
     sourceAuthority: detail.sourceAuthority!, sourceYear: 2025, factorType: 'System' as const, verified: false,
   }])).values());
   return { ...field, calculationDetails, activities, conversionFactorsUsed,
-    matchedActivityEmissions: calculated.map(detail => ({ activityDataId: detail.activityDataId, activityType: detail.activityType, quantity: detail.activityQuantity, unit: detail.activityUnit, estimatedEmissionsKgCO2e: detail.calculatedEmissionsKgCO2e!, sourceType: detail.sourceType })),
+    matchedActivityEmissions: calculated.map(detail => ({ activityDataId: detail.activityDataId, factorId: detail.factorId, activityType: detail.activityType, quantity: detail.activityQuantity, unit: detail.activityUnit, estimatedEmissionsKgCO2e: detail.calculatedEmissionsKgCO2e!, sourceType: detail.sourceType })),
     usageTotals: aggregateActivityUsage(activities),
     totalEstimatedEmissionsKgCO2e: calculated.reduce((sum, detail) => sum + detail.calculatedEmissionsKgCO2e!, 0),
     countSummary: { ...field.countSummary, totalRecordsFound: 9, recordsInScope: 9, processedRecords: 8, skippedRecords: 1 },
