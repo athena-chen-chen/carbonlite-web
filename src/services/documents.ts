@@ -225,6 +225,7 @@ export async function deleteDocument(id: string) {
       deletedActivityRecords: 0,
     };
   } catch (err) {
+    if (err instanceof ApiError && err.code === 'DOCUMENT_DELETE_RECONCILIATION_REQUIRED') throw err;
     if (err instanceof ApiError && err.status === 403) {
       throw new Error('You do not have permission to perform this action.');
     }

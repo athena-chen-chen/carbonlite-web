@@ -2116,8 +2116,12 @@ describe('UploadPage sample workflow', () => {
     }
   });
 
-  it('keeps the document visible and shows an error when source delete fails', async () => {
-    vi.mocked(deleteDocument).mockRejectedValue(new Error('delete failed'));
+  it.each([
+    [new Error('delete failed'), 'Unable to delete source document. Please try again.'],
+    [new ApiError(503, 'ignored backend message', { code: 'DOCUMENT_DELETE_RECONCILIATION_REQUIRED', requestId: '72676144-1328-4cd1-95f4-d677e7d55139' }, 'DOCUMENT_DELETE_RECONCILIATION_REQUIRED'),
+      'This source document needs storage reconciliation. Deletion was not completed. Contact support with reference 72676144-1328-4cd1-95f4-d677e7d55139.'],
+  ])('keeps the document visible and shows a safe error when source delete fails (%s)', async (failure, message) => {
+    vi.mocked(deleteDocument).mockRejectedValue(failure);
     vi.mocked(getDocuments).mockResolvedValue({
       items: [
         {
@@ -2152,7 +2156,7 @@ describe('UploadPage sample workflow', () => {
     );
     await userEvent.click(await screen.findByRole('button', { name: /^Delete$/i }));
 
-    expect(await screen.findByText('Unable to delete source document. Please try again.')).toBeInTheDocument();
+    expect(await screen.findByText(message as string)).toBeInTheDocument();
     expect(screen.getAllByText('delete-fails.pdf').length).toBeGreaterThan(0);
   });
 

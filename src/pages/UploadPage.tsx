@@ -1,3 +1,4 @@
+import { documentDeleteFailureMessage } from '../utils/documentDeleteFailure';
 import { PageHeader } from '../components/PageHeader';
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -3658,7 +3659,7 @@ ${sampleRows.join('\n')}`,
           : 'Source document deleted.',
       );
     } catch (err) {
-      setError('Unable to delete source document. Please try again.');
+      setError(documentDeleteFailureMessage(err));
     } finally {
       setDeletingDocumentId(null);
     }

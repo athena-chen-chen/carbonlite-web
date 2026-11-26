@@ -1,9 +1,11 @@
+import { reconciliationReference } from '../utils/documentDeleteFailure';
 import { getToken, handleUnauthorized } from './auth';
 import { buildApiUrl } from '../config/api';
 import { captureFrontendException } from '../sentry';
 import { getUserFriendlyErrorMessage } from '../utils/userFriendlyErrors';
 
 export type ApiErrorCode =
+  | 'DOCUMENT_DELETE_RECONCILIATION_REQUIRED'
   | 'FILE_MISSING'
   | 'EXTRACTION_NOT_FOUND'
   | 'EXTRACTION_FAILED'
@@ -41,7 +43,11 @@ function getApiErrorCode(
   status: number,
   path: string,
   backendMessage: string,
+  parsedBody?: unknown,
 ): ApiErrorCode {
+  if (status === 503 && /^\/documents\/[^/]+$/.test(path) && reconciliationReference(parsedBody)) {
+    return 'DOCUMENT_DELETE_RECONCILIATION_REQUIRED';
+  }
   const lowerMessage = backendMessage.toLowerCase();
   const lowerPath = path.toLowerCase();
 
@@ -88,6 +94,8 @@ function getApiErrorCode(
 
 function getFriendlyApiErrorMessage(code: ApiErrorCode, backendMessage = '') {
   switch (code) {
+    case 'DOCUMENT_DELETE_RECONCILIATION_REQUIRED':
+      return 'This source document needs storage reconciliation. Deletion was not completed.';
     case 'FILE_MISSING':
       return 'The original file is no longer available. Please upload it again.';
     case 'EXTRACTION_NOT_FOUND':
@@ -136,6 +144,7 @@ export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
+  const documentDelete = options?.method?.toUpperCase() === 'DELETE' && /^\/documents\/[^/]+$/.test(path);
   const token = getToken();
   const isFormData = options?.body instanceof FormData;
   const url = buildApiUrl(path);
@@ -161,7 +170,7 @@ export async function apiFetch<T>(
       isTimeout ? 'TIMEOUT' : 'REQUEST_FAILED',
       error instanceof Error ? error.message : String(error),
     );
-    captureFrontendException(apiError, {
+    if (!documentDelete) captureFrontendException(apiError, {
       path,
       code: apiError.code,
       technicalMessage: apiError.technicalMessage,
@@ -177,7 +186,7 @@ export async function apiFetch<T>(
     const text = await response.text();
     const parsedBody = parseApiErrorBody(text);
     const backendMessage = extractBackendMessage(text, parsedBody);
-    const code = getApiErrorCode(response.status, path, backendMessage);
+    const code = getApiErrorCode(response.status, path, backendMessage, parsedBody);
     const apiError = new ApiError(
       response.status,
       getFriendlyApiErrorMessage(code, backendMessage),
@@ -186,7 +195,7 @@ export async function apiFetch<T>(
       backendMessage,
     );
 
-    if (response.status >= 500 || code === 'EXTRACTION_FAILED') {
+    if (!documentDelete && (response.status >= 500 || code === 'EXTRACTION_FAILED')) {
       captureFrontendException(apiError, {
         path,
         status: response.status,
