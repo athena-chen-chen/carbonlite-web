@@ -68,6 +68,7 @@ export default function CarbonLiteLandingPage() {
             <a href="#demo-video" className="hover:text-emerald-800">Demo</a>
           </nav>
           <div className="flex flex-wrap items-center gap-3">
+            <Link to="/calculator" className="font-semibold text-emerald-800 hover:text-emerald-950">Free Calculator</Link>
             {isAuthenticated ? (
               <button type="button" onClick={openProduct} className={primaryButtonClass}>Open CarbonLite</button>
             ) : (
