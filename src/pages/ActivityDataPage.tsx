@@ -845,6 +845,12 @@ function handleExportRecords(scope: 'all' | 'filtered' | 'selected') {
     return;
   }
 
+  const exportOrganizationId = getOrganizationId(getCurrentUser());
+  if (!exportOrganizationId || recordsToExport.some((record) => record.organizationId !== exportOrganizationId)) {
+    setError('The active workspace changed. Reload the records before exporting.');
+    return;
+  }
+
   try {
     downloadRecordsCsv(recordsToExport, scope);
     setSuccessMessage('Export prepared.');

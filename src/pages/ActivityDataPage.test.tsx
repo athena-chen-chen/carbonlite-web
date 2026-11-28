@@ -40,6 +40,7 @@ describe('ActivityDataPage delete flows', () => {
   const records = [
     {
       id: 'activity-1',
+      organizationId: 'org-1',
       activityType: 'DIESEL',
       recordDate: '2026-05-14',
       quantity: 100,
@@ -49,6 +50,7 @@ describe('ActivityDataPage delete flows', () => {
     },
     {
       id: 'activity-2',
+      organizationId: 'org-1',
       activityType: 'ELECTRICITY',
       recordDate: '2026-05-15',
       quantity: 200,
@@ -1541,6 +1543,20 @@ describe('ActivityDataPage delete flows', () => {
     await user.click(screen.getByRole('menuitem', { name: /Export all records/i }));
 
     expect(await screen.findByText('No records available to export.')).toBeInTheDocument();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('blocks the loaded records from export after the workspace changes', async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL');
+    renderPage();
+    await screen.findByText('Diesel');
+    localStorage.setItem('currentUser', JSON.stringify({
+      email: 'owner@example.test', role: 'ADMIN', organizationId: 'org-2',
+    }));
+    await user.click(screen.getByRole('button', { name: /^Export records$/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Export all records/i }));
+    expect(await screen.findByText('The active workspace changed. Reload the records before exporting.')).toBeInTheDocument();
     expect(createObjectURL).not.toHaveBeenCalled();
   });
 

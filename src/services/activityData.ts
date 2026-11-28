@@ -333,21 +333,24 @@ export async function getAllActivityData(params?: {
   dateTo?: string;
   search?: string;
 }) {
-  const firstPage = (await getActivityDataList({
-    ...params,
-    page: 1,
-    pageSize: ACTIVITY_DATA_PAGE_SIZE,
-  })) as ActivityDataListResponse;
+  const organizationId = getOrganizationId(getCurrentUser());
+  if (!organizationId) return [];
 
+  async function getWorkspacePage(page: number) {
+    const result = await getActivityDataList({ ...params, page, pageSize: ACTIVITY_DATA_PAGE_SIZE });
+    if (getOrganizationId(getCurrentUser()) !== organizationId ||
+        result.items.some((item) => item.organizationId !== organizationId)) {
+      throw new Error('Activity data workspace changed. Reload and try again.');
+    }
+    return result;
+  }
+
+  const firstPage = await getWorkspacePage(1);
   const totalPages = Math.max(1, Number(firstPage.totalPages ?? 1));
   const items = [...(firstPage.items ?? [])];
 
   for (let page = 2; page <= totalPages; page += 1) {
-    const nextPage = (await getActivityDataList({
-      ...params,
-      page,
-      pageSize: ACTIVITY_DATA_PAGE_SIZE,
-    })) as ActivityDataListResponse;
+    const nextPage = await getWorkspacePage(page);
 
     items.push(...(nextPage.items ?? []));
   }

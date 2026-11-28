@@ -611,6 +611,22 @@ describe('getActivityDataList', () => {
       expect.any(Object),
     );
   });
+
+  it('rejects a multi-page result if the authenticated workspace changes in flight', async () => {
+    setMemberUser('org-a');
+    const page = (id: string, organizationId: string) => new Response(
+      JSON.stringify({ items: [{ id, organizationId }], totalPages: 2 }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(page('activity-a', 'org-a'))
+      .mockImplementationOnce(async () => {
+        setMemberUser('org-b');
+        return page('activity-b', 'org-b');
+      });
+
+    await expect(getAllActivityData()).rejects.toThrow('Activity data workspace changed');
+  });
 });
 
 describe('deleteActivityData', () => {
