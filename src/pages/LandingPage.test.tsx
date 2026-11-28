@@ -98,6 +98,19 @@ it('preserves the demo video and hero analytics event', async () => {
   expect(trackEvent).toHaveBeenCalledWith('DEMO_VIDEO_VIEWED', { video_name: 'CarbonLite demo', source: 'hero' });
 });
 
+it('does not load the video provider until a pilot visitor follows the link', () => {
+  vi.stubEnv('VITE_APP_ENV', 'pilot');
+  try {
+    renderLanding();
+    expect(screen.queryByTitle('CarbonLite demo video')).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Open the demo video' });
+    expect(link).toHaveAttribute('href', expect.stringContaining('youtube.com/embed/'));
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 it.each([
   { authenticated: false, name: 'Sign In', route: '/login' },
   { authenticated: false, name: 'Request Pilot Access', route: '/pilot' },

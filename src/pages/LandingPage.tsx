@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { trackEvent } from '../services/ga4.service';
 import { USER_WORKFLOW } from '../constants/userWorkflow';
+import { getAppEnv } from '../config/api';
 
 const demoVideoUrl = import.meta.env.VITE_DEMO_VIDEO_URL || 'https://www.youtube.com/embed/7sXJJN1GMyE';
 const demoVideoEmbedUrl = getYouTubeEmbedUrl(demoVideoUrl);
@@ -142,7 +143,15 @@ export default function CarbonLiteLandingPage() {
             </div>
             <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
               <div className="relative aspect-video overflow-hidden rounded-2xl bg-slate-950">
-                <iframe className="absolute inset-0 h-full w-full" src={demoVideoEmbedUrl} title="CarbonLite demo video" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+                {getAppEnv() === 'pilot' ? (
+                  <div className="flex h-full items-center justify-center">
+                    <a className={secondaryButtonClass} href={demoVideoEmbedUrl} target="_blank" rel="noopener noreferrer">
+                      Open the demo video
+                    </a>
+                  </div>
+                ) : (
+                  <iframe className="absolute inset-0 h-full w-full" src={demoVideoEmbedUrl} title="CarbonLite demo video" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+                )}
               </div>
             </div>
           </div>
