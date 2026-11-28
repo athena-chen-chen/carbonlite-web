@@ -10,6 +10,7 @@ import {
   getActivityDataList,
   resetDemoDataForCurrentCompany,
   updateActivityData,
+  type ActivityDataItem,
 } from '../services/activityData';
 import { getAllConversionFactors } from '../services/conversionFactors';
 import { AppDialogProvider } from '../components/AppDialog';
@@ -37,10 +38,12 @@ vi.mock('../services/conversionFactors', () => ({
 }));
 
 describe('ActivityDataPage delete flows', () => {
-  const records = [
+  const records: ActivityDataItem[] = [
     {
       id: 'activity-1',
       organizationId: 'org-1',
+      createdAt: '2026-05-14T00:00:00.000Z',
+      updatedAt: '2026-05-14T00:00:00.000Z',
       activityType: 'DIESEL',
       recordDate: '2026-05-14',
       quantity: 100,
@@ -51,6 +54,8 @@ describe('ActivityDataPage delete flows', () => {
     {
       id: 'activity-2',
       organizationId: 'org-1',
+      createdAt: '2026-05-15T00:00:00.000Z',
+      updatedAt: '2026-05-15T00:00:00.000Z',
       activityType: 'ELECTRICITY',
       recordDate: '2026-05-15',
       quantity: 200,
@@ -1920,7 +1925,7 @@ describe('ActivityDataPage delete flows', () => {
     expect(
       screen.getByText('37_mixed_utility_report_missing_units.pdf'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Electricity')).toBeInTheDocument();
+    expect(await screen.findByText('Electricity')).toBeInTheDocument();
     expect(screen.queryByText('Diesel')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear filter' }));
