@@ -4,5 +4,10 @@
       "source": "/((?!api/.*|sitemap\\.xml|robots\\.txt|favicon\\.ico|brand\\.svg|demo/.*|assets/.*).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "qa/pilot-0476812": false
+    }
+  }
 }
